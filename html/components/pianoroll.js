@@ -379,8 +379,6 @@ export function createPianoroll(opts) {
     let lastClickRow = -1;
     let lastClickCol = -1;
 
-    const MOVE_THRESHOLD = 5;
-
     canvas.addEventListener('mousedown', (e) => {
         const rect = canvas.getBoundingClientRect();
         const x = e.clientX - rect.left;
