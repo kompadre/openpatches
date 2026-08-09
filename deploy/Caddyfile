@@ -1,0 +1,14 @@
+{$DOMAIN:localhost} {
+	root * /srv
+	file_server
+
+	handle /exports/* {
+		uri strip_prefix /exports
+		root * /exports
+		file_server
+	}
+
+	handle /api/* {
+		reverse_proxy openpatches:8080
+	}
+}

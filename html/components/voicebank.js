@@ -1,0 +1,374 @@
+// VoiceBank — patch selector for pianoroll
+// Each entry has a color that maps to pianoroll note colors.
+// Volume overlay: click+drag horizontally to adjust channel volume (0-127).
+
+const STORAGE_KEY = 'openpatches_voicebank';
+const MAX_SLOTS = 8;
+const DEFAULT_VOLUME = 100;
+
+const PATCH_COLORS = ['#e94560', '#4caf50', '#2196f3', '#ff9800', '#9c27b0', '#00bcd4', '#ff5722', '#607d8b'];
+
+export function createVoiceBank(opts) {
+    const { onSelect, onVolumeChange, onPreview, onSnapshot } = opts;
+    let entries = [];
+    let activeId = null;
+
+    function notifySnapshot() {
+        if (onSnapshot) onSnapshot(entries);
+    }
+
+    const container = document.createElement('div');
+    container.className = 'voicebank';
+
+    const header = document.createElement('div');
+    header.className = 'voicebank-header';
+    header.textContent = 'Voices';
+    container.appendChild(header);
+
+    const list = document.createElement('div');
+    list.className = 'voicebank-list';
+    container.appendChild(list);
+
+    // Drop target for canvas patches
+    container.addEventListener('dragover', (e) => {
+        if (!window._draggedPatch) return;
+        e.preventDefault();
+        e.stopPropagation();
+        container.classList.add('voicebank-drag-over');
+        const items = [...list.querySelectorAll('.voicebank-item')];
+        items.forEach(i => i.classList.remove('voicebank-drop-target'));
+        const afterItem = getInsertAfterItem(items, e.clientY);
+        if (afterItem) {
+            afterItem.classList.add('voicebank-drop-target');
+        } else if (items.length > 0) {
+            items[items.length - 1].classList.add('voicebank-drop-target');
+        }
+    });
+
+    container.addEventListener('dragleave', (e) => {
+        if (!container.contains(e.relatedTarget)) {
+            container.classList.remove('voicebank-drag-over');
+            list.querySelectorAll('.voicebank-drop-target').forEach(i => i.classList.remove('voicebank-drop-target'));
+        }
+    });
+
+    container.addEventListener('drop', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        container.classList.remove('voicebank-drag-over');
+        list.querySelectorAll('.voicebank-drop-target').forEach(i => i.classList.remove('voicebank-drop-target'));
+        if (!window._draggedPatch) return;
+
+        const patch = window._draggedPatch;
+        const items = [...list.querySelectorAll('.voicebank-item')];
+        const afterItem = getInsertAfterItem(items, e.clientY);
+
+        if (afterItem) {
+            const idx = parseInt(afterItem.dataset.vbIdx);
+            if (entries[idx]) {
+                entries[idx].name = patch.name || entries[idx].name;
+                entries[idx].voiceData = patch.voice_data || entries[idx].voiceData;
+                entries[idx].patchId = patch.name || entries[idx].patchId;
+                activeId = entries[idx].id;
+                render();
+                fireSelect();
+                saveState();
+            }
+        } else {
+            addEntry(patch.name || 'Untitled', patch.voice_data || null, patch.name);
+        }
+
+        window._draggedPatch = null;
+    });
+
+    function getInsertAfterItem(items, clientY) {
+        for (const item of items) {
+            const rect = item.getBoundingClientRect();
+            if (clientY < rect.top + rect.height / 2) return item;
+        }
+        return null;
+    }
+
+    function fireSelect() {
+        const active = entries.find(e => e.id === activeId);
+        if (onSelect && active) {
+            const slot = entries.indexOf(active);
+            onSelect(active, slot);
+        }
+    }
+
+    function render() {
+        list.innerHTML = '';
+        for (let i = 0; i < MAX_SLOTS; i++) {
+            const entry = entries[i];
+            const item = document.createElement('div');
+            item.className = 'voicebank-item' + (entry && entry.id === activeId ? ' active' : '');
+            item.dataset.vbIdx = i;
+
+            if (entry) {
+                // Volume overlay (fills from left)
+                const overlay = document.createElement('div');
+                overlay.className = 'voicebank-volume-overlay';
+                overlay.style.background = entry.color;
+                overlay.style.width = ((entry.volume || DEFAULT_VOLUME) / 127 * 100) + '%';
+                item.appendChild(overlay);
+
+                // Drag handle for reordering
+                const dragHandle = document.createElement('button');
+                dragHandle.className = 'voicebank-drag-handle';
+                dragHandle.textContent = '\u2B0D';
+                dragHandle.title = 'Drag to reorder';
+                dragHandle.draggable = true;
+                dragHandle.addEventListener('click', (e) => e.stopPropagation());
+                dragHandle.addEventListener('dragstart', (e) => {
+                    e.dataTransfer.effectAllowed = 'move';
+                    e.dataTransfer.setData('text/plain', entry.id);
+                    item.classList.add('dragging');
+                    window._vbDragSourceId = entry.id;
+                });
+                dragHandle.addEventListener('dragend', () => {
+                    item.classList.remove('dragging');
+                    window._vbDragSourceId = null;
+                    list.querySelectorAll('.drag-over-top, .drag-over-bottom').forEach(el => {
+                        el.classList.remove('drag-over-top', 'drag-over-bottom');
+                    });
+                });
+                item.appendChild(dragHandle);
+
+                const playBtn = document.createElement('button');
+                playBtn.className = 'voicebank-play';
+                playBtn.textContent = '\u25B6';
+                playBtn.title = 'Preview';
+                playBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (onPreview) onPreview(entry, i);
+                });
+                item.appendChild(playBtn);
+
+                const dot = document.createElement('span');
+                dot.className = 'voicebank-dot';
+                dot.style.background = entry.color;
+                item.appendChild(dot);
+
+                const nameEl = document.createElement('span');
+                nameEl.className = 'voicebank-name';
+                nameEl.textContent = (i + 1) + '. ' + entry.name;
+                item.appendChild(nameEl);
+
+                // Volume label
+                const volEl = document.createElement('span');
+                volEl.className = 'voicebank-vol';
+                volEl.textContent = entry.volume || DEFAULT_VOLUME;
+                item.appendChild(volEl);
+
+                const removeBtn = document.createElement('button');
+                removeBtn.className = 'voicebank-remove';
+                removeBtn.textContent = '\u00D7';
+                removeBtn.title = 'Remove';
+                removeBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    removeEntry(entry.id);
+                });
+                item.appendChild(removeBtn);
+
+                // Reorder drop targets
+                item.addEventListener('dragover', (e) => {
+                    if (!window._vbDragSourceId) return;
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                    const rect = item.getBoundingClientRect();
+                    const midY = rect.top + rect.height / 2;
+                    item.classList.remove('drag-over-top', 'drag-over-bottom');
+                    item.classList.add(e.clientY < midY ? 'drag-over-top' : 'drag-over-bottom');
+                });
+                item.addEventListener('dragleave', () => {
+                    item.classList.remove('drag-over-top', 'drag-over-bottom');
+                });
+                item.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    item.classList.remove('drag-over-top', 'drag-over-bottom');
+                    if (!window._vbDragSourceId) return;
+                    const fromId = window._vbDragSourceId;
+                    const fromIdx = entries.findIndex(en => en.id === fromId);
+                    let toIdx = i;
+                    const rect = item.getBoundingClientRect();
+                    if (e.clientY >= rect.top + rect.height / 2) toIdx = i + 1;
+                    if (fromIdx < 0 || fromIdx === toIdx || fromIdx === toIdx - 1) return;
+                    const [moved] = entries.splice(fromIdx, 1);
+                    if (toIdx > fromIdx) toIdx--;
+                    entries.splice(toIdx, 0, moved);
+                    render();
+                    saveState();
+                    notifySnapshot();
+                });
+
+                // Click to select
+                item.addEventListener('click', (e) => {
+                    // Don't select if dragging volume
+                    if (item._dragging) return;
+                    activeId = entry.id;
+                    render();
+                    fireSelect();
+                    saveState();
+                });
+
+                // Volume drag: mousedown → track mousemove → mouseup
+                item.addEventListener('mousedown', (e) => {
+                    if (e.button !== 0) return;
+                    const rect = item.getBoundingClientRect();
+                    const startX = e.clientX;
+                    let didDrag = false;
+
+                    function onMove(ev) {
+                        const x = ev.clientX - rect.left;
+                        const pct = Math.max(0, Math.min(1, x / rect.width));
+                        const vol = Math.round(pct * 127);
+                        entry.volume = vol;
+                        overlay.style.width = (pct * 100) + '%';
+                        volEl.textContent = vol;
+                        didDrag = true;
+                        if (onVolumeChange) onVolumeChange(i, vol);
+                    }
+
+                    function onUp() {
+                        document.removeEventListener('mousemove', onMove);
+                        document.removeEventListener('mouseup', onUp);
+                        if (didDrag) {
+                            item._dragging = true;
+                            setTimeout(() => { item._dragging = false; }, 50);
+                            saveState();
+                        }
+                    }
+
+                    document.addEventListener('mousemove', onMove);
+                    document.addEventListener('mouseup', onUp);
+                });
+            } else {
+                item.classList.add('voicebank-empty');
+                const placeholder = document.createElement('span');
+                placeholder.className = 'voicebank-placeholder';
+                placeholder.textContent = '—';
+                item.appendChild(placeholder);
+            }
+
+            list.appendChild(item);
+        }
+    }
+
+    function addEntry(name, voiceData, patchId) {
+        if (!voiceData) return;
+        if (entries.length >= MAX_SLOTS) return;
+
+        // Deep copy voiceData to avoid stale references
+        let voiceCopy;
+        if (typeof voiceData === 'string') {
+            voiceCopy = voiceData; // strings are immutable
+        } else if (voiceData instanceof Uint8Array) {
+            voiceCopy = new Uint8Array(voiceData); // true deep copy
+        } else if (Array.isArray(voiceData)) {
+            voiceCopy = voiceData.slice();
+        } else {
+            return;
+        }
+
+        // Dedup by content (string compare for base64, byte compare for arrays)
+        const voiceKey = typeof voiceCopy === 'string' ? voiceCopy : Array.from(voiceCopy).join(',');
+        const existing = entries.find(e => {
+            if (typeof e.voiceData === 'string' && typeof voiceCopy === 'string') {
+                return e.voiceData === voiceCopy;
+            }
+            if (Array.isArray(e.voiceData) && Array.isArray(voiceCopy)) {
+                return Array.from(e.voiceData).join(',') === voiceKey;
+            }
+            return false;
+        });
+        if (existing) {
+            activeId = existing.id;
+            render();
+            fireSelect();
+            saveState();
+            return;
+        }
+
+        const color = PATCH_COLORS[entries.length % PATCH_COLORS.length];
+        entries.push({
+            id: 'vb_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+            name: name || 'Untitled',
+            voiceData: voiceCopy,
+            patchId: patchId || name,
+            color,
+            volume: DEFAULT_VOLUME,
+        });
+        activeId = entries[entries.length - 1].id;
+        render();
+        fireSelect();
+        saveState();
+        notifySnapshot();
+    }
+
+    function removeEntry(id) {
+        entries = entries.filter(e => e.id !== id);
+        if (activeId === id) {
+            activeId = entries.length > 0 ? entries[0].id : null;
+            if (activeId) fireSelect();
+        }
+        render();
+        saveState();
+        notifySnapshot();
+    }
+
+    function getActive() {
+        return entries.find(e => e.id === activeId) || null;
+    }
+
+    function setActive(id) {
+        if (entries.find(e => e.id === id)) {
+            activeId = id;
+            render();
+            fireSelect();
+            saveState();
+        }
+    }
+
+    function saveState() {
+        try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify({ entries, activeId }));
+        } catch (e) {
+            console.warn('VoiceBank save failed:', e);
+        }
+    }
+
+    function loadState() {
+        try {
+            const raw = localStorage.getItem(STORAGE_KEY);
+            if (!raw) return;
+            const data = JSON.parse(raw);
+            entries = data.entries || [];
+            activeId = data.activeId || null;
+            if (activeId && !entries.find(e => e.id === activeId)) {
+                activeId = entries.length > 0 ? entries[0].id : null;
+            }
+            // Backfill volume for entries saved before volume feature
+            for (const entry of entries) {
+                if (entry.volume === undefined) entry.volume = DEFAULT_VOLUME;
+            }
+        } catch (e) {
+            console.warn('VoiceBank load failed:', e);
+        }
+    }
+
+    // Init
+    loadState();
+    render();
+
+    container._addEntry = addEntry;
+    container._removeEntry = removeEntry;
+    container._clear = () => { entries = []; activeId = null; render(); saveState(); notifySnapshot(); };
+    container._getActive = getActive;
+    container._setActive = setActive;
+    container._getEntries = () => entries;
+    container._notifySnapshot = notifySnapshot;
+
+    return container;
+}

@@ -1,0 +1,19 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Node
+node_modules/
+
+# Build artifacts
+*.tgz
+
+# Deploy staging
+deploy/app/

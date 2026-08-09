@@ -1,0 +1,50 @@
+# MSFA DX7 WASM build (AudioWorklet version)
+# Uses msfa_bridge.cpp from external/msfa-wasm/
+# Requires: zig c++
+
+MSFA = ../../../external/msfa-wasm
+
+SRC = $(MSFA)/msfa_bridge.cpp \
+      $(MSFA)/synth_unit.cc \
+      $(MSFA)/ringbuffer.cc \
+      $(MSFA)/patch.cc \
+      $(MSFA)/lfo.cc \
+      $(MSFA)/dx7note.cc \
+      $(MSFA)/freqlut.cc \
+      $(MSFA)/sin.cc \
+      $(MSFA)/exp2.cc \
+      $(MSFA)/fm_core.cc \
+      $(MSFA)/fm_op_kernel.cc \
+      $(MSFA)/pitchenv.cc \
+      $(MSFA)/env.cc \
+      $(MSFA)/resofilter.cc \
+      $(MSFA)/fir.cc \
+      $(MSFA)/log2.cc
+
+TARGET = msfa.wasm
+
+.PHONY: all clean
+
+all: $(TARGET)
+
+$(TARGET): $(SRC)
+	zig c++ -target wasm32-wasi -O2 \
+		-I$(MSFA) \
+		-fno-exceptions \
+		-Wl,--no-entry \
+		-Wl,--export-table \
+		-Wl,--export=init_engine \
+		-Wl,--export=get_patch_buffer \
+		-Wl,--export=load_voice_from_buffer \
+		-Wl,--export=load_voice_channel_from_buffer \
+		-Wl,--export=load_voice \
+		-Wl,--export=load_voice_channel \
+		-Wl,--export=send_midi \
+		-Wl,--export=note_on \
+		-Wl,--export=note_off \
+		-Wl,--export=set_channel_volume \
+		-Wl,--export=render_audio \
+		-o $(TARGET) $(SRC)
+
+clean:
+	rm -f $(TARGET)

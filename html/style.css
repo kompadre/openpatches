@@ -1,0 +1,2664 @@
+/* ============================================================
+   1. Reset & body
+   ============================================================ */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background-color: #1a1a2e;
+    color: #e0e0e0;
+    font-family: system-ui, -apple-system, sans-serif;
+    padding: 0;
+    margin: 0;
+    position: relative;
+    z-index: -2;
+}
+
+/* ============================================================
+   Menu Bar
+   ============================================================ */
+
+.menu-bar {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    width: 100%;
+    height: 36px;
+    background: #0d0d1a;
+    border-bottom: 1px solid #222;
+    padding: 0 0.5rem;
+    gap: 0.25rem;
+    flex-shrink: 0;
+}
+
+.menu-brand {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #e94560;
+    padding: 0 0.75rem;
+    letter-spacing: 0.04em;
+    user-select: none;
+}
+
+.menu-items {
+    display: flex;
+    gap: 0;
+}
+
+.menu-item {
+    position: relative;
+}
+
+.menu-label {
+    display: block;
+    padding: 0.35rem 0.75rem;
+    font-size: 0.78rem;
+    color: #aaa;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.1s, color 0.1s;
+    border-radius: 4px;
+}
+
+.menu-label:hover {
+    background: #16213e;
+    color: #fff;
+}
+
+.menu-item.open .menu-label {
+    background: #16213e;
+    color: #fff;
+}
+
+.menu-dropdown {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    min-width: 160px;
+    background: #12121f;
+    border: 1px solid #333;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    padding: 0.25rem 0;
+    z-index: 200;
+}
+
+.menu-item.open .menu-dropdown {
+    display: block;
+}
+
+.menu-dropdown button {
+    display: block;
+    width: 100%;
+    padding: 0.4rem 0.8rem;
+    background: none;
+    border: none;
+    color: #ccc;
+    font-size: 0.78rem;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.1s;
+}
+
+.menu-dropdown button:hover {
+    background: #1a2744;
+    color: #fff;
+}
+
+.menu-dropdown hr {
+    border: none;
+    border-top: 1px solid #2a2a3e;
+    margin: 0.2rem 0;
+}
+
+.menu-status {
+    margin-left: auto;
+    font-size: 0.7rem;
+    color: #555;
+    padding-right: 0.5rem;
+}
+
+/* ============================================================
+   Modal
+   ============================================================ */
+
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    z-index: 500;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-dialog {
+    background: #16213e;
+    border: 1px solid #333;
+    border-radius: 8px;
+    max-width: 450px;
+    width: 90%;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.6);
+}
+
+.modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid #2a2a3e;
+}
+
+.modal-header h3 {
+    margin: 0;
+    font-size: 0.95rem;
+    color: #e0e0e0;
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    color: #888;
+    font-size: 1.2rem;
+    cursor: pointer;
+    padding: 0 0.25rem;
+    transition: color 0.15s;
+}
+
+.modal-close:hover {
+    color: #e94560;
+}
+
+.modal-body {
+    padding: 1rem;
+    font-size: 0.85rem;
+    color: #bbb;
+    line-height: 1.6;
+}
+
+.modal-body a {
+    color: #4caf50;
+    text-decoration: none;
+}
+
+.modal-body a:hover {
+    text-decoration: underline;
+}
+
+.modal-body p {
+    margin: 0.5rem 0;
+}
+
+/* ============================================================
+   2. Typography & buttons
+   ============================================================ */
+
+h1 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: #ffffff;
+}
+
+button {
+    padding: 0.75rem 1.5rem;
+    background-color: #e94560;
+    border: none;
+    border-radius: 8px;
+    color: #fff;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+button:hover {
+    background-color: #c73550;
+}
+
+button:disabled {
+    background-color: #555;
+    cursor: not-allowed;
+}
+
+.file-name {
+    display: block;
+    margin-top: 0.5rem;
+    font-size: 0.85rem;
+    color: #aaa;
+}
+
+textarea {
+    width: 100%;
+    max-width: 500px;
+    min-height: 150px;
+    padding: 1rem;
+    background-color: #0f0f23;
+    border: 1px solid #333;
+    border-radius: 0 0 8px 8px;
+    color: #e0e0e0;
+    font-family: monospace;
+    font-size: 0.9rem;
+    resize: vertical;
+}
+
+textarea:focus {
+    outline: none;
+    border-color: #e94560;
+}
+
+/* ============================================================
+   3. File input
+   ============================================================ */
+
+.file-input-wrapper {
+    position: relative;
+}
+
+.file-input-wrapper input[type="file"] {
+    display: none;
+}
+
+.file-input-label {
+    display: inline-block;
+    padding: 0.75rem 1.5rem;
+    background-color: #16213e;
+    border: 2px dashed #0f3460;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: border-color 0.2s, background-color 0.2s;
+    text-align: center;
+    min-width: 300px;
+}
+
+.file-input-label:hover {
+    border-color: #e94560;
+    background-color: #1a1a3e;
+}
+
+.file-input-label.selected {
+    border-style: solid;
+    border-color: #4caf50;
+    background-color: #1a2e1a;
+}
+
+/* ============================================================
+   4. Progress bar
+   ============================================================ */
+
+#progress-wrapper {
+    width: 100%;
+    max-width: 500px;
+    margin-bottom: 0.5rem;
+}
+
+#progress-bar {
+    width: 100%;
+    height: 6px;
+    background: #333;
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+#progress-fill {
+    height: 100%;
+    width: 0%;
+    background: #e94560;
+    transition: width 0.3s ease;
+}
+
+#progress-label {
+    font-size: 0.75rem;
+    color: #888;
+    margin-top: 0.3rem;
+    text-align: center;
+    min-height: 1rem;
+}
+
+/* ============================================================
+   5. Tabs
+   ============================================================ */
+
+#tabs {
+    display: none;
+    width: 100%;
+    max-width: 500px;
+    gap: 0.25rem;
+    flex-wrap: wrap;
+}
+
+#tabs.visible {
+    display: flex;
+}
+
+.tab {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.4rem 0.75rem;
+    background-color: #0f0f23;
+    border: 1px solid #333;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    color: #aaa;
+    transition: background-color 0.2s, color 0.2s;
+}
+
+.tab:hover {
+    background-color: #16213e;
+    color: #fff;
+}
+
+.tab.active {
+    background-color: #16213e;
+    border-color: #e94560;
+    color: #fff;
+}
+
+.tab .spinner {
+    width: 12px;
+    height: 12px;
+    border: 2px solid #555;
+    border-top-color: #e94560;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.tab-play {
+    background: none;
+    border: none;
+    color: inherit;
+    cursor: pointer;
+    font-size: 0.85rem;
+    padding: 0;
+    line-height: 1;
+}
+
+.tab-play:hover {
+    color: #e94560;
+}
+
+.tab-close {
+    background: none;
+    border: none;
+    color: #666;
+    cursor: pointer;
+    font-size: 0.7rem;
+    padding: 0 0.2rem;
+    margin-left: 0.3rem;
+    line-height: 1;
+}
+
+.tab-close:hover {
+    color: #e94560;
+}
+
+.tab-status {
+    font-size: 0.7rem;
+    color: #888;
+    margin-left: 0.2rem;
+}
+
+#clear-btn {
+    display: none;
+    padding: 0.3rem 0.75rem;
+    background: none;
+    border: 1px solid #555;
+    border-radius: 6px;
+    color: #888;
+    font-size: 0.75rem;
+    cursor: pointer;
+    margin-left: 0.5rem;
+    position: relative;
+    z-index: 2;
+}
+
+#clear-btn:hover {
+    color: #e94560;
+    border-color: #e94560;
+}
+
+/* ============================================================
+   6. Tab content / config
+   ============================================================ */
+
+#tab-content {
+    display: none;
+    width: 100%;
+    max-width: 500px;
+    background-color: #16213e;
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 1.5rem;
+    overflow: auto;
+    max-height: 300px;
+}
+
+#tab-content.visible {
+    display: block;
+}
+
+.tab-content:not(.visible) {
+    display: none;
+}
+
+/* ============================================================
+   Night Sky — free-floating patch canvas
+   ============================================================ */
+
+#night-sky {
+    position: absolute;
+    top: 36px;
+    left: 0;
+    right: 0;
+    height: calc(100vh - 256px);
+    display: none;
+    z-index: -1;
+}
+
+#night-sky.visible {
+    display: block;
+}
+
+#night-sky > * {
+    position: relative;
+    z-index: 1;
+}
+
+h1, .file-input-wrapper, #progress-wrapper {
+    position: relative;
+    z-index: 2;
+    padding-left: 2rem;
+    padding-right: 2rem;
+}
+
+h1 {
+    padding-top: 1.5rem;
+}
+
+.night-sky-canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 100%;
+    border: 1px dashed #2a2a3e;
+    border-radius: 8px;
+    background: url('images/bg.png') center/cover no-repeat, radial-gradient(ellipse at center, #0d0d1a 0%, #080812 100%);
+}
+
+.sky-toolbar {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 0.4rem;
+}
+
+.sky-ctr-btn {
+    background: #16213e;
+    color: #999;
+    border: 1px solid #333;
+    border-radius: 4px;
+    padding: 0.2rem 0.6rem;
+    font-size: 0.7rem;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+
+.sky-ctr-btn:hover {
+    background: #1a2744;
+    color: #ccc;
+}
+
+.night-sky-canvas.drag-over-sky {
+    border-color: #e94560;
+    background: radial-gradient(ellipse at center, #12121f 0%, #0a0a18 100%);
+}
+
+/* Floating patch — its own layout, not dependent on patch-list */
+.patch-float {
+    position: absolute;
+    z-index: 10;
+    cursor: grab;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.3rem 0.5rem;
+    background: #16213e;
+    border: 1px solid #333;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    color: #ccc;
+}
+
+.patch-float:active {
+    cursor: grabbing;
+}
+
+.patch-float:hover {
+    border-color: #e94560;
+}
+
+/* Expanded floating patch — show all fields */
+.patch-float:not(.minified) {
+    flex-wrap: wrap;
+}
+
+.patch-float:not(.minified) .patch-spec {
+    position: relative;
+    width: 180px;
+    min-width: 180px;
+    height: 48px;
+    border-radius: 4px;
+    overflow: hidden;
+    border: 1px solid #2a2a3e;
+    flex-shrink: 0;
+}
+
+.patch-float:not(.minified) .patch-canvas {
+    display: block;
+    width: 180px;
+    height: 48px;
+}
+
+.patch-float:not(.minified) .patch-play {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background-color: rgba(15, 15, 35, 0.85);
+    border: 1.5px solid #4caf50;
+    color: #4caf50;
+    font-size: 0.7rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+    opacity: 1;
+}
+
+.patch-float:not(.minified) .patch-play:hover {
+    background-color: rgba(76, 175, 80, 0.3);
+    border-color: #66bb6a;
+    color: #66bb6a;
+}
+
+.patch-float:not(.minified) .patch-col {
+    width: 45px;
+    min-width: 45px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+    font-size: 0.8rem;
+}
+
+.patch-float:not(.minified) .patch-col.patch-dist {
+    width: 60px;
+    min-width: 60px;
+}
+
+.patch-float:not(.minified) .patch-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.patch-float:not(.minified) .patch-star {
+    opacity: 1;
+}
+
+.patch-float:not(.minified) .patch-assign {
+    background: none;
+    border: 1px solid #333;
+    border-radius: 4px;
+    color: #666;
+    cursor: pointer;
+    font-size: 0.8rem;
+    padding: 0.15rem 0.4rem;
+    line-height: 1;
+    flex-shrink: 0;
+    opacity: 1;
+}
+
+.patch-float:not(.minified) .patch-assign:hover {
+    color: #4caf50;
+    border-color: #4caf50;
+}
+
+/* Minified floating patch — star + name only */
+.patch-float.minified {
+    flex-direction: column;
+    align-items: center;
+    gap: 0.15rem;
+    min-width: 56px;
+    max-width: 90px;
+    background: #12121f;
+    border-left: 3px solid #f5c542;
+    padding: 0.25rem 0.4rem;
+}
+
+.patch-float.minified .patch-spec,
+.patch-float.minified .patch-col,
+.patch-float.minified .patch-edit-btn {
+    display: none;
+}
+
+.patch-float.minified .patch-star {
+    opacity: 1;
+}
+
+.patch-float.minified .patch-assign {
+    opacity: 1;
+    font-size: 0.75rem;
+    padding: 0.1rem 0.3rem;
+}
+
+.patch-float.minified .patch-name {
+    color: #f5c542;
+    font-size: 0.65rem;
+    max-width: 80px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: center;
+}
+
+/* Container on night sky */
+.sky-container {
+    position: absolute;
+    min-width: 200px;
+    min-height: 80px;
+    border: 1px dashed #333;
+    border-radius: 8px;
+    background: none;
+    z-index: 5;
+    height: auto;
+}
+
+.sky-container.drag-over-container {
+    border-color: #4caf50;
+    background: rgba(76, 175, 80, 0.08);
+}
+
+.sky-container-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.3rem;
+    padding: 0.2rem 0.5rem;
+    font-size: 0.7rem;
+    color: #666;
+    cursor: move;
+    border-bottom: 1px dashed #2a2a3e;
+    background: #16213e;
+    border-radius: 8px 8px 0 0;
+}
+
+.sky-container-header-left {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    min-width: 0;
+    flex: 1;
+}
+
+.sky-container-header-right {
+    display: flex;
+    align-items: center;
+    gap: 0.2rem;
+    flex-shrink: 0;
+}
+
+.sky-container-minimize {
+    background: none;
+    border: none;
+    color: #555;
+    font-size: 0.7rem;
+    cursor: pointer;
+    padding: 0 0.2rem;
+    line-height: 1;
+    transition: color 0.15s;
+}
+
+.sky-container-minimize:hover {
+    color: #e94560;
+}
+
+.sky-container-assign {
+    background: none;
+    border: none;
+    color: #555;
+    font-size: 0.8rem;
+    cursor: pointer;
+    padding: 0 0.2rem;
+    line-height: 1;
+    transition: color 0.15s;
+}
+
+.sky-container-assign:hover {
+    color: #4caf50;
+}
+
+.sky-container-sort {
+    background: none;
+    border: none;
+    color: #555;
+    font-size: 0.8rem;
+    cursor: pointer;
+    padding: 0 0.2rem;
+    line-height: 1;
+    transition: color 0.15s;
+}
+
+.sky-container-sort:hover {
+    color: #2196f3;
+}
+
+.sky-container-export {
+    background: none;
+    border: none;
+    color: #555;
+    font-size: 0.8rem;
+    cursor: pointer;
+    padding: 0 0.2rem;
+    line-height: 1;
+    transition: color 0.15s;
+}
+
+.sky-container-export:hover {
+    color: #ff9800;
+}
+
+.sky-container-resize {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 14px;
+    height: 14px;
+    cursor: nwse-resize;
+    z-index: 10;
+}
+
+.sky-container-resize::after {
+    content: '';
+    position: absolute;
+    bottom: 3px;
+    right: 3px;
+    width: 8px;
+    height: 8px;
+    border-right: 2px solid #555;
+    border-bottom: 2px solid #555;
+    border-radius: 0 0 2px 0;
+}
+
+.sky-container:hover .sky-container-resize::after {
+    border-color: #999;
+}
+
+.sky-container-name {
+    cursor: text;
+    padding: 0.1rem 0.2rem;
+    border-radius: 3px;
+    min-width: 2rem;
+}
+
+.sky-container-name:hover {
+    background: rgba(255,255,255,0.05);
+}
+
+.sky-container-name:focus {
+    outline: 1px solid #e94560;
+    background: rgba(255,255,255,0.08);
+    color: #ccc;
+}
+
+.sky-container-name-failed {
+    color: #e94560;
+    text-decoration: line-through;
+    cursor: default;
+}
+
+.sky-container-name-failed:hover {
+    background: none;
+}
+
+.sky-remove {
+    background: none;
+    border: none;
+    color: #555;
+    font-size: 0.9rem;
+    cursor: pointer;
+    padding: 0 0.2rem;
+    line-height: 1;
+    transition: color 0.15s;
+    opacity: 0;
+    flex-shrink: 0;
+}
+
+.patch-float:hover .sky-remove,
+.sky-container:hover .sky-remove {
+    opacity: 1;
+}
+
+.sky-remove:hover {
+    color: #e94560;
+}
+
+.sky-container-body {
+    padding: 5px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-height: 40px;
+    overflow: auto;
+    max-height: 400px;
+    background: rgba(22, 33, 62, 0.6);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border-radius: 0 0 8px 8px;
+}
+
+.sky-container-body .patch-row {
+    width: 100%;
+}
+
+.container-status {
+    padding: 1rem;
+    text-align: center;
+    color: #888;
+    font-size: 0.8rem;
+    width: 100%;
+}
+
+.sky-container-body.container-body-probe {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    overflow-y: auto;
+    max-height: 400px;
+}
+
+.sky-container-body .probe-panel {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.sky-container-body .patch-float {
+    position: relative;
+}
+
+.config-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    user-select: none;
+    margin-bottom: 0.75rem;
+    font-size: 0.9rem;
+    color: #ccc;
+}
+
+.config-header:hover {
+    color: #fff;
+}
+
+.config-arrow {
+    font-size: 0.75rem;
+    transition: transform 0.2s;
+}
+
+.config-header.collapsed .config-arrow {
+    transform: rotate(-90deg);
+}
+
+.config-body {
+    overflow: hidden;
+    transition: max-height 0.25s ease;
+}
+
+.config-body.collapsed {
+    max-height: 0 !important;
+    margin: 0;
+}
+
+/* ============================================================
+   7. Probe form
+   ============================================================ */
+
+.probe-info {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.probe-info .badge {
+    background-color: #0f0f23;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    color: #aaa;
+}
+
+.probe-info .badge strong {
+    color: #e0e0e0;
+}
+
+.probe-info .badge.seen {
+    color: #e94560;
+    font-weight: 600;
+}
+
+.probe-info .badge.match {
+    color: #4caf50;
+}
+
+.probe-form {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+}
+
+.probe-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.probe-field label {
+    font-size: 0.75rem;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.probe-field input,
+.probe-field select {
+    background-color: #0f0f23;
+    border: 1px solid #333;
+    border-radius: 4px;
+    padding: 0.4rem 0.5rem;
+    color: #e0e0e0;
+    font-size: 0.85rem;
+    font-family: monospace;
+    width: 100%;
+}
+
+.probe-field input:focus,
+.probe-field select:focus {
+    outline: none;
+    border-color: #e94560;
+}
+
+.note-row {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: flex-end;
+    gap: 0.5rem;
+}
+
+.note-row .probe-field {
+    flex: 1;
+    min-width: 0;
+}
+
+.tuning-fork-btn {
+    background-color: #0f0f23;
+    border: 1px solid #333;
+    border-radius: 4px;
+    padding: 0;
+    color: #e0e0e0;
+    font-size: 1.1rem;
+    font-weight: 700;
+    cursor: pointer;
+    line-height: 1;
+    width: 2rem;
+    height: 2rem;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.tuning-fork-btn:hover {
+    border-color: #e94560;
+    color: #e94560;
+}
+
+.tuning-fork-btn.active {
+    background-color: #e94560;
+    border-color: #e94560;
+    color: #fff;
+}
+
+.probe-actions {
+    grid-column: 1 / -1;
+    display: flex;
+    gap: 0.75rem;
+    margin-top: 0.5rem;
+}
+
+.probe-actions button {
+    flex: 1;
+    font-size: 0.85rem;
+    padding: 0.6rem 1rem;
+}
+
+.btn-match {
+    background-color: #4caf50;
+}
+
+.btn-match:hover {
+    background-color: #3d8b40;
+}
+
+.btn-reset {
+    background-color: #333;
+}
+
+.btn-reset:hover {
+    background-color: #444;
+}
+
+/* ============================================================
+   8. Results / matches table
+   ============================================================ */
+
+.result-info {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+    font-size: 0.9rem;
+    color: #ccc;
+}
+
+.result-info span {
+    background-color: #0f0f23;
+    padding: 0.25rem 0.6rem;
+    border-radius: 4px;
+}
+
+.result-info strong {
+    color: #4caf50;
+}
+
+/* Patch list — unified layout for results and favorites */
+
+.patch-list {
+    margin-bottom: 1rem;
+}
+
+.patch-list-header .patch-spec {
+    border: none;
+}
+
+.patch-list-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.6rem;
+    font-size: 0.75rem;
+    color: #666;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border-bottom: 1px solid #2a2a3e;
+}
+
+.patch-list-body {
+    display: flex;
+    flex-direction: column;
+}
+
+.patch-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.45rem 0.6rem;
+    border-bottom: 1px solid #1e1e30;
+    cursor: pointer;
+    transition: background-color 0.12s;
+    font-size: 0.85rem;
+    color: #ccc;
+}
+
+.patch-row:hover {
+    background-color: #16162a;
+}
+
+.patch-row.selected {
+    color: #ccc;
+}
+
+.patch-spec {
+    position: relative;
+    width: 180px;
+    min-width: 180px;
+    height: 48px;
+    border-radius: 4px;
+    overflow: hidden;
+    border: 1px solid #2a2a3e;
+    flex-shrink: 0;
+}
+
+.patch-canvas {
+    display: block;
+    width: 180px;
+    height: 48px;
+}
+
+.patch-play {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background-color: rgba(15, 15, 35, 0.85);
+    border: 1.5px solid #4caf50;
+    color: #4caf50;
+    font-size: 0.7rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+.patch-row:hover .patch-play {
+    opacity: 1;
+}
+
+.patch-play:hover {
+    background-color: rgba(76, 175, 80, 0.3);
+    border-color: #66bb6a;
+    color: #66bb6a;
+}
+
+.patch-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.patch-star {
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    color: #555;
+    transition: color 0.15s;
+    padding: 0.15rem 0.3rem;
+    line-height: 1;
+    flex-shrink: 0;
+    opacity: 0;
+}
+
+.patch-row:hover .patch-star {
+    opacity: 1;
+}
+
+.patch-star:hover {
+    color: #f5c542;
+}
+
+.patch-star.fav-active {
+    color: #f5c542;
+    opacity: 1;
+}
+
+.patch-col {
+    width: 50px;
+    min-width: 50px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+}
+
+.patch-col.patch-dist {
+    width: 65px;
+    min-width: 65px;
+}
+
+/* Minified row (inside containers) */
+.patch-row-minified {
+    padding: 0.2rem 0.4rem;
+    gap: 0.3rem;
+    background: #12121f;
+    border-left: 2px solid #f5c542;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.patch-row-minified .patch-col {
+    display: none;
+}
+
+.patch-row-minified .patch-spec {
+    display: none;
+}
+
+.patch-row-minified .patch-spec-mini {
+    display: flex;
+    flex-shrink: 0;
+}
+
+.patch-row-minified .patch-star {
+    opacity: 1;
+    flex-shrink: 0;
+}
+
+.patch-row-minified .patch-name {
+    color: #f5c542;
+    font-size: 0.8rem;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.patch-row-minified .patch-assign {
+    opacity: 0.6;
+    flex-shrink: 0;
+}
+
+.patch-row-minified:hover .patch-assign,
+.patch-row-minified:hover .patch-edit-btn,
+.patch-row-minified:hover .sky-remove {
+    opacity: 1;
+}
+
+.patch-row-minified .patch-edit-btn {
+    flex-shrink: 0;
+}
+
+.patch-row-minified .sky-remove {
+    flex-shrink: 0;
+}
+
+/* Mini spectrogram */
+.patch-spec-mini {
+    display: none;
+    align-items: center;
+    gap: 0.2rem;
+    flex-shrink: 0;
+    width: auto;
+    min-width: 0;
+    height: auto;
+    border: none;
+    overflow: visible;
+}
+
+.patch-spec-mini .patch-canvas {
+    width: 120px;
+    height: 32px;
+    border-radius: 3px;
+    border: 1px solid #2a2a3e;
+}
+
+.patch-spec-mini .patch-play {
+    width: 20px;
+    height: 20px;
+    font-size: 0.55rem;
+}
+
+/* Drag states */
+.patch-row.dragging {
+    opacity: 0.4;
+}
+
+.patch-row.drag-ghost {
+    opacity: 0.2;
+}
+
+.patch-list-body.drag-over {
+    background: rgba(233, 69, 96, 0.05);
+    border-radius: 4px;
+}
+
+.patch-row.drag-insert-before {
+    border-top: 2px solid #e94560;
+}
+
+.patch-row.drag-insert-after {
+    border-bottom: 2px solid #e94560;
+}
+
+.patch-assign {
+    background: none;
+    border: 1px solid #333;
+    border-radius: 4px;
+    color: #666;
+    cursor: pointer;
+    font-size: 0.8rem;
+    padding: 0.15rem 0.4rem;
+    line-height: 1;
+    flex-shrink: 0;
+    transition: color 0.15s, border-color 0.15s;
+    opacity: 0;
+}
+
+.patch-row:hover .patch-assign {
+    opacity: 1;
+}
+
+.patch-assign:hover {
+    color: #4caf50;
+    border-color: #4caf50;
+}
+
+.syx-link {
+    display: inline-block;
+    padding: 0.5rem 1rem;
+    background-color: #0f3460;
+    border-radius: 6px;
+    color: #fff;
+    text-decoration: none;
+    font-size: 0.9rem;
+    transition: background-color 0.2s;
+}
+
+.syx-link:hover {
+    background-color: #1a5276;
+}
+
+.section-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #ffffff;
+    margin-top: 1.25rem;
+    margin-bottom: 0.15rem;
+}
+
+.section-subtitle {
+    font-size: 0.8rem;
+    color: #777;
+    margin-bottom: 0.75rem;
+}
+
+/* Collapsible sections (details/summary) */
+.collapsible-section {
+    margin-bottom: 0.75rem;
+}
+
+.collapsible-section summary {
+    cursor: pointer;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #ccc;
+    padding: 0.4rem 0;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    user-select: none;
+}
+
+.collapsible-section summary::-webkit-details-marker {
+    display: none;
+}
+
+.collapsible-section summary::before {
+    content: '▸';
+    font-size: 0.7rem;
+    color: #888;
+    transition: transform 0.2s;
+    flex-shrink: 0;
+}
+
+.collapsible-section[open] summary::before {
+    transform: rotate(90deg);
+}
+
+.collapsible-section summary:hover {
+    color: #fff;
+}
+
+/* ============================================================
+   9. Keyboard / piano
+   ============================================================ */
+
+.keyboard-wrapper {
+    margin-top: 1rem;
+    text-align: center;
+}
+
+.keyboard-wrapper .keyboard-label {
+    font-size: 0.75rem;
+    color: #666;
+    margin-bottom: 0.4rem;
+}
+
+.keyboard {
+    display: inline-flex;
+    position: relative;
+    height: 140px;
+    user-select: none;
+}
+
+.key {
+    position: relative;
+    cursor: pointer;
+    border-radius: 0 0 4px 4px;
+    transition: background 0.08s;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    padding-bottom: 6px;
+    font-size: 0.55rem;
+    color: #999;
+}
+
+.key.white {
+    width: 36px;
+    height: 140px;
+    background: #e8e8e8;
+    border: 1px solid #999;
+    z-index: 1;
+}
+
+.key.black {
+    width: 24px;
+    height: 90px;
+    background: #333;
+    border: 1px solid #111;
+    z-index: 2;
+    margin-left: -12px;
+    margin-right: -12px;
+    color: #666;
+}
+
+.key.white:active, .key.white.pressed {
+    background: #ccc;
+}
+
+.key.black:active, .key.black.pressed {
+    background: #555;
+}
+
+.key.matched {
+    border-color: #4caf50;
+    box-shadow: 0 0 6px #4caf50;
+}
+
+.key.pianoroll-active {
+    border-color: #2196f3;
+    box-shadow: 0 0 4px #2196f3;
+}
+
+.key:hover {
+    filter: brightness(0.95);
+}
+
+/* Pianoroll */
+
+.pianoroll-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 0.3rem 0;
+    flex: 1;
+    min-width: 0;
+}
+
+.pianoroll-row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: flex-start;
+}
+
+/* VoiceBank */
+.voicebank {
+    min-width: 160px;
+    max-width: 200px;
+    border: 1px solid #333;
+    border-radius: 4px;
+    background: #12121f;
+    flex-shrink: 0;
+}
+
+.voicebank-header {
+    font-size: 0.7rem;
+    color: #666;
+    padding: 0.3rem 0.5rem;
+    border-bottom: 1px solid #2a2a3e;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 600;
+}
+
+.voicebank-list {
+    display: flex;
+    flex-direction: column;
+}
+
+.voicebank-item {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.72rem;
+    color: #aaa;
+    cursor: pointer;
+    transition: background 0.1s;
+    border-bottom: 1px solid #1e1e30;
+    min-height: 24px;
+    position: relative;
+    overflow: hidden;
+    user-select: none;
+}
+
+.voicebank-item:hover {
+    background: #1a2744;
+}
+
+.voicebank-item.active {
+    background: #16213e;
+    color: #fff;
+}
+
+.voicebank-item.voicebank-empty {
+    opacity: 0.3;
+    cursor: default;
+}
+
+.voicebank-item.voicebank-drop-target {
+    border-top: 2px solid #e94560;
+}
+
+.voicebank-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    flex-shrink: 0;
+}
+
+.voicebank-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+    position: relative;
+    z-index: 1;
+}
+
+.voicebank-volume-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    opacity: 0.15;
+    pointer-events: none;
+    z-index: 0;
+}
+
+.voicebank-vol {
+    margin-left: auto;
+    font-size: 0.6rem;
+    color: #555;
+    min-width: 1.5em;
+    text-align: right;
+    position: relative;
+    z-index: 1;
+}
+
+.voicebank-play {
+    background: none;
+    border: none;
+    color: #666;
+    font-size: 0.6rem;
+    padding: 0;
+    cursor: pointer;
+    position: relative;
+    z-index: 1;
+    flex-shrink: 0;
+    line-height: 1;
+}
+
+.voicebank-play:hover {
+    color: #4caf50;
+}
+
+.voicebank-drag-handle {
+    background: none;
+    border: none;
+    color: #555;
+    font-size: 0.55rem;
+    padding: 0 0.1rem;
+    cursor: grab;
+    position: relative;
+    z-index: 1;
+    flex-shrink: 0;
+    line-height: 1;
+    letter-spacing: -0.05em;
+    user-select: none;
+}
+
+.voicebank-drag-handle:hover {
+    color: #aaa;
+}
+
+.voicebank-drag-handle:active {
+    cursor: grabbing;
+}
+
+.voicebank-item.dragging {
+    opacity: 0.4;
+    background: #1a2744;
+}
+
+.voicebank-item.drag-over-top {
+    border-top: 2px solid #4caf50;
+}
+
+.voicebank-item.drag-over-bottom {
+    border-bottom: 2px solid #4caf50;
+}
+
+.voicebank-remove {
+    background: none;
+    border: none;
+    color: #555;
+    font-size: 0.7rem;
+    padding: 0;
+    cursor: pointer;
+    position: relative;
+    z-index: 1;
+    flex-shrink: 0;
+    line-height: 1;
+}
+
+.voicebank-remove:hover {
+    color: #e94560;
+}
+
+.voicebank-placeholder {
+    color: #333;
+    font-size: 0.65rem;
+}
+
+.voicebank-drag-over {
+    border-color: #e94560;
+}
+
+.pianoroll-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 0.3rem;
+}
+
+.pianoroll-btn {
+    background: #16213e;
+    color: #ccc;
+    border: 1px solid #333;
+    border-radius: 4px;
+    padding: 0.25rem 0.6rem;
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.pianoroll-btn:hover {
+    background: #1a2744;
+    color: #fff;
+}
+
+.pianoroll-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.pianoroll-play {
+    background: #1b5e20;
+    border-color: #4caf50;
+    color: #fff;
+}
+
+.pianoroll-play:hover {
+    background: #2e7d32;
+}
+
+.pianoroll-play:disabled {
+    background: #1b5e20;
+}
+
+.pianoroll-stop {
+    background: #b71c1c;
+    border-color: #e94560;
+    color: #fff;
+}
+
+.pianoroll-stop:hover {
+    background: #c62828;
+}
+
+.pianoroll-hint {
+    color: #666;
+    font-size: 0.7rem;
+    margin-left: 0.5rem;
+}
+
+.pianoroll-bpm-label {
+    color: #555;
+    font-size: 0.7rem;
+    margin-left: 0.5rem;
+}
+
+.pianoroll-bpm {
+    width: 3.2rem;
+    padding: 0.15rem 0.3rem;
+    background: #0f0f23;
+    border: 1px solid #333;
+    border-radius: 4px;
+    color: #ccc;
+    font-size: 0.75rem;
+    text-align: center;
+}
+
+.pianoroll-bpm:focus {
+    outline: none;
+    border-color: #4caf50;
+}
+
+.pianoroll-canvas {
+    border: 1px solid #333;
+    border-radius: 4px;
+    cursor: crosshair;
+    display: block;
+}
+
+.pianoroll-scroll {
+    height: 180px;
+    overflow-y: auto;
+    overflow-x: auto;
+    border-radius: 4px;
+    max-width: 800px;
+}
+
+.pianoroll-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.3rem;
+    font-size: 0.7rem;
+    color: #aaa;
+}
+
+.pianoroll-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.pianoroll-legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    display: inline-block;
+}
+
+/* Piano wrapper — sticky above footer */
+
+#piano-dock {
+    position: absolute;
+    bottom: 42px;
+    right: 0;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    background-color: #1a1a2e;
+    border-top: 1px solid #333;
+    padding: 0.4rem 0;
+}
+
+.piano-dock-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+}
+
+.piano-dock-disabled {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+.dock-tabs {
+    display: flex;
+    gap: 0.25rem;
+    margin-bottom: 0.3rem;
+}
+
+.dock-tab {
+    background: #16213e;
+    color: #999;
+    border: 1px solid #333;
+    border-bottom: none;
+    border-radius: 4px 4px 0 0;
+    padding: 0.2rem 0.8rem;
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+
+.dock-tab:hover {
+    background: #1a2744;
+    color: #ccc;
+}
+
+.dock-tab.active {
+    background: #1a1a2e;
+    color: #e94560;
+    border-color: #e94560;
+}
+
+.dock-panel {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    max-width: 95vw;
+    overflow: auto;
+}
+
+.dock-panel.active {
+    display: flex;
+}
+
+.dock-panel-log {
+    flex-direction: column;
+}
+
+.dock-log {
+    width: 100%;
+    min-width: 400px;
+    height: 200px;
+    background: #0f0f23;
+    color: #8f8;
+    border: 1px solid #333;
+    border-radius: 4px;
+    padding: 0.5rem;
+    font-family: monospace;
+    font-size: 0.75rem;
+    resize: vertical;
+}
+
+.dock-panel .keyboard {
+    height: auto;
+    justify-content: center;
+}
+
+.dock-panel .key.white {
+    width: 36px;
+    height: 140px;
+}
+
+.dock-panel .key.black {
+    width: 24px;
+    height: 90px;
+}
+
+.dock-panel .keyboard-label {
+    font-size: 0.75rem;
+    color: #666;
+    margin-bottom: 0.4rem;
+}
+
+.pianoroll-placeholder {
+    color: #666;
+    font-size: 0.8rem;
+    padding: 1rem;
+}
+
+.piano-wrapper {
+    padding: 0.3rem 0;
+}
+
+.piano-wrapper .keyboard {
+    height: auto;
+    justify-content: center;
+}
+
+.piano-wrapper .key.white {
+    width: 36px;
+    height: 140px;
+}
+
+.piano-wrapper .key.black {
+    width: 24px;
+    height: 90px;
+}
+
+/* ============================================================
+   11. Edit panel (toolbar tab)
+   ============================================================ */
+
+.edit-panel-inner {
+    padding: 0.5rem;
+    min-width: 400px;
+}
+
+/* Mode tabs */
+.edit-modes {
+    display: flex;
+    gap: 0;
+    margin-bottom: 0.75rem;
+    border: 1px solid #333;
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.edit-mode-btn {
+    flex: 1;
+    padding: 0.4rem 0.6rem;
+    background-color: #0f0f23;
+    border: none;
+    border-radius: 0;
+    color: #888;
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.15s, color 0.15s;
+}
+
+.edit-mode-btn:not(:last-child) {
+    border-right: 1px solid #333;
+}
+
+.edit-mode-btn:hover {
+    background-color: #1a1a3e;
+    color: #ccc;
+}
+
+.edit-mode-btn.active {
+    background-color: #e94560;
+    color: #fff;
+}
+
+/* Slots */
+.edit-slots {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.edit-slot {
+    flex: 1;
+    background-color: #0f0f23;
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 0.5rem;
+    min-height: 3rem;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.edit-slot.filled {
+    border-color: #4caf50;
+}
+
+.edit-slot-label {
+    font-size: 0.7rem;
+    color: #666;
+    font-weight: 700;
+    width: 1.2rem;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+.edit-slot-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.edit-slot-empty {
+    font-size: 0.75rem;
+    color: #555;
+    font-style: italic;
+}
+
+.edit-slot-name {
+    font-size: 0.8rem;
+    color: #e0e0e0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.edit-slot-info {
+    font-size: 0.7rem;
+    color: #888;
+}
+
+.edit-slot-remove {
+    background: none;
+    border: none;
+    color: #666;
+    cursor: pointer;
+    font-size: 0.8rem;
+    padding: 0;
+    line-height: 1;
+    flex-shrink: 0;
+    margin-left: auto;
+}
+
+.edit-slot-remove:hover {
+    color: #e94560;
+}
+
+.edit-swap-btn {
+    background: none;
+    border: 1px solid #444;
+    border-radius: 4px;
+    color: #aaa;
+    cursor: pointer;
+    font-size: 0.9rem;
+    padding: 0.3rem 0.5rem;
+    flex-shrink: 0;
+    transition: color 0.15s, border-color 0.15s;
+}
+
+.edit-swap-btn:hover {
+    color: #4caf50;
+    border-color: #4caf50;
+}
+
+/* Slider row */
+.edit-slider-row {
+    margin-bottom: 0.75rem;
+}
+
+.edit-slider-label {
+    font-size: 0.8rem;
+    color: #aaa;
+    display: block;
+    margin-bottom: 0.3rem;
+}
+
+.edit-slider {
+    width: 100%;
+    accent-color: #e94560;
+    cursor: pointer;
+}
+
+.edit-slider-ticks {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.65rem;
+    color: #555;
+    margin-top: 0.1rem;
+}
+
+/* Param sliders */
+.edit-params-grid {
+    margin-bottom: 0.75rem;
+    max-height: 260px;
+    overflow-y: auto;
+    padding-right: 0.25rem;
+}
+
+.edit-param-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 0.35rem;
+}
+
+.edit-param-label {
+    font-size: 0.7rem;
+    color: #888;
+    width: 4.5rem;
+    text-align: right;
+    flex-shrink: 0;
+}
+
+.edit-param-label small {
+    color: #666;
+    font-size: 0.6rem;
+}
+
+.edit-param-slider {
+    flex: 1;
+    height: 4px;
+    accent-color: #e94560;
+    cursor: pointer;
+}
+
+.edit-param-val {
+    font-size: 0.7rem;
+    color: #aaa;
+    width: 2rem;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+}
+
+.edit-param-sep {
+    border: none;
+    border-top: 1px solid #222;
+    margin: 0.4rem 0;
+}
+
+.edit-feedback-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 0.35rem;
+}
+
+.edit-feedback-label {
+    font-size: 0.7rem;
+    color: #888;
+    width: 4.5rem;
+    text-align: right;
+    flex-shrink: 0;
+}
+
+.edit-play-btn {
+    margin-top: 0.5rem;
+    padding: 0.3rem 0.8rem;
+    background: #16213e;
+    border: 1px solid #4caf50;
+    border-radius: 4px;
+    color: #4caf50;
+    cursor: pointer;
+    font-size: 0.8rem;
+    transition: background-color 0.15s;
+}
+
+.edit-play-btn:hover {
+    background-color: #1a5276;
+}
+
+/* Actions */
+.edit-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.edit-actions button {
+    flex: 1;
+    font-size: 0.85rem;
+    padding: 0.5rem 0.75rem;
+}
+
+.btn-edit-primary {
+    background-color: #e94560;
+}
+
+.btn-edit-primary:hover {
+    background-color: #c73550;
+}
+
+.btn-edit-primary:disabled {
+    background-color: #555;
+    cursor: not-allowed;
+}
+
+.btn-edit-clear {
+    background-color: #333;
+}
+
+.btn-edit-clear:hover {
+    background-color: #444;
+}
+
+.edit-status {
+    font-size: 0.75rem;
+    color: #aaa;
+    margin-top: 0.5rem;
+    min-height: 1rem;
+}
+
+/* Edit button on patch rows */
+.patch-edit-btn {
+    background: none;
+    border: 1px solid #333;
+    border-radius: 4px;
+    color: #888;
+    cursor: pointer;
+    font-size: 0.85rem;
+    padding: 0.15rem 0.4rem;
+    flex-shrink: 0;
+    transition: color 0.15s, border-color 0.15s;
+    opacity: 0;
+    line-height: 1;
+}
+
+.patch-row:hover .patch-edit-btn {
+    opacity: 1;
+}
+
+.patch-edit-btn:hover {
+    color: #e94560;
+    border-color: #e94560;
+}
+
+/* ============================================================
+   12. Footer / log
+   ============================================================ */
+
+footer {
+    padding: 1rem;
+    text-align: center;
+    font-size: 0.75rem;
+    color: #555;
+    width: 100%;
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 2;
+    background-color: #1a1a2e;
+}
+
+.audio-status {
+    float: right;
+    font-size: 0.8rem;
+    cursor: default;
+    margin-left: 0.5rem;
+}
+
+.audio-ready { color: #4caf50; }
+.audio-error { color: #e94560; }
+.audio-loading { color: #ff9800; }
+.audio-closed { color: #555; }
+
+#log-details {
+    width: 100%;
+    max-width: 500px;
+    position: relative;
+    z-index: 2;
+    background-color: #1a1a2e;
+    padding: 0 2rem 1rem;
+}
+
+#log-details summary {
+    cursor: pointer;
+    padding: 0.5rem 0.75rem;
+    background-color: #16213e;
+    border: 1px solid #333;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    color: #aaa;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+#log-details summary::-webkit-details-marker {
+    display: none;
+}
+
+#log-details summary::before {
+    content: '\25b6';
+    font-size: 0.65rem;
+    transition: transform 0.2s;
+}
+
+#log-details[open] summary::before {
+    transform: rotate(90deg);
+}
+
+#log-details summary:hover {
+    color: #fff;
+}
+
+/* ============================================================
+   14. Spectrogram
+   ============================================================ */
+
+.spectrogram-container {
+    position: relative;
+    width: 100%;
+    max-width: 460px;
+    margin-bottom: 1rem;
+    border-radius: 6px;
+    overflow: hidden;
+    border: 1px solid #333;
+}
+
+.spectrogram-canvas {
+    display: block;
+    width: 100%;
+    height: 80px;
+}
+
+.spectrogram-play {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background-color: rgba(15, 15, 35, 0.85);
+    border: 2px solid #4caf50;
+    color: #4caf50;
+    font-size: 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background-color 0.15s, border-color 0.15s;
+    padding: 0;
+    line-height: 1;
+}
+
+.spectrogram-play:hover {
+    background-color: rgba(76, 175, 80, 0.25);
+    border-color: #66bb6a;
+    color: #66bb6a;
+}
+
+/* ============================================================
+   15. Probe floating panel
+   ============================================================ */
+
+.probe-floating-panel {
+    position: absolute;
+    z-index: 200;
+    background: #16213e;
+    border: 1px solid #333;
+    border-radius: 8px;
+    min-width: 300px;
+    max-width: 400px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+}
+
+.probe-floating-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 0.8rem;
+    border-bottom: 1px solid #2a2a3e;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #ccc;
+    cursor: move;
+}
+
+.probe-floating-body {
+    padding: 0.8rem;
+}
+
+.probe-panel {
+    padding: 0.5rem;
+}
+
+.probe-panel .probe-info {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-bottom: 0.75rem;
+}
+
+.probe-panel .probe-form {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: flex-end;
+}
+
+.probe-panel .probe-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+.probe-panel .probe-field label {
+    font-size: 0.65rem;
+    color: #888;
+    text-transform: capitalize;
+}
+
+.probe-panel .probe-field input,
+.probe-panel .probe-field select {
+    background: #0f0f23;
+    border: 1px solid #333;
+    border-radius: 4px;
+    color: #e0e0e0;
+    padding: 0.25rem 0.4rem;
+    font-size: 0.75rem;
+    width: 80px;
+}
+
+.probe-panel .probe-field input:disabled,
+.probe-panel .probe-field select:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background: #0a0a18;
+}
+
+.probe-panel .tuning-fork-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.probe-panel .note-row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    margin-bottom: 0.75rem;
+}
+
+.probe-panel .probe-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+.probe-panel .btn-match {
+    background: #e94560;
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    padding: 0.4rem 1rem;
+    cursor: pointer;
+    font-size: 0.8rem;
+}
+
+.probe-panel .btn-match:hover {
+    background: #d63851;
+}
+
+.probe-panel .btn-reset {
+    background: none;
+    color: #888;
+    border: 1px solid #333;
+    border-radius: 4px;
+    padding: 0.4rem 0.8rem;
+    cursor: pointer;
+    font-size: 0.8rem;
+}
+
+.probe-panel .btn-reset:hover {
+    color: #ccc;
+    border-color: #555;
+}
+
+.container-spectrogram {
+    height: 36px;
+    border-radius: 4px;
+    margin-left: 0.5rem;
+}
+
+/* ============================================================
+   16. Footer / log
+   ============================================================ */
+}
+
+/* Upload button in header area */
+.syx-upload-btn {
+    background: none;
+    border: 1px dashed #555;
+    border-radius: 6px;
+    color: #888;
+    cursor: pointer;
+    font-size: 0.8rem;
+    padding: 0.4rem 0.8rem;
+    transition: color 0.15s, border-color 0.15s;
+}
+
+.syx-upload-btn:hover {
+    color: #4caf50;
+    border-color: #4caf50;
+}
+
+/* Editable patch name */
+.patch-name[contenteditable="true"] {
+    outline: 1px solid #4caf50;
+    background-color: #1a1a2e;
+    padding: 0 0.2rem;
+    border-radius: 2px;
+}
+
+/* ============================================================
+   Tutorial
+   ============================================================ */
+
+/* Blur applied to page content directly (not overlay) to avoid
+   stacking context issues with menu bar z-index */
+#page-content.page-blurred {
+    filter: blur(6px);
+    pointer-events: none;
+    user-select: none;
+}
+
+.tutorial-overlay {
+    z-index: 500;
+    background: rgba(0, 0, 0, 0.45);
+    align-items: flex-start;
+    justify-content: flex-start;
+    padding: 0;
+}
+
+/* Menu bar pops above the overlay */
+.menu-bar.tutorial-highlight {
+    z-index: 501;
+}
+
+/* Container highlight glow during tutorial */
+.sky-container.tutorial-highlight {
+    box-shadow: 0 0 20px rgba(76, 175, 80, 0.4), 0 0 40px rgba(76, 175, 80, 0.15);
+    border-color: #4caf50;
+}
+
+/* Modal positioned below menu bar, left-aligned near File menu */
+.tutorial-dialog {
+    max-width: 420px;
+    margin: 48px 0 0 8px;
+}
+
+/* Centered variant when primary highlight isn't found */
+.tutorial-dialog.tutorial-centered {
+    margin: auto;
+}
+
+.tutorial-dialog .modal-body {
+    max-height: 400px;
+    overflow: auto;
+}
+
+.tutorial-illustration {
+    width: 100%;
+    height: 160px;
+    background: #0f0f23;
+    border: 1px dashed #333;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 1rem;
+}
+
+.tutorial-illustration-placeholder {
+    font-size: 3rem;
+    opacity: 0.3;
+}
+
+.tutorial-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    border-top: 1px solid #2a2a3e;
+}
+
+.tutorial-step-indicator {
+    font-size: 0.7rem;
+    color: #555;
+}
+
+.tutorial-nav {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.tutorial-btn {
+    padding: 0.4rem 0.8rem;
+    border: 1px solid #333;
+    border-radius: 4px;
+    font-size: 0.78rem;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.tutorial-btn-skip {
+    background: none;
+    color: #888;
+}
+
+.tutorial-btn-skip:hover {
+    color: #ccc;
+}
+
+.tutorial-btn-next {
+    background: #1a2744;
+    color: #e0e0e0;
+    border-color: #4caf50;
+}
+
+.tutorial-btn-next:hover {
+    background: #243356;
+}
