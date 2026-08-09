@@ -206,6 +206,7 @@ export function createPianoroll(opts) {
     // Note move/resize state
     let movingNote = null;
     let resizingNote = null;
+    let resizeSide = null; // 'left' or 'right'
     let moveStartPos = null;
     let moveOriginal = null;
     let moveCommitted = false;
@@ -374,6 +375,24 @@ export function createPianoroll(opts) {
             && (opts.activeSlot == null || n.slot === opts.activeSlot));
     }
 
+    function findInteractionTarget(x, y) {
+        const row = pixelToRow(y);
+        if (row < 0 || row >= NOTES.length) return null;
+        const midi = NOTES[row].midi;
+        const activeSlot = opts.activeSlot;
+
+        // Proximity check for notes in this row
+        const candidates = notes.filter(n => n.midi === midi && (activeSlot == null || n.slot === activeSlot));
+        for (const n of candidates) {
+            const startX = LABEL_W + n.start * COL_W;
+            const endX = LABEL_W + (n.start + n.dur) * COL_W;
+            if (Math.abs(x - endX) <= RESIZE_MARGIN) return { note: n, side: 'right' };
+            if (Math.abs(x - startX) <= RESIZE_MARGIN) return { note: n, side: 'left' };
+            if (x > startX && x < endX) return { note: n, side: 'move' };
+        }
+        return null;
+    }
+
     let lastMousePos = null;
     let lastClickTime = 0;
     let lastClickRow = -1;
@@ -389,11 +408,11 @@ export function createPianoroll(opts) {
         if (col < 0) return;
 
         const now = Date.now();
-        const existing = activeNoteAt(row, col);
+        const target = findInteractionTarget(x, y);
 
         // Double-click detection
-        if (existing && now - lastClickTime < 350 && row === lastClickRow && Math.abs(col - lastClickCol) <= 1) {
-            const idx = notes.indexOf(existing);
+        if (target && target.note && now - lastClickTime < 350 && row === lastClickRow && Math.abs(col - lastClickCol) <= 1) {
+            const idx = notes.indexOf(target.note);
             if (idx >= 0) notes.splice(idx, 1);
             draw();
             renderLegend();
@@ -407,18 +426,18 @@ export function createPianoroll(opts) {
         lastClickRow = row;
         lastClickCol = col;
 
-        if (existing) {
-            const edgeX = LABEL_W + (existing.start + existing.dur) * COL_W;
-            if (Math.abs(x - edgeX) <= RESIZE_MARGIN) {
-                resizingNote = existing;
+        if (target) {
+            if (target.side === 'left' || target.side === 'right') {
+                resizingNote = target.note;
+                resizeSide = target.side;
                 moveStartPos = { x, y };
-                moveOriginal = { dur: existing.dur };
+                moveOriginal = { start: target.note.start, dur: target.note.dur };
                 moveCommitted = false;
                 return;
             }
-            movingNote = existing;
+            movingNote = target.note;
             moveStartPos = { x, y };
-            moveOriginal = { start: existing.start, midi: existing.midi };
+            moveOriginal = { start: target.note.start, midi: target.note.midi, dur: target.note.dur };
             moveCommitted = false;
             return;
         }
@@ -443,7 +462,15 @@ export function createPianoroll(opts) {
             moveCommitted = true;
 
             const colDelta = Math.round(dx / COL_W);
-            resizingNote.dur = Math.max(1, moveOriginal.dur + colDelta);
+            if (resizeSide === 'right') {
+                resizingNote.dur = Math.max(1, moveOriginal.dur + colDelta);
+            } else {
+                const maxStart = moveOriginal.start + moveOriginal.dur - 1;
+                const newStart = Math.max(0, Math.min(maxStart, moveOriginal.start + colDelta));
+                const actualDelta = newStart - moveOriginal.start;
+                resizingNote.start = newStart;
+                resizingNote.dur = moveOriginal.dur - actualDelta;
+            }
             draw();
             return;
         }
@@ -478,12 +505,9 @@ export function createPianoroll(opts) {
         }
 
         // Hover cursor
-        const row = pixelToRow(y);
-        const col = pixelToCol(x);
-        const existing = activeNoteAt(row, col);
-        if (existing) {
-            const edgeX = LABEL_W + (existing.start + existing.dur) * COL_W;
-            if (Math.abs(x - edgeX) <= RESIZE_MARGIN) {
+        const target = findInteractionTarget(x, y);
+        if (target) {
+            if (target.side === 'left' || target.side === 'right') {
                 canvas.style.cursor = 'ew-resize';
             } else {
                 canvas.style.cursor = 'grab';
@@ -510,6 +534,7 @@ export function createPianoroll(opts) {
                 playNoteFn(resizingNote.midi, resizingNote.dur * msPerSixteenth, voiceData, resizingNote.slot);
             }
             resizingNote = null;
+            resizeSide = null;
             moveStartPos = null;
             moveOriginal = null;
             moveCommitted = false;
@@ -577,7 +602,9 @@ export function createPianoroll(opts) {
         canvas.style.cursor = '';
         if (resizingNote && moveOriginal) {
             resizingNote.dur = moveOriginal.dur;
+            resizingNote.start = moveOriginal.start;
             resizingNote = null;
+            resizeSide = null;
             moveStartPos = null;
             moveOriginal = null;
             moveCommitted = false;
