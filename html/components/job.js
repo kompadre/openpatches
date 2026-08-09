@@ -322,7 +322,16 @@ export class Job {
         badges.forEach(b => {
             const span = document.createElement('span');
             span.className = 'badge' + (b.cls ? ' ' + b.cls : '');
-            span.innerHTML = b.value ? `<strong>${b.label}:</strong> ${b.value}` : `<strong>${b.label}</strong>`;
+            if (b.value) {
+                const strong = document.createElement('strong');
+                strong.textContent = b.label + ':';
+                span.appendChild(strong);
+                span.appendChild(document.createTextNode(' ' + b.value));
+            } else {
+                const strong = document.createElement('strong');
+                strong.textContent = b.label;
+                span.appendChild(strong);
+            }
             info.appendChild(span);
         });
         panel.appendChild(info);
@@ -334,7 +343,9 @@ export class Job {
 
         const noteField = document.createElement('div');
         noteField.className = 'probe-field';
-        noteField.innerHTML = '<label>Note</label>';
+        const noteLabel = document.createElement('label');
+        noteLabel.textContent = 'Note';
+        noteField.appendChild(noteLabel);
         const noteSelect = document.createElement('select');
         noteSelect.disabled = disabled;
         NOTE_NAMES.forEach((n, i) => {
@@ -349,7 +360,9 @@ export class Job {
 
         const octField = document.createElement('div');
         octField.className = 'probe-field';
-        octField.innerHTML = '<label>Octave</label>';
+        const octLabel = document.createElement('label');
+        octLabel.textContent = 'Octave';
+        octField.appendChild(octLabel);
         const octSelect = document.createElement('select');
         octSelect.disabled = disabled;
         for (let o = 0; o <= 8; o++) {
@@ -372,7 +385,9 @@ export class Job {
         forkBtn.type = 'button';
         forkBtn.className = 'tuning-fork-btn';
         forkBtn.title = 'Tuning fork — click to play/stop';
-        forkBtn.innerHTML = '<b>Y</b>';
+        const forkIcon = document.createElement('b');
+        forkIcon.textContent = 'Y';
+        forkBtn.appendChild(forkIcon);
         forkBtn.disabled = disabled;
         noteRow.appendChild(forkBtn);
 
@@ -408,7 +423,9 @@ export class Job {
             input.min = '0';
             if (key === 'sustain_level' || key === 'brightness' || key === 'harmonicity') input.max = '1';
             input.value = numVal !== undefined ? (Number.isInteger(numVal) ? numVal : parseFloat(numVal.toFixed(6))) : '';
-            field.innerHTML = `<label>${key.replace(/_/g, ' ')}</label>`;
+            const label = document.createElement('label');
+            label.textContent = key.replace(/_/g, ' ');
+            field.appendChild(label);
             field.appendChild(input);
             form.appendChild(field);
         });

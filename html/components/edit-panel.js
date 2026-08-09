@@ -43,7 +43,11 @@ export function createEditPanel(opts) {
     const sliderLabel = document.createElement('label');
     sliderLabel.className = 'edit-slider-label';
     sliderLabel.id = 'edit-slider-label';
-    sliderLabel.innerHTML = 'Distance: <span id="edit-slider-val">0.50</span>';
+    sliderLabel.textContent = 'Distance: ';
+    const valSpan = document.createElement('span');
+    valSpan.id = 'edit-slider-val';
+    valSpan.textContent = '0.50';
+    sliderLabel.appendChild(valSpan);
     sliderRow.appendChild(sliderLabel);
     const slider = document.createElement('input');
     slider.type = 'range';
@@ -56,7 +60,15 @@ export function createEditPanel(opts) {
     sliderRow.appendChild(slider);
     const ticks = document.createElement('div');
     ticks.className = 'edit-slider-ticks';
-    ticks.innerHTML = '<span>−1</span><span>0</span><span>1</span>';
+    [
+        { val: '−1' },
+        { val: '0' },
+        { val: '1' }
+    ].forEach(t => {
+        const span = document.createElement('span');
+        span.textContent = t.val;
+        ticks.appendChild(span);
+    });
     sliderRow.appendChild(ticks);
     panel.appendChild(sliderRow);
 
@@ -168,7 +180,10 @@ function renderEditSlot(container, patch, slotIdx, showRemove) {
     if (existingBtn) existingBtn.remove();
 
     if (!patch) {
-        container.innerHTML = '<span class="edit-slot-empty">Click 🔧 on any patch</span>';
+        const empty = document.createElement('span');
+        empty.className = 'edit-slot-empty';
+        empty.textContent = 'Click 🔧 on any patch';
+        container.appendChild(empty);
         container.classList.remove('filled');
         return;
     }
@@ -207,7 +222,11 @@ function renderMorphMode(slotArea, sliderRow, paramsArea, goBtn, status) {
     const sliderLabel = document.getElementById('edit-slider-label');
     slider.min = '-1'; slider.max = '1'; slider.step = '0.01';
     if (!slider.dataset.morphInit) { slider.value = '0.5'; slider.dataset.morphInit = '1'; }
-    sliderLabel.innerHTML = 'Distance: <span id="edit-slider-val">' + parseFloat(slider.value).toFixed(2) + '</span>';
+    sliderLabel.textContent = 'Distance: ';
+    const valSpan = document.createElement('span');
+    valSpan.id = 'edit-slider-val';
+    valSpan.textContent = parseFloat(slider.value).toFixed(2);
+    sliderLabel.appendChild(valSpan);
 
     slotArea.innerHTML = '';
     const slotsDiv = document.createElement('div');
@@ -325,7 +344,10 @@ function renderParamsMode(slotArea, sliderRow, paramsArea, goBtn, status) {
         rowOL.className = 'edit-param-row';
         const lblOL = document.createElement('span');
         lblOL.className = 'edit-param-label';
-        lblOL.innerHTML = `Op${6-i} <small>Level</small>`;
+        lblOL.textContent = `Op${6-i} `;
+        const smallOL = document.createElement('small');
+        smallOL.textContent = 'Level';
+        lblOL.appendChild(smallOL);
         rowOL.appendChild(lblOL);
         const slOL = document.createElement('input');
         slOL.type = 'range'; slOL.min = '0'; slOL.max = '99'; slOL.value = String(op.outputLevel);
@@ -345,7 +367,9 @@ function renderParamsMode(slotArea, sliderRow, paramsArea, goBtn, status) {
         rowFC.className = 'edit-param-row';
         const lblFC = document.createElement('span');
         lblFC.className = 'edit-param-label';
-        lblFC.innerHTML = ` <small>Freq</small>`;
+        const smallFC = document.createElement('small');
+        smallFC.textContent = 'Freq';
+        lblFC.appendChild(smallFC);
         rowFC.appendChild(lblFC);
         const slFC = document.createElement('input');
         slFC.type = 'range'; slFC.min = '0'; slFC.max = '31'; slFC.value = String(op.freqCoarse);
@@ -413,7 +437,12 @@ function renderRandomMode(slotArea, sliderRow, paramsArea, goBtn, status) {
     const sliderLabel = document.getElementById('edit-slider-label');
     slider.min = '0'; slider.max = '100'; slider.step = '1';
     if (!slider.dataset.randomInit) { slider.value = '30'; slider.dataset.randomInit = '1'; }
-    sliderLabel.innerHTML = 'Mutation: <span id="edit-slider-val">' + slider.value + '</span>%';
+    sliderLabel.textContent = 'Mutation: ';
+    const valSpan = document.createElement('span');
+    valSpan.id = 'edit-slider-val';
+    valSpan.textContent = slider.value;
+    sliderLabel.appendChild(valSpan);
+    sliderLabel.appendChild(document.createTextNode('%'));
 
     slotArea.innerHTML = '';
     const slotsDiv = document.createElement('div');

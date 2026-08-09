@@ -9,6 +9,7 @@ COPY server .
 COPY lib/libonnxruntime.so ./lib/
 COPY index.html .
 COPY html/ ./html/
+COPY legal/ ./legal/
 COPY dx7_codebook.bin dx7_codebook_timbre.bin ./
 
 RUN chmod +x server && mkdir -p exports

@@ -111,15 +111,26 @@
     <div id="legal-modal" class="modal-overlay" style="display:none;">
         <div class="modal-dialog">
             <div class="modal-header">
-                <h3>Legal</h3>
+                <h3>Legal & Privacy</h3>
                 <button class="modal-close" id="legal-close">×</button>
             </div>
             <div class="modal-body">
+                <h4>Terms of Service</h4>
+                <div class="legal-scroll">
+                    <p>By using OpenPatches, you agree to these terms. OpenPatches is provided "as is", without warranty of any kind. You are responsible for the content you upload. Unauthorized abuse of the matching API is prohibited.</p>
+                    <p>DX7 is a trademark of Yamaha Corporation. OpenPatches is not affiliated with Yamaha.</p>
+                </div>
+                
+                <h4>Privacy Policy</h4>
+                <div class="legal-scroll">
+                    <p>We do not collect personal data. Uploaded audio is processed to find matches and stored temporarily. Application data (patches, canvas) is stored <strong>locally in your browser</strong> (LocalStorage/IndexedDB) and never sent to our servers unless you explicitly export it.</p>
+                </div>
+
+                <hr>
                 <p>OpenPatches is licensed under the <strong>MIT License</strong>.</p>
                 <p>This project includes:</p>
                 <p>• <strong>MSFA</strong> (Apache 2.0) — Music Synthesizer for Android by Raph Levien and contributors</p>
                 <p>• <strong>webdx7</strong> (MIT) — Build tooling for WASM encoding by Jari Kleimola</p>
-                <p>DYNA MUSIC TOP is a trademark of its respective owner. DX7 is a product of Yamaha Corporation.</p>
             </div>
         </div>
     </div>
@@ -151,7 +162,11 @@
         </div>
     </div>
 
-    <footer>&copy; Alexey S. Kompaniets 2026 <span id="audio-status" class="audio-status audio-closed" title="Audio: inactive">●</span></footer>
+    <footer>
+        <span class="footer-copy">&copy; Alexey S. Kompaniets 2026</span>
+        <span class="footer-storage-note">All data stored locally in your browser</span>
+        <span id="audio-status" class="audio-status audio-closed" title="Audio: inactive">●</span>
+    </footer>
 
     <script type="module" src="html/app.js"></script>
 </body>
