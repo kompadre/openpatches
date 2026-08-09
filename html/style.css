@@ -50,6 +50,37 @@ body {
     user-select: none;
 }
 
+.beta-label {
+    font-size: 0.6rem;
+    font-weight: 900;
+    background: #e94560;
+    color: #fff;
+    padding: 0.1rem 0.4rem;
+    border-radius: 3px;
+    letter-spacing: 0.05em;
+    user-select: none;
+}
+
+.beta-left {
+    margin-left: 0.5rem;
+}
+
+.beta-right {
+    margin-right: 0.5rem;
+}
+
+.bug-report-link {
+    font-size: 0.7rem;
+    color: #888;
+    text-decoration: none;
+    margin-right: 1rem;
+    transition: color 0.15s;
+}
+
+.bug-report-link:hover {
+    color: #e94560;
+}
+
 .menu-items {
     display: flex;
     gap: 0;

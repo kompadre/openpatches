@@ -10,6 +10,7 @@
 
 <body>
     <nav id="menu-bar" class="menu-bar">
+        <span class="beta-label beta-left">BETA</span>
         <div class="menu-brand">OpenPatches</div>
         <div class="menu-items">
             <div class="menu-item" data-menu="file">
@@ -44,6 +45,8 @@
             </div>
         </div>
         <div class="menu-status" id="menu-status"></div>
+        <a href="https://github.com/kompadre/openpatches/issues" target="_blank" class="bug-report-link">Report Bugs</a>
+        <span class="beta-label beta-right">BETA</span>
     </nav>
 
     <div id="page-content">
@@ -85,6 +88,8 @@
                 <p>FM synthesis is uniquely suited for this purpose: it consumes very little CPU, needs minimal storage, and sounds consistent across the entire pitch range without temporal distortions. A single 128-byte patch can reproduce a sound at any MIDI note, instantly.</p>
                 <p>This makes FM ideal for drafting musical ideas on low-end hardware — devices where sample-based playback would be too expensive. Projects like <a href="https://github.com/djdiskmachine/LittleGPTracker" target="_blank">LittleGPTracker</a> and <a href="https://github.com/kompadre/trkr" target="_blank">trkr</a> already use FM for this reason.</p>
                 <p>OpenPatches takes any audio recording and finds the closest DX7 patch using genetic algorithms, spectral analysis, and neural network prediction. The result is a portable, lightweight voice you can use anywhere — from a tracker on a Raspberry Pi to a browser on a phone.</p>
+                <hr>
+                <p>Source code and documentation: <a href="https://github.com/kompadre/openpatches" target="_blank">github.com/kompadre/openpatches</a></p>
             </div>
         </div>
     </div>
