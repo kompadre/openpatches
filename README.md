@@ -1,25 +1,43 @@
-# OpenPatches
+# OpenPatches — Sound Archeology & FM Curation
 
-Browser-based DX7 FM synthesizer patch editor, sequencer, and explorer.
+OpenPatches is a next-generation platform for **Sound Archeology** and **FM Curation**, built around the legendary Yamaha DX7 synthesis engine.
+
+Treat the DX7 not just as a static instrument, but as a living, searchable database of timbres. OpenPatches allows you to reverse-engineer audio, curate bespoke patch banks, and compose with iconic FM sounds entirely in your browser.
 
 **Live at:** [openpatch.es](https://openpatch.es)
 
-## Features
+---
 
-- **Patch Editor** — Edit DX7 parameters (operators, envelopes, algorithms) in the browser
-- **Patch Matching** — Import any `.wav` audio and find the closest DX7 patch via genetic algorithms (powered by [fmguessr](https://github.com/kompadre/fmguessr))
-- **Piano Roll Sequencer** — Multi-measure sequencer with per-note patch assignment
-- **Voice Bank** — 8-slot voice palette with drag-to-reorder, per-slot volume control
-- **Morph** — Interpolate between two patches with spectral optimization
-- **Real-time Preview** — Browser-based DX7 synth via WebAssembly AudioWorklet
-- **SYX Export** — Export patches as DX7 SysEx bank files
+## Why OpenPatches?
+
+### 1. Sound Archeology
+Recover the iconic bell, bass, and pad sounds from classic tracks. Using a sophisticated pipeline of Formant Analysis and Genetic Algorithms (powered by [fmguessr](https://github.com/kompadre/fmguessr)), OpenPatches reverse-engineers audio recordings back into constituent DX7 parameters.
+
+### 2. Bespoke Curation (Digital Cartridges)
+Archive and categorize patches into custom containers on a "night sky" canvas. Build bespoke sets of sounds and export them as standard `.syx` files, fully compatible with original hardware, modern clones, and software instruments like Dexed.
+
+### 3. Advanced Iteration: Morph & Mutate
+Move beyond simple preset browsing. Blend timbres with spectral morphing to find the "sweet spot" between sounds, or generate smart mutations while maintaining the core character of a patch.
+
+### 4. Compositional Context: Multitimbral Pianoroll
+Use the unique **8-channel multitimbral sequencer** to hear how your patches work together in realtime. Instant verification of how different FM timbres sit in a mix, rendered with high-fidelity via WebAssembly.
+
+### 5. The FM Advantage
+Experience the benefits of pure mathematical synthesis:
+- **Spectral Purity:** Noiseless by nature, free from sample artifacts.
+- **Perfect Pitch Scaling:** Sounds maintain their spectral proportions perfectly across all 127 MIDI notes.
+- **Zero Footprint:** A 128-byte patch can replace megabytes of samples.
+
+---
 
 ## Tech Stack
 
-- Vanilla JavaScript (no framework)
-- MSFA DX7 engine compiled to WebAssembly (`zig c++ -target wasm32-wasi`)
-- AudioWorklet for real-time synthesis
-- Communicates with fmguessr server for patch inference (see [API.md](API.md))
+- **Vanilla JavaScript:** Zero-dependency frontend architecture.
+- **WebAssembly:** MSFA DX7 engine compiled to WASM (`zig c++ -target wasm32-wasi`).
+- **AudioWorklet:** High-performance, low-latency realtime synthesis.
+- **IndexedDB:** Privacy-first architecture; all session data and audio binaries live in your browser.
+
+---
 
 ## Development
 
@@ -42,11 +60,7 @@ docker compose build
 docker compose up
 ```
 
-Requires the fmguessr inference server to be running for `/api/*` endpoints.
-
-## API
-
-See [API.md](API.md) for the complete REST API contract used to communicate with the fmguessr inference backend.
+Requires the `fmguessr` inference server to be running for `/api/*` endpoints.
 
 ## License
 

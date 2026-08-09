@@ -6,6 +6,16 @@ const STORAGE_KEY = 'openpatches_tutorial';
 
 const STEPS = [
     {
+        id: 'welcome',
+        title: 'Welcome to OpenPatches',
+        illustration: '<div class="tutorial-illustration-placeholder">\uD83C\uDF10</div>',
+        description:
+            'OpenPatches is a next-generation <strong>Sound Archeology</strong> and <strong>FM Curation</strong> platform.<br><br>' +
+            '<strong>Recover & Archive:</strong> Reverse-engineer audio into constituent DX7 parameters using genetic algorithms. Curate bespoke banks (Digital Cartridges) and export them for use in hardware or software.<br><br>' +
+            '<strong>Mutate & Compose:</strong> Blend timbres with spectral morphing or generate mutations. Use the unique 8-channel <strong>multitimbral sequencer</strong> to hear how your patches work together in realtime.<br><br>' +
+            '<strong>The FM Advantage:</strong> Experience noiseless, pure mathematical oscillation that scales perfectly across all pitches without the artifacts of traditional sampling.',
+    },
+    {
         id: 'import-wav',
         title: 'Import a .WAV file',
         openMenu: 'file',
