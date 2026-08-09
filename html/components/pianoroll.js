@@ -203,13 +203,15 @@ export function createPianoroll(opts) {
     let dragging = false;
     let dragStart = null;
 
-    // Note move state
+    // Note move/resize state
     let movingNote = null;
+    let resizingNote = null;
     let moveStartPos = null;
     let moveOriginal = null;
     let moveCommitted = false;
 
-    // --- Persistence ---
+    const MOVE_THRESHOLD = 5;
+    const RESIZE_MARGIN = 8;
     function saveState() {
         try {
             const data = {
@@ -408,6 +410,14 @@ export function createPianoroll(opts) {
         lastClickCol = col;
 
         if (existing) {
+            const edgeX = LABEL_W + (existing.start + existing.dur) * COL_W;
+            if (Math.abs(x - edgeX) <= RESIZE_MARGIN) {
+                resizingNote = existing;
+                moveStartPos = { x, y };
+                moveOriginal = { dur: existing.dur };
+                moveCommitted = false;
+                return;
+            }
             movingNote = existing;
             moveStartPos = { x, y };
             moveOriginal = { start: existing.start, midi: existing.midi };
@@ -427,6 +437,18 @@ export function createPianoroll(opts) {
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
         lastMousePos = { x, y };
+
+        if (resizingNote && moveStartPos) {
+            const dx = x - moveStartPos.x;
+            if (!moveCommitted && Math.abs(dx) < MOVE_THRESHOLD) return;
+            if (!moveCommitted) canvas.style.cursor = 'ew-resize';
+            moveCommitted = true;
+
+            const colDelta = Math.round(dx / COL_W);
+            resizingNote.dur = Math.max(1, moveOriginal.dur + colDelta);
+            draw();
+            return;
+        }
 
         if (movingNote && moveStartPos) {
             const dx = x - moveStartPos.x;
@@ -452,11 +474,49 @@ export function createPianoroll(opts) {
             return;
         }
 
-        if (dragging) draw();
+        if (dragging) {
+            draw();
+            return;
+        }
+
+        // Hover cursor
+        const row = pixelToRow(y);
+        const col = pixelToCol(x);
+        const existing = activeNoteAt(row, col);
+        if (existing) {
+            const edgeX = LABEL_W + (existing.start + existing.dur) * COL_W;
+            if (Math.abs(x - edgeX) <= RESIZE_MARGIN) {
+                canvas.style.cursor = 'ew-resize';
+            } else {
+                canvas.style.cursor = 'grab';
+            }
+        } else {
+            canvas.style.cursor = 'crosshair';
+        }
     });
 
     canvas.addEventListener('mouseup', (e) => {
         canvas.style.cursor = '';
+
+        if (resizingNote) {
+            if (moveCommitted) {
+                draw();
+                onNotesChange();
+                saveState();
+            } else {
+                // Click preview
+                const entry = getSlotData(resizingNote.slot);
+                const voiceData = entry ? entry.voiceData : null;
+                const bpm = Math.max(32, Math.min(255, parseInt(bpmInput.value) || 120));
+                const msPerSixteenth = 60000 / bpm / 4;
+                playNoteFn(resizingNote.midi, resizingNote.dur * msPerSixteenth, voiceData, resizingNote.slot);
+            }
+            resizingNote = null;
+            moveStartPos = null;
+            moveOriginal = null;
+            moveCommitted = false;
+            return;
+        }
 
         if (movingNote) {
             if (moveCommitted) {
@@ -517,6 +577,14 @@ export function createPianoroll(opts) {
 
     canvas.addEventListener('mouseleave', () => {
         canvas.style.cursor = '';
+        if (resizingNote && moveOriginal) {
+            resizingNote.dur = moveOriginal.dur;
+            resizingNote = null;
+            moveStartPos = null;
+            moveOriginal = null;
+            moveCommitted = false;
+            draw();
+        }
         if (movingNote && moveOriginal) {
             movingNote.start = moveOriginal.start;
             movingNote.midi = moveOriginal.midi;
@@ -524,6 +592,7 @@ export function createPianoroll(opts) {
             moveStartPos = null;
             moveOriginal = null;
             moveCommitted = false;
+            draw();
         }
         if (dragging) {
             dragging = false;
