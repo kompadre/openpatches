@@ -245,35 +245,26 @@ export class Job {
 
         const baseName = this.fileName.replace(/\.[^.]+$/, '');
         const groups = [
-            { key: 'matches', label: ' — Top Nearest' },
-            { key: 'timbral_matches', label: ' — Timbral' },
-            { key: 'full_matches', label: ' — Formant' },
+            { key: 'matches', prefix: 'NEAREST' },
+            { key: 'timbral_matches', prefix: 'TIMBRAL' },
+            { key: 'full_matches', prefix: 'FORMANT' },
         ];
+
+        const ctrId = this.containerId;
+        if (!ctrId) return;
 
         for (const group of groups) {
             const matches = data[group.key];
             if (!matches || matches.length === 0) continue;
 
             const patches = matches.map(m => createPatch({
-                name: m.name || (`${baseName} #${m.rank}`),
+                name: `${group.prefix} ${m.name || (`#${m.rank}`)}`,
                 algorithm: m.algorithm,
                 feedback: m.feedback,
                 voice_data: m.voice_data || null,
                 source: 'wav',
             }));
             patchStore.bulkPut(patches);
-
-            let ctrId = this.containerId;
-            if (group.key !== 'matches') {
-                const ctr = addContainer(baseName + group.label, { jobId: this.id });
-                ctrId = ctr.id;
-            } else {
-                const ctr = this.getContainer();
-                if (ctr) {
-                    ctr.name = baseName + group.label;
-                    canvasStore.putContainer(ctr);
-                }
-            }
 
             for (const p of patches) {
                 addPatchToContainer(p.id, ctrId);

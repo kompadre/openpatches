@@ -518,17 +518,25 @@ function renderContainer(ctr) {
     const body = document.createElement('div');
     body.className = 'sky-container-body';
 
-    // Container body content: job-driven or patch list
-    if ((isActiveJob || isFailedJob) && optsRef && optsRef.renderJobBody) {
-        // Job container — delegate rendering to the job
+    // Container body content: job-driven (probe/status) AND/OR patch list
+    const job = ctr.jobId ? jobStore.get(ctr.jobId) : null;
+    const hasJobUI = job && optsRef && optsRef.renderJobBody;
+
+    if (hasJobUI) {
         body.classList.add('container-body-probe');
         ctr.width = Math.max(ctr.width, 380);
         el.style.width = ctr.width + 'px';
-        el.style.minHeight = '200px';
         optsRef.renderJobBody(job, body);
-    } else {
-        // Normal: render patches inside container
-        const patches = (ctr.patchIds || []).map(id => patchStore.get(id)).filter(Boolean);
+    }
+
+    const patches = (ctr.patchIds || []).map(id => patchStore.get(id)).filter(Boolean);
+    if (patches.length > 0) {
+        if (hasJobUI) {
+            const hr = document.createElement('hr');
+            hr.className = 'container-results-sep';
+            body.appendChild(hr);
+        }
+
         for (const patch of patches) {
             const row = createPatchRow(patch, {
                 isMinified: true,

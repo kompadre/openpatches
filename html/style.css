@@ -925,11 +925,11 @@ h1 {
     width: 100%;
 }
 
-.sky-container-body.container-body-probe {
-    flex-direction: column;
-    flex-wrap: nowrap;
-    overflow-y: auto;
-    max-height: 400px;
+.container-results-sep {
+    border: none;
+    border-top: 1px dashed #333;
+    margin: 0.5rem 0;
+    width: 100%;
 }
 
 .sky-container-body .probe-panel {
