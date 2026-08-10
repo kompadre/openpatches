@@ -2,7 +2,7 @@
 
 OpenPatches is a next-generation platform for **Sound Archeology** and **FM Curation**, built around the legendary Yamaha DX7 synthesis engine.
 
-Treat the DX7 not just as a static instrument, but as a living, searchable database of timbres. OpenPatches allows you to reverse-engineer audio, curate bespoke patch banks, and compose with iconic FM sounds entirely in your browser.
+Treat the DX7 not just as a static instrument, but as a living, searchable database of timbres. OpenPatches allows you to reverse-engineer audio, curate bespoke patch banks, and compose with iconic FM sounds entirely in your browser. expansion to more synths and drum machines is in the works!
 
 **Live at:** [openpatch.es](https://openpatch.es)
 
@@ -11,7 +11,7 @@ Treat the DX7 not just as a static instrument, but as a living, searchable datab
 ## Why OpenPatches?
 
 ### 1. Sound Archeology
-Recover the iconic bell, bass, and pad sounds from classic tracks. Using a sophisticated pipeline of Formant Analysis and Genetic Algorithms (powered by [fmguessr](https://github.com/kompadre/fmguessr)), OpenPatches reverse-engineers audio recordings back into constituent DX7 parameters.
+Recover the iconic bell, bass, and pad sounds from classic tracks. Using a sophisticated pipeline of Formant Analysis and Linear Approximation (powered by [fmguessr](https://github.com/kompadre/fmguessr)), OpenPatches reverse-engineers audio recordings back into constituent DX7 parameters.
 
 ### 2. Bespoke Curation (Digital Cartridges)
 Archive and categorize patches into custom containers on a "night sky" canvas. Build bespoke sets of sounds and export them as standard `.syx` files, fully compatible with original hardware, modern clones, and software instruments like Dexed.
@@ -27,6 +27,15 @@ Experience the benefits of pure mathematical synthesis:
 - **Spectral Purity:** Noiseless by nature, free from sample artifacts.
 - **Perfect Pitch Scaling:** Sounds maintain their spectral proportions perfectly across all 127 MIDI notes.
 - **Zero Footprint:** A 128-byte patch can replace megabytes of samples.
+
+---
+
+## Roadmap
+
+OpenPatches is designed with a multi-engine architecture in mind. Future updates will include support for:
+- **Classic Drum Machines:** Reverse-engineering analog and digital percussion.
+- **Subtractive Synths:** Matching audio to oscillators, filters, and LFOs.
+- **Custom Inference Models:** Support for user-provided approximation models.
 
 ---
 

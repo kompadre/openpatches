@@ -11,7 +11,7 @@ const STEPS = [
         illustration: '<div class="tutorial-illustration-placeholder">\uD83C\uDF10</div>',
         description:
             'OpenPatches is a next-generation <strong>Sound Archeology</strong> and <strong>FM Curation</strong> platform.<br><br>' +
-            '<strong>Recover & Archive:</strong> Reverse-engineer audio into constituent DX7 parameters using genetic algorithms. Curate bespoke banks (Digital Cartridges) and export them for use in hardware or software.<br><br>' +
+            '<strong>Recover & Archive:</strong> Reverse-engineer audio into constituent DX7 parameters using linear approximation. Curate bespoke banks (Digital Cartridges) and export them for use in hardware or software.<br><br>' +
             '<strong>Mutate & Compose:</strong> Blend timbres with spectral morphing or generate mutations. Use the unique 8-channel <strong>multitimbral sequencer</strong> to hear how your patches work together in realtime.<br><br>' +
             '<strong>The FM Advantage:</strong> Experience noiseless, pure mathematical oscillation that scales perfectly across all pitches without the artifacts of traditional sampling.',
     },
@@ -26,7 +26,7 @@ const STEPS = [
             '1. Select a <strong>.WAV</strong> file from your computer<br>' +
             '2. The server <em>probes</em> it — analyzing attack, decay, brightness, and harmonicity<br>' +
             '3. You review and adjust the detected parameters<br>' +
-            '4. <em>Matching</em> begins — genetic algorithms search for the best DX7 patch<br>' +
+            '4. <em>Matching</em> begins — linear approximation searches for the best DX7 patch<br>' +
             '5. Results appear as patches in a container on the canvas<br><br>' +
             'Each patch is a 128-byte DX7 voice that reproduces the original sound using FM synthesis.',
     },
