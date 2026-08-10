@@ -294,8 +294,20 @@ export class Job {
         if (!this.probeData) return;
 
         const disabled = !this.isProbe;
+        const isFinalized = this.isCompleted || this.isFailed;
 
         bodyEl.classList.add('container-body-probe');
+
+        let targetEl = bodyEl;
+        if (isFinalized) {
+            const details = document.createElement('details');
+            details.className = 'probe-details-finalized';
+            const summary = document.createElement('summary');
+            summary.textContent = 'Probe Parameters';
+            details.appendChild(summary);
+            bodyEl.appendChild(details);
+            targetEl = details;
+        }
 
         const panel = document.createElement('div');
         panel.className = 'probe-panel';
@@ -372,28 +384,30 @@ export class Job {
         hiddenNote.value = this.probeData.root_note || 'C4';
         noteRow.appendChild(hiddenNote);
 
-        const forkBtn = document.createElement('button');
-        forkBtn.type = 'button';
-        forkBtn.className = 'tuning-fork-btn';
-        forkBtn.title = 'Tuning fork — click to play/stop';
-        const forkIcon = document.createElement('b');
-        forkIcon.textContent = 'Y';
-        forkBtn.appendChild(forkIcon);
-        forkBtn.disabled = disabled;
-        noteRow.appendChild(forkBtn);
+        if (!isFinalized) {
+            const forkBtn = document.createElement('button');
+            forkBtn.type = 'button';
+            forkBtn.className = 'tuning-fork-btn';
+            forkBtn.title = 'Tuning fork — click to play/stop';
+            const forkIcon = document.createElement('b');
+            forkIcon.textContent = 'Y';
+            forkBtn.appendChild(forkIcon);
+            forkBtn.disabled = disabled;
+            noteRow.appendChild(forkBtn);
 
-        function syncHiddenNote() {
-            hiddenNote.value = NOTE_NAMES[noteSelect.value] + octSelect.value;
+            function syncHiddenNote() {
+                hiddenNote.value = NOTE_NAMES[noteSelect.value] + octSelect.value;
+            }
+            noteSelect.addEventListener('change', () => {
+                syncHiddenNote();
+                if (toggleFork._osc) toggleFork._osc.frequency.value = noteToFreq(parseInt(noteSelect.value), parseInt(octSelect.value));
+            });
+            octSelect.addEventListener('change', () => {
+                syncHiddenNote();
+                if (toggleFork._osc) toggleFork._osc.frequency.value = noteToFreq(parseInt(noteSelect.value), parseInt(octSelect.value));
+            });
+            forkBtn.addEventListener('click', () => toggleFork(forkBtn, noteSelect, octSelect));
         }
-        noteSelect.addEventListener('change', () => {
-            syncHiddenNote();
-            if (toggleFork._osc) toggleFork._osc.frequency.value = noteToFreq(parseInt(noteSelect.value), parseInt(octSelect.value));
-        });
-        octSelect.addEventListener('change', () => {
-            syncHiddenNote();
-            if (toggleFork._osc) toggleFork._osc.frequency.value = noteToFreq(parseInt(noteSelect.value), parseInt(octSelect.value));
-        });
-        forkBtn.addEventListener('click', () => toggleFork(forkBtn, noteSelect, octSelect));
 
         panel.appendChild(noteRow);
 
@@ -422,31 +436,34 @@ export class Job {
         });
 
         // Actions
-        const actions = document.createElement('div');
-        actions.className = 'probe-actions';
+        if (!isFinalized) {
+            const actions = document.createElement('div');
+            actions.className = 'probe-actions';
 
-        const resetBtn = document.createElement('button');
-        resetBtn.type = 'button';
-        resetBtn.className = 'btn-reset';
-        resetBtn.textContent = 'Reset';
-        resetBtn.disabled = disabled;
-        resetBtn.addEventListener('click', () => {
-            bodyEl.innerHTML = '';
-            this.renderBody(bodyEl, opts);
-        });
+            const resetBtn = document.createElement('button');
+            resetBtn.type = 'button';
+            resetBtn.className = 'btn-reset';
+            resetBtn.textContent = 'Reset';
+            resetBtn.disabled = disabled;
+            resetBtn.addEventListener('click', () => {
+                bodyEl.innerHTML = '';
+                this.renderBody(bodyEl, opts);
+            });
 
-        const matchBtn = document.createElement('button');
-        matchBtn.type = 'button';
-        matchBtn.className = 'btn-match';
-        matchBtn.textContent = disabled ? 'Matching...' : 'Start Matching';
-        matchBtn.disabled = disabled;
-        matchBtn.addEventListener('click', () => this.startMatch(form, opts));
+            const matchBtn = document.createElement('button');
+            matchBtn.type = 'button';
+            matchBtn.className = 'btn-match';
+            matchBtn.textContent = disabled ? 'Matching...' : 'Start Matching';
+            matchBtn.disabled = disabled;
+            matchBtn.addEventListener('click', () => this.startMatch(form, opts));
 
-        actions.appendChild(resetBtn);
-        actions.appendChild(matchBtn);
-        form.appendChild(actions);
+            actions.appendChild(resetBtn);
+            actions.appendChild(matchBtn);
+            form.appendChild(actions);
+        }
+
         panel.appendChild(form);
-        bodyEl.appendChild(panel);
+        targetEl.appendChild(panel);
     }
 }
 

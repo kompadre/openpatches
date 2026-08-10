@@ -939,6 +939,34 @@ h1 {
     gap: 0.4rem;
 }
 
+.probe-details-finalized {
+    width: 100%;
+    margin-bottom: 0.5rem;
+}
+
+.probe-details-finalized summary {
+    cursor: pointer;
+    font-size: 0.75rem;
+    color: #888;
+    padding: 0.3rem 0.5rem;
+    background: rgba(0,0,0,0.2);
+    border-radius: 4px;
+    user-select: none;
+    outline: none;
+}
+
+.probe-details-finalized summary:hover {
+    color: #ccc;
+    background: rgba(255,255,255,0.05);
+}
+
+.probe-details-finalized[open] summary {
+    margin-bottom: 0.5rem;
+    border-bottom: 1px dashed #333;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
 .sky-container-body .patch-float {
     position: relative;
 }
