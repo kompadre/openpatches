@@ -459,16 +459,18 @@ function initToolbar() {
 
 const DEMO_OFFERED_KEY = 'openpatches_demo_offered';
 
-async function offerDemoData() {
-    // Skip if already offered or if there's existing data
-    if (localStorage.getItem(DEMO_OFFERED_KEY)) return;
-    const hasPatches = localStorage.getItem('openpatches_patches');
-    const hasCanvas = localStorage.getItem('openpatches_canvas');
-    if (hasPatches || hasCanvas) return;
+async function loadDemoSyx(forceConfirm = false) {
+    if (!forceConfirm) {
+        // Auto-offer mode: skip if already offered or if there's existing data
+        if (localStorage.getItem(DEMO_OFFERED_KEY)) return;
+        const hasPatches = localStorage.getItem('openpatches_patches');
+        const hasCanvas = localStorage.getItem('openpatches_canvas');
+        if (hasPatches || hasCanvas) return;
 
-    if (!confirm('Load demo patches? This will add 32 DX7 voices to get started.')) {
-        localStorage.setItem(DEMO_OFFERED_KEY, '1');
-        return;
+        if (!confirm('Load demo patches? This will add 32 DX7 voices to get started.')) {
+            localStorage.setItem(DEMO_OFFERED_KEY, '1');
+            return;
+        }
     }
 
     try {
@@ -503,6 +505,7 @@ async function offerDemoData() {
             if (updatedCtr) { updatedCtr.patchIds = created.map(p => p.id); canvasStore.putContainer(updatedCtr); }
             initCanvas(getCanvasOpts());
             appendLog(`Loaded DEMO.syx: ${created.length} voices`);
+            localStorage.setItem(DEMO_OFFERED_KEY, '1');
         }
     } catch (err) {
         appendLog('Failed to load demo: ' + err.message);
@@ -513,7 +516,7 @@ async function restore() {
     initCanvas(getCanvasOpts());
 
     // Offer demo data if no existing data
-    await offerDemoData();
+    await loadDemoSyx(false);
 
     // Restore jobs: resume polling, handle completed/failed
     const jobs = jobStore.getAll();
@@ -575,8 +578,7 @@ document.getElementById('menu-export-syx').addEventListener('click', () => {
     exportPatches();
 });
 document.getElementById('menu-load-demo').addEventListener('click', () => {
-    // TODO: Load DEMO.SYX — action to be discussed
-    appendLog('Load DEMO.SYX — not yet implemented');
+    loadDemoSyx(true);
 });
 document.getElementById('menu-show-log').addEventListener('click', () => {
     if (pianoDockWrapper && pianoDockWrapper._showLog) pianoDockWrapper._showLog();
