@@ -102,11 +102,11 @@ export function createEditPanel(opts) {
     panel.appendChild(actions);
 
     // Status
-    const status = document.getElementById('edit-status');
-    status.className = 'edit-status';
-    status.id = 'edit-status';
-    status.textContent = 'Open Edit on any patch to begin';
-    panel.appendChild(status);
+    const statusEl = document.createElement('div');
+    statusEl.className = 'edit-status';
+    statusEl.id = 'edit-status';
+    statusEl.textContent = 'Open Edit on any patch to begin';
+    panel.appendChild(statusEl);
 
     // Tags area (global for active patch)
     const tagsArea = document.createElement('div');
@@ -119,7 +119,7 @@ export function createEditPanel(opts) {
         const valEl = document.getElementById('edit-slider-val');
         if (valEl) valEl.textContent = editMode === 'random' ? slider.value : parseFloat(slider.value).toFixed(2);
         if (editMode === 'morph' && editSlot && editSlotB) {
-            status.textContent = `Ready: ${editSlot.name} ${ratioLabel(parseFloat(slider.value))} ${editSlotB.name}`;
+            statusEl.textContent = `Ready: ${editSlot.name} ${ratioLabel(parseFloat(slider.value))} ${editSlotB.name}`;
         }
     });
 
@@ -158,9 +158,9 @@ function renderEditPanel() {
     const paramsArea = document.getElementById('edit-params-area');
     const tagsArea = document.getElementById('edit-tags-area');
     const goBtn = document.getElementById('edit-go');
-    const status = document.getElementById('edit-status');
+    const statusEl = document.getElementById('edit-status');
 
-    if (!slotArea || !goBtn || !status || !tagsArea) return;
+    if (!slotArea || !goBtn || !statusEl || !tagsArea) return;
 
     if (!editSlot && !editSlotB) {
         slotArea.innerHTML = '';
@@ -169,7 +169,7 @@ function renderEditPanel() {
         tagsArea.innerHTML = '';
         goBtn.disabled = true;
         goBtn.textContent = 'Morph';
-        status.textContent = 'Open Edit on any patch to begin';
+        statusEl.textContent = 'Open Edit on any patch to begin';
         return;
     }
 
@@ -178,11 +178,11 @@ function renderEditPanel() {
     tagsArea.appendChild(createTagEditor(editSlot, (updated) => patchStore.put(updated)));
 
     if (editMode === 'morph') {
-        renderMorphMode(slotArea, sliderRow, paramsArea, goBtn, status);
+        renderMorphMode(slotArea, sliderRow, paramsArea, goBtn, statusEl);
     } else if (editMode === 'params') {
-        renderParamsMode(slotArea, sliderRow, paramsArea, goBtn, status);
+        renderParamsMode(slotArea, sliderRow, paramsArea, goBtn, statusEl);
     } else if (editMode === 'random') {
-        renderRandomMode(slotArea, sliderRow, paramsArea, goBtn, status);
+        renderRandomMode(slotArea, sliderRow, paramsArea, goBtn, statusEl);
     }
 }
 
@@ -227,7 +227,7 @@ function renderEditSlot(container, patch, slotIdx, showRemove) {
 
 // --- Morph Mode ---
 
-function renderMorphMode(slotArea, sliderRow, paramsArea, goBtn, status) {
+function renderMorphMode(slotArea, sliderRow, paramsArea, goBtn, statusEl) {
     sliderRow.style.display = '';
     paramsArea.style.display = 'none';
 
@@ -289,17 +289,17 @@ function renderMorphMode(slotArea, sliderRow, paramsArea, goBtn, status) {
 
     if (editSlot && editSlotB) {
         const r = parseFloat(slider.value);
-        status.textContent = `Ready: ${editSlot.name} ${ratioLabel(r)} ${editSlotB.name}`;
+        statusEl.textContent = `Ready: ${editSlot.name} ${ratioLabel(r)} ${editSlotB.name}`;
     } else if (editSlot) {
-        status.textContent = `${editSlot.name} — add a target (B)`;
+        statusEl.textContent = `${editSlot.name} — add a target (B)`;
     } else {
-        status.textContent = '';
+        statusEl.textContent = '';
     }
 }
 
 // --- Params Mode ---
 
-function renderParamsMode(slotArea, sliderRow, paramsArea, goBtn, status) {
+function renderParamsMode(slotArea, sliderRow, paramsArea, goBtn, statusEl) {
     sliderRow.style.display = 'none';
     paramsArea.style.display = '';
 
@@ -437,12 +437,12 @@ function renderParamsMode(slotArea, sliderRow, paramsArea, goBtn, status) {
 
     goBtn.disabled = false;
     goBtn.textContent = 'Save as new';
-    status.textContent = `Editing ${editSlot.name} — tweak sliders, then save`;
+    statusEl.textContent = `Editing ${editSlot.name} — tweak sliders, then save`;
 }
 
 // --- Random Mode ---
 
-function renderRandomMode(slotArea, sliderRow, paramsArea, goBtn, status) {
+function renderRandomMode(slotArea, sliderRow, paramsArea, goBtn, statusEl) {
     sliderRow.style.display = '';
     paramsArea.style.display = 'none';
 
@@ -475,7 +475,7 @@ function renderRandomMode(slotArea, sliderRow, paramsArea, goBtn, status) {
 
     goBtn.disabled = false;
     goBtn.textContent = currentMutation ? 'Save as new' : 'Mutate';
-    status.textContent = currentMutation
+    statusEl.textContent = currentMutation
         ? `Mutation ready — save or mutate again`
         : `${editSlot.name} — set intensity, then mutate`;
 }
@@ -529,11 +529,11 @@ async function fetchVoiceData(patch) {
 async function runMorphEdit() {
     if (!editSlot || !editSlotB) return;
     const goBtn = document.getElementById('edit-go');
-    const status = document.getElementById('edit-status');
+    const statusEl = document.getElementById('edit-status');
     const ratio = parseFloat(document.getElementById('edit-slider').value);
 
     goBtn.disabled = true;
-    status.textContent = 'Fetching patches...';
+    statusEl.textContent = 'Fetching patches...';
 
     try {
         const [srcData, tgtData] = await Promise.all([
@@ -541,12 +541,12 @@ async function runMorphEdit() {
             fetchVoiceData(editSlotB),
         ]);
         if (!srcData || !tgtData) {
-            status.textContent = 'Error: could not fetch voice data';
+            statusEl.textContent = 'Error: could not fetch voice data';
             goBtn.disabled = false;
             return;
         }
 
-        status.textContent = 'Morphing...';
+        statusEl.textContent = 'Morphing...';
         const resp = await fetch(baseUrlRef + '/api/morph', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -554,12 +554,12 @@ async function runMorphEdit() {
         });
         const data = await resp.json();
         if (data.error) {
-            status.textContent = 'Error: ' + data.error;
+            statusEl.textContent = 'Error: ' + data.error;
             goBtn.disabled = false;
             return;
         }
 
-        status.textContent = `Done — distance: ${data.source_dist.toFixed(4)} → ${data.morph_dist.toFixed(4)} (${ratioLabel(data.ratio)})`;
+        statusEl.textContent = `Done — distance: ${data.source_dist.toFixed(4)} → ${data.morph_dist.toFixed(4)} (${ratioLabel(data.ratio)})`;
         if (data.wav_url) new Audio(baseUrlRef + data.wav_url).play();
 
         const morphPatch = createPatch({
@@ -577,7 +577,7 @@ async function runMorphEdit() {
         editSlotB = null;
         renderEditPanel();
     } catch (err) {
-        status.textContent = 'Error: ' + err.message;
+        statusEl.textContent = 'Error: ' + err.message;
         goBtn.disabled = false;
     }
 }
@@ -607,11 +607,11 @@ async function buildModifiedVoiceData() {
 
 async function previewParamsEdit() {
     if (!currentMutation) return;
-    const status = document.getElementById('edit-status');
+    const statusEl = document.getElementById('edit-status');
     try {
-        status.textContent = 'Rendering preview...';
+        statusEl.textContent = 'Rendering preview...';
         const voiceData = await buildModifiedVoiceData();
-        if (!voiceData) { status.textContent = 'Error: no voice data'; return; }
+        if (!voiceData) { statusEl.textContent = 'Error: no voice data'; return; }
         const resp = await fetch(baseUrlRef + '/api/play', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -620,24 +620,24 @@ async function previewParamsEdit() {
         const d = await resp.json();
         if (d.wav_url) {
             new Audio(baseUrlRef + d.wav_url).play();
-            status.textContent = 'Playing preview...';
+            statusEl.textContent = 'Playing preview...';
         } else {
-            status.textContent = 'Error: no WAV returned';
+            statusEl.textContent = 'Error: no WAV returned';
         }
     } catch (err) {
-        status.textContent = 'Error: ' + err.message;
+        statusEl.textContent = 'Error: ' + err.message;
     }
 }
 
 async function saveParamsEdit() {
     if (!currentMutation) return;
-    const status = document.getElementById('edit-status');
+    const statusEl = document.getElementById('edit-status');
 
     try {
         const voiceData = await buildModifiedVoiceData();
-        if (!voiceData) { status.textContent = 'Error: no voice data'; return; }
+        if (!voiceData) { statusEl.textContent = 'Error: no voice data'; return; }
 
-        status.textContent = 'Rendering...';
+        statusEl.textContent = 'Rendering...';
         const resp = await fetch(baseUrlRef + '/api/play', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -658,18 +658,18 @@ async function saveParamsEdit() {
         patchStore.put(newPatch);
         if (onPatchCreated) onPatchCreated(newPatch);
 
-        status.textContent = `Saved: ${newPatch.name}`;
+        statusEl.textContent = `Saved: ${newPatch.name}`;
     } catch (err) {
-        status.textContent = 'Error: ' + err.message;
+        statusEl.textContent = 'Error: ' + err.message;
     }
 }
 
 async function runRandomMutate() {
     if (!editSlot) return;
-    const status = document.getElementById('edit-status');
+    const statusEl = document.getElementById('edit-status');
     const intensity = parseInt(document.getElementById('edit-slider').value) / 100;
 
-    status.textContent = 'Mutating...';
+    statusEl.textContent = 'Mutating...';
 
     try {
         const voiceData = await fetchVoiceData(editSlot);
@@ -735,15 +735,15 @@ async function runRandomMutate() {
 
         const goBtn = document.getElementById('edit-go');
         goBtn.textContent = 'Save as new';
-        status.textContent = `Mutation ready — save or mutate again (intensity: ${Math.round(intensity*100)}%)`;
+        statusEl.textContent = `Mutation ready — save or mutate again (intensity: ${Math.round(intensity*100)}%)`;
     } catch (err) {
-        status.textContent = 'Error: ' + err.message;
+        statusEl.textContent = 'Error: ' + err.message;
     }
 }
 
 async function saveMutation() {
     if (!currentMutation) return;
-    const status = document.getElementById('edit-status');
+    const statusEl = document.getElementById('edit-status');
 
     try {
         if (!currentMutation.wav_url && currentMutation.voice_data) {
@@ -769,11 +769,11 @@ async function saveMutation() {
         patchStore.put(newPatch);
         if (onPatchCreated) onPatchCreated(newPatch);
 
-        status.textContent = `Saved: ${newPatch.name}`;
+        statusEl.textContent = `Saved: ${newPatch.name}`;
         currentMutation = null;
         const goBtn = document.getElementById('edit-go');
         goBtn.textContent = 'Mutate';
     } catch (err) {
-        status.textContent = 'Error: ' + err.message;
+        statusEl.textContent = 'Error: ' + err.message;
     }
 }
