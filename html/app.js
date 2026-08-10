@@ -574,9 +574,6 @@ document.getElementById('menu-import-syx').addEventListener('click', () => {
     fileInput.accept = '.syx';
     fileInput.click();
 });
-document.getElementById('menu-export-syx').addEventListener('click', () => {
-    exportPatches();
-});
 document.getElementById('menu-load-demo').addEventListener('click', () => {
     loadDemoSyx(true);
 });
@@ -629,46 +626,6 @@ document.getElementById('menu-restart-tutorial').addEventListener('click', () =>
         if (e.target === e.currentTarget) e.currentTarget.style.display = 'none';
     });
 });
-
-// --- Export patches ---
-
-async function exportPatches() {
-    const patches = patchStore.getAll();
-    if (patches.length === 0) {
-        appendLog('No patches to export');
-        return;
-    }
-
-    const exportPatches = patches.filter(p => p.voice_data).map(p => ({
-        name: p.name,
-        voice_data: p.voice_data,
-    }));
-
-    if (exportPatches.length === 0) {
-        appendLog('No patches with voice data to export');
-        return;
-    }
-
-    try {
-        const resp = await fetch(baseUrl + '/api/export-syx', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: 'patches', patches: exportPatches })
-        });
-        const data = await resp.json();
-        if (data.error) {
-            appendLog('Export error: ' + data.error);
-            return;
-        }
-        const a = document.createElement('a');
-        a.href = baseUrl + data.syx_url;
-        a.download = 'patches.syx';
-        a.click();
-        appendLog(`Exported ${data.count} patches`);
-    } catch (e) {
-        appendLog('Export failed: ' + e.message);
-    }
-}
 
 // --- Init ---
 
