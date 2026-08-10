@@ -519,7 +519,6 @@ function renderContainer(ctr) {
     body.className = 'sky-container-body';
 
     // Container body content: job-driven (probe/status) AND/OR patch list
-    const job = ctr.jobId ? jobStore.get(ctr.jobId) : null;
     const hasJobUI = job && optsRef && optsRef.renderJobBody;
 
     if (hasJobUI) {
