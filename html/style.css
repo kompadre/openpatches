@@ -65,8 +65,17 @@ body {
     margin-left: 0.5rem;
 }
 
-.beta-right {
+.github-link {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #888;
     margin-right: 0.5rem;
+    transition: color 0.15s;
+}
+
+.github-link:hover {
+    color: #e94560;
 }
 
 .bug-report-link {
