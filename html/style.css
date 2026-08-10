@@ -2637,8 +2637,100 @@ footer {
 }
 
 /* ============================================================
-   Tutorial
+   17. Tagging
    ============================================================ */
+
+.tags-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    margin-top: 0.25rem;
+}
+
+.tag-chip {
+    background: rgba(255, 255, 255, 0.1);
+    color: #aaa;
+    font-size: 0.65rem;
+    padding: 0.1rem 0.4rem;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    gap: 0.2rem;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.tag-chip:hover {
+    background: rgba(255, 255, 255, 0.15);
+    color: #eee;
+}
+
+.tag-remove {
+    cursor: pointer;
+    font-weight: bold;
+    opacity: 0.6;
+}
+
+.tag-remove:hover {
+    opacity: 1;
+    color: #e94560;
+}
+
+.tag-add-btn {
+    background: none;
+    border: 1px dashed #444;
+    color: #666;
+    font-size: 0.65rem;
+    padding: 0.1rem 0.4rem;
+    border-radius: 10px;
+    cursor: pointer;
+}
+
+.tag-add-btn:hover {
+    border-color: #888;
+    color: #aaa;
+}
+
+.tag-input {
+    background: #0f0f23;
+    border: 1px solid #4caf50;
+    color: #eee;
+    font-size: 0.65rem;
+    padding: 0.1rem 0.3rem;
+    border-radius: 4px;
+    outline: none;
+    width: 60px;
+}
+
+/* Container tags placement */
+.sky-container-tags {
+    margin-top: 0.2rem;
+    padding: 0 0.5rem;
+}
+
+/* Patch row tags placement */
+.patch-row .tags-container {
+    margin-left: 0.5rem;
+}
+
+.patch-tags-canvas {
+    display: inline-block;
+    vertical-align: middle;
+}
+
+.edit-tags-area {
+    margin-top: 1rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid #333;
+    width: 100%;
+}
+
+.edit-section-title {
+    font-size: 0.7rem;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.4rem;
+}
 
 /* Blur applied to page content directly (not overlay) to avoid
    stacking context issues with menu bar z-index */

@@ -1,6 +1,8 @@
 // Unified patch row rendering — used on canvas, in containers, and in edit panel.
 
 import { decodeWavSamples, drawMiniWaveform, wavSampleCache } from './patch.js';
+import { createTagEditor } from './tag-editor.js';
+import { patchStore } from './patch-model.js';
 import { batchRenderWaveforms } from '../synth/dx7-synth.js';
 
 // Global drag state (shared with canvas.js for drop detection)
@@ -249,6 +251,12 @@ export function createPatchRow(patch, opts = {}) {
         distEl.className = 'patch-col patch-dist';
         distEl.textContent = (patch.distance || 0).toFixed(4);
         row.appendChild(distEl);
+
+        // Tags
+        const tagsWrapper = document.createElement('div');
+        tagsWrapper.className = 'patch-tags';
+        tagsWrapper.appendChild(createTagEditor(patch, (updated) => patchStore.put(updated)));
+        row.appendChild(tagsWrapper);
 
         // Assign to voicebank
         const assignBtn = document.createElement('button');

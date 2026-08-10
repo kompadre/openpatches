@@ -36,6 +36,7 @@ export function createPatch(partial) {
         voice_data,
         source: partial.source || 'unknown',
         created: partial.created || Date.now(),
+        tags: partial.tags || [],
     };
 }
 
@@ -45,6 +46,7 @@ const PATCHES_KEY = 'openpatches_patches';
 const CANVAS_KEY = 'openpatches_canvas';
 const JOBS_KEY = 'openpatches_jobs';
 const PATCH_NAMES_KEY = 'openpatches_patch_names';
+const TAGS_KEY = 'openpatches_all_tags';
 
 // --- patchStore ---
 
@@ -198,3 +200,42 @@ export function loadPatchNames() {
 export function savePatchNames(names) {
     localStorage.setItem(PATCH_NAMES_KEY, JSON.stringify(names));
 }
+
+// --- tagStore (Global Tag Registry) ---
+
+function loadGlobalTags() {
+    try {
+        return JSON.parse(localStorage.getItem(TAGS_KEY) || '[]');
+    } catch { return []; }
+}
+
+function saveGlobalTags(tags) {
+    try {
+        localStorage.setItem(TAGS_KEY, JSON.stringify(tags));
+    } catch (e) {
+        console.warn('tagStore save failed:', e);
+    }
+}
+
+export const tagStore = {
+    getTags() {
+        return loadGlobalTags();
+    },
+    addTag(tag) {
+        if (!tag) return;
+        const tags = loadGlobalTags();
+        if (!tags.includes(tag)) {
+            tags.push(tag);
+            tags.sort();
+            saveGlobalTags(tags);
+        }
+    },
+    removeTag(tag) {
+        const tags = loadGlobalTags();
+        const idx = tags.indexOf(tag);
+        if (idx > -1) {
+            tags.splice(idx, 1);
+            saveGlobalTags(tags);
+        }
+    }
+};

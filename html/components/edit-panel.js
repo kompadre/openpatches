@@ -2,6 +2,7 @@
 // Extracted from app.js. Lives in the toolbar's Edit tab.
 
 import { createPatch, patchStore, patchIdFromVoiceData } from './patch-model.js';
+import { createTagEditor } from './tag-editor.js';
 
 let editSlot = null;
 let editSlotB = null;
@@ -101,11 +102,17 @@ export function createEditPanel(opts) {
     panel.appendChild(actions);
 
     // Status
-    const status = document.createElement('div');
+    const status = document.getElementById('edit-status');
     status.className = 'edit-status';
     status.id = 'edit-status';
     status.textContent = 'Open Edit on any patch to begin';
     panel.appendChild(status);
+
+    // Tags area (global for active patch)
+    const tagsArea = document.createElement('div');
+    tagsArea.id = 'edit-tags-area';
+    tagsArea.className = 'edit-tags-area';
+    panel.appendChild(tagsArea);
 
     // Slider input handler
     slider.addEventListener('input', () => {
@@ -149,20 +156,26 @@ function renderEditPanel() {
     const slotArea = document.getElementById('edit-slot-area');
     const sliderRow = document.getElementById('edit-slider-row');
     const paramsArea = document.getElementById('edit-params-area');
+    const tagsArea = document.getElementById('edit-tags-area');
     const goBtn = document.getElementById('edit-go');
     const status = document.getElementById('edit-status');
 
-    if (!slotArea || !goBtn || !status) return;
+    if (!slotArea || !goBtn || !status || !tagsArea) return;
 
     if (!editSlot && !editSlotB) {
         slotArea.innerHTML = '';
         sliderRow.style.display = 'none';
         paramsArea.style.display = 'none';
+        tagsArea.innerHTML = '';
         goBtn.disabled = true;
         goBtn.textContent = 'Morph';
         status.textContent = 'Open Edit on any patch to begin';
         return;
     }
+
+    // Always show tags for the primary edit slot
+    tagsArea.innerHTML = '<div class="edit-section-title">Patch Tags</div>';
+    tagsArea.appendChild(createTagEditor(editSlot, (updated) => patchStore.put(updated)));
 
     if (editMode === 'morph') {
         renderMorphMode(slotArea, sliderRow, paramsArea, goBtn, status);

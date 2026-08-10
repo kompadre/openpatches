@@ -3,6 +3,7 @@
 // drag-to-reposition (star handle), and snap-into-container behavior.
 
 import { canvasStore, patchStore, jobStore } from './patch-model.js';
+import { createTagEditor } from './tag-editor.js';
 import { createPatchRow, getDraggedPatch, clearDraggedPatch } from './patch-row.js';
 import { decodeWavSamples, drawMiniWaveform } from './patch.js';
 import { batchRenderWaveforms } from '../synth/dx7-synth.js';
@@ -124,6 +125,7 @@ export function addContainer(name, opts = {}) {
         width: opts.width || 260,
         jobId: opts.jobId || null,
         patchIds: opts.patchIds || [],
+        tags: opts.tags || [],
     };
     canvasStore.putContainer(ctr);
     renderAll();
@@ -342,6 +344,13 @@ function appendFullFields(el, patch) {
 
     // Append in order after name
     nameEl.insertAdjacentElement('afterend', distEl);
+
+    // Tags
+    const tagsWrapper = document.createElement('div');
+    tagsWrapper.className = 'patch-tags-canvas';
+    tagsWrapper.appendChild(createTagEditor(patch, (updated) => patchStore.put(updated)));
+    nameEl.insertAdjacentElement('afterend', tagsWrapper);
+
     nameEl.insertAdjacentElement('afterend', fbEl);
     nameEl.insertAdjacentElement('afterend', algoEl);
     nameEl.insertAdjacentElement('afterend', specWrap);
@@ -513,6 +522,12 @@ function renderContainer(ctr) {
 
     header.appendChild(headerRight);
     el.appendChild(header);
+
+    // Tags
+    const tagsWrapper = document.createElement('div');
+    tagsWrapper.className = 'sky-container-tags';
+    tagsWrapper.appendChild(createTagEditor(ctr, (updated) => canvasStore.putContainer(updated)));
+    el.appendChild(tagsWrapper);
 
     // Body
     const body = document.createElement('div');
