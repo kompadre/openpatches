@@ -692,7 +692,8 @@ function renderContainer(ctr) {
         if (!resizing) return;
         const clientX = e.touches ? e.touches[0].clientX : e.clientX;
         const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-        const newW = Math.max(200, resizeStartW + (clientX - resizeStartX));
+        const maxW = canvasEl ? canvasEl.scrollWidth : window.innerWidth;
+        const newW = Math.max(200, Math.min(maxW, resizeStartW + (clientX - resizeStartX)));
         const newH = Math.max(80, resizeStartH + (clientY - resizeStartY));
         el.style.width = newW + 'px';
         el.style.height = newH + 'px';
@@ -729,36 +730,53 @@ function renderContainer(ctr) {
 
     // Drag container by header
     let dragging = false;
+    let dragPending = false;
     let startX, startY, origLeft, origTop;
 
     function handleDragStart(e) {
         if (e.target.contentEditable === 'true') return;
-        e.preventDefault();
-        dragging = true;
+        dragPending = true;
+        dragging = false;
         const clientX = e.touches ? e.touches[0].clientX : e.clientX;
         const clientY = e.touches ? e.touches[0].clientY : e.clientY;
         startX = clientX;
         startY = clientY;
         origLeft = ctr.left;
         origTop = ctr.top;
-        el.style.zIndex = 50;
     }
 
     function handleDragMove(e) {
-        if (!dragging) return;
+        if (!dragPending && !dragging) return;
         const clientX = e.touches ? e.touches[0].clientX : e.clientX;
         const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-        ctr.left = Math.max(0, origLeft + (clientX - startX));
+        if (dragPending && !dragging) {
+            const dx = Math.abs(clientX - startX);
+            const dy = Math.abs(clientY - startY);
+            if (dx > 5 || dy > 5) {
+                dragging = true;
+                dragPending = false;
+                el.style.zIndex = 50;
+                e.preventDefault();
+            } else {
+                return;
+            }
+        }
+        if (!dragging) return;
+        e.preventDefault();
+        const maxLeft = canvasEl ? canvasEl.scrollWidth - el.offsetWidth : window.innerWidth - el.offsetWidth;
+        ctr.left = Math.max(0, Math.min(maxLeft, origLeft + (clientX - startX)));
         ctr.top = Math.max(0, origTop + (clientY - startY));
         el.style.left = ctr.left + 'px';
         el.style.top = ctr.top + 'px';
     }
 
     function handleDragEnd() {
-        if (!dragging) return;
+        if (dragging) {
+            el.style.zIndex = '';
+            canvasStore.putContainer(ctr);
+        }
         dragging = false;
-        el.style.zIndex = '';
-        canvasStore.putContainer(ctr);
+        dragPending = false;
     }
 
     header.addEventListener('mousedown', handleDragStart);
