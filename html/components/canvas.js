@@ -52,8 +52,8 @@ export function initCanvas(opts) {
         if (!patch) return;
 
         const rect = canvasEl.getBoundingClientRect();
-        const left = e.clientX - rect.left + canvasEl.scrollLeft;
-        const top = e.clientY - rect.top + canvasEl.scrollTop;
+        const left = e.clientX - rect.left + (skyEl.scrollLeft || 0);
+        const top = e.clientY - rect.top + (skyEl.scrollTop || 0);
 
         // Store patch in patchStore if not already there
         const stored = patchStore.get(patch.id);
@@ -102,8 +102,8 @@ export function initCanvas(opts) {
                     }
                 }
                 const rect = canvasEl.getBoundingClientRect();
-                const left = window._touchDropX - rect.left + canvasEl.scrollLeft;
-                const top = window._touchDropY - rect.top + canvasEl.scrollTop;
+                const left = window._touchDropX - rect.left + (skyEl.scrollLeft || 0);
+                const top = window._touchDropY - rect.top + (skyEl.scrollTop || 0);
                 addPatchToCanvas(patch.id, Math.max(0, left), Math.max(0, top), null);
             }
         }
