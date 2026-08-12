@@ -167,6 +167,75 @@ export function createPatchRow(patch, opts = {}) {
                 nameEl.contentEditable = 'false';
             }
         });
+
+        // Tap to activate (mobile) — makes row draggable
+        row.addEventListener('click', (e) => {
+            if (e.target.tagName === 'BUTTON') return;
+            const wasActive = row.classList.contains('active');
+            row.parentElement.querySelectorAll('.patch-row.active').forEach(r => r.classList.remove('active'));
+            if (!wasActive) row.classList.add('active');
+        });
+
+        // Touch drag when active — creates floating clone
+        row.addEventListener('touchstart', (e) => {
+            if (!row.classList.contains('active')) return;
+            if (e.target.tagName === 'BUTTON') return;
+            const touch = e.touches[0];
+            const startX = touch.clientX;
+            const startY = touch.clientY;
+            let clone = null;
+            let didMove = false;
+
+            function onMove(ev) {
+                const t = ev.touches[0];
+                const dx = Math.abs(t.clientX - startX);
+                const dy = Math.abs(t.clientY - startY);
+                if (!didMove && (dx > 8 || dy > 8)) {
+                    didMove = true;
+                    // Create floating clone
+                    clone = row.cloneNode(true);
+                    clone.className = 'patch-row patch-row-minified patch-drag-clone';
+                    clone.style.position = 'fixed';
+                    clone.style.zIndex = '10000';
+                    clone.style.pointerEvents = 'none';
+                    clone.style.width = row.offsetWidth + 'px';
+                    clone.style.opacity = '0.85';
+                    document.body.appendChild(clone);
+                    row.classList.add('dragging');
+                    _draggedPatch = patch;
+                    window._draggedPatch = patch;
+                }
+                if (clone) {
+                    ev.preventDefault();
+                    clone.style.left = (t.clientX - 20) + 'px';
+                    clone.style.top = (t.clientY - 15) + 'px';
+                }
+            }
+
+            function onEnd(ev) {
+                document.removeEventListener('touchmove', onMove);
+                document.removeEventListener('touchend', onEnd);
+                if (clone) {
+                    clone.remove();
+                    row.classList.remove('dragging');
+                    // Find container under the last touch position
+                    const t = ev.changedTouches[0];
+                    const el = document.elementFromPoint(t.clientX, t.clientY);
+                    const containerEl = el ? el.closest('.sky-container') : null;
+                    if (containerEl && containerEl.dataset.containerId) {
+                        window._touchDropPatch = patch;
+                        window._touchDropContainerId = containerEl.dataset.containerId;
+                        // Dispatch a custom event so canvas.js can handle it
+                        window.dispatchEvent(new CustomEvent('touch-drop-patch'));
+                    }
+                    _draggedPatch = null;
+                    window._draggedPatch = null;
+                }
+            }
+
+            document.addEventListener('touchmove', onMove, { passive: false });
+            document.addEventListener('touchend', onEnd);
+        }, { passive: true });
     } else {
         // Full row: spec + name + algo + fb + dist + actions
 

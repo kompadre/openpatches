@@ -1383,6 +1383,24 @@ h1 {
     flex-shrink: 0;
 }
 
+/* Active state for minified rows (tap to select on mobile) */
+.patch-row-minified.active {
+    background: #1a2744 !important;
+    border-color: #4caf50;
+    box-shadow: 0 0 6px rgba(76, 175, 80, 0.3);
+}
+.patch-row-minified.active .patch-name {
+    color: #fff;
+}
+
+/* Touch drag clone */
+.patch-drag-clone {
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+    border-radius: 4px;
+    background: #1a2744;
+    border: 1px solid #4caf50;
+}
+
 /* Mini spectrogram */
 .patch-spec-mini {
     display: none;

@@ -75,6 +75,25 @@ export function initCanvas(opts) {
     });
 
     renderAll();
+
+    // Handle touch-drop from patch rows (mobile drag between containers)
+    window.addEventListener('touch-drop-patch', () => {
+        const patch = window._touchDropPatch;
+        const containerId = window._touchDropContainerId;
+        if (patch && containerId) {
+            const existing = canvasStore.getCanvasPatch(patch.id);
+            if (existing && existing.containerId) {
+                const srcCtr = canvasStore.getContainer(existing.containerId);
+                if (srcCtr) {
+                    srcCtr.patchIds = (srcCtr.patchIds || []).filter(id => id !== patch.id);
+                    canvasStore.putContainer(srcCtr);
+                }
+            }
+            addPatchToContainer(patch.id, containerId);
+        }
+        window._touchDropPatch = null;
+        window._touchDropContainerId = null;
+    });
 }
 
 // --- Patch on canvas ---
