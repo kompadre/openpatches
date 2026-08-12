@@ -135,6 +135,22 @@ export function createToolbar(opts) {
     let recordStartTime = 0;
     let activeRecordSlot = 0;
 
+    const voiceSelect = document.createElement('select');
+    voiceSelect.className = 'kb-voice-select';
+    voiceSelect.title = 'Active voice for playback and recording';
+
+    function refreshVoiceSelect() {
+        const entries = voiceBank ? voiceBank._getEntries() : [];
+        voiceSelect.innerHTML = '';
+        for (let i = 0; i < 8; i++) {
+            const opt = document.createElement('option');
+            opt.value = i;
+            opt.textContent = entries[i] ? (i + 1) + '. ' + entries[i].name : (i + 1) + '. —';
+            voiceSelect.appendChild(opt);
+        }
+        voiceSelect.value = activeRecordSlot;
+    }
+
     function updateKeyboardVoice(slot) {
         activeRecordSlot = slot;
         voiceSelect.value = slot;
@@ -196,23 +212,7 @@ export function createToolbar(opts) {
 
     const kbVoices = document.createElement('div');
     kbVoices.className = 'kb-voices';
-
-    const voiceSelect = document.createElement('select');
-    voiceSelect.className = 'kb-voice-select';
-    voiceSelect.title = 'Active voice for playback and recording';
     kbVoices.appendChild(voiceSelect);
-
-    function refreshVoiceSelect() {
-        const entries = voiceBank ? voiceBank._getEntries() : [];
-        voiceSelect.innerHTML = '';
-        for (let i = 0; i < 8; i++) {
-            const opt = document.createElement('option');
-            opt.value = i;
-            opt.textContent = entries[i] ? (i + 1) + '. ' + entries[i].name : (i + 1) + '. —';
-            voiceSelect.appendChild(opt);
-        }
-        voiceSelect.value = activeRecordSlot;
-    }
 
     voiceSelect.addEventListener('change', () => {
         activeRecordSlot = parseInt(voiceSelect.value);
