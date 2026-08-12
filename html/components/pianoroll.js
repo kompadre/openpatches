@@ -705,6 +705,10 @@ export function createPianoroll(opts) {
     }
 
     let lastTapTime = 0;
+    let longPressTimer = null;
+    let longPressPos = null;
+    let isTouchScrolling = false;
+    let touchScrollStart = null;
 
     canvas.addEventListener('touchstart', (e) => {
         e.preventDefault();
@@ -719,6 +723,7 @@ export function createPianoroll(opts) {
 
         const now = Date.now();
         const target = findInteractionTargetTouch(x, y);
+        const isStopped = !playing && !looping;
 
         // Double-tap detection
         if (target && target.note && now - lastTapTime < 400 && row === lastClickRow && Math.abs(col - lastClickCol) <= 1) {
@@ -735,6 +740,7 @@ export function createPianoroll(opts) {
         lastClickRow = row;
         lastClickCol = col;
 
+        // Existing note interactions (resize/move) — always active
         if (target) {
             if (target.side === 'left' || target.side === 'right') {
                 resizingNote = target.note;
@@ -751,7 +757,25 @@ export function createPianoroll(opts) {
             return;
         }
 
-        // Start drag to create note
+        // Empty space — when stopped: long-press to create, drag to scroll
+        if (isStopped) {
+            longPressPos = { x, y, row, col };
+            longPressTimer = setTimeout(() => {
+                // 1 second hold — create note
+                longPressTimer = null;
+                longPressPos = null;
+                const midi = NOTES[row].midi;
+                const slot = opts.activeSlot != null ? opts.activeSlot : 0;
+                notes.push({ midi, start: col, dur: 1, slot });
+                draw();
+                renderLegend();
+                onNotesChange();
+                saveState();
+            }, 1000);
+            return;
+        }
+
+        // Playing/recording — original drag-to-create behavior
         dragging = true;
         dragStart = { row, col };
         lastMousePos = { x, y };
@@ -765,6 +789,28 @@ export function createPianoroll(opts) {
         const x = touch.clientX - rect.left;
         const y = touch.clientY - rect.top;
         lastMousePos = { x, y };
+
+        // Long-press pending — check if moved (scroll instead)
+        if (longPressTimer && longPressPos) {
+            const dx = x - longPressPos.x;
+            const dy = y - longPressPos.y;
+            if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
+                clearTimeout(longPressTimer);
+                longPressTimer = null;
+                isTouchScrolling = true;
+                touchScrollStart = { sx: scroll.scrollLeft, sy: scroll.scrollTop, x, y };
+            }
+            return;
+        }
+
+        // Active touch scrolling
+        if (isTouchScrolling && touchScrollStart) {
+            const dx = touchScrollStart.x - x;
+            const dy = touchScrollStart.y - y;
+            scroll.scrollLeft = touchScrollStart.sx + dx;
+            scroll.scrollTop = touchScrollStart.sy + dy;
+            return;
+        }
 
         if (resizingNote && moveStartPos) {
             const dx = x - moveStartPos.x;
@@ -806,6 +852,15 @@ export function createPianoroll(opts) {
 
     canvas.addEventListener('touchend', (e) => {
         e.preventDefault();
+
+        // Cancel long press if still pending
+        if (longPressTimer) {
+            clearTimeout(longPressTimer);
+            longPressTimer = null;
+            longPressPos = null;
+        }
+        isTouchScrolling = false;
+        touchScrollStart = null;
 
         if (resizingNote) {
             if (moveCommitted) {
