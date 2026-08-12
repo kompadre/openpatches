@@ -990,13 +990,25 @@ export function createPianoroll(opts) {
             draw();
         },
         addNote({ midi, start, dur, slot }) {
-            notes.push({ midi, start, dur, slot });
+            const note = { midi, start, dur, slot };
+            notes.push(note);
             draw();
             renderLegend();
             if (onNotesChange) onNotesChange();
             saveState();
             // Auto-scroll to new note only when not recording (recording interval handles scroll)
             if (!looping) this.scrollTo(start, midi);
+            return note;
+        },
+        removeNote(note) {
+            const idx = notes.indexOf(note);
+            if (idx >= 0) {
+                notes.splice(idx, 1);
+                draw();
+                renderLegend();
+                if (onNotesChange) onNotesChange();
+                saveState();
+            }
         },
         scrollTo(col, midi) {
             const row = NOTES.findIndex(n => n.midi === midi);

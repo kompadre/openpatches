@@ -2913,6 +2913,11 @@ footer {
 
 /* --- Mobile-only keyboard controls (hidden on desktop) --- */
 .kb-controls { display: none; }
+.kb-btn-undo {
+    background: #2a1a1a;
+    color: #e94560;
+    border-color: #e94560;
+}
 .dock-tab-canvas { display: none !important; }
 .kb-voice-select {
     padding: 4px 8px;

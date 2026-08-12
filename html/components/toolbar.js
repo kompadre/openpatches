@@ -222,6 +222,24 @@ export function createToolbar(opts) {
 
     kbControls.appendChild(btnRecord);
     kbControls.appendChild(btnPlayStop);
+
+    const btnUndo = document.createElement('button');
+    btnUndo.className = 'kb-btn kb-btn-undo';
+    btnUndo.textContent = '↩ Undo';
+    btnUndo.style.display = 'none';
+    kbControls.appendChild(btnUndo);
+
+    const undoStack = [];
+    const MAX_UNDO = 5;
+
+    btnUndo.addEventListener('click', () => {
+        if (undoStack.length === 0) return;
+        const lastNote = undoStack.pop();
+        if (pianorollRef && pianorollRef.removeNote) {
+            pianorollRef.removeNote(lastNote);
+        }
+    });
+
     kbControls.appendChild(kbVoices);
     pianorollPanel.appendChild(kbControls);
 
@@ -236,6 +254,8 @@ export function createToolbar(opts) {
         }
         activePresses.clear();
         recording = false;
+        undoStack.length = 0;
+        btnUndo.style.display = 'none';
         btnRecord.classList.remove('active');
         btnRecord.textContent = 'Record ●';
         btnPlayStop.textContent = 'Play ▶';
@@ -254,6 +274,8 @@ export function createToolbar(opts) {
             btnRecord.classList.add('active');
             btnRecord.textContent = 'Stop ■';
             btnPlayStop.textContent = 'Stop ■';
+            btnUndo.style.display = '';
+            undoStack.length = 0;
             if (pianorollRef && pianorollRef.startRecording) pianorollRef.startRecording();
             // Tick recording: play notes, move playhead, scroll, handle seam splits
             recordInterval = setInterval(() => {
@@ -316,7 +338,11 @@ export function createToolbar(opts) {
             dur = tc - s; // wraps to end
         }
         dur = Math.max(1, dur);
-        pianorollRef.addNote({ midi, start: s, dur, slot });
+        const note = pianorollRef.addNote({ midi, start: s, dur, slot });
+        if (note) {
+            undoStack.push(note);
+            if (undoStack.length > MAX_UNDO) undoStack.shift();
+        }
     }
 
     PIANO_NOTES.forEach(n => {
