@@ -526,7 +526,7 @@ textarea:focus {
 }
 
 #night-sky.visible {
-    display: block;
+    display: flex;
 }
 
 #night-sky > * {
@@ -547,8 +547,8 @@ h1 {
 
 .night-sky-canvas {
     position: relative;
-    min-height: 2000px;
-    min-width: 3000px;
+    min-height: 100%;
+    min-width: 100%;
     border: 1px dashed #2a2a3e;
     border-radius: 8px;
     background: url('images/bg.png') center/cover no-repeat, radial-gradient(ellipse at center, #0d0d1a 0%, #080812 100%);
