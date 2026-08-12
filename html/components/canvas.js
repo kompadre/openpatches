@@ -76,26 +76,42 @@ export function initCanvas(opts) {
 
     renderAll();
 
-    // Handle touch-drop from patch rows (mobile: reorder or cross-container drop)
+    // Handle touch-drop from patch rows (mobile: reorder, cross-container, or free-float)
     window.addEventListener('touch-drop-patch', () => {
         const patch = window._touchDropPatch;
         const containerId = window._touchDropContainerId;
-        if (patch && containerId) {
-            // Cross-container drop
+        if (patch) {
             const existing = canvasStore.getCanvasPatch(patch.id);
-            if (existing && existing.containerId) {
-                const srcCtr = canvasStore.getContainer(existing.containerId);
-                if (srcCtr) {
-                    srcCtr.patchIds = (srcCtr.patchIds || []).filter(id => id !== patch.id);
-                    canvasStore.putContainer(srcCtr);
+            if (containerId) {
+                // Cross-container drop
+                if (existing && existing.containerId) {
+                    const srcCtr = canvasStore.getContainer(existing.containerId);
+                    if (srcCtr) {
+                        srcCtr.patchIds = (srcCtr.patchIds || []).filter(id => id !== patch.id);
+                        canvasStore.putContainer(srcCtr);
+                    }
                 }
+                addPatchToContainer(patch.id, containerId);
+            } else if (window._touchDropX != null) {
+                // Free-floating on canvas — remove from old container if any
+                if (existing && existing.containerId) {
+                    const srcCtr = canvasStore.getContainer(existing.containerId);
+                    if (srcCtr) {
+                        srcCtr.patchIds = (srcCtr.patchIds || []).filter(id => id !== patch.id);
+                        canvasStore.putContainer(srcCtr);
+                    }
+                }
+                const rect = canvasEl.getBoundingClientRect();
+                const left = window._touchDropX - rect.left + canvasEl.scrollLeft;
+                const top = window._touchDropY - rect.top + canvasEl.scrollTop;
+                addPatchToCanvas(patch.id, Math.max(0, left), Math.max(0, top), null);
             }
-            addPatchToContainer(patch.id, containerId);
         }
-        // Re-render in all cases (reorder or cross-container)
         renderAll();
         window._touchDropPatch = null;
         window._touchDropContainerId = null;
+        window._touchDropX = null;
+        window._touchDropY = null;
     });
 }
 

@@ -264,8 +264,6 @@ export function createPatchRow(patch, opts = {}) {
                 if (insertIndicator) { insertIndicator.remove(); insertIndicator = null; }
 
                 if (isOutside) {
-                    // Drag out — try drop on container or canvas
-                    if (clone) clone.remove();
                     const t = ev.changedTouches[0];
                     const el = document.elementFromPoint(t.clientX, t.clientY);
                     const dropContainer = el ? el.closest('.sky-container') : null;
@@ -275,7 +273,15 @@ export function createPatchRow(patch, opts = {}) {
                         window._touchDropPatch = patch;
                         window._touchDropContainerId = dropContainer.dataset.containerId;
                         window.dispatchEvent(new CustomEvent('touch-drop-patch'));
+                    } else {
+                        // Dropped on canvas — become a free-floating patch
+                        window._touchDropPatch = patch;
+                        window._touchDropContainerId = null;
+                        window._touchDropX = t.clientX;
+                        window._touchDropY = t.clientY;
+                        window.dispatchEvent(new CustomEvent('touch-drop-patch'));
                     }
+                    if (clone) clone.remove();
                     _draggedPatch = null;
                     window._draggedPatch = null;
                 } else if (didMove && targetRow && containerEl) {
