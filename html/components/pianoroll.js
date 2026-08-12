@@ -97,7 +97,7 @@ export function createPianoroll(opts) {
 
     const clearBtn = document.createElement('button');
     clearBtn.className = 'pianoroll-btn';
-    clearBtn.textContent = 'Clear';
+    clearBtn.textContent = '\u{1F9F9} Clear';
     controls.appendChild(clearBtn);
 
     const addMeasureBtn = document.createElement('button');
@@ -213,6 +213,7 @@ export function createPianoroll(opts) {
 
     const MOVE_THRESHOLD = 5;
     const RESIZE_MARGIN = 8;
+    const TOUCH_RESIZE_MARGIN = 20;
     function saveState() {
         try {
             const data = {
@@ -309,6 +310,11 @@ export function createPianoroll(opts) {
                 ctx.strokeStyle = '#fff';
                 ctx.lineWidth = 0.5;
                 ctx.strokeRect(x + 1, y + 1, w, ROW_H - 2);
+                // Resize handles
+                const handleW = Math.min(4, w / 4);
+                ctx.fillStyle = 'rgba(255,255,255,0.5)';
+                ctx.fillRect(x + 1, y + 1, handleW, ROW_H - 2);
+                ctx.fillRect(x + w - handleW, y + 1, handleW, ROW_H - 2);
             }
         }
 
@@ -627,6 +633,181 @@ export function createPianoroll(opts) {
         }
     });
 
+    // --- Touch events for mobile ---
+    function findInteractionTargetTouch(x, y) {
+        const row = pixelToRow(y);
+        if (row < 0 || row >= NOTES.length) return null;
+        const midi = NOTES[row].midi;
+        const activeSlot = opts.activeSlot;
+        const candidates = notes.filter(n => n.midi === midi && (activeSlot == null || n.slot === activeSlot));
+        for (const n of candidates) {
+            const startX = LABEL_W + n.start * COL_W;
+            const endX = LABEL_W + (n.start + n.dur) * COL_W;
+            if (Math.abs(x - endX) <= TOUCH_RESIZE_MARGIN) return { note: n, side: 'right' };
+            if (Math.abs(x - startX) <= TOUCH_RESIZE_MARGIN) return { note: n, side: 'left' };
+            if (x > startX && x < endX) return { note: n, side: 'move' };
+        }
+        return null;
+    }
+
+    let lastTapTime = 0;
+
+    canvas.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        const touch = e.touches[0];
+        const rect = canvas.getBoundingClientRect();
+        const x = touch.clientX - rect.left;
+        const y = touch.clientY - rect.top;
+        const row = pixelToRow(y);
+        const col = pixelToCol(x);
+
+        if (col < 0) return;
+
+        const now = Date.now();
+        const target = findInteractionTargetTouch(x, y);
+
+        // Double-tap detection
+        if (target && target.note && now - lastTapTime < 400 && row === lastClickRow && Math.abs(col - lastClickCol) <= 1) {
+            const idx = notes.indexOf(target.note);
+            if (idx >= 0) notes.splice(idx, 1);
+            draw();
+            renderLegend();
+            onNotesChange();
+            saveState();
+            lastTapTime = 0;
+            return;
+        }
+        lastTapTime = now;
+        lastClickRow = row;
+        lastClickCol = col;
+
+        if (target) {
+            if (target.side === 'left' || target.side === 'right') {
+                resizingNote = target.note;
+                resizeSide = target.side;
+                moveStartPos = { x, y };
+                moveOriginal = { start: target.note.start, dur: target.note.dur };
+                moveCommitted = false;
+                return;
+            }
+            movingNote = target.note;
+            moveStartPos = { x, y };
+            moveOriginal = { start: target.note.start, midi: target.note.midi, dur: target.note.dur };
+            moveCommitted = false;
+            return;
+        }
+
+        // Start drag to create note
+        dragging = true;
+        dragStart = { row, col };
+        lastMousePos = { x, y };
+        draw();
+    }, { passive: false });
+
+    canvas.addEventListener('touchmove', (e) => {
+        e.preventDefault();
+        const touch = e.touches[0];
+        const rect = canvas.getBoundingClientRect();
+        const x = touch.clientX - rect.left;
+        const y = touch.clientY - rect.top;
+        lastMousePos = { x, y };
+
+        if (resizingNote && moveStartPos) {
+            const dx = x - moveStartPos.x;
+            if (!moveCommitted && Math.abs(dx) < MOVE_THRESHOLD) return;
+            moveCommitted = true;
+            const colDelta = Math.round(dx / COL_W);
+            if (resizeSide === 'right') {
+                resizingNote.dur = Math.max(1, moveOriginal.dur + colDelta);
+            } else {
+                const maxStart = moveOriginal.start + moveOriginal.dur - 1;
+                const newStart = Math.max(0, Math.min(maxStart, moveOriginal.start + colDelta));
+                const actualDelta = newStart - moveOriginal.start;
+                resizingNote.start = newStart;
+                resizingNote.dur = moveOriginal.dur - actualDelta;
+            }
+            draw();
+            return;
+        }
+
+        if (movingNote && moveStartPos) {
+            const dx = x - moveStartPos.x;
+            const dy = y - moveStartPos.y;
+            if (!moveCommitted && Math.abs(dx) < MOVE_THRESHOLD && Math.abs(dy) < MOVE_THRESHOLD) return;
+            moveCommitted = true;
+            const colOffset = Math.round(dx / COL_W);
+            const rowOffset = Math.round(dy / ROW_H);
+            const newStart = Math.max(0, Math.min(totalCols() - movingNote.dur, moveOriginal.start + colOffset));
+            const newRow = Math.max(0, Math.min(NOTES.length - 1, NOTES.findIndex(nn => nn.midi === moveOriginal.midi) + rowOffset));
+            movingNote.start = newStart;
+            movingNote.midi = NOTES[newRow].midi;
+            draw();
+            return;
+        }
+
+        if (dragging) {
+            draw();
+        }
+    }, { passive: false });
+
+    canvas.addEventListener('touchend', (e) => {
+        e.preventDefault();
+
+        if (resizingNote) {
+            if (moveCommitted) {
+                draw();
+                onNotesChange();
+                saveState();
+            }
+            resizingNote = null;
+            resizeSide = null;
+            moveStartPos = null;
+            moveOriginal = null;
+            moveCommitted = false;
+            return;
+        }
+
+        if (movingNote) {
+            if (moveCommitted) {
+                draw();
+                renderLegend();
+                onNotesChange();
+                saveState();
+            }
+            movingNote = null;
+            moveStartPos = null;
+            moveOriginal = null;
+            moveCommitted = false;
+            return;
+        }
+
+        if (!dragging || !dragStart) {
+            dragging = false;
+            return;
+        }
+
+        const endCol = lastMousePos ? pixelToCol(lastMousePos.x) : dragStart.col;
+        const endRow = lastMousePos ? pixelToRow(lastMousePos.y) : dragStart.row;
+
+        if (endRow === dragStart.row) {
+            const minC = Math.min(dragStart.col, endCol);
+            const maxC = Math.max(dragStart.col, endCol);
+            const dur = maxC - minC + 1;
+            const midi = NOTES[dragStart.row].midi;
+            const slot = opts.activeSlot != null ? opts.activeSlot : 0;
+            notes.push({ midi, start: minC, dur, slot });
+            draw();
+            renderLegend();
+            onNotesChange();
+            saveState();
+        }
+
+        dragging = false;
+        dragStart = null;
+        lastMousePos = null;
+        draw();
+    }, { passive: false });
+
     // --- Sequencer ---
     let consecutiveErrors = 0;
     const MAX_CONSECUTIVE_ERRORS = 3;
@@ -731,10 +912,19 @@ export function createPianoroll(opts) {
     return {
         element: container,
         draw,
+        startPlayback,
         stopPlayback,
+        isPlaying() { return playing; },
         setActiveSlot(slot) {
             opts.activeSlot = slot;
             draw();
+        },
+        addNote({ midi, start, dur, slot }) {
+            notes.push({ midi, start, dur, slot });
+            draw();
+            renderLegend();
+            if (onNotesChange) onNotesChange();
+            saveState();
         },
         getNotes() { return notes; },
         getBpm() { return parseInt(bpmInput.value) || DEFAULT_BPM; },

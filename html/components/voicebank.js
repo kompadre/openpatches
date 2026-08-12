@@ -106,12 +106,33 @@ export function createVoiceBank(opts) {
             item.dataset.vbIdx = i;
 
             if (entry) {
-                // Volume overlay (fills from left)
+                const isCompact = container.classList.contains('compact');
+
+                // Volume overlay
                 const overlay = document.createElement('div');
-                overlay.className = 'voicebank-volume-overlay';
+                overlay.className = 'voicebank-volume-overlay voicebank-dot';
                 overlay.style.background = entry.color;
-                overlay.style.width = ((entry.volume || DEFAULT_VOLUME) / 127 * 100) + '%';
+                if (isCompact) {
+                    const vol = (entry.volume || DEFAULT_VOLUME) / 127 * 100;
+                    overlay.style.position = 'absolute';
+                    overlay.style.left = '0';
+                    overlay.style.bottom = '0';
+                    overlay.style.top = 'auto';
+                    overlay.style.width = '100%';
+                    overlay.style.height = vol + '%';
+                    overlay.style.opacity = '0.3';
+                    overlay.style.pointerEvents = 'none';
+                    overlay.style.zIndex = '0';
+                } else {
+                    overlay.style.width = ((entry.volume || DEFAULT_VOLUME) / 127 * 100) + '%';
+                }
                 item.appendChild(overlay);
+
+                // Slot number (for compact mode)
+                const slotNum = document.createElement('span');
+                slotNum.className = 'voicebank-slot-num';
+                slotNum.textContent = (i + 1);
+                item.appendChild(slotNum);
 
                 // Drag handle for reordering
                 const dragHandle = document.createElement('button');
@@ -145,14 +166,16 @@ export function createVoiceBank(opts) {
                 });
                 item.appendChild(playBtn);
 
+                // Normal dot for list mode
                 const dot = document.createElement('span');
                 dot.className = 'voicebank-dot';
                 dot.style.background = entry.color;
+                if (isCompact) dot.style.display = 'none';
                 item.appendChild(dot);
 
                 const nameEl = document.createElement('span');
                 nameEl.className = 'voicebank-name';
-                nameEl.textContent = (i + 1) + '. ' + entry.name;
+                nameEl.textContent = isCompact ? entry.name : (i + 1) + '. ' + entry.name;
                 item.appendChild(nameEl);
 
                 // Volume label
@@ -203,9 +226,8 @@ export function createVoiceBank(opts) {
                     notifySnapshot();
                 });
 
-                // Click to select
+                // Click to select (desktop only — mobile uses handleVolStart tap detection)
                 item.addEventListener('click', (e) => {
-                    // Don't select if dragging volume
                     if (item._dragging) return;
                     activeId = entry.id;
                     render();
@@ -213,37 +235,59 @@ export function createVoiceBank(opts) {
                     saveState();
                 });
 
-                // Volume drag: mousedown → track mousemove → mouseup
-                item.addEventListener('mousedown', (e) => {
-                    if (e.button !== 0) return;
+                // Volume drag + tap-to-select
+                function handleVolStart(e) {
+                    if (e.type === 'mousedown' && e.button !== 0) return;
+                    if (e.type === 'touchstart') e.preventDefault();
                     const rect = item.getBoundingClientRect();
-                    const startX = e.clientX;
                     let didDrag = false;
 
                     function onMove(ev) {
-                        const x = ev.clientX - rect.left;
-                        const pct = Math.max(0, Math.min(1, x / rect.width));
+                        const clientY = ev.touches ? ev.touches[0].clientY : ev.clientY;
+                        const y = rect.bottom - clientY;
+                        const pct = Math.max(0, Math.min(1, y / rect.height));
                         const vol = Math.round(pct * 127);
                         entry.volume = vol;
-                        overlay.style.width = (pct * 100) + '%';
+                        if (isCompact) {
+                            overlay.style.height = (pct * 100) + '%';
+                        } else {
+                            const clientX = ev.touches ? ev.touches[0].clientX : ev.clientX;
+                            const x = clientX - rect.left;
+                            const pctH = Math.max(0, Math.min(1, x / rect.width));
+                            overlay.style.width = (pctH * 100) + '%';
+                        }
                         volEl.textContent = vol;
                         didDrag = true;
                         if (onVolumeChange) onVolumeChange(i, vol);
                     }
 
-                    function onUp() {
+                    function onUp(ev) {
                         document.removeEventListener('mousemove', onMove);
                         document.removeEventListener('mouseup', onUp);
+                        document.removeEventListener('touchmove', onMove);
+                        document.removeEventListener('touchend', onUp);
                         if (didDrag) {
                             item._dragging = true;
                             setTimeout(() => { item._dragging = false; }, 50);
                             saveState();
+                        } else {
+                            // Tap without drag = select
+                            activeId = entry.id;
+                            saveState();
+                            fireSelect();
+                            // Defer render to avoid killing DOM during touch event chain
+                            requestAnimationFrame(() => render());
                         }
                     }
 
                     document.addEventListener('mousemove', onMove);
                     document.addEventListener('mouseup', onUp);
-                });
+                    document.addEventListener('touchmove', onMove, { passive: false });
+                    document.addEventListener('touchend', onUp);
+                }
+
+                item.addEventListener('mousedown', handleVolStart);
+                item.addEventListener('touchstart', handleVolStart, { passive: false });
             } else {
                 item.classList.add('voicebank-empty');
                 const placeholder = document.createElement('span');
@@ -368,6 +412,15 @@ export function createVoiceBank(opts) {
     container._getActive = getActive;
     container._setActive = setActive;
     container._getEntries = () => entries;
+    container._setActiveSlot = (idx) => {
+        if (entries[idx]) {
+            activeId = entries[idx].id;
+            render();
+            fireSelect();
+            saveState();
+        }
+    };
+    container._render = render;
     container._notifySnapshot = notifySnapshot;
 
     return container;

@@ -551,6 +551,10 @@ h1 {
 }
 
 .sky-ctr-btn {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    z-index: 10;
     background: #16213e;
     color: #999;
     border: 1px solid #333;
@@ -1912,6 +1916,7 @@ h1 {
     flex-direction: column;
     align-items: center;
     width: 100%;
+    max-width: 100vw;
     background-color: #1a1a2e;
     border-top: 1px solid #333;
     padding: 0.4rem 0;
@@ -1922,6 +1927,8 @@ h1 {
     flex-direction: column;
     align-items: center;
     width: 100%;
+    flex: 1;
+    min-height: 0;
 }
 
 .piano-dock-disabled {
@@ -2846,3 +2853,400 @@ footer {
 .tutorial-btn-next:hover {
     background: #243356;
 }
+
+/* --- Mobile-only hamburger (hidden on desktop) --- */
+.hamburger {
+    display: none;
+    background: none;
+    border: none;
+    color: #e0e0e0;
+    font-size: 1.4rem;
+    cursor: pointer;
+    padding: 0 0.5rem;
+    line-height: 1;
+}
+
+/* --- Mobile-only keyboard controls (hidden on desktop) --- */
+.kb-controls { display: none; }
+.dock-tab-canvas { display: none !important; }
+.kb-voice-select {
+    padding: 4px 8px;
+    border-radius: 4px;
+    border: 1px solid #444;
+    background: #0f0f23;
+    color: #ccc;
+    font-size: 0.8rem;
+    max-width: 180px;
+}
+
+/* --- Mobile Responsiveness --- */
+
+@media (max-width: 600px) {
+    /* Hide desktop-only elements */
+    footer { display: none; }
+    .menu-brand { font-size: 0.75rem; padding: 0 0.4rem; }
+
+    /* Always show close/remove buttons on mobile (no hover) */
+    .sky-remove,
+    .patch-float .sky-remove,
+    .sky-container .sky-remove,
+    .patch-row-minified .sky-remove { opacity: 0.6 !important; }
+
+    /* Show mobile-only keyboard controls */
+    .kb-controls { display: flex !important; }
+    .dock-tab-canvas { display: flex !important; }
+
+    /* Hamburger menu */
+    .hamburger { display: block !important; }
+    .menu-items { display: none !important; }
+    .bug-report-link { display: none !important; }
+    .github-link { display: none !important; }
+    .beta-left { display: none !important; }
+
+    /* Mobile menu overlay */
+    .menu-bar.menu-open .menu-items {
+        display: flex !important;
+        position: fixed;
+        top: 36px;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        flex-direction: column;
+        background: #1a1a2e;
+        z-index: 999;
+        padding: 1rem;
+        gap: 0.5rem;
+        overflow-y: auto;
+    }
+    .menu-bar.menu-open .menu-item {
+        width: 100%;
+    }
+    .menu-bar.menu-open .menu-label {
+        padding: 0.75rem 1rem;
+        font-size: 1rem;
+        display: block;
+        border-bottom: 1px solid #333;
+    }
+    .menu-bar.menu-open .menu-dropdown {
+        position: static;
+        display: flex !important;
+        flex-direction: column;
+        box-shadow: none;
+        border: none;
+        background: transparent;
+        padding: 0.25rem 0 0.25rem 1rem;
+    }
+    .menu-bar.menu-open .menu-dropdown button {
+        padding: 0.6rem 0.75rem;
+        font-size: 0.9rem;
+        text-align: left;
+    }
+    
+    /* Progress bar: fixed, visible at top */
+    #progress-wrapper {
+        position: fixed;
+        top: 36px;
+        left: 0; right: 0;
+        z-index: 300;
+        margin: 0;
+        background: rgba(13, 13, 26, 0.95);
+        border-bottom: 1px solid #222;
+    }
+    #progress-bar { height: 8px; border-radius: 0; }
+    #progress-fill {
+        background: linear-gradient(90deg, #e94560, #ff6b8a);
+        animation: progress-pulse 1.5s ease-in-out infinite;
+    }
+    #progress-label { font-size: 0.75rem; color: #e94560; font-weight: 600; padding: 2px 8px; }
+
+    @keyframes progress-pulse {
+        0% { opacity: 0.8; }
+        50% { opacity: 1; }
+        100% { opacity: 0.8; }
+    }
+    
+    /* Piano dock: full screen below menu */
+    #piano-dock {
+        position: fixed;
+        top: 36px;
+        bottom: 0;
+        left: 0; right: 0;
+        z-index: 20;
+        height: auto !important;
+        display: flex;
+        flex-direction: column;
+        background: #0d0d1a;
+    }
+    
+    /* Dock panels: fill available space */
+    .dock-panel {
+        max-width: 100vw;
+        width: 100%;
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        overflow-x: hidden;
+        display: none;
+        flex-direction: column;
+    }
+    .dock-panel.active { display: flex; }
+
+    /* Canvas Panel (Mobile Special) */
+    .dock-panel-canvas {
+        padding: 0;
+        position: relative;
+        overflow: hidden;
+    }
+    #night-sky {
+        position: absolute !important;
+        top: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        bottom: 0 !important;
+        height: 100% !important;
+        width: 100% !important;
+        z-index: 1;
+    }
+    
+    /* Tab bar: bottom navigation */
+    .dock-tabs {
+        flex-shrink: 0;
+        gap: 0;
+        margin: 0;
+        border-top: 1px solid #333;
+        background: #0d0d1a;
+        height: 54px;
+        display: flex;
+        width: 100%;
+    }
+    .dock-tab {
+        flex: 1;
+        padding: 0;
+        border-radius: 0;
+        border: none;
+        border-bottom: 3px solid transparent;
+        font-size: 0.9rem;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: transparent;
+        color: #888;
+    }
+    .dock-tab span { margin-top: 2px; }
+    .dock-tab.active {
+        border-bottom: 3px solid #e94560;
+        background: #16213e;
+        color: #fff;
+    }
+    
+    /* Piano roll layout */
+    .pianoroll-row {
+        flex-direction: column !important;
+        height: 100%;
+        max-height: 61vh;
+        overflow: hidden;
+        width: 100% !important;
+        max-width: 100vw !important;
+    }
+    @media (orientation: landscape) {
+        .pianoroll-row { flex-direction: row !important; }
+    }
+    
+    .pianoroll-container {
+        flex: 1;
+        min-height: 200px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+    }
+
+    .pianoroll-scroll {
+        height: auto !important;
+        flex: 1;
+        min-height: 150px;
+        max-width: none;
+        overflow-x: auto !important;
+        width: 100% !important;
+        max-width: 100vw !important;
+    }
+
+    .pianoroll-hint { display: none !important; }
+
+    .voicebank {
+        height: 25vh;
+        min-height: 80px;
+        border-left: none;
+        border-top: 1px solid #333;
+        min-width: 0;
+        max-width: none;
+        width: 100%;
+    }
+    
+    /* VoiceBank compact mode */
+    .voicebank.compact {
+        display: flex !important;
+        flex-direction: column !important;
+        width: 100% !important;
+        height: 25vh !important;
+        min-height: 80px !important;
+        min-width: 0 !important;
+        max-width: none !important;
+        box-sizing: border-box;
+        flex-shrink: 0 !important;
+        overflow: hidden;
+    }
+    .voicebank.compact .voicebank-header { display: none !important; }
+    .voicebank.compact .voicebank-list {
+        display: grid !important;
+        grid-template-columns: repeat(8, 1fr);
+        gap: 2px;
+        padding: 2px;
+        overflow: hidden;
+        min-width: 0;
+        flex: 1 1 0 !important;
+    }
+    .voicebank.compact .voicebank-drag-handle,
+    .voicebank.compact .voicebank-play,
+    .voicebank.compact .voicebank-remove,
+    .voicebank.compact .voicebank-vol { display: none !important; }
+
+    .voicebank.compact .voicebank-item {
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: center;
+        justify-content: flex-end;
+        border: 1px solid #222;
+        border-radius: 3px 3px 0 0;
+        padding: 2px 0 !important;
+        margin: 0 !important;
+        position: relative;
+        background: #0a0a15;
+        min-width: 0 !important;
+        overflow: hidden;
+    }
+    .voicebank.compact .voicebank-item.active {
+        background: #16213e;
+        border-color: #444;
+    }
+    .voicebank.compact .voicebank-dot {
+        width: 100% !important;
+        bottom: 0 !important;
+        top: auto !important;
+        left: 0 !important;
+        border-radius: 2px 2px 0 0;
+        position: absolute;
+        transition: height 0.1s;
+        opacity: 0.3;
+        z-index: 0;
+    }
+    .voicebank.compact .voicebank-name {
+        font-size: 0.5rem;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        max-width: 100%;
+        z-index: 2;
+        pointer-events: none;
+        text-align: center;
+        padding: 0 1px;
+    }
+    .voicebank.compact .voicebank-slot-num {
+        font-size: 0.7rem;
+        font-weight: bold;
+        margin-bottom: 2px;
+        z-index: 2;
+        pointer-events: none;
+    }
+
+    /* Keyboard recording controls */
+    .kb-controls {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 8px;
+        background: #16213e;
+        border-bottom: 1px solid #333;
+        flex-wrap: wrap;
+    }
+    .kb-btn {
+        padding: 6px 12px;
+        border-radius: 4px;
+        border: 1px solid #444;
+        background: #0f0f23;
+        color: #ccc;
+        font-size: 0.8rem;
+        cursor: pointer;
+    }
+    .kb-btn.active {
+        background: #e94560;
+        color: #fff;
+        border-color: #ff6b8a;
+    }
+    .kb-btn-record.active {
+        animation: rec-pulse 1s infinite;
+    }
+    @keyframes rec-pulse {
+        0% { opacity: 1; }
+        50% { opacity: 0.5; }
+        100% { opacity: 1; }
+    }
+    .kb-voices {
+        display: flex;
+        gap: 4px;
+        margin-left: auto;
+    }
+    .kb-voice-btn {
+        width: 24px;
+        height: 24px;
+        border-radius: 4px;
+        border: 2px solid transparent;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.7rem;
+        font-weight: bold;
+        color: rgba(255,255,255,0.8);
+    }
+    .kb-voice-btn.active {
+        border-color: #fff;
+        box-shadow: 0 0 8px rgba(255,255,255,0.3);
+    }
+    
+    /* Keyboard keys responsiveness */
+    .dock-panel-keyboard {
+        position: relative;
+        overflow: hidden;
+    }
+    .keyboard {
+        display: flex !important;
+        width: 100% !important;
+        padding: 0 !important;
+        box-sizing: border-box;
+        min-height: 80px !important;
+        position: relative;
+    }
+    .key.white {
+        flex: 1;
+        min-width: 0;
+        height: 100% !important;
+        border-radius: 0 0 3px 3px;
+    }
+    .key.black {
+        position: absolute;
+        height: 62% !important;
+        width: 12px !important;
+        z-index: 2;
+        margin: 0 !important;
+        border-radius: 0 0 3px 3px;
+        color: transparent;
+    }
+    
+    /* Edit panel */
+    .edit-panel-inner { min-width: 0; width: 100%; padding: 10px; }
+    .edit-row { flex-direction: column; align-items: stretch; gap: 4px; }
+    .edit-row label { width: auto; margin-bottom: 2px; }
+}
+

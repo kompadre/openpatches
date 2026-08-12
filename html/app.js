@@ -337,7 +337,12 @@ function getCanvasOpts() {
                 if (pianoDockWrapper && pianoDockWrapper._voiceBank) {
                     pianoDockWrapper._voiceBank._addEntry(patch.name || 'Untitled', patch.voice_data, patch.name);
                 }
-                if (pianoDockWrapper) pianoDockWrapper.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                const isMobile = window.matchMedia('(max-width: 600px)').matches;
+                if (isMobile && pianoDockWrapper && pianoDockWrapper._showPianoroll) {
+                    pianoDockWrapper._showPianoroll();
+                } else if (pianoDockWrapper) {
+                    pianoDockWrapper.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }
             }
         },
         onAssignToPianoroll: (patches) => {
@@ -347,7 +352,12 @@ function getCanvasOpts() {
                     pianoDockWrapper._voiceBank._addEntry(patch.name || 'Untitled', patch.voice_data, patch.name);
                 }
             }
-            pianoDockWrapper.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            const isMobile = window.matchMedia('(max-width: 600px)').matches;
+            if (isMobile && pianoDockWrapper && pianoDockWrapper._showPianoroll) {
+                pianoDockWrapper._showPianoroll();
+            } else {
+                pianoDockWrapper.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
         },
         onEdit: (patch) => {
             openEdit(patch);
@@ -421,12 +431,13 @@ function initToolbar() {
     const pianoDock = document.getElementById('piano-dock');
     pianoDock.innerHTML = '';
 
+    const isMobile = window.matchMedia('(max-width: 600px)').matches;
     const playFn = (midi, durationMs, voiceData, channel) => playNote(midi, voiceData || activeSyxVoiceData, durationMs, channel);
 
     const dock = createToolbar({
         matchedMidi: activeKeyboardNote,
         playNoteFn: playFn,
-        initialTab: 'pianoroll',
+        initialTab: isMobile ? 'canvas' : 'pianoroll',
         onNoteClick: (midi) => { activeKeyboardNote = midi; },
         onSnapshot: (entries) => {
             if (isReady()) {
@@ -448,6 +459,16 @@ function initToolbar() {
     });
     pianoDock.appendChild(dock);
     pianoDockWrapper = dock;
+
+    if (isMobile) {
+        const sky = document.getElementById('night-sky');
+        const canvasPanel = dock.querySelector('.dock-panel-canvas');
+        if (sky && canvasPanel) canvasPanel.appendChild(sky);
+        if (dock._voiceBank) {
+            dock._voiceBank.classList.add('compact');
+            if (dock._voiceBank._render) dock._voiceBank._render();
+        }
+    }
 
     // Register pianoroll stop for audio-manager shutdown
     if (dock._pianoroll && dock._pianoroll.stopPlayback) {
@@ -474,7 +495,7 @@ async function loadDemoSyx(forceConfirm = false) {
     }
 
     try {
-        const resp = await fetch(baseUrl + '/html/DEMO.syx');
+        const resp = await fetch('html/DEMO.syx');
         const arrayBuffer = await resp.arrayBuffer();
         const patches = parseSyxFile(arrayBuffer);
         if (!patches || patches.length === 0) {
@@ -552,6 +573,16 @@ async function restore() {
 
 // --- Menu bar ---
 
+const hamburger = document.getElementById('hamburger');
+const menuBar = document.getElementById('menu-bar');
+
+if (hamburger) {
+    hamburger.addEventListener('click', (e) => {
+        e.stopPropagation();
+        menuBar.classList.toggle('menu-open');
+    });
+}
+
 document.querySelectorAll('.menu-item').forEach(item => {
     item.querySelector('.menu-label').addEventListener('click', (e) => {
         e.stopPropagation();
@@ -564,6 +595,13 @@ document.addEventListener('click', () => {
     // Don't close menus while tutorial is active (it opens them programmatically)
     if (isTutorialActive()) return;
     document.querySelectorAll('.menu-item.open').forEach(i => i.classList.remove('open'));
+    if (menuBar) menuBar.classList.remove('menu-open');
+});
+
+document.querySelectorAll('.menu-dropdown button').forEach(btn => {
+    btn.addEventListener('click', () => {
+        if (menuBar) menuBar.classList.remove('menu-open');
+    });
 });
 
 document.getElementById('menu-import-wav').addEventListener('click', () => {

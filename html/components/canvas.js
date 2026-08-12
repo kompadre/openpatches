@@ -11,6 +11,7 @@ import { batchRenderWaveforms } from '../synth/dx7-synth.js';
 let skyEl = null;
 let canvasEl = null;
 let optsRef = null;
+let docListeners = [];
 
 // --- Init ---
 
@@ -20,20 +21,17 @@ export function initCanvas(opts) {
     skyEl.innerHTML = '';
     skyEl.classList.add('visible');
 
-    // Toolbar: "+ Container" button
-    const toolbar = document.createElement('div');
-    toolbar.className = 'sky-toolbar';
+    canvasEl = document.createElement('div');
+    canvasEl.className = 'night-sky-canvas';
+    skyEl.appendChild(canvasEl);
+
+    // "+ Container" button inside canvas
     const ctrBtn = document.createElement('button');
     ctrBtn.className = 'sky-ctr-btn';
     ctrBtn.textContent = '+ Container';
     ctrBtn.title = 'Create a container to group patches';
     ctrBtn.addEventListener('click', () => addContainer('Group'));
-    toolbar.appendChild(ctrBtn);
-    skyEl.appendChild(toolbar);
-
-    canvasEl = document.createElement('div');
-    canvasEl.className = 'night-sky-canvas';
-    skyEl.appendChild(canvasEl);
+    canvasEl.appendChild(ctrBtn);
 
     // Drop target for patches dragged from external lists
     canvasEl.addEventListener('dragover', (e) => {
@@ -174,8 +172,21 @@ export function refreshCanvas() {
     renderAll();
 }
 
+function onDoc(event, handler, opts) {
+    document.addEventListener(event, handler, opts);
+    docListeners.push({ event, handler, opts });
+}
+
+function clearDocListeners() {
+    for (const l of docListeners) {
+        document.removeEventListener(l.event, l.handler, l.opts);
+    }
+    docListeners = [];
+}
+
 function renderAll() {
     if (!canvasEl) return;
+    clearDocListeners();
     canvasEl.querySelectorAll('.patch-float, .sky-container').forEach(el => el.remove());
 
     const containers = canvasStore.getContainers();
@@ -228,6 +239,17 @@ function renderFloatingPatch(patchId, entry) {
     });
     el.appendChild(assignBtn);
 
+    // Edit button (new)
+    const editBtn = document.createElement('button');
+    editBtn.className = 'patch-edit-btn-inline';
+    editBtn.textContent = '🔧';
+    editBtn.title = 'Edit patch';
+    editBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (optsRef && optsRef.onEdit) optsRef.onEdit(patch);
+    });
+    el.appendChild(editBtn);
+
     // Remove button
     const removeBtn = document.createElement('button');
     removeBtn.className = 'sky-remove';
@@ -249,40 +271,47 @@ function renderFloatingPatch(patchId, entry) {
     let startX, startY, origLeft, origTop;
     let didMove = false;
 
-    star.addEventListener('mousedown', (e) => {
+    function handleStart(e) {
         e.preventDefault();
         e.stopPropagation();
         dragging = true;
         didMove = false;
-        startX = e.clientX;
-        startY = e.clientY;
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        startX = clientX;
+        startY = clientY;
         origLeft = entry.left;
         origTop = entry.top;
         el.style.cursor = 'grabbing';
         el.style.zIndex = 100;
         el.style.transition = 'none';
-    });
+    }
 
-    document.addEventListener('mousemove', (e) => {
+    function handleMove(e) {
         if (!dragging) return;
-        const dx = e.clientX - startX;
-        const dy = e.clientY - startY;
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        const dx = clientX - startX;
+        const dy = clientY - startY;
         if (Math.abs(dx) > 3 || Math.abs(dy) > 3) didMove = true;
         entry.left = Math.max(0, origLeft + dx);
         entry.top = Math.max(0, origTop + dy);
         el.style.left = entry.left + 'px';
         el.style.top = entry.top + 'px';
-    });
+    }
 
-    document.addEventListener('mouseup', (e) => {
+    function handleEnd(e) {
         if (!dragging) return;
         dragging = false;
         el.style.cursor = '';
         el.style.zIndex = '';
         el.style.transition = '';
 
+        const clientX = e.changedTouches ? e.changedTouches[0].clientX : e.clientX;
+        const clientY = e.changedTouches ? e.changedTouches[0].clientY : e.clientY;
+
         // Check if dropped over a container
-        const hitContainer = findContainerUnder(e.clientX, e.clientY);
+        const hitContainer = findContainerUnder(clientX, clientY);
         if (hitContainer && hitContainer.id) {
             // Snap into container
             removePatchFromCanvas(patchId);
@@ -291,7 +320,15 @@ function renderFloatingPatch(patchId, entry) {
             // Save free-floating position
             canvasStore.putCanvasPatch(patchId, { left: entry.left, top: entry.top });
         }
-    });
+    }
+
+    star.addEventListener('mousedown', handleStart);
+    onDoc('mousemove', handleMove);
+    onDoc('mouseup', handleEnd);
+
+    star.addEventListener('touchstart', handleStart, { passive: false });
+    onDoc('touchmove', handleMove, { passive: false });
+    onDoc('touchend', handleEnd);
 
     // Click to expand/collapse (not on star)
     el.addEventListener('click', (e) => {
@@ -599,30 +636,45 @@ function renderContainer(ctr) {
 
     let resizing = false;
     let resizeStartX, resizeStartY, resizeStartW, resizeStartH;
-    resizeHandle.addEventListener('mousedown', (e) => {
+    
+    function handleResizeStart(e) {
         e.preventDefault();
         e.stopPropagation();
         resizing = true;
-        resizeStartX = e.clientX;
-        resizeStartY = e.clientY;
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        resizeStartX = clientX;
+        resizeStartY = clientY;
         resizeStartW = el.offsetWidth;
         resizeStartH = el.offsetHeight;
         el.style.zIndex = 60;
-    });
-    document.addEventListener('mousemove', (e) => {
+    }
+
+    function handleResizeMove(e) {
         if (!resizing) return;
-        const newW = Math.max(200, resizeStartW + (e.clientX - resizeStartX));
-        const newH = Math.max(80, resizeStartH + (e.clientY - resizeStartY));
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        const newW = Math.max(200, resizeStartW + (clientX - resizeStartX));
+        const newH = Math.max(80, resizeStartH + (clientY - resizeStartY));
         el.style.width = newW + 'px';
         el.style.height = newH + 'px';
         ctr.width = newW;
-    });
-    document.addEventListener('mouseup', () => {
+    }
+
+    function handleResizeEnd() {
         if (!resizing) return;
         resizing = false;
         el.style.zIndex = '';
         canvasStore.putContainer(ctr);
-    });
+    }
+
+    resizeHandle.addEventListener('mousedown', handleResizeStart);
+    onDoc('mousemove', handleResizeMove);
+    onDoc('mouseup', handleResizeEnd);
+
+    resizeHandle.addEventListener('touchstart', handleResizeStart, { passive: false });
+    onDoc('touchmove', handleResizeMove, { passive: false });
+    onDoc('touchend', handleResizeEnd);
 
     // Minimize toggle for probe containers
     const minBtn = headerRight.querySelector('.sky-container-minimize');
@@ -640,28 +692,44 @@ function renderContainer(ctr) {
     // Drag container by header
     let dragging = false;
     let startX, startY, origLeft, origTop;
-    header.addEventListener('mousedown', (e) => {
+
+    function handleDragStart(e) {
+        if (e.target.contentEditable === 'true') return;
         e.preventDefault();
         dragging = true;
-        startX = e.clientX;
-        startY = e.clientY;
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        startX = clientX;
+        startY = clientY;
         origLeft = ctr.left;
         origTop = ctr.top;
         el.style.zIndex = 50;
-    });
-    document.addEventListener('mousemove', (e) => {
+    }
+
+    function handleDragMove(e) {
         if (!dragging) return;
-        ctr.left = Math.max(0, origLeft + (e.clientX - startX));
-        ctr.top = Math.max(0, origTop + (e.clientY - startY));
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        ctr.left = Math.max(0, origLeft + (clientX - startX));
+        ctr.top = Math.max(0, origTop + (clientY - startY));
         el.style.left = ctr.left + 'px';
         el.style.top = ctr.top + 'px';
-    });
-    document.addEventListener('mouseup', () => {
+    }
+
+    function handleDragEnd() {
         if (!dragging) return;
         dragging = false;
         el.style.zIndex = '';
         canvasStore.putContainer(ctr);
-    });
+    }
+
+    header.addEventListener('mousedown', handleDragStart);
+    onDoc('mousemove', handleDragMove);
+    onDoc('mouseup', handleDragEnd);
+
+    header.addEventListener('touchstart', handleDragStart, { passive: false });
+    onDoc('touchmove', handleDragMove, { passive: false });
+    onDoc('touchend', handleDragEnd);
 
     // Drop patches into container (from external lists)
     el.addEventListener('dragover', (e) => {

@@ -66,31 +66,40 @@ export function createToolbar(opts) {
     const tabBar = document.createElement('div');
     tabBar.className = 'dock-tabs';
 
-    const tabKeyboard = document.createElement('button');
-    tabKeyboard.className = 'dock-tab' + (initialTab === 'keyboard' ? ' active' : '');
-    tabKeyboard.textContent = 'Keyboard';
+    const tabCanvas = document.createElement('button');
+    tabCanvas.className = 'dock-tab dock-tab-canvas' + (initialTab === 'canvas' ? ' active' : '');
+    tabCanvas.innerHTML = '<span>🖼️</span><span>Canvas</span>';
 
     const tabPianoroll = document.createElement('button');
     tabPianoroll.className = 'dock-tab' + (initialTab === 'pianoroll' ? ' active' : '');
-    tabPianoroll.textContent = 'Piano Roll';
+    tabPianoroll.innerHTML = '<span>🎹</span><span>Piano Roll</span>';
+
+    const tabKeyboard = document.createElement('button');
+    tabKeyboard.className = 'dock-tab' + (initialTab === 'keyboard' ? ' active' : '');
+    tabKeyboard.innerHTML = '<span>⌨️</span><span>Keyboard</span>';
 
     const tabEdit = document.createElement('button');
     tabEdit.className = 'dock-tab' + (initialTab === 'edit' ? ' active' : '');
-    tabEdit.textContent = 'Edit';
+    tabEdit.innerHTML = '<span>✏️</span><span>Edit</span>';
 
     const tabLog = document.createElement('button');
-    tabLog.className = 'dock-tab' + (initialTab === 'log' ? ' active' : '');
-    tabLog.textContent = 'Log';
+    tabLog.className = 'dock-tab dock-tab-log' + (initialTab === 'log' ? ' active' : '');
+    tabLog.innerHTML = '<span>📋</span><span>Log</span>';
 
-    tabBar.appendChild(tabKeyboard);
+    tabBar.appendChild(tabCanvas);
     tabBar.appendChild(tabPianoroll);
+    tabBar.appendChild(tabKeyboard);
     tabBar.appendChild(tabEdit);
     tabBar.appendChild(tabLog);
     wrapper.appendChild(tabBar);
 
     // Panels
+    const canvasPanel = document.createElement('div');
+    canvasPanel.className = 'dock-panel dock-panel-canvas' + (initialTab === 'canvas' ? ' active' : '');
+    // #night-sky is moved here by app.js on mobile, but it's okay to have it empty initially
+
     const keyboardPanel = document.createElement('div');
-    keyboardPanel.className = 'dock-panel' + (initialTab === 'keyboard' ? ' active' : '');
+    keyboardPanel.className = 'dock-panel dock-panel-keyboard' + (initialTab === 'keyboard' ? ' active' : '');
 
     const pianorollPanel = document.createElement('div');
     pianorollPanel.className = 'dock-panel' + (initialTab === 'pianoroll' ? ' active' : '');
@@ -101,30 +110,108 @@ export function createToolbar(opts) {
     const logPanel = document.createElement('div');
     logPanel.className = 'dock-panel dock-panel-log' + (initialTab === 'log' ? ' active' : '');
 
+    wrapper.appendChild(canvasPanel);
     wrapper.appendChild(keyboardPanel);
     wrapper.appendChild(pianorollPanel);
     wrapper.appendChild(editPanel);
     wrapper.appendChild(logPanel);
 
     function activateTab(tab, panel) {
-        [tabKeyboard, tabPianoroll, tabEdit, tabLog].forEach(t => t.classList.remove('active'));
-        [keyboardPanel, pianorollPanel, editPanel, logPanel].forEach(p => p.classList.remove('active'));
+        [tabCanvas, tabKeyboard, tabPianoroll, tabEdit, tabLog].forEach(t => t.classList.remove('active'));
+        [canvasPanel, keyboardPanel, pianorollPanel, editPanel, logPanel].forEach(p => p.classList.remove('active'));
         tab.classList.add('active');
         panel.classList.add('active');
     }
 
-    tabKeyboard.addEventListener('click', () => activateTab(tabKeyboard, keyboardPanel));
+    tabCanvas.addEventListener('click', () => activateTab(tabCanvas, canvasPanel));
+    tabKeyboard.addEventListener('click', () => {
+        activateTab(tabKeyboard, keyboardPanel);
+        requestAnimationFrame(positionBlackKeys);
+    });
     tabPianoroll.addEventListener('click', () => activateTab(tabPianoroll, pianorollPanel));
     tabEdit.addEventListener('click', () => activateTab(tabEdit, editPanel));
     tabLog.addEventListener('click', () => activateTab(tabLog, logPanel));
 
     // --- Keyboard panel ---
-    const note = matchedMidi || 60;
+    let recording = false;
+    let recordStartTime = 0;
+    let activeRecordSlot = 0;
 
-    const label = document.createElement('div');
-    label.className = 'keyboard-label';
-    label.textContent = 'Click to preview note';
-    keyboardPanel.appendChild(label);
+    const kbControls = document.createElement('div');
+    kbControls.className = 'kb-controls';
+    
+    const btnRecord = document.createElement('button');
+    btnRecord.className = 'kb-btn kb-btn-record';
+    btnRecord.textContent = 'Record ●';
+    
+    const btnPlayStop = document.createElement('button');
+    btnPlayStop.className = 'kb-btn kb-btn-play';
+    btnPlayStop.textContent = 'Play ▶';
+
+    const kbVoices = document.createElement('div');
+    kbVoices.className = 'kb-voices';
+
+    const voiceSelect = document.createElement('select');
+    voiceSelect.className = 'kb-voice-select';
+    voiceSelect.title = 'Active voice for playback and recording';
+    kbVoices.appendChild(voiceSelect);
+
+    function refreshVoiceSelect() {
+        const entries = voiceBank ? voiceBank._getEntries() : [];
+        voiceSelect.innerHTML = '';
+        for (let i = 0; i < 8; i++) {
+            const opt = document.createElement('option');
+            opt.value = i;
+            opt.textContent = entries[i] ? (i + 1) + '. ' + entries[i].name : (i + 1) + '. —';
+            voiceSelect.appendChild(opt);
+        }
+        voiceSelect.value = activeRecordSlot;
+    }
+
+    voiceSelect.addEventListener('change', () => {
+        activeRecordSlot = parseInt(voiceSelect.value);
+        if (voiceBank && voiceBank._setActiveSlot) voiceBank._setActiveSlot(activeRecordSlot);
+    });
+
+    kbControls.appendChild(btnRecord);
+    kbControls.appendChild(btnPlayStop);
+    kbControls.appendChild(kbVoices);
+    keyboardPanel.appendChild(kbControls);
+
+    function stopAll() {
+        recording = false;
+        btnRecord.classList.remove('active');
+        btnRecord.textContent = 'Record ●';
+        btnPlayStop.textContent = 'Play ▶';
+        btnPlayStop.classList.remove('active');
+        if (pianorollRef && pianorollRef.stopPlayback) pianorollRef.stopPlayback();
+    }
+
+    btnRecord.addEventListener('click', () => {
+        if (recording) {
+            stopAll();
+        } else {
+            recording = true;
+            recordStartTime = Date.now();
+            btnRecord.classList.add('active');
+            btnRecord.textContent = 'Stop ■';
+            btnPlayStop.textContent = 'Stop ■';
+            // Also start playback in background if needed? 
+            // For now just record timestamps.
+        }
+    });
+
+    btnPlayStop.addEventListener('click', () => {
+        if (recording || (pianorollRef && pianorollRef.isPlaying && pianorollRef.isPlaying())) {
+            stopAll();
+        } else {
+            if (pianorollRef && pianorollRef.startPlayback) {
+                activateTab(tabPianoroll, pianorollPanel);
+                pianorollRef.startPlayback();
+                btnPlayStop.textContent = 'Stop ■';
+            }
+        }
+    });
 
     const kb = document.createElement('div');
     kb.className = 'keyboard';
@@ -134,30 +221,77 @@ export function createToolbar(opts) {
         const key = document.createElement('div');
         key.className = 'key ' + (n.white ? 'white' : 'black');
         key.title = n.name;
-        if (n.midi === note) key.classList.add('matched');
         if (n.white) key.textContent = n.name;
 
         const playFn = playNoteFn || (() => {});
-        let pressed = false;
-        key.addEventListener('mousedown', (e) => {
+        
+        function handleStart(e) {
+            if (e.type === 'mousedown' && e.button !== 0) return;
             e.preventDefault();
-            pressed = true;
             key.classList.add('pressed');
-            if (onNoteClick) {
-                onNoteClick(n.midi);
-                kb.querySelectorAll('.key.matched').forEach(k => k.classList.remove('matched'));
-                key.classList.add('matched');
+            
+            const entries = voiceBank ? voiceBank._getEntries() : [];
+            const activeEntry = entries[activeRecordSlot];
+            playFn(n.midi, 600, activeEntry ? activeEntry.voiceData : null, activeRecordSlot);
+
+            if (recording && pianorollRef && pianorollRef.addNote) {
+                const bpm = pianorollRef.getBpm ? pianorollRef.getBpm() : 120;
+                const msPerSixteenth = (60000 / bpm) / 4;
+                const elapsed = Date.now() - recordStartTime;
+                const col = Math.round(elapsed / msPerSixteenth);
+                pianorollRef.addNote({ midi: n.midi, start: col, dur: 1, slot: activeRecordSlot });
             }
-            playFn(n.midi);
-        });
-        key.addEventListener('mouseup', () => { pressed = false; key.classList.remove('pressed'); });
-        key.addEventListener('mouseleave', () => { if (pressed) key.classList.remove('pressed'); });
+
+            if (onNoteClick) onNoteClick(n.midi);
+        }
+
+        function handleEnd(e) {
+            e.preventDefault();
+            key.classList.remove('pressed');
+        }
+
+        key.addEventListener('mousedown', handleStart);
+        key.addEventListener('mouseup', handleEnd);
+        key.addEventListener('mouseleave', handleEnd);
+        
+        key.addEventListener('touchstart', handleStart, { passive: false });
+        key.addEventListener('touchend', handleEnd, { passive: false });
+        key.addEventListener('touchcancel', handleEnd, { passive: false });
 
         keyElements[n.midi] = key;
         kb.appendChild(key);
     });
 
     keyboardPanel.appendChild(kb);
+
+    // Position black keys absolutely over white keys (mobile layout)
+    function positionBlackKeys() {
+        const isMobile = window.matchMedia('(max-width: 600px)').matches;
+        if (!isMobile) {
+            // Reset black keys to normal flow on desktop
+            kb.querySelectorAll('.key.black').forEach(k => { k.style.left = ''; k.style.position = ''; });
+            return;
+        }
+        const whiteKeys = kb.querySelectorAll('.key.white');
+        const whiteKeyWidth = whiteKeys.length > 0 ? whiteKeys[0].offsetWidth : 0;
+        let whiteIdx = 0;
+        PIANO_NOTES.forEach(n => {
+            const key = keyElements[n.midi];
+            if (n.white) {
+                whiteIdx++;
+            } else {
+                // Black key sits centered over the previous white key
+                const prevWhite = whiteKeys[whiteIdx - 1];
+                if (prevWhite) {
+                    const left = prevWhite.offsetLeft + whiteKeyWidth * 0.55;
+                    key.style.position = 'absolute';
+                    key.style.left = left + 'px';
+                }
+            }
+        });
+    }
+    positionBlackKeys();
+    window.addEventListener('resize', positionBlackKeys);
 
     function updateHighlights() {
         const midiSet = new Set((pianorollNotes || []).map(n => n.midi));
@@ -176,11 +310,17 @@ export function createToolbar(opts) {
 
     const pianorollPlayFn = playNoteFn || (() => {});
     let pianorollRef = null;
+    function updateKeyboardVoice(slot) {
+        activeRecordSlot = slot;
+        voiceSelect.value = slot;
+    }
+
     const voiceBank = createVoiceBank({
         onSelect: (entry, slot) => {
             if (pianorollRef) {
                 pianorollRef.setActiveSlot(slot);
             }
+            updateKeyboardVoice(slot);
         },
         onVolumeChange: opts.onVolumeChange || null,
         onPreview: (entry, slot) => {
@@ -189,6 +329,7 @@ export function createToolbar(opts) {
         onSnapshot: (entries) => {
             if (opts.onSnapshot) opts.onSnapshot(entries);
             if (pianorollRef && pianorollRef.renderLegend) pianorollRef.renderLegend();
+            refreshVoiceSelect();
         },
     });
     // Fire initial snapshot after onSnapshot callback is wired
@@ -231,6 +372,7 @@ export function createToolbar(opts) {
     wrapper._updateHighlights = updateHighlights;
     wrapper._pianoroll = pianorollRef;
     wrapper._voiceBank = voiceBank;
+    wrapper._showCanvas = () => activateTab(tabCanvas, canvasPanel);
     wrapper._showKeyboard = () => activateTab(tabKeyboard, keyboardPanel);
     wrapper._showPianoroll = () => activateTab(tabPianoroll, pianorollPanel);
     wrapper._showEdit = () => activateTab(tabEdit, editPanel);
