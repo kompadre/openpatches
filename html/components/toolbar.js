@@ -295,7 +295,9 @@ export function createToolbar(opts) {
                 const bpm = pianorollRef.getBpm ? pianorollRef.getBpm() : 120;
                 const msPerSixteenth = (60000 / bpm) / 4;
                 const elapsed = Date.now() - recordStartTime;
-                const col = Math.round(elapsed / msPerSixteenth);
+                const rawCol = Math.round(elapsed / msPerSixteenth);
+                const tc = pianorollRef.totalCols ? pianorollRef.totalCols() : 16;
+                const col = ((rawCol % tc) + tc) % tc;
                 pianorollRef.addNote({ midi: n.midi, start: col, dur: 1, slot: activeRecordSlot });
             }
 

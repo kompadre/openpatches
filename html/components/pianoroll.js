@@ -1056,6 +1056,7 @@ export function createPianoroll(opts) {
         },
         getNotes() { return notes; },
         getBpm() { return parseInt(bpmInput.value) || DEFAULT_BPM; },
+        totalCols() { return totalCols(); },
         renderLegend,
         saveState,
     };
