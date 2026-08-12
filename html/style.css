@@ -3217,7 +3217,6 @@ footer {
     
     /* Keyboard keys responsiveness */
     .dock-panel-pianoroll {
-        display: flex;
         flex-direction: column;
         overflow: hidden;
     }
