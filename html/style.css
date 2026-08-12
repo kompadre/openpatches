@@ -532,9 +532,9 @@ textarea:focus {
     display: grid;
 }
 
-#night-sky > * {
+.night-sky-canvas {
     position: relative;
-    z-index: 1;
+    z-index: 0;
 }
 
 h1, .file-input-wrapper, #progress-wrapper {
