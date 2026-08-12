@@ -104,7 +104,7 @@ export function initCanvas(opts) {
                 const rect = skyEl.getBoundingClientRect();
                 const left = window._touchDropX - rect.left + (skyEl.scrollLeft || 0);
                 const top = window._touchDropY - rect.top + (skyEl.scrollTop || 0);
-                addPatchToCanvas(patch.id, Math.max(0, left), Math.max(0, top), null);
+                addPatchToCanvas(patch.id, left, top, null);
             }
         }
         renderAll();
@@ -332,8 +332,8 @@ function renderFloatingPatch(patchId, entry) {
         const dx = clientX - startX;
         const dy = clientY - startY;
         if (Math.abs(dx) > 3 || Math.abs(dy) > 3) didMove = true;
-        entry.left = Math.max(0, origLeft + dx);
-        entry.top = Math.max(0, origTop + dy);
+        entry.left = origLeft + dx;
+        entry.top = origTop + dy;
         el.style.left = entry.left + 'px';
         el.style.top = entry.top + 'px';
     }
@@ -758,8 +758,8 @@ function renderContainer(ctr) {
         didMove = true;
         e.preventDefault();
         const maxLeft = skyEl ? skyEl.scrollWidth - el.offsetWidth : window.innerWidth - el.offsetWidth;
-        ctr.left = Math.max(0, Math.min(maxLeft, origLeft + dx));
-        ctr.top = Math.max(0, origTop + dy);
+        ctr.left = Math.min(maxLeft, origLeft + dx);
+        ctr.top = origTop + dy;
         el.style.left = ctr.left + 'px';
         el.style.top = ctr.top + 'px';
     }
