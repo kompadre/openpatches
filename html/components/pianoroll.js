@@ -925,6 +925,25 @@ export function createPianoroll(opts) {
             renderLegend();
             if (onNotesChange) onNotesChange();
             saveState();
+            // Scroll to the newly added note
+            this.scrollTo(start, midi);
+        },
+        scrollTo(col, midi) {
+            const row = NOTES.findIndex(n => n.midi === midi);
+            const x = LABEL_W + col * COL_W;
+            const y = row >= 0 ? row * ROW_H : 0;
+            scroll.scrollTo({
+                left: Math.max(0, x - scroll.clientWidth / 2),
+                top: Math.max(0, y - scroll.clientHeight / 2),
+                behavior: 'smooth',
+            });
+        },
+        scrollToCol(col) {
+            const x = LABEL_W + col * COL_W;
+            scroll.scrollTo({
+                left: Math.max(0, x - scroll.clientWidth / 2),
+                behavior: 'smooth',
+            });
         },
         getNotes() { return notes; },
         getBpm() { return parseInt(bpmInput.value) || DEFAULT_BPM; },

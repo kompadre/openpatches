@@ -134,6 +134,7 @@ export function createToolbar(opts) {
     let recording = false;
     let recordStartTime = 0;
     let activeRecordSlot = 0;
+    let recordInterval = null;
 
     const voiceSelect = document.createElement('select');
     voiceSelect.className = 'kb-voice-select';
@@ -230,6 +231,7 @@ export function createToolbar(opts) {
         btnRecord.textContent = 'Record ●';
         btnPlayStop.textContent = 'Play ▶';
         btnPlayStop.classList.remove('active');
+        if (recordInterval) { clearInterval(recordInterval); recordInterval = null; }
         if (pianorollRef && pianorollRef.stopPlayback) pianorollRef.stopPlayback();
     }
 
@@ -242,6 +244,14 @@ export function createToolbar(opts) {
             btnRecord.classList.add('active');
             btnRecord.textContent = 'Stop ■';
             btnPlayStop.textContent = 'Stop ■';
+            // Scroll pianoroll to follow playhead during recording
+            recordInterval = setInterval(() => {
+                if (!recording || !pianorollRef) return;
+                const bpm = pianorollRef.getBpm ? pianorollRef.getBpm() : 120;
+                const msPerSixteenth = (60000 / bpm) / 4;
+                const col = Math.floor((Date.now() - recordStartTime) / msPerSixteenth);
+                if (pianorollRef.scrollToCol) pianorollRef.scrollToCol(col);
+            }, 150);
         }
     });
 
