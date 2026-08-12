@@ -735,6 +735,7 @@ function renderContainer(ctr) {
 
     function handleDragStart(e) {
         if (e.target.contentEditable === 'true') return;
+        if (e.type === 'mousedown') e.preventDefault();
         dragPending = true;
         dragging = false;
         const clientX = e.touches ? e.touches[0].clientX : e.clientX;
@@ -756,7 +757,6 @@ function renderContainer(ctr) {
                 dragging = true;
                 dragPending = false;
                 el.style.zIndex = 50;
-                e.preventDefault();
             } else {
                 return;
             }
