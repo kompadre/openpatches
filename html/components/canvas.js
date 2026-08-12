@@ -31,27 +31,27 @@ export function initCanvas(opts) {
     ctrBtn.textContent = '+ Container';
     ctrBtn.title = 'Create a container to group patches';
     ctrBtn.addEventListener('click', () => addContainer('Group'));
-    canvasEl.appendChild(ctrBtn);
+    skyEl.appendChild(ctrBtn);
 
     // Drop target for patches dragged from external lists
-    canvasEl.addEventListener('dragover', (e) => {
+    skyEl.addEventListener('dragover', (e) => {
         if (!getDraggedPatch() && !window._draggedPatch) return;
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
-        canvasEl.classList.add('drag-over-sky');
+        skyEl.classList.add('drag-over-sky');
     });
-    canvasEl.addEventListener('dragleave', (e) => {
-        if (!canvasEl.contains(e.relatedTarget)) {
-            canvasEl.classList.remove('drag-over-sky');
+    skyEl.addEventListener('dragleave', (e) => {
+        if (!skyEl.contains(e.relatedTarget)) {
+            skyEl.classList.remove('drag-over-sky');
         }
     });
-    canvasEl.addEventListener('drop', (e) => {
+    skyEl.addEventListener('drop', (e) => {
         e.preventDefault();
-        canvasEl.classList.remove('drag-over-sky');
+        skyEl.classList.remove('drag-over-sky');
         const patch = getDraggedPatch() || window._draggedPatch;
         if (!patch) return;
 
-        const rect = canvasEl.getBoundingClientRect();
+        const rect = skyEl.getBoundingClientRect();
         const left = e.clientX - rect.left + (skyEl.scrollLeft || 0);
         const top = e.clientY - rect.top + (skyEl.scrollTop || 0);
 
@@ -101,7 +101,7 @@ export function initCanvas(opts) {
                         canvasStore.putContainer(srcCtr);
                     }
                 }
-                const rect = canvasEl.getBoundingClientRect();
+                const rect = skyEl.getBoundingClientRect();
                 const left = window._touchDropX - rect.left + (skyEl.scrollLeft || 0);
                 const top = window._touchDropY - rect.top + (skyEl.scrollTop || 0);
                 addPatchToCanvas(patch.id, Math.max(0, left), Math.max(0, top), null);
@@ -146,7 +146,7 @@ export function removePatchFromCanvas(patchId) {
         }
     }
     canvasStore.removeCanvasPatch(patchId);
-    const el = canvasEl.querySelector(`[data-patch-id="${patchId}"]`);
+    const el = skyEl.querySelector(`[data-patch-id="${patchId}"]`);
     if (el) el.remove();
 }
 
@@ -223,9 +223,9 @@ function clearDocListeners() {
 }
 
 function renderAll() {
-    if (!canvasEl) return;
+    if (!skyEl) return;
     clearDocListeners();
-    canvasEl.querySelectorAll('.patch-float, .sky-container').forEach(el => el.remove());
+    skyEl.querySelectorAll('.patch-float, .sky-container').forEach(el => el.remove());
 
     const containers = canvasStore.getContainers();
     const canvasPatches = canvasStore.getCanvasPatches();
@@ -381,7 +381,7 @@ function renderFloatingPatch(patchId, entry) {
         canvasStore.putCanvasPatch(patchId, { minified: entry.minified });
     });
 
-    canvasEl.appendChild(el);
+    skyEl.appendChild(el);
 }
 
 function appendFullFields(el, patch) {
@@ -692,7 +692,7 @@ function renderContainer(ctr) {
         if (!resizing) return;
         const clientX = e.touches ? e.touches[0].clientX : e.clientX;
         const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-        const maxW = canvasEl ? canvasEl.scrollWidth : window.innerWidth;
+        const maxW = skyEl ? skyEl.scrollWidth : window.innerWidth;
         const newW = Math.max(200, Math.min(maxW, resizeStartW + (clientX - resizeStartX)));
         const newH = Math.max(80, resizeStartH + (clientY - resizeStartY));
         el.style.width = newW + 'px';
@@ -757,7 +757,7 @@ function renderContainer(ctr) {
         if (!didMove && Math.abs(dx) < 3 && Math.abs(dy) < 3) return;
         didMove = true;
         e.preventDefault();
-        const maxLeft = canvasEl ? canvasEl.scrollWidth - el.offsetWidth : window.innerWidth - el.offsetWidth;
+        const maxLeft = skyEl ? skyEl.scrollWidth - el.offsetWidth : window.innerWidth - el.offsetWidth;
         ctr.left = Math.max(0, Math.min(maxLeft, origLeft + dx));
         ctr.top = Math.max(0, origTop + dy);
         el.style.left = ctr.left + 'px';
@@ -808,7 +808,7 @@ function renderContainer(ctr) {
         window._draggedPatch = null;
     });
 
-    canvasEl.appendChild(el);
+    skyEl.appendChild(el);
 
     // Render spectrogram for WAV-import containers (if jobId exists)
     // Insert into headerLeft so it appears between name and buttons
@@ -838,7 +838,7 @@ function renderContainer(ctr) {
 function findContainerUnder(clientX, clientY) {
     const containers = canvasStore.getContainers();
     for (const ctr of Object.values(containers)) {
-        const el = canvasEl.querySelector(`[data-container-id="${ctr.id}"]`);
+        const el = skyEl.querySelector(`[data-container-id="${ctr.id}"]`);
         if (!el) continue;
         const rect = el.getBoundingClientRect();
         if (clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom) {

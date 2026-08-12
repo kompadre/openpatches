@@ -590,7 +590,7 @@ h1 {
     color: #ccc;
 }
 
-.night-sky-canvas.drag-over-sky {
+#night-sky.drag-over-sky {
     border-color: #e94560;
     background: radial-gradient(ellipse at center, #12121f 0%, #0a0a18 100%);
 }
