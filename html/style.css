@@ -520,13 +520,16 @@ textarea:focus {
    ============================================================ */
 
 #night-sky {
-    display: none;
     overflow: auto;
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr;
+    position: relative;
     min-height: 0;
 }
 
 #night-sky.visible {
-    display: flex;
+    display: grid;
 }
 
 #night-sky > * {
@@ -546,12 +549,19 @@ h1 {
 }
 
 .night-sky-canvas {
-    position: relative;
-    min-height: 100%;
+    grid-area: 1 / 1;
+    width: 100%;
+    height: 100%;
     min-width: 100%;
+    min-height: 100%;
+    z-index: 0;
+    pointer-events: none;
     border: 1px dashed #2a2a3e;
     border-radius: 8px;
     background: url('images/bg.png') center/cover no-repeat, radial-gradient(ellipse at center, #0d0d1a 0%, #080812 100%);
+}
+.night-sky-canvas > * {
+    pointer-events: auto;
 }
 
 .sky-toolbar {
