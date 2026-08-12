@@ -1953,7 +1953,7 @@ h1 {
     background-color: #1a1a2e;
     border-top: 1px solid #333;
     padding: 0.4rem 0;
-    overflow: hidden;
+    overflow: auto;
     min-height: 0;
 }
 
@@ -2005,7 +2005,6 @@ h1 {
     flex-direction: column;
     align-items: center;
     max-width: 95vw;
-    overflow: auto;
 }
 
 .dock-panel.active {
@@ -3027,8 +3026,6 @@ footer {
         width: 100%;
         flex: 1;
         min-height: 0;
-        overflow-y: auto;
-        overflow-x: hidden;
         display: none;
         flex-direction: column;
     }
@@ -3262,7 +3259,6 @@ footer {
     /* Keyboard keys responsiveness */
     .dock-panel-pianoroll {
         flex-direction: column;
-        overflow: hidden;
     }
     .dock-panel-pianoroll .pianoroll-row {
         flex: 1;
