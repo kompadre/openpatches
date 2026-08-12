@@ -193,8 +193,9 @@ function showStep(index) {
         }
     }
 
-    // Cut a hole in the overlay around the highlighted element
-    if (highlightTarget) {
+    // Cut a hole in the overlay around the highlighted element (skip on mobile)
+    var isMobile = window.innerWidth <= 600;
+    if (highlightTarget && !isMobile) {
         var rect = highlightTarget.getBoundingClientRect();
         var pad = 6;
         var lx = ((rect.left - pad) / window.innerWidth * 100).toFixed(2);
@@ -216,17 +217,18 @@ function showStep(index) {
         highlightTarget.classList.add('tutorial-highlight');
     } else {
         modal.style.clipPath = '';
+        if (highlightTarget && !isMobile) highlightTarget.classList.add('tutorial-highlight');
     }
 
-    // Position modal relative to highlight target
+    // Position modal relative to highlight target (skip container-based positioning on mobile)
     var dialog = modal.querySelector('.tutorial-dialog');
     if (dialog) {
         dialog.classList.remove('tutorial-centered');
         dialog.style.margin = '';
 
-        if (usedFallback) {
+        if (isMobile || usedFallback || !highlightTarget) {
             dialog.classList.add('tutorial-centered');
-        } else if (highlightTarget && highlightTarget.classList.contains('sky-container')) {
+        } else if (highlightTarget.classList.contains('sky-container')) {
             var rect = highlightTarget.getBoundingClientRect();
             var screenCenter = window.innerWidth / 2;
             var containerCenter = rect.left + rect.width / 2;
