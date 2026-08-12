@@ -226,6 +226,15 @@ export function createToolbar(opts) {
     pianorollPanel.appendChild(kbControls);
 
     function stopAll() {
+        // Finalize any active presses
+        for (const [midi, press] of activePresses) {
+            const bpm = pianorollRef && pianorollRef.getBpm ? pianorollRef.getBpm() : 120;
+            const msPerSixteenth = (60000 / bpm) / 4;
+            const elapsed = Date.now() - recordStartTime;
+            const endCol = Math.round(elapsed / msPerSixteenth);
+            addRecordedNote(midi, press.startCol, endCol, activeRecordSlot);
+        }
+        activePresses.clear();
         recording = false;
         btnRecord.classList.remove('active');
         btnRecord.textContent = 'Record ●';
@@ -246,14 +255,31 @@ export function createToolbar(opts) {
             btnRecord.textContent = 'Stop ■';
             btnPlayStop.textContent = 'Stop ■';
             if (pianorollRef && pianorollRef.startRecording) pianorollRef.startRecording();
-            // Tick recording: play notes, move playhead, scroll
+            // Tick recording: play notes, move playhead, scroll, handle seam splits
             recordInterval = setInterval(() => {
                 if (!recording || !pianorollRef) return;
                 const bpm = pianorollRef.getBpm ? pianorollRef.getBpm() : 120;
                 const msPerSixteenth = (60000 / bpm) / 4;
-                const col = Math.floor((Date.now() - recordStartTime) / msPerSixteenth);
-                if (pianorollRef.tickRecording) pianorollRef.tickRecording(col);
-                if (pianorollRef.scrollToCol) pianorollRef.scrollToCol(col);
+                const tc = pianorollRef.totalCols ? pianorollRef.totalCols() : 16;
+                const elapsed = Date.now() - recordStartTime;
+                const rawCol = Math.floor(elapsed / msPerSixteenth);
+                const wrappedCol = ((rawCol % tc) + tc) % tc;
+
+                // Split notes held across the loop seam
+                if (wrappedCol === 0 && rawCol > 0) {
+                    for (const [midi, press] of activePresses) {
+                        const pressWrappedCol = ((press.startCol % tc) + tc) % tc;
+                        if (pressWrappedCol > 0) {
+                            // Note started before the seam — add ending at seam
+                            addRecordedNote(midi, press.startCol, rawCol, activeRecordSlot);
+                            // Reset press to start of new loop
+                            press.startCol = rawCol;
+                        }
+                    }
+                }
+
+                if (pianorollRef.tickRecording) pianorollRef.tickRecording(rawCol);
+                if (pianorollRef.scrollToCol) pianorollRef.scrollToCol(rawCol);
             }, 100);
         }
     });
@@ -274,6 +300,25 @@ export function createToolbar(opts) {
     kb.className = 'keyboard';
 
     const keyElements = {};
+    const activePresses = new Map(); // midi → { startTime, startCol }
+
+    function addRecordedNote(midi, startCol, endCol, slot) {
+        if (!pianorollRef || !pianorollRef.addNote) return;
+        const tc = pianorollRef.totalCols ? pianorollRef.totalCols() : 16;
+        const s = ((startCol % tc) + tc) % tc;
+        const e = ((endCol % tc) + tc) % tc;
+        let dur;
+        if (e > s) {
+            dur = e - s;
+        } else if (e === s) {
+            dur = tc; // full loop
+        } else {
+            dur = tc - s; // wraps to end
+        }
+        dur = Math.max(1, dur);
+        pianorollRef.addNote({ midi, start: s, dur, slot });
+    }
+
     PIANO_NOTES.forEach(n => {
         const key = document.createElement('div');
         key.className = 'key ' + (n.white ? 'white' : 'black');
@@ -291,14 +336,12 @@ export function createToolbar(opts) {
             const activeEntry = entries[activeRecordSlot];
             playFn(n.midi, 600, activeEntry ? activeEntry.voiceData : null, activeRecordSlot);
 
-            if (recording && pianorollRef && pianorollRef.addNote) {
+            if (recording) {
                 const bpm = pianorollRef.getBpm ? pianorollRef.getBpm() : 120;
                 const msPerSixteenth = (60000 / bpm) / 4;
                 const elapsed = Date.now() - recordStartTime;
                 const rawCol = Math.round(elapsed / msPerSixteenth);
-                const tc = pianorollRef.totalCols ? pianorollRef.totalCols() : 16;
-                const col = ((rawCol % tc) + tc) % tc;
-                pianorollRef.addNote({ midi: n.midi, start: col, dur: 1, slot: activeRecordSlot });
+                activePresses.set(n.midi, { startTime: Date.now(), startCol: rawCol });
             }
 
             if (onNoteClick) onNoteClick(n.midi);
@@ -307,6 +350,16 @@ export function createToolbar(opts) {
         function handleEnd(e) {
             e.preventDefault();
             key.classList.remove('pressed');
+
+            if (recording && activePresses.has(n.midi)) {
+                const press = activePresses.get(n.midi);
+                activePresses.delete(n.midi);
+                const bpm = pianorollRef.getBpm ? pianorollRef.getBpm() : 120;
+                const msPerSixteenth = (60000 / bpm) / 4;
+                const elapsed = Date.now() - recordStartTime;
+                const endCol = Math.round(elapsed / msPerSixteenth);
+                addRecordedNote(n.midi, press.startCol, endCol, activeRecordSlot);
+            }
         }
 
         key.addEventListener('mousedown', handleStart);
