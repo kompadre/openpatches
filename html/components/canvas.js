@@ -730,53 +730,45 @@ function renderContainer(ctr) {
 
     // Drag container by header
     let dragging = false;
-    let dragPending = false;
     let startX, startY, origLeft, origTop;
+    let didMove = false;
 
     function handleDragStart(e) {
         if (e.target.contentEditable === 'true') return;
-        if (e.type === 'mousedown') e.preventDefault();
-        dragPending = true;
-        dragging = false;
+        if (e.target.closest('button')) return;
+        e.preventDefault();
+        dragging = true;
+        didMove = false;
         const clientX = e.touches ? e.touches[0].clientX : e.clientX;
         const clientY = e.touches ? e.touches[0].clientY : e.clientY;
         startX = clientX;
         startY = clientY;
         origLeft = ctr.left;
         origTop = ctr.top;
+        el.style.zIndex = 50;
     }
 
     function handleDragMove(e) {
-        if (!dragPending && !dragging) return;
+        if (!dragging) return;
         const clientX = e.touches ? e.touches[0].clientX : e.clientX;
         const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-        if (dragPending && !dragging) {
-            const dx = Math.abs(clientX - startX);
-            const dy = Math.abs(clientY - startY);
-            if (dx > 5 || dy > 5) {
-                dragging = true;
-                dragPending = false;
-                el.style.zIndex = 50;
-            } else {
-                return;
-            }
-        }
-        if (!dragging) return;
+        const dx = clientX - startX;
+        const dy = clientY - startY;
+        if (!didMove && Math.abs(dx) < 3 && Math.abs(dy) < 3) return;
+        didMove = true;
         e.preventDefault();
         const maxLeft = canvasEl ? canvasEl.scrollWidth - el.offsetWidth : window.innerWidth - el.offsetWidth;
-        ctr.left = Math.max(0, Math.min(maxLeft, origLeft + (clientX - startX)));
-        ctr.top = Math.max(0, origTop + (clientY - startY));
+        ctr.left = Math.max(0, Math.min(maxLeft, origLeft + dx));
+        ctr.top = Math.max(0, origTop + dy);
         el.style.left = ctr.left + 'px';
         el.style.top = ctr.top + 'px';
     }
 
     function handleDragEnd() {
-        if (dragging) {
-            el.style.zIndex = '';
-            canvasStore.putContainer(ctr);
-        }
+        if (!dragging) return;
         dragging = false;
-        dragPending = false;
+        el.style.zIndex = '';
+        if (didMove) canvasStore.putContainer(ctr);
     }
 
     header.addEventListener('mousedown', handleDragStart);
