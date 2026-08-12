@@ -59,8 +59,9 @@ export function createPianoroll(opts) {
     let looping = false;
 
     function totalCols() { return measures * COLS_PER_MEASURE; }
-    function baseWidth() { return LABEL_W + totalCols() * COL_W; }
-    function canvasWidth() { return looping ? baseWidth() * 2 : baseWidth(); }
+    function gridWidth() { return totalCols() * COL_W; }
+    function baseWidth() { return LABEL_W + gridWidth(); }
+    function canvasWidth() { return looping ? LABEL_W + gridWidth() * 2 : baseWidth(); }
 
     // --- Helpers to look up voice bank data by slot ---
     function getSlotData(slot) {
@@ -409,8 +410,8 @@ export function createPianoroll(opts) {
         drawNotes(ctx, 0);
 
         if (looping) {
-            drawGrid(ctx, baseWidth());
-            drawNotes(ctx, baseWidth());
+            drawGrid(ctx, gridWidth());
+            drawNotes(ctx, gridWidth());
         }
     }
 
@@ -878,7 +879,7 @@ export function createPianoroll(opts) {
 
         const bpm = Math.max(32, Math.min(255, parseInt(bpmInput.value) || 120));
         const msPerSixteenth = 60000 / bpm / 4;
-        const bw = baseWidth();
+        const gw = gridWidth();
 
         function tick() {
             if (!playing) return;
@@ -908,9 +909,9 @@ export function createPianoroll(opts) {
             const scrollX = LABEL_W + playCol * COL_W;
             scroll.scrollLeft = scrollX;
 
-            // Wrap: if scroll has passed one full base width, jump back
-            if (scroll.scrollLeft >= bw) {
-                scroll.scrollLeft -= bw;
+            // Wrap: if scroll has passed one full grid width, jump back
+            if (scroll.scrollLeft >= LABEL_W + gw) {
+                scroll.scrollLeft -= gw;
             }
 
             const current = playCol;
@@ -920,7 +921,7 @@ export function createPianoroll(opts) {
         }
 
         draw();
-        scroll.scrollLeft = 0;
+        scroll.scrollLeft = LABEL_W;
         playTimer = setTimeout(tick, msPerSixteenth);
     }
 
@@ -933,8 +934,8 @@ export function createPianoroll(opts) {
         playBtn.disabled = false;
         stopBtn.disabled = true;
 
-        // Normalize scroll position
-        scroll.scrollLeft = scroll.scrollLeft % baseWidth();
+        // Normalize scroll position within single copy
+        scroll.scrollLeft = scroll.scrollLeft % gridWidth();
         draw();
     }
 
@@ -1015,6 +1016,10 @@ export function createPianoroll(opts) {
             const x = LABEL_W + col * COL_W;
             if (looping) {
                 scroll.scrollLeft = x;
+                // Wrap if past the first copy
+                if (scroll.scrollLeft >= LABEL_W + gridWidth()) {
+                    scroll.scrollLeft -= gridWidth();
+                }
             } else {
                 scroll.scrollTo({
                     left: Math.max(0, x - scroll.clientWidth / 2),
@@ -1028,7 +1033,7 @@ export function createPianoroll(opts) {
         },
         stopRecording() {
             looping = false;
-            scroll.scrollLeft = scroll.scrollLeft % baseWidth();
+            scroll.scrollLeft = scroll.scrollLeft % gridWidth();
             draw();
         },
         getNotes() { return notes; },
