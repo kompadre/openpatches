@@ -232,6 +232,7 @@ export function createToolbar(opts) {
         btnPlayStop.textContent = 'Play ▶';
         btnPlayStop.classList.remove('active');
         if (recordInterval) { clearInterval(recordInterval); recordInterval = null; }
+        if (pianorollRef && pianorollRef.stopRecording) pianorollRef.stopRecording();
         if (pianorollRef && pianorollRef.stopPlayback) pianorollRef.stopPlayback();
     }
 
@@ -244,6 +245,7 @@ export function createToolbar(opts) {
             btnRecord.classList.add('active');
             btnRecord.textContent = 'Stop ■';
             btnPlayStop.textContent = 'Stop ■';
+            if (pianorollRef && pianorollRef.startRecording) pianorollRef.startRecording();
             // Scroll pianoroll to follow playhead during recording
             recordInterval = setInterval(() => {
                 if (!recording || !pianorollRef) return;

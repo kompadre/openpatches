@@ -56,9 +56,11 @@ export function createPianoroll(opts) {
     const notes = [];
     let measures = 1;
     const CANVAS_H = NOTES.length * ROW_H;
+    let looping = false;
 
     function totalCols() { return measures * COLS_PER_MEASURE; }
-    function canvasWidth() { return LABEL_W + totalCols() * COL_W; }
+    function baseWidth() { return LABEL_W + totalCols() * COL_W; }
+    function canvasWidth() { return looping ? baseWidth() * 2 : baseWidth(); }
 
     // --- Helpers to look up voice bank data by slot ---
     function getSlotData(slot) {
@@ -250,40 +252,9 @@ export function createPianoroll(opts) {
         canvas.width = canvasWidth();
     }
 
-    function draw() {
-        resizeCanvas();
-        ctx.clearRect(0, 0, canvasWidth(), CANVAS_H);
+    // --- Drawing helpers (parameterized by context and offset) ---
 
-        // Row backgrounds
-        for (let r = 0; r < NOTES.length; r++) {
-            const y = r * ROW_H;
-            ctx.fillStyle = NOTES[r].white ? '#1a1a2e' : '#12121f';
-            ctx.fillRect(LABEL_W, y, totalCols() * COL_W, ROW_H);
-        }
-
-        // Column lines (beat boundaries thicker)
-        for (let c = 0; c <= totalCols(); c++) {
-            const x = LABEL_W + c * COL_W;
-            ctx.strokeStyle = c % 4 === 0 ? '#444' : '#2a2a3a';
-            ctx.lineWidth = c % 4 === 0 ? 1.5 : 0.5;
-            ctx.beginPath();
-            ctx.moveTo(x, 0);
-            ctx.lineTo(x, CANVAS_H);
-            ctx.stroke();
-        }
-
-        // Row lines
-        for (let r = 0; r <= NOTES.length; r++) {
-            const y = r * ROW_H;
-            ctx.strokeStyle = '#2a2a3a';
-            ctx.lineWidth = 0.5;
-            ctx.beginPath();
-            ctx.moveTo(LABEL_W, y);
-            ctx.lineTo(canvasWidth(), y);
-            ctx.stroke();
-        }
-
-        // Note labels
+    function drawLabels(ctx) {
         ctx.font = '10px monospace';
         ctx.textBaseline = 'middle';
         for (let r = 0; r < NOTES.length; r++) {
@@ -292,13 +263,81 @@ export function createPianoroll(opts) {
             ctx.textAlign = 'right';
             ctx.fillText(NOTES[r].name, LABEL_W - 4, y);
         }
+    }
 
-        // Notes
+    function drawGrid(ctx, ox) {
+        const cols = totalCols();
+        const gridW = cols * COL_W;
+
+        // Row backgrounds
+        for (let r = 0; r < NOTES.length; r++) {
+            const y = r * ROW_H;
+            ctx.fillStyle = NOTES[r].white ? '#1a1a2e' : '#12121f';
+            ctx.fillRect(ox + LABEL_W, y, gridW, ROW_H);
+        }
+
+        // Column lines
+        for (let c = 0; c <= cols; c++) {
+            const x = ox + LABEL_W + c * COL_W;
+            const isMeasureStart = c % COLS_PER_MEASURE === 0;
+            const isBeat = c % 4 === 0;
+            ctx.strokeStyle = isMeasureStart ? '#666' : isBeat ? '#444' : '#2a2a3a';
+            ctx.lineWidth = isMeasureStart ? 2 : isBeat ? 1.5 : 0.5;
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, CANVAS_H);
+            ctx.stroke();
+        }
+
+        // Measure numbers
+        ctx.font = '9px monospace';
+        ctx.textBaseline = 'top';
+        ctx.textAlign = 'center';
+        for (let m = 0; m < measures; m++) {
+            const x = ox + LABEL_W + m * COLS_PER_MEASURE * COL_W + (COLS_PER_MEASURE * COL_W) / 2;
+            ctx.fillStyle = m === 0 ? '#e94560' : '#555';
+            ctx.fillText(String(m + 1), x, 2);
+        }
+
+        // Row lines
+        for (let r = 0; r <= NOTES.length; r++) {
+            const y = r * ROW_H;
+            ctx.strokeStyle = '#2a2a3a';
+            ctx.lineWidth = 0.5;
+            ctx.beginPath();
+            ctx.moveTo(ox + LABEL_W, y);
+            ctx.lineTo(ox + baseWidth(), y);
+            ctx.stroke();
+        }
+
+        // Loop boundary markers
+        if (looping) {
+            // Start marker (left edge of first copy)
+            ctx.strokeStyle = '#e94560';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(ox + LABEL_W, 0);
+            ctx.lineTo(ox + LABEL_W, CANVAS_H);
+            ctx.stroke();
+
+            // End marker (right edge of first copy = left edge of second copy)
+            ctx.strokeStyle = '#e94560';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([4, 4]);
+            ctx.beginPath();
+            ctx.moveTo(ox + baseWidth(), 0);
+            ctx.lineTo(ox + baseWidth(), CANVAS_H);
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+    }
+
+    function drawNotes(ctx, ox) {
         const activeSlot = opts.activeSlot;
         for (const n of notes) {
             const r = NOTES.findIndex(nn => nn.midi === n.midi);
             if (r < 0) continue;
-            const x = LABEL_W + n.start * COL_W;
+            const x = ox + LABEL_W + n.start * COL_W;
             const y = r * ROW_H;
             const w = n.dur * COL_W - 1;
             const isActive = activeSlot == null || n.slot === activeSlot;
@@ -310,7 +349,6 @@ export function createPianoroll(opts) {
                 ctx.strokeStyle = '#fff';
                 ctx.lineWidth = 0.5;
                 ctx.strokeRect(x + 1, y + 1, w, ROW_H - 2);
-                // Resize handles
                 const handleW = Math.min(4, w / 4);
                 ctx.fillStyle = 'rgba(255,255,255,0.5)';
                 ctx.fillRect(x + 1, y + 1, handleW, ROW_H - 2);
@@ -318,11 +356,11 @@ export function createPianoroll(opts) {
             }
         }
 
-        // Ghost note at original position during move
+        // Ghost note
         if (movingNote && moveCommitted && moveOriginal) {
             const origRow = NOTES.findIndex(nn => nn.midi === moveOriginal.midi);
             if (origRow >= 0) {
-                const gx = LABEL_W + moveOriginal.start * COL_W;
+                const gx = ox + LABEL_W + moveOriginal.start * COL_W;
                 const gy = origRow * ROW_H;
                 const gw = movingNote.dur * COL_W - 1;
                 ctx.fillStyle = slotColor(movingNote.slot);
@@ -339,7 +377,7 @@ export function createPianoroll(opts) {
 
         // Playback cursor
         if (playCol >= 0) {
-            const x = LABEL_W + playCol * COL_W;
+            const x = ox + LABEL_W + playCol * COL_W;
             ctx.fillStyle = 'rgba(255,255,255,0.15)';
             ctx.fillRect(x, 0, COL_W, CANVAS_H);
         }
@@ -353,7 +391,7 @@ export function createPianoroll(opts) {
                 if (endRow === dragStart.row) {
                     const minC = Math.min(dragStart.col, endCol);
                     const maxC = Math.max(dragStart.col, endCol);
-                    const x = LABEL_W + minC * COL_W;
+                    const x = ox + LABEL_W + minC * COL_W;
                     const w = (maxC - minC + 1) * COL_W;
                     ctx.fillStyle = 'rgba(255,255,255,0.1)';
                     ctx.fillRect(x, dragStart.row * ROW_H, w, ROW_H);
@@ -362,8 +400,23 @@ export function createPianoroll(opts) {
         }
     }
 
+    function draw() {
+        resizeCanvas();
+        ctx.clearRect(0, 0, canvasWidth(), CANVAS_H);
+
+        drawLabels(ctx);
+        drawGrid(ctx, 0);
+        drawNotes(ctx, 0);
+
+        if (looping) {
+            drawGrid(ctx, baseWidth());
+            drawNotes(ctx, baseWidth());
+        }
+    }
+
     function pixelToCol(px) {
-        return Math.max(0, Math.min(totalCols() - 1, Math.floor((px - LABEL_W) / COL_W)));
+        const col = Math.floor((px - LABEL_W) / COL_W);
+        return Math.max(0, Math.min(totalCols() - 1, col % totalCols()));
     }
 
     function pixelToRow(py) {
@@ -817,6 +870,7 @@ export function createPianoroll(opts) {
         if (notes.length === 0) return;
 
         playing = true;
+        looping = true;
         playCol = 0;
         consecutiveErrors = 0;
         playBtn.disabled = true;
@@ -824,6 +878,7 @@ export function createPianoroll(opts) {
 
         const bpm = Math.max(32, Math.min(255, parseInt(bpmInput.value) || 120));
         const msPerSixteenth = 60000 / bpm / 4;
+        const bw = baseWidth();
 
         function tick() {
             if (!playing) return;
@@ -849,6 +904,15 @@ export function createPianoroll(opts) {
 
             draw();
 
+            // Scroll to follow playhead
+            const scrollX = LABEL_W + playCol * COL_W;
+            scroll.scrollLeft = scrollX;
+
+            // Wrap: if scroll has passed one full base width, jump back
+            if (scroll.scrollLeft >= bw) {
+                scroll.scrollLeft -= bw;
+            }
+
             const current = playCol;
             playCol = (current + 1) % totalCols();
 
@@ -856,16 +920,21 @@ export function createPianoroll(opts) {
         }
 
         draw();
+        scroll.scrollLeft = 0;
         playTimer = setTimeout(tick, msPerSixteenth);
     }
 
     function stopPlayback() {
         playing = false;
+        looping = false;
         playCol = -1;
         if (playTimer) clearTimeout(playTimer);
         playTimer = null;
         playBtn.disabled = false;
         stopBtn.disabled = true;
+
+        // Normalize scroll position
+        scroll.scrollLeft = scroll.scrollLeft % baseWidth();
         draw();
     }
 
@@ -932,18 +1001,35 @@ export function createPianoroll(opts) {
             const row = NOTES.findIndex(n => n.midi === midi);
             const x = LABEL_W + col * COL_W;
             const y = row >= 0 ? row * ROW_H : 0;
-            scroll.scrollTo({
-                left: Math.max(0, x - scroll.clientWidth / 2),
-                top: Math.max(0, y - scroll.clientHeight / 2),
-                behavior: 'smooth',
-            });
+            if (looping) {
+                scroll.scrollLeft = x;
+            } else {
+                scroll.scrollTo({
+                    left: Math.max(0, x - scroll.clientWidth / 2),
+                    top: Math.max(0, y - scroll.clientHeight / 2),
+                    behavior: 'smooth',
+                });
+            }
         },
         scrollToCol(col) {
             const x = LABEL_W + col * COL_W;
-            scroll.scrollTo({
-                left: Math.max(0, x - scroll.clientWidth / 2),
-                behavior: 'smooth',
-            });
+            if (looping) {
+                scroll.scrollLeft = x;
+            } else {
+                scroll.scrollTo({
+                    left: Math.max(0, x - scroll.clientWidth / 2),
+                    behavior: 'smooth',
+                });
+            }
+        },
+        startRecording() {
+            looping = true;
+            draw();
+        },
+        stopRecording() {
+            looping = false;
+            scroll.scrollLeft = scroll.scrollLeft % baseWidth();
+            draw();
         },
         getNotes() { return notes; },
         getBpm() { return parseInt(bpmInput.value) || DEFAULT_BPM; },
