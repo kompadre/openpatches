@@ -76,11 +76,12 @@ export function initCanvas(opts) {
 
     renderAll();
 
-    // Handle touch-drop from patch rows (mobile drag between containers)
+    // Handle touch-drop from patch rows (mobile: reorder or cross-container drop)
     window.addEventListener('touch-drop-patch', () => {
         const patch = window._touchDropPatch;
         const containerId = window._touchDropContainerId;
         if (patch && containerId) {
+            // Cross-container drop
             const existing = canvasStore.getCanvasPatch(patch.id);
             if (existing && existing.containerId) {
                 const srcCtr = canvasStore.getContainer(existing.containerId);
@@ -91,6 +92,8 @@ export function initCanvas(opts) {
             }
             addPatchToContainer(patch.id, containerId);
         }
+        // Re-render in all cases (reorder or cross-container)
+        renderAll();
         window._touchDropPatch = null;
         window._touchDropContainerId = null;
     });

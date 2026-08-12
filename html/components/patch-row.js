@@ -176,15 +176,43 @@ export function createPatchRow(patch, opts = {}) {
             if (!wasActive) row.classList.add('active');
         });
 
-        // Touch drag when active — creates floating clone
+        // Touch drag when active — reorder inside container or drag out
         row.addEventListener('touchstart', (e) => {
             if (!row.classList.contains('active')) return;
             if (e.target.tagName === 'BUTTON') return;
             const touch = e.touches[0];
             const startX = touch.clientX;
             const startY = touch.clientY;
+            const body = row.closest('.sky-container-body');
+            const containerEl = row.closest('.sky-container');
             let clone = null;
             let didMove = false;
+            let isOutside = false;
+            let insertIndicator = null;
+            let targetRow = null;
+
+            function getRowUnder(y) {
+                if (!body) return null;
+                const rows = [...body.querySelectorAll('.patch-row')];
+                for (const r of rows) {
+                    if (r === row) continue;
+                    const rect = r.getBoundingClientRect();
+                    if (y < rect.top + rect.height / 2) return { row: r, before: true };
+                }
+                return rows.length > 0 ? { row: rows[rows.length - 1], before: false } : null;
+            }
+
+            function showInsertIndicator(target) {
+                if (insertIndicator) insertIndicator.remove();
+                if (!target || !body) return;
+                insertIndicator = document.createElement('div');
+                insertIndicator.className = 'patch-insert-indicator';
+                if (target.before) {
+                    target.row.parentNode.insertBefore(insertIndicator, target.row);
+                } else {
+                    target.row.parentNode.insertBefore(insertIndicator, target.row.nextSibling);
+                }
+            }
 
             function onMove(ev) {
                 const t = ev.touches[0];
@@ -192,44 +220,81 @@ export function createPatchRow(patch, opts = {}) {
                 const dy = Math.abs(t.clientY - startY);
                 if (!didMove && (dx > 8 || dy > 8)) {
                     didMove = true;
-                    // Create floating clone
-                    clone = row.cloneNode(true);
-                    clone.className = 'patch-row patch-row-minified patch-drag-clone';
-                    clone.style.position = 'fixed';
-                    clone.style.zIndex = '10000';
-                    clone.style.pointerEvents = 'none';
-                    clone.style.width = row.offsetWidth + 'px';
-                    clone.style.opacity = '0.85';
-                    document.body.appendChild(clone);
                     row.classList.add('dragging');
+                }
+                if (!didMove) return;
+                ev.preventDefault();
+
+                const bodyRect = body ? body.getBoundingClientRect() : null;
+                const outside = !bodyRect || t.clientX < bodyRect.left || t.clientX > bodyRect.right ||
+                    t.clientY < bodyRect.top || t.clientY > bodyRect.bottom;
+
+                if (outside && !isOutside) {
+                    // Transition: reorder → drag out
+                    isOutside = true;
+                    if (insertIndicator) { insertIndicator.remove(); insertIndicator = null; }
+                    if (!clone) {
+                        clone = row.cloneNode(true);
+                        clone.className = 'patch-row patch-row-minified patch-drag-clone';
+                        clone.style.position = 'fixed';
+                        clone.style.zIndex = '10000';
+                        clone.style.pointerEvents = 'none';
+                        clone.style.width = row.offsetWidth + 'px';
+                        clone.style.opacity = '0.85';
+                        document.body.appendChild(clone);
+                    }
                     _draggedPatch = patch;
                     window._draggedPatch = patch;
                 }
-                if (clone) {
-                    ev.preventDefault();
+
+                if (isOutside && clone) {
                     clone.style.left = (t.clientX - 20) + 'px';
                     clone.style.top = (t.clientY - 15) + 'px';
+                } else if (!isOutside) {
+                    // Reorder: show insert indicator
+                    targetRow = getRowUnder(t.clientY);
+                    showInsertIndicator(targetRow);
                 }
             }
 
             function onEnd(ev) {
                 document.removeEventListener('touchmove', onMove);
                 document.removeEventListener('touchend', onEnd);
-                if (clone) {
-                    clone.remove();
-                    row.classList.remove('dragging');
-                    // Find container under the last touch position
+                row.classList.remove('dragging');
+                if (insertIndicator) { insertIndicator.remove(); insertIndicator = null; }
+
+                if (isOutside) {
+                    // Drag out — try drop on container or canvas
+                    if (clone) clone.remove();
                     const t = ev.changedTouches[0];
                     const el = document.elementFromPoint(t.clientX, t.clientY);
-                    const containerEl = el ? el.closest('.sky-container') : null;
-                    if (containerEl && containerEl.dataset.containerId) {
+                    const dropContainer = el ? el.closest('.sky-container') : null;
+                    if (dropContainer && dropContainer.dataset.containerId && containerEl &&
+                        dropContainer.dataset.containerId !== containerEl.dataset.containerId) {
+                        // Dropped on a different container
                         window._touchDropPatch = patch;
-                        window._touchDropContainerId = containerEl.dataset.containerId;
-                        // Dispatch a custom event so canvas.js can handle it
+                        window._touchDropContainerId = dropContainer.dataset.containerId;
                         window.dispatchEvent(new CustomEvent('touch-drop-patch'));
                     }
                     _draggedPatch = null;
                     window._draggedPatch = null;
+                } else if (didMove && targetRow && containerEl) {
+                    // Reorder — update container's patchIds
+                    import('./patch-model.js').then(m => {
+                        const ctr = m.canvasStore.getContainer(containerEl.dataset.containerId);
+                        if (!ctr || !ctr.patchIds) return;
+                        const fromIdx = ctr.patchIds.indexOf(patch.id);
+                        if (fromIdx < 0) return;
+                        const targetPatchId = targetRow.row.dataset.patchId;
+                        let toIdx = ctr.patchIds.indexOf(targetPatchId);
+                        if (toIdx < 0) return;
+                        if (!targetRow.before) toIdx++;
+                        ctr.patchIds.splice(fromIdx, 1);
+                        if (toIdx > fromIdx) toIdx--;
+                        ctr.patchIds.splice(toIdx, 0, patch.id);
+                        m.canvasStore.putContainer(ctr);
+                        window.dispatchEvent(new CustomEvent('touch-drop-patch'));
+                    });
                 }
             }
 

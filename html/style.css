@@ -1401,6 +1401,15 @@ h1 {
     border: 1px solid #4caf50;
 }
 
+/* Reorder insert indicator */
+.patch-insert-indicator {
+    height: 3px;
+    background: #4caf50;
+    border-radius: 2px;
+    margin: 1px 0;
+    box-shadow: 0 0 6px rgba(76, 175, 80, 0.5);
+}
+
 /* Mini spectrogram */
 .patch-spec-mini {
     display: none;
