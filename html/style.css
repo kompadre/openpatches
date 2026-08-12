@@ -3216,11 +3216,20 @@ footer {
     }
     
     /* Keyboard keys responsiveness */
-    .dock-panel-keyboard {
-        position: relative;
+    .dock-panel-pianoroll {
+        display: flex;
+        flex-direction: column;
         overflow: hidden;
     }
-    .keyboard {
+    .dock-panel-pianoroll .pianoroll-row {
+        flex: 1;
+        min-height: 0;
+    }
+    .dock-panel-pianoroll .kb-controls {
+        flex-shrink: 0;
+    }
+    .dock-panel-pianoroll .keyboard {
+        flex-shrink: 0;
         display: flex !important;
         width: 100% !important;
         padding: 0 !important;

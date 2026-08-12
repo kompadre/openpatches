@@ -1,5 +1,6 @@
-// Toolbar — bottom panel with tabs: Keyboard | Piano Roll | Edit | Log
-// Replaces piano-dock.js. Keyboard/Pianoroll/Log logic moved here; Edit tab delegates to edit-panel.js.
+// Toolbar — bottom panel with tabs: Canvas | Piano Roll | Edit | Log
+// Keyboard is integrated into the Piano Roll panel.
+// Replaces piano-dock.js. Pianoroll/Log logic moved here; Edit tab delegates to edit-panel.js.
 
 import { createPianoroll } from './pianoroll.js';
 import { createVoiceBank } from './voicebank.js';
@@ -62,88 +63,133 @@ export function createToolbar(opts) {
     const wrapper = document.createElement('div');
     wrapper.className = 'piano-dock-inner';
 
+    // Resolve effective initial tab — 'keyboard' now maps to 'pianoroll'
+    const effectiveInitialTab = initialTab === 'keyboard' ? 'pianoroll' : initialTab;
+
     // Tab bar
     const tabBar = document.createElement('div');
     tabBar.className = 'dock-tabs';
 
     const tabCanvas = document.createElement('button');
-    tabCanvas.className = 'dock-tab dock-tab-canvas' + (initialTab === 'canvas' ? ' active' : '');
+    tabCanvas.className = 'dock-tab dock-tab-canvas' + (effectiveInitialTab === 'canvas' ? ' active' : '');
     tabCanvas.innerHTML = '<span>🖼️</span><span>Canvas</span>';
 
     const tabPianoroll = document.createElement('button');
-    tabPianoroll.className = 'dock-tab' + (initialTab === 'pianoroll' ? ' active' : '');
+    tabPianoroll.className = 'dock-tab' + (effectiveInitialTab === 'pianoroll' ? ' active' : '');
     tabPianoroll.innerHTML = '<span>🎹</span><span>Piano Roll</span>';
 
-    const tabKeyboard = document.createElement('button');
-    tabKeyboard.className = 'dock-tab' + (initialTab === 'keyboard' ? ' active' : '');
-    tabKeyboard.innerHTML = '<span>⌨️</span><span>Keyboard</span>';
-
     const tabEdit = document.createElement('button');
-    tabEdit.className = 'dock-tab' + (initialTab === 'edit' ? ' active' : '');
+    tabEdit.className = 'dock-tab' + (effectiveInitialTab === 'edit' ? ' active' : '');
     tabEdit.innerHTML = '<span>✏️</span><span>Edit</span>';
 
     const tabLog = document.createElement('button');
-    tabLog.className = 'dock-tab dock-tab-log' + (initialTab === 'log' ? ' active' : '');
+    tabLog.className = 'dock-tab dock-tab-log' + (effectiveInitialTab === 'log' ? ' active' : '');
     tabLog.innerHTML = '<span>📋</span><span>Log</span>';
 
     tabBar.appendChild(tabCanvas);
     tabBar.appendChild(tabPianoroll);
-    tabBar.appendChild(tabKeyboard);
     tabBar.appendChild(tabEdit);
     tabBar.appendChild(tabLog);
     wrapper.appendChild(tabBar);
 
     // Panels
     const canvasPanel = document.createElement('div');
-    canvasPanel.className = 'dock-panel dock-panel-canvas' + (initialTab === 'canvas' ? ' active' : '');
-    // #night-sky is moved here by app.js on mobile, but it's okay to have it empty initially
-
-    const keyboardPanel = document.createElement('div');
-    keyboardPanel.className = 'dock-panel dock-panel-keyboard' + (initialTab === 'keyboard' ? ' active' : '');
+    canvasPanel.className = 'dock-panel dock-panel-canvas' + (effectiveInitialTab === 'canvas' ? ' active' : '');
 
     const pianorollPanel = document.createElement('div');
-    pianorollPanel.className = 'dock-panel' + (initialTab === 'pianoroll' ? ' active' : '');
+    pianorollPanel.className = 'dock-panel dock-panel-pianoroll' + (effectiveInitialTab === 'pianoroll' ? ' active' : '');
 
     const editPanel = document.createElement('div');
-    editPanel.className = 'dock-panel' + (initialTab === 'edit' ? ' active' : '');
+    editPanel.className = 'dock-panel' + (effectiveInitialTab === 'edit' ? ' active' : '');
 
     const logPanel = document.createElement('div');
-    logPanel.className = 'dock-panel dock-panel-log' + (initialTab === 'log' ? ' active' : '');
+    logPanel.className = 'dock-panel dock-panel-log' + (effectiveInitialTab === 'log' ? ' active' : '');
 
     wrapper.appendChild(canvasPanel);
-    wrapper.appendChild(keyboardPanel);
     wrapper.appendChild(pianorollPanel);
     wrapper.appendChild(editPanel);
     wrapper.appendChild(logPanel);
 
     function activateTab(tab, panel) {
-        [tabCanvas, tabKeyboard, tabPianoroll, tabEdit, tabLog].forEach(t => t.classList.remove('active'));
-        [canvasPanel, keyboardPanel, pianorollPanel, editPanel, logPanel].forEach(p => p.classList.remove('active'));
+        [tabCanvas, tabPianoroll, tabEdit, tabLog].forEach(t => t.classList.remove('active'));
+        [canvasPanel, pianorollPanel, editPanel, logPanel].forEach(p => p.classList.remove('active'));
         tab.classList.add('active');
         panel.classList.add('active');
     }
 
     tabCanvas.addEventListener('click', () => activateTab(tabCanvas, canvasPanel));
-    tabKeyboard.addEventListener('click', () => {
-        activateTab(tabKeyboard, keyboardPanel);
+    tabPianoroll.addEventListener('click', () => {
+        activateTab(tabPianoroll, pianorollPanel);
         requestAnimationFrame(positionBlackKeys);
     });
-    tabPianoroll.addEventListener('click', () => activateTab(tabPianoroll, pianorollPanel));
     tabEdit.addEventListener('click', () => activateTab(tabEdit, editPanel));
     tabLog.addEventListener('click', () => activateTab(tabLog, logPanel));
 
-    // --- Keyboard panel ---
+    // --- VoiceBank + Pianoroll (top section) ---
+    const pianorollRow = document.createElement('div');
+    pianorollRow.className = 'pianoroll-row';
+
+    const pianorollPlayFn = playNoteFn || (() => {});
+    let pianorollRef = null;
     let recording = false;
     let recordStartTime = 0;
     let activeRecordSlot = 0;
 
+    function updateKeyboardVoice(slot) {
+        activeRecordSlot = slot;
+        voiceSelect.value = slot;
+    }
+
+    const voiceBank = createVoiceBank({
+        onSelect: (entry, slot) => {
+            if (pianorollRef) {
+                pianorollRef.setActiveSlot(slot);
+            }
+            updateKeyboardVoice(slot);
+        },
+        onVolumeChange: opts.onVolumeChange || null,
+        onPreview: (entry, slot) => {
+            pianorollPlayFn(60, 600, entry.voiceData, slot);
+        },
+        onSnapshot: (entries) => {
+            if (opts.onSnapshot) opts.onSnapshot(entries);
+            if (pianorollRef && pianorollRef.renderLegend) pianorollRef.renderLegend();
+            refreshVoiceSelect();
+        },
+    });
+    // Fire initial snapshot after onSnapshot callback is wired
+    if (voiceBank._notifySnapshot) voiceBank._notifySnapshot();
+    pianorollRow.appendChild(voiceBank);
+
+    pianorollRef = createPianoroll({
+        playNoteFn: pianorollPlayFn,
+        onNotesChange: updateHighlights,
+        activeSlot: null,
+        getSlotData: (slot) => {
+            const entries = voiceBank._getEntries ? voiceBank._getEntries() : [];
+            return entries[slot] || null;
+        },
+        onClear: () => { if (voiceBank._clear) voiceBank._clear(); },
+    });
+    pianorollRow.appendChild(pianorollRef.element);
+
+    // Initialize active slot from voice bank's restored active entry
+    const initActive = voiceBank._getActive ? voiceBank._getActive() : null;
+    if (initActive) {
+        const entries = voiceBank._getEntries ? voiceBank._getEntries() : [];
+        const initSlot = entries.indexOf(initActive);
+        if (initSlot >= 0) pianorollRef.setActiveSlot(initSlot);
+    }
+    pianorollPanel.appendChild(pianorollRow);
+
+    // --- Recording controls (middle section) ---
     const kbControls = document.createElement('div');
     kbControls.className = 'kb-controls';
-    
+
     const btnRecord = document.createElement('button');
     btnRecord.className = 'kb-btn kb-btn-record';
     btnRecord.textContent = 'Record ●';
-    
+
     const btnPlayStop = document.createElement('button');
     btnPlayStop.className = 'kb-btn kb-btn-play';
     btnPlayStop.textContent = 'Play ▶';
@@ -176,7 +222,7 @@ export function createToolbar(opts) {
     kbControls.appendChild(btnRecord);
     kbControls.appendChild(btnPlayStop);
     kbControls.appendChild(kbVoices);
-    keyboardPanel.appendChild(kbControls);
+    pianorollPanel.appendChild(kbControls);
 
     function stopAll() {
         recording = false;
@@ -196,8 +242,6 @@ export function createToolbar(opts) {
             btnRecord.classList.add('active');
             btnRecord.textContent = 'Stop ■';
             btnPlayStop.textContent = 'Stop ■';
-            // Also start playback in background if needed? 
-            // For now just record timestamps.
         }
     });
 
@@ -206,13 +250,13 @@ export function createToolbar(opts) {
             stopAll();
         } else {
             if (pianorollRef && pianorollRef.startPlayback) {
-                activateTab(tabPianoroll, pianorollPanel);
                 pianorollRef.startPlayback();
                 btnPlayStop.textContent = 'Stop ■';
             }
         }
     });
 
+    // --- Keyboard (bottom section) ---
     const kb = document.createElement('div');
     kb.className = 'keyboard';
 
@@ -224,12 +268,12 @@ export function createToolbar(opts) {
         if (n.white) key.textContent = n.name;
 
         const playFn = playNoteFn || (() => {});
-        
+
         function handleStart(e) {
             if (e.type === 'mousedown' && e.button !== 0) return;
             e.preventDefault();
             key.classList.add('pressed');
-            
+
             const entries = voiceBank ? voiceBank._getEntries() : [];
             const activeEntry = entries[activeRecordSlot];
             playFn(n.midi, 600, activeEntry ? activeEntry.voiceData : null, activeRecordSlot);
@@ -253,7 +297,7 @@ export function createToolbar(opts) {
         key.addEventListener('mousedown', handleStart);
         key.addEventListener('mouseup', handleEnd);
         key.addEventListener('mouseleave', handleEnd);
-        
+
         key.addEventListener('touchstart', handleStart, { passive: false });
         key.addEventListener('touchend', handleEnd, { passive: false });
         key.addEventListener('touchcancel', handleEnd, { passive: false });
@@ -262,13 +306,12 @@ export function createToolbar(opts) {
         kb.appendChild(key);
     });
 
-    keyboardPanel.appendChild(kb);
+    pianorollPanel.appendChild(kb);
 
     // Position black keys absolutely over white keys (mobile layout)
     function positionBlackKeys() {
         const isMobile = window.matchMedia('(max-width: 600px)').matches;
         if (!isMobile) {
-            // Reset black keys to normal flow on desktop
             kb.querySelectorAll('.key.black').forEach(k => { k.style.left = ''; k.style.position = ''; });
             return;
         }
@@ -280,7 +323,6 @@ export function createToolbar(opts) {
             if (n.white) {
                 whiteIdx++;
             } else {
-                // Black key sits centered over the previous white key
                 const prevWhite = whiteKeys[whiteIdx - 1];
                 if (prevWhite) {
                     const left = prevWhite.offsetLeft + whiteKeyWidth * 0.55;
@@ -304,58 +346,6 @@ export function createToolbar(opts) {
     }
     updateHighlights();
 
-    // --- Pianoroll panel (voicebank + pianoroll side by side) ---
-    const pianorollRow = document.createElement('div');
-    pianorollRow.className = 'pianoroll-row';
-
-    const pianorollPlayFn = playNoteFn || (() => {});
-    let pianorollRef = null;
-    function updateKeyboardVoice(slot) {
-        activeRecordSlot = slot;
-        voiceSelect.value = slot;
-    }
-
-    const voiceBank = createVoiceBank({
-        onSelect: (entry, slot) => {
-            if (pianorollRef) {
-                pianorollRef.setActiveSlot(slot);
-            }
-            updateKeyboardVoice(slot);
-        },
-        onVolumeChange: opts.onVolumeChange || null,
-        onPreview: (entry, slot) => {
-            pianorollPlayFn(60, 600, entry.voiceData, slot);
-        },
-        onSnapshot: (entries) => {
-            if (opts.onSnapshot) opts.onSnapshot(entries);
-            if (pianorollRef && pianorollRef.renderLegend) pianorollRef.renderLegend();
-            refreshVoiceSelect();
-        },
-    });
-    // Fire initial snapshot after onSnapshot callback is wired
-    if (voiceBank._notifySnapshot) voiceBank._notifySnapshot();
-    pianorollRow.appendChild(voiceBank);
-    pianorollRef = createPianoroll({
-        playNoteFn: pianorollPlayFn,
-        onNotesChange: updateHighlights,
-        activeSlot: null,
-        getSlotData: (slot) => {
-            const entries = voiceBank._getEntries ? voiceBank._getEntries() : [];
-            return entries[slot] || null;
-        },
-        onClear: () => { if (voiceBank._clear) voiceBank._clear(); },
-    });
-    pianorollRow.appendChild(pianorollRef.element);
-
-    // Initialize active slot from voice bank's restored active entry
-    const initActive = voiceBank._getActive ? voiceBank._getActive() : null;
-    if (initActive) {
-        const entries = voiceBank._getEntries ? voiceBank._getEntries() : [];
-        const initSlot = entries.indexOf(initActive);
-        if (initSlot >= 0) pianorollRef.setActiveSlot(initSlot);
-    }
-    pianorollPanel.appendChild(pianorollRow);
-
     // --- Edit panel ---
     const edit = createEditPanel(editOpts || {});
     editPanel.appendChild(edit);
@@ -373,7 +363,6 @@ export function createToolbar(opts) {
     wrapper._pianoroll = pianorollRef;
     wrapper._voiceBank = voiceBank;
     wrapper._showCanvas = () => activateTab(tabCanvas, canvasPanel);
-    wrapper._showKeyboard = () => activateTab(tabKeyboard, keyboardPanel);
     wrapper._showPianoroll = () => activateTab(tabPianoroll, pianorollPanel);
     wrapper._showEdit = () => activateTab(tabEdit, editPanel);
     wrapper._showLog = () => activateTab(tabLog, logPanel);

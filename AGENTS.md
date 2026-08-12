@@ -35,7 +35,7 @@ OpenPatches is a browser-based DX7 patch editor and sequencer. It communicates w
 **Frontend (Vanilla JS, no framework):**
 - `html/app.js`: main orchestrator (~600 lines). Wires file input, menu bar, canvas, toolbar. PlayNote/playPatch with multi-channel support.
 - `html/components/canvas.js`: Canvas — patches + PatchContainers on night-sky. Drag-to-reposition, snap-into-container, resize containers. State derived from linked Job. Uses `onDoc()` helper for document-level listeners with cleanup via `clearDocListeners()` on each `renderAll()` to prevent stale closures.
-- `html/components/toolbar.js`: Bottom toolbar — Canvas | Piano Roll | Keyboard | Edit | Log tabs. On mobile (≤600px): 5 full-screen tabs, piano dock becomes main viewport. Keyboard has Record/Play controls + voice select dropdown (desktop) / compact voice bars (mobile).
+- `html/components/toolbar.js`: Bottom panel with tabs: Canvas | Piano Roll | Edit | Log. Keyboard is integrated into the Piano Roll panel (recording controls + piano keys below the pianoroll grid). On mobile (≤600px): 4 full-screen tabs, piano dock becomes main viewport. VoiceBank compact mode with vertical bars.
 - `html/components/edit-panel.js`: Morph / Params / Random editing.
 - `html/components/job.js`: Job class — steering object for WAV import lifecycle. Owns: probe → match → poll → complete/fail.
 - `html/components/patch-model.js`: Unified data model + stores (localStorage). `patchStore`, `canvasStore`, `jobStore`.
