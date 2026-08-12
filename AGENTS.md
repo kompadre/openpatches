@@ -34,15 +34,15 @@ OpenPatches is a browser-based DX7 patch editor and sequencer. It communicates w
 
 **Frontend (Vanilla JS, no framework):**
 - `html/app.js`: main orchestrator (~600 lines). Wires file input, menu bar, canvas, toolbar. PlayNote/playPatch with multi-channel support.
-- `html/components/canvas.js`: Canvas — patches + PatchContainers on night-sky. Drag-to-reposition, snap-into-container, resize containers. State derived from linked Job.
-- `html/components/toolbar.js`: Bottom toolbar — Keyboard | Piano Roll | Edit | Log tabs.
+- `html/components/canvas.js`: Canvas — patches + PatchContainers on night-sky. Drag-to-reposition, snap-into-container, resize containers. State derived from linked Job. Uses `onDoc()` helper for document-level listeners with cleanup via `clearDocListeners()` on each `renderAll()` to prevent stale closures.
+- `html/components/toolbar.js`: Bottom toolbar — Canvas | Piano Roll | Keyboard | Edit | Log tabs. On mobile (≤600px): 5 full-screen tabs, piano dock becomes main viewport. Keyboard has Record/Play controls + voice select dropdown (desktop) / compact voice bars (mobile).
 - `html/components/edit-panel.js`: Morph / Params / Random editing.
 - `html/components/job.js`: Job class — steering object for WAV import lifecycle. Owns: probe → match → poll → complete/fail.
 - `html/components/patch-model.js`: Unified data model + stores (localStorage). `patchStore`, `canvasStore`, `jobStore`.
 - `html/components/patch-row.js`: Unified patch row rendering with star drag handle, mini spectrogram, assign/edit/remove buttons.
 - `html/components/patch.js`: Waveform helpers only — `decodeWavSamples`, `drawMiniWaveform`, `wavSampleCache`.
-- `html/components/voicebank.js`: Voice palette (8 slots). Persists to localStorage. Each entry has static channel assignment (0-7).
-- `html/components/pianoroll.js`: Sequencer. Notes store per-note `voiceData` and `channel`. Error counter stops after 3 failures.
+- `html/components/voicebank.js`: Voice palette (8 slots). Persists to localStorage. Each entry has static channel assignment (0-7). Compact mode on mobile: vertical bars, tap to select, vertical drag for volume. Exposes `_render()` for re-rendering after class changes (e.g. adding `compact`).
+- `html/components/pianoroll.js`: Sequencer. Notes store per-note `voiceData` and `channel`. Error counter stops after 3 failures. Touch support: `TOUCH_RESIZE_MARGIN = 20` for finger-friendly resize, visual resize handles on active notes, double-tap to delete.
 - `html/components/tutorial.js`: First-run tutorial modal with overlay highlights.
 - `html/synth/audio-manager.js`: Singleton AudioContext + AudioWorklet. `acquire()` creates once, `initAudio()` loads modules once. Multi-channel: `sendVoiceSnapshot()`, `playNoteOnChannel()`. No malloc/free — uses static WASM buffers.
 - `html/synth/dx7-synth.js`: Batch waveform rendering only (main thread WASM). No realtime synth code.
