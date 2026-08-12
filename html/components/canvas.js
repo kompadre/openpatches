@@ -13,20 +13,6 @@ let canvasEl = null;
 let optsRef = null;
 let docListeners = [];
 
-const GROW_MARGIN = 200; // px of padding before canvas grows
-
-function growCanvasIfNeeded(x, y) {
-    if (!canvasEl) return;
-    const curW = canvasEl.offsetWidth;
-    const curH = canvasEl.offsetHeight;
-    let newW = curW;
-    let newH = curH;
-    if (x + GROW_MARGIN > curW) newW = x + GROW_MARGIN + 500;
-    if (y + GROW_MARGIN > curH) newH = y + GROW_MARGIN + 500;
-    if (newW > curW) canvasEl.style.minWidth = newW + 'px';
-    if (newH > curH) canvasEl.style.minHeight = newH + 'px';
-}
-
 // --- Init ---
 
 export function initCanvas(opts) {
@@ -68,7 +54,6 @@ export function initCanvas(opts) {
         const rect = canvasEl.getBoundingClientRect();
         const left = e.clientX - rect.left + (skyEl.scrollLeft || 0);
         const top = e.clientY - rect.top + (skyEl.scrollTop || 0);
-        growCanvasIfNeeded(left + 200, top + 80);
 
         // Store patch in patchStore if not already there
         const stored = patchStore.get(patch.id);
@@ -119,7 +104,6 @@ export function initCanvas(opts) {
                 const rect = canvasEl.getBoundingClientRect();
                 const left = window._touchDropX - rect.left + (skyEl.scrollLeft || 0);
                 const top = window._touchDropY - rect.top + (skyEl.scrollTop || 0);
-                growCanvasIfNeeded(left + 200, top + 80);
                 addPatchToCanvas(patch.id, Math.max(0, left), Math.max(0, top), null);
             }
         }
@@ -352,7 +336,6 @@ function renderFloatingPatch(patchId, entry) {
         entry.top = Math.max(0, origTop + dy);
         el.style.left = entry.left + 'px';
         el.style.top = entry.top + 'px';
-        growCanvasIfNeeded(entry.left + el.offsetWidth, entry.top + el.offsetHeight);
     }
 
     function handleEnd(e) {
@@ -774,11 +757,11 @@ function renderContainer(ctr) {
         if (!didMove && Math.abs(dx) < 3 && Math.abs(dy) < 3) return;
         didMove = true;
         e.preventDefault();
-        ctr.left = Math.max(0, origLeft + dx);
+        const maxLeft = canvasEl ? canvasEl.scrollWidth - el.offsetWidth : window.innerWidth - el.offsetWidth;
+        ctr.left = Math.max(0, Math.min(maxLeft, origLeft + dx));
         ctr.top = Math.max(0, origTop + dy);
         el.style.left = ctr.left + 'px';
         el.style.top = ctr.top + 'px';
-        growCanvasIfNeeded(ctr.left + el.offsetWidth, ctr.top + el.offsetHeight);
     }
 
     function handleDragEnd() {
