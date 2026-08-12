@@ -995,8 +995,8 @@ export function createPianoroll(opts) {
             renderLegend();
             if (onNotesChange) onNotesChange();
             saveState();
-            // Scroll to the newly added note
-            this.scrollTo(start, midi);
+            // Auto-scroll to new note only when not recording (recording interval handles scroll)
+            if (!looping) this.scrollTo(start, midi);
         },
         scrollTo(col, midi) {
             const row = NOTES.findIndex(n => n.midi === midi);
@@ -1013,27 +1013,45 @@ export function createPianoroll(opts) {
             }
         },
         scrollToCol(col) {
-            const x = LABEL_W + col * COL_W;
-            if (looping) {
-                scroll.scrollLeft = x;
-                // Wrap if past the first copy
-                if (scroll.scrollLeft >= LABEL_W + gridWidth()) {
-                    scroll.scrollLeft -= gridWidth();
-                }
-            } else {
+            if (!looping) {
+                const x = LABEL_W + col * COL_W;
                 scroll.scrollTo({
                     left: Math.max(0, x - scroll.clientWidth / 2),
                     behavior: 'smooth',
                 });
+                return;
             }
+            const gw = gridWidth();
+            const target = LABEL_W + (col * COL_W % gw);
+            scroll.scrollLeft = target;
         },
         startRecording() {
             looping = true;
+            playCol = 0;
             draw();
         },
         stopRecording() {
             looping = false;
+            playCol = -1;
             scroll.scrollLeft = scroll.scrollLeft % gridWidth();
+            draw();
+        },
+        tickRecording(col) {
+            // Play notes at this column and advance playhead
+            const tc = totalCols();
+            const wrappedCol = ((col % tc) + tc) % tc;
+            const bpm = Math.max(32, Math.min(255, parseInt(bpmInput.value) || 120));
+            const msPerSixteenth = 60000 / bpm / 4;
+            for (const n of notes) {
+                if (n.start === wrappedCol) {
+                    try {
+                        const entry = getSlotData(n.slot);
+                        const voiceData = entry ? entry.voiceData : null;
+                        playNoteFn(n.midi, n.dur * msPerSixteenth, voiceData, n.slot);
+                    } catch (e) { /* ignore */ }
+                }
+            }
+            playCol = wrappedCol;
             draw();
         },
         getNotes() { return notes; },

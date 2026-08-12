@@ -246,14 +246,15 @@ export function createToolbar(opts) {
             btnRecord.textContent = 'Stop ■';
             btnPlayStop.textContent = 'Stop ■';
             if (pianorollRef && pianorollRef.startRecording) pianorollRef.startRecording();
-            // Scroll pianoroll to follow playhead during recording
+            // Tick recording: play notes, move playhead, scroll
             recordInterval = setInterval(() => {
                 if (!recording || !pianorollRef) return;
                 const bpm = pianorollRef.getBpm ? pianorollRef.getBpm() : 120;
                 const msPerSixteenth = (60000 / bpm) / 4;
                 const col = Math.floor((Date.now() - recordStartTime) / msPerSixteenth);
+                if (pianorollRef.tickRecording) pianorollRef.tickRecording(col);
                 if (pianorollRef.scrollToCol) pianorollRef.scrollToCol(col);
-            }, 150);
+            }, 100);
         }
     });
 
