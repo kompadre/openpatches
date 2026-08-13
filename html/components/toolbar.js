@@ -446,7 +446,7 @@ export function createToolbar(opts) {
             } else {
                 const prevWhite = whiteKeys[whiteIdx - 1];
                 if (prevWhite) {
-                    const left = prevWhite.offsetLeft + whiteKeyWidth * 0.5 - blackKeyWidth / 2;
+                    const left = prevWhite.offsetLeft + whiteKeyWidth - blackKeyWidth / 2;
                     key.style.position = 'absolute';
                     key.style.left = left + 'px';
                 }
