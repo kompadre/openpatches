@@ -288,10 +288,9 @@ export function createToolbar(opts) {
                     for (const [midi, press] of activePresses) {
                         const pressWrappedCol = ((press.startCol % tc) + tc) % tc;
                         if (pressWrappedCol > 0) {
-                            // Note started before the seam — add ending at seam
+                            // Note started before the seam — end it at the seam
                             addRecordedNote(midi, press.startCol, rawCol, activeRecordSlot);
-                            // Reset press to start of new loop
-                            press.startCol = rawCol;
+                            activePresses.delete(midi);
                         }
                     }
                 }
