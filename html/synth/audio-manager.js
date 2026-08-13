@@ -182,10 +182,17 @@ export function playNoteOnChannel(channel, midi, velocity = 100) {
         activeNotes.delete(key);
     }
 
+    // Increment generation to guard against stale stop functions
+    const generation = (activeNotes._gen || 0) + 1;
+    activeNotes._gen = generation;
+
     dx7Node.port.postMessage({ type: 'midi', data: [0x90 | channel, midi, velocity] });
     const stop = () => {
-        if (dx7Node) dx7Node.port.postMessage({ type: 'midi', data: [0x80 | channel, midi, 0] });
-        activeNotes.delete(key);
+        // Only send note-off if this is still the active note
+        if (activeNotes.get(key) === stop) {
+            if (dx7Node) dx7Node.port.postMessage({ type: 'midi', data: [0x80 | channel, midi, 0] });
+            activeNotes.delete(key);
+        }
     };
     activeNotes.set(key, stop);
     return stop;
