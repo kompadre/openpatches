@@ -436,7 +436,7 @@ export function createToolbar(opts) {
         const whiteKeys = kb.querySelectorAll('.key.white');
         const whiteKeyWidth = whiteKeys.length > 0 ? whiteKeys[0].offsetWidth : 0;
         let whiteIdx = 0;
-        PIANO_NOTES.forEach(n => {
+        kbNotes.forEach(n => {
             const key = keyElements[n.midi];
             if (n.white) {
                 whiteIdx++;

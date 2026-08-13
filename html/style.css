@@ -3330,6 +3330,7 @@ footer {
         gap: 4px;
         padding: 4px;
     }
+    .kb-voice-select { max-width: 100px; }
     .pianoroll-more {
         display: flex !important;
         font-size: 1.1rem;
