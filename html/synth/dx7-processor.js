@@ -117,6 +117,14 @@ class DX7Processor extends AudioWorkletProcessor {
         break;
       case 'midi':
       case 'raw-midi':
+        if (msg.data[0] >= 0x80 && msg.data[0] <= 0x9f) {
+          const status = msg.data[0] & 0xf0;
+          const ch = msg.data[0] & 0x0f;
+          const note = msg.data[1];
+          const vel = msg.data[2];
+          const type = status === 0x90 ? 'note-on' : 'note-off';
+          console.log(`[wasm-midi] ${type} ch=${ch} note=${note} vel=${vel}`);
+        }
         this.exp.send_midi(msg.data[0], msg.data[1], msg.data[2]);
         // Pre-render a few blocks so the note starts immediately
         this.fillRingBuffer();
