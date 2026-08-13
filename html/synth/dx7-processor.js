@@ -18,6 +18,15 @@ class DX7Processor extends AudioWorkletProcessor {
     this.ready = false;
     this.hasError = false;
 
+    // Ring buffer for pre-rendered audio (~300ms lookahead)
+    this.bufferMs = 300;
+    this.ringBlocks = Math.ceil((this.sr * this.bufferMs / 1000) / this.bufsize);
+    this.ringSize = this.ringBlocks * this.bufsize;
+    this.ringBuffer = new Float32Array(this.ringSize);
+    this.ringWrite = 0;
+    this.ringRead = 0;
+    this.ringAvailable = 0;
+
     // Preview playback state (fed from main-thread offline render)
     this.previewBuffer = null;
     this.previewPos = 0;
@@ -49,6 +58,7 @@ class DX7Processor extends AudioWorkletProcessor {
 
       this.ready = true;
       this.port.postMessage({ type: 'ready' });
+      this.fillRingBuffer();
 
       if (this._pending) {
         for (const msg of this._pending) this.handleMessage(msg);
@@ -65,6 +75,23 @@ class DX7Processor extends AudioWorkletProcessor {
     if (this.heapI16.buffer !== this.exp.memory.buffer) {
       this.heapI16 = new Int16Array(this.exp.memory.buffer);
       this.patchView = new Uint8Array(this.exp.memory.buffer, this.patchPtr, 128);
+    }
+  }
+
+  // Pre-render blocks into the ring buffer
+  fillRingBuffer() {
+    if (!this.ready || this.hasError) return;
+    // Fill until we have at least ringBlocks worth of audio ahead
+    while (this.ringAvailable < this.ringSize) {
+      const ptr = this.exp.render_audio(this.bufsize);
+      if (!ptr) break;
+      this.refreshHeap();
+      const i16base = ptr >> 1;
+      for (let i = 0; i < this.bufsize; i++) {
+        this.ringBuffer[this.ringWrite] = this.heapI16[i16base + i] * (1.0 / 32768.0);
+        this.ringWrite = (this.ringWrite + 1) % this.ringSize;
+      }
+      this.ringAvailable += this.bufsize;
     }
   }
 
@@ -91,6 +118,8 @@ class DX7Processor extends AudioWorkletProcessor {
       case 'midi':
       case 'raw-midi':
         this.exp.send_midi(msg.data[0], msg.data[1], msg.data[2]);
+        // Pre-render a few blocks so the note starts immediately
+        this.fillRingBuffer();
         break;
       case 'play-samples':
         // Overwrite any active preview, reset position
@@ -121,24 +150,43 @@ class DX7Processor extends AudioWorkletProcessor {
   process(inputs, outputs) {
     if (!this.ready || this.hasError) return true;
 
-    // Always render synth (keeps pianoroll notes alive)
-    const ptr = this.exp.render_audio(this.bufsize);
-    if (!ptr) return true;
-
-    this.refreshHeap();
     const out = outputs[0][0];
-    const i16base = ptr >> 1;
 
-    for (let i = 0; i < this.bufsize; i++) {
-      let sample = this.heapI16[i16base + i] * (1.0 / 32768.0);
+    // Read from ring buffer
+    if (this.ringAvailable >= this.bufsize) {
+      for (let i = 0; i < this.bufsize; i++) {
+        let sample = this.ringBuffer[this.ringRead];
 
-      if (this.previewRemaining > 0) {
-        sample = sample * 0.5 + this.previewBuffer[this.previewPos++] * 0.5;
-        this.previewRemaining--;
+        if (this.previewRemaining > 0) {
+          sample = sample * 0.5 + this.previewBuffer[this.previewPos++] * 0.5;
+          this.previewRemaining--;
+        }
+
+        out[i] = sample;
+        this.ringRead = (this.ringRead + 1) % this.ringSize;
       }
-
-      out[i] = sample;
+      this.ringAvailable -= this.bufsize;
+    } else {
+      // Ring buffer underrun — render directly as fallback
+      const ptr = this.exp.render_audio(this.bufsize);
+      if (ptr) {
+        this.refreshHeap();
+        const i16base = ptr >> 1;
+        for (let i = 0; i < this.bufsize; i++) {
+          let sample = this.heapI16[i16base + i] * (1.0 / 32768.0);
+          if (this.previewRemaining > 0) {
+            sample = sample * 0.5 + this.previewBuffer[this.previewPos++] * 0.5;
+            this.previewRemaining--;
+          }
+          out[i] = sample;
+        }
+      } else {
+        out.fill(0);
+      }
     }
+
+    // Pre-render to keep ring buffer topped
+    this.fillRingBuffer();
 
     // Clean up references when the clip finishes
     if (this.previewRemaining === 0 && this.previewBuffer) {
