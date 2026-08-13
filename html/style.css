@@ -3307,7 +3307,7 @@ footer {
     .key.black {
         position: absolute;
         height: 62% !important;
-        width: 12px !important;
+        width: 32px !important;
         z-index: 2;
         margin: 0 !important;
         border-radius: 0 0 3px 3px;
