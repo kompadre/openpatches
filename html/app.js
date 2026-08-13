@@ -459,10 +459,14 @@ function initToolbar() {
 
     const isMobile = window.matchMedia('(max-width: 600px)').matches;
     const playFn = (midi, durationMs, voiceData, channel) => playNote(midi, voiceData || activeSyxVoiceData, durationMs, channel);
+    const stopNoteFn = (midi, channel) => {
+        if (isReady()) playNoteOnChannel(channel, midi, 0);
+    };
 
     const dock = createToolbar({
         matchedMidi: activeKeyboardNote,
         playNoteFn: playFn,
+        stopNoteFn: stopNoteFn,
         initialTab: isMobile ? 'canvas' : 'pianoroll',
         tickWorker: tickWorker,
         stopWorker: stopTickWorker,

@@ -405,10 +405,14 @@ export function createToolbar(opts) {
                 e.preventDefault();
                 key.classList.remove('pressed');
 
+                // Stop the sustained sound
                 if (activeSounds.has(n.midi)) {
                     const stopFn = activeSounds.get(n.midi);
                     activeSounds.delete(n.midi);
                     if (typeof stopFn === 'function') stopFn();
+                } else if (opts.stopNoteFn) {
+                    // Fallback: send note-off directly if async stopFn wasn't ready
+                    opts.stopNoteFn(n.midi, activeRecordSlot);
                 }
 
                 if (recording && activePresses.has(n.midi)) {
