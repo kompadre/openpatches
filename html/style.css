@@ -3334,17 +3334,17 @@ footer {
     .kb-octave-row {
         display: flex;
         gap: 4px;
-        padding: 4px;
-        justify-content: center;
+        padding: 4px 0;
+        width: 100%;
     }
     .kb-octave-btn {
         flex: 1;
-        padding: 6px 0;
-        border-radius: 4px;
-        border: 1px solid #444;
+        padding: 10px 0;
+        border-radius: 0;
+        border: 1px solid #333;
         background: #0f0f23;
         color: #888;
-        font-size: 0.8rem;
+        font-size: 0.9rem;
         cursor: pointer;
     }
     .kb-octave-btn.active {

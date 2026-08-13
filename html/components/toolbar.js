@@ -447,13 +447,13 @@ export function createToolbar(opts) {
     if (isMobileKb) {
         const octaveRow = document.createElement('div');
         octaveRow.className = 'kb-octave-row';
-        for (let i = 0; i < 6; i++) {
+        for (let i = 2; i <= 7; i++) {
             const btn = document.createElement('button');
             btn.className = 'kb-octave-btn' + (i === kbOctave ? ' active' : '');
             btn.textContent = i;
             btn.addEventListener('click', () => {
                 kbOctave = i;
-                octaveBtns.forEach((b, idx) => b.classList.toggle('active', idx === i));
+                octaveBtns.forEach((b, idx) => b.classList.toggle('active', idx + 2 === i));
                 rebuildKeyboard();
             });
             octaveBtns.push(btn);
