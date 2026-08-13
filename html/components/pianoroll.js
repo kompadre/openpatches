@@ -110,34 +110,6 @@ export function createPianoroll(opts) {
     stopBtn.disabled = true;
     controls.appendChild(stopBtn);
 
-    const clearBtn = document.createElement('button');
-    clearBtn.className = 'pianoroll-btn';
-    clearBtn.textContent = '\u{1F9F9} Clear';
-    controls.appendChild(clearBtn);
-
-    const addMeasureBtn = document.createElement('button');
-    addMeasureBtn.className = 'pianoroll-btn';
-    addMeasureBtn.textContent = '+ Msr';
-    addMeasureBtn.title = 'Add measure';
-    controls.appendChild(addMeasureBtn);
-
-    const cloneMeasureBtn = document.createElement('button');
-    cloneMeasureBtn.className = 'pianoroll-btn';
-    cloneMeasureBtn.textContent = '\u29C9 Clone';
-    cloneMeasureBtn.title = 'Clone last measure to new';
-    controls.appendChild(cloneMeasureBtn);
-
-    const removeMeasureBtn = document.createElement('button');
-    removeMeasureBtn.className = 'pianoroll-btn';
-    removeMeasureBtn.textContent = '\u2715 Msr';
-    removeMeasureBtn.title = 'Remove last measure';
-    removeMeasureBtn.disabled = true;
-    controls.appendChild(removeMeasureBtn);
-
-    function updateMeasureButtons() {
-        removeMeasureBtn.disabled = measures <= 1;
-    }
-
     const bpmLabel = document.createElement('span');
     bpmLabel.className = 'pianoroll-bpm-label';
     bpmLabel.textContent = 'BPM';
@@ -151,6 +123,72 @@ export function createPianoroll(opts) {
     bpmInput.max = '255';
     bpmInput.step = '1';
     controls.appendChild(bpmInput);
+
+    // Ellipsis menu (mobile)
+    const moreBtn = document.createElement('button');
+    moreBtn.className = 'pianoroll-btn pianoroll-more';
+    moreBtn.textContent = '\u22EF';
+    moreBtn.title = 'More options';
+    controls.appendChild(moreBtn);
+
+    const moreMenu = document.createElement('div');
+    moreMenu.className = 'pianoroll-more-menu';
+    moreMenu.style.display = 'none';
+
+    const clearBtn = document.createElement('button');
+    clearBtn.className = 'pianoroll-btn';
+    clearBtn.textContent = '\u{1F9F9} Clear';
+    moreMenu.appendChild(clearBtn);
+
+    const addMeasureBtn = document.createElement('button');
+    addMeasureBtn.className = 'pianoroll-btn';
+    addMeasureBtn.textContent = '+ Msr';
+    addMeasureBtn.title = 'Add measure';
+    moreMenu.appendChild(addMeasureBtn);
+
+    const cloneMeasureBtn = document.createElement('button');
+    cloneMeasureBtn.className = 'pianoroll-btn';
+    cloneMeasureBtn.textContent = '\u29C9 Clone';
+    cloneMeasureBtn.title = 'Clone last measure to new';
+    moreMenu.appendChild(cloneMeasureBtn);
+
+    const removeMeasureBtn = document.createElement('button');
+    removeMeasureBtn.className = 'pianoroll-btn';
+    removeMeasureBtn.textContent = '\u2715 Msr';
+    removeMeasureBtn.title = 'Remove last measure';
+    removeMeasureBtn.disabled = true;
+    moreMenu.appendChild(removeMeasureBtn);
+
+    function updateMeasureButtons() {
+        removeMeasureBtn.disabled = measures <= 1;
+    }
+
+    function toggleMoreMenu() {
+        const open = moreMenu.style.display === 'none';
+        moreMenu.style.display = open ? 'flex' : 'none';
+        moreBtn.classList.toggle('active', open);
+    }
+
+    function closeMoreMenu() {
+        moreMenu.style.display = 'none';
+        moreBtn.classList.remove('active');
+    }
+
+    moreBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleMoreMenu();
+    });
+
+    // Close on button press inside menu
+    moreMenu.addEventListener('click', (e) => {
+        if (e.target.tagName === 'BUTTON') closeMoreMenu();
+    });
+
+    // Close on outside click
+    document.addEventListener('click', closeMoreMenu);
+
+    container.appendChild(controls);
+    container.appendChild(moreMenu);
 
     const hint = document.createElement('span');
     hint.className = 'pianoroll-hint';
@@ -192,8 +230,6 @@ export function createPianoroll(opts) {
         onNotesChange();
         saveState();
     });
-
-    container.appendChild(controls);
 
     // Scrollable canvas area
     const scroll = document.createElement('div');

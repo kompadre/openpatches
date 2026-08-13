@@ -2924,6 +2924,7 @@ footer {
     color: #e94560 !important;
     border-color: #e94560 !important;
 }
+.pianoroll-more { display: none !important; }
 .dock-tab-canvas { display: none !important; }
 .kb-voice-select {
     padding: 4px 8px;
@@ -3319,7 +3320,7 @@ footer {
     .edit-row label { width: auto; margin-bottom: 2px; }
 
     /* Pianoroll controls: hide non-essential on mobile */
-    .pianoroll-controls .pianoroll-btn:not(.pianoroll-play):not(.pianoroll-stop) {
+    .pianoroll-controls .pianoroll-btn:not(.pianoroll-play):not(.pianoroll-stop):not(.pianoroll-more) {
         display: none;
     }
     .pianoroll-bpm-label { display: none; }
@@ -3328,6 +3329,24 @@ footer {
         flex-wrap: wrap;
         gap: 4px;
         padding: 4px;
+    }
+    .pianoroll-more {
+        display: flex !important;
+        font-size: 1.1rem;
+        padding: 4px 8px;
+    }
+    .pianoroll-more-menu {
+        display: none;
+        flex-direction: row;
+        flex-wrap: wrap;
+        gap: 4px;
+        padding: 4px;
+        background: #16213e;
+        border-top: 1px solid #333;
+    }
+    .pianoroll-more-menu .pianoroll-btn {
+        font-size: 0.75rem;
+        padding: 4px 8px;
     }
 }
 
