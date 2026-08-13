@@ -1,0 +1,156 @@
+OpenPatches: A Codebase Audio Tour
+
+This file is intended to be a high-level introduction to the project's anatomy and optimized to be read by TTS. Last commit covered one four zero one zero five six from today.
+
+Welcome to this architectural walkthrough of OpenPatches. This is a browser-based DX seven patch editor, sequencer, and sound design environment. It runs entirely on the client side — no server-side computation for the editor itself. The only server dependency is an inference engine for turning WAV files into DX seven patches, and even that is optional. Everything else — the synthesizer, the sequencer, the patch editing, the voice bank — happens in the browser using vanilla JavaScript, Web Audio, WebAssembly, and Web Workers.
+
+Let's start from the top and work our way down.
+
+
+Chapter One: The Entry Point and Orchestration
+
+The application starts in index.html, which defines the overall page structure. There is a menu bar at the top, a main content area in the middle called page-content, and a piano dock at the bottom. The page-content area uses CSS grid with two equal rows — the top half is the night sky canvas where patches live, and the bottom half is the piano dock where the sequencer and keyboard live.
+
+The orchestrator is app.js. This is the main entry point that wires everything together. It imports from all the component modules and the synthesizer modules. It does not contain any UI rendering logic itself — it delegates all of that to the components.
+
+When the page loads, app.js calls two functions: initCanvas and initToolbar. InitCanvas sets up the night sky area — the visual workspace where patches and containers float. InitToolbar creates the piano dock with its tab system, voice bank, pianoroll, keyboard, and editing panels.
+
+App.js also handles all the menu bar actions: importing WAV files, loading SYX banks, clearing history, opening help and about modals, and the emergency mute button. It manages the IndexedDB connection for storing WAV binary data alongside the localStorage-based patch and canvas state.
+
+The file input handler detects whether the user dropped a WAV file or a SYX file and routes accordingly. WAV files trigger the Job lifecycle — a state machine that probes the audio, sends it to the inference server, polls for results, and creates a container with matched patches when done. SYX files are parsed directly on the client using a binary parser that extracts individual one-hundred-twenty-eight-byte DX seven voice data blocks.
+
+
+Chapter Two: The Canvas — Where Patches Live
+
+The canvas module is the visual heart of the application. It manages the night sky area — a large scrollable workspace where patches and containers exist as floating, draggable elements.
+
+The canvas maintains its state through three stores defined in the patch model module: the patchStore holds the actual patch data, the canvasStore tracks where patches are positioned and which containers they belong to, and the jobStore manages the lifecycle of WAV import jobs.
+
+When the canvas initializes, it creates the night-sky-canvas element — a large background div that serves as the grid area. On desktop, this is inside the night-sky element which uses CSS grid to manage scrolling. On mobile, the night-sky is moved into the canvas dock panel via JavaScript.
+
+The canvas supports two types of elements: free-floating patches and containers. Free-floating patches are individual DX seven voices positioned anywhere on the canvas. Containers are grouping boxes that hold multiple patches — typically the results of a WAV import or a SYX file load.
+
+Each container has a header with the container name, action buttons for assigning patches to the voice bank, sorting, and exporting as SYX. The container body holds patch rows — compact representations of each patch with a waveform mini-spectrogram, the patch name, and action buttons.
+
+The drag system is the most complex part of the canvas. On desktop, it uses the HTML five drag and drop API. On mobile, it uses custom touch event handlers. The canvas module defines helper functions for document-level event listeners that get cleaned up on each re-render to prevent stale closures from accumulating.
+
+When a patch is dragged out of a container onto the canvas, it becomes a free-floating patch. When a patch is dragged onto a container, it gets added to that container's patch list. The canvas also supports dragging containers by their headers and resizing them by their bottom-right corner.
+
+The canvas grows dynamically as elements are dragged near the edges. This is achieved through CSS — the night-sky uses display grid with a single cell, and the night-sky-canvas has minimum width and height of one hundred percent. When absolutely-positioned children extend beyond the canvas bounds, the canvas expands naturally.
+
+
+Chapter Three: The Toolbar and Tab System
+
+The toolbar module creates the piano dock's tab system and all its panels. On desktop, the dock sits at the bottom of the page. On mobile, it becomes a full-screen overlay with a bottom tab bar.
+
+The tab bar has five buttons on mobile: Canvas, Piano Roll, Edit, Log, and Mute. On desktop, the Canvas and Log tabs are hidden — the canvas is always visible above the dock, and the log is accessible from the History menu. The Mute button is an emergency stop that reinitializes the DX seven engine.
+
+Each tab has a corresponding panel. Only one panel is visible at a time. The activateTab function removes the active class from all tabs and panels, then adds it to the selected pair.
+
+The Piano Roll panel is the most complex. It contains three sections stacked vertically: the pianoroll row at the top, the recording controls in the middle, and the keyboard at the bottom.
+
+The pianoroll row is a flex container that holds the voice bank on the left and the pianoroll grid on the right in landscape mode, or stacked vertically in portrait mode. The voice bank takes up twenty-five viewport height units on mobile with compact vertical bars.
+
+
+Chapter Four: The Pianoroll — Sequencing and Looping
+
+The pianoroll module implements a grid-based sequencer. It renders a canvas element with rows for each MIDI note and columns for each sixteenth-note time step. Notes are stored as objects with MIDI number, start column, duration, and voice bank slot.
+
+The pianoroll has a looping system for both playback and recording. When playing or recording, the canvas doubles in width — the grid content is drawn twice side by side. As the playhead advances past the first copy, the scroll position wraps back to the beginning, creating a seamless loop. When stopped, the canvas returns to single width with fixed boundaries.
+
+The draw function is split into three helpers: drawLabels renders the note names on the left edge, drawGrid draws the row backgrounds, column lines, and beat markers, and drawNotes draws the actual note rectangles with resize handles. Each helper takes an offset parameter so the same code can draw both copies of the grid.
+
+The tick worker is a dedicated Web Worker that provides the heartbeat for playback and recording. It uses absolute targeting — the target time for each tick is calculated as the start time plus the tick count multiplied by the milliseconds per sixteenth note. This prevents drift accumulation. When the SharedArrayBuffer is available — which requires the C O O P and C O E P headers — the worker uses Atomics dot wait for zero-C P U sleeping. Otherwise, it falls back to setTimeout.
+
+The worker communicates through messages. The main thread sends a start message with the B P M, and the worker sends tick messages back with the column index. To stop, the main thread writes a flag into the shared memory and calls Atomics dot notify to wake the worker instantly. The worker checks this flag before each sleep, after each wake, and after each spin, ensuring a clean exit at every stage.
+
+During playback, the pianoroll's tick handler plays all notes at the current column, advances the playhead, redraws the canvas, and scrolls to follow the playhead. During recording, the toolbar's tick handler does the seam logic — detecting when the playhead wraps around, finalizing any notes held across the boundary, and clearing recording flags so previously recorded notes play back on the next loop.
+
+The pianoroll also handles touch interactions. When stopped, a long press of one second creates a note at that position. An immediate drag scrolls the canvas. Existing notes can be resized by dragging their edges or moved by dragging their centers. Double-tap deletes a note.
+
+
+Chapter Five: The Voice Bank
+
+The voice bank manages up to eight DX seven patches that are loaded into the synthesizer's memory. Each slot has a color, a name, voice data, and a volume level.
+
+On desktop, the voice bank displays as a vertical list of items with drag handles, play buttons, and remove buttons. The volume overlay fills from left to right. Clicking an item selects it as the active slot for the pianoroll and keyboard.
+
+On mobile, the voice bank switches to compact mode — vertical bars arranged horizontally. Each bar represents a slot, with the height indicating the volume level. Tapping a bar selects it as the active voice. Dragging vertically on a bar adjusts the volume, with the bar growing or shrinking from the bottom.
+
+The voice bank persists its state to local storage, including the entries array and the active entry I D. When entries change, it fires a snapshot notification that triggers the synthesizer to reload all voice patches into the DX seven engine.
+
+The voice bank also handles drop targets for patches dragged from the canvas. When a patch is dropped onto the voice bank, it gets added to the next available slot with its voice data and color assigned automatically.
+
+
+Chapter Six: The DX Seven Synthesizer Engine
+
+The synthesizer runs entirely in an AudioWorklet thread. The processor module wraps a WebAssembly build of the M S F A — that's the Music Synthesizer for Android — DX seven engine, compiled with Zig targeting wasm thirty-two wasi.
+
+The processor initializes by receiving the W A S M binary through processor options, instantiating the module, and calling init engine with the sample rate. It allocates a patch buffer and sets up a heap view for efficient memory access.
+
+The processor handles five message types. Patch loads a single voice into a slot. Voice snapshot loads multiple patches from the voice bank. Midi sends raw MIDI messages to the engine. Play samples injects offline-rendered audio for preview playback. Reinit reinitializes the engine for the emergency mute feature.
+
+The process function is called by the audio system every one hundred twenty-eight samples. It uses a ring buffer that pre-renders approximately three hundred milliseconds of audio ahead of time. The fill ring buffer method calls render audio in a loop until the buffer is full. The process method reads from the ring buffer instead of rendering inline, which prevents the W A S M computation from blocking the real-time audio thread. If the ring buffer runs dry, it falls back to inline rendering.
+
+The audio manager is the main-thread counterpart. It's a singleton that creates the AudioContext once, loads the processor module once, and provides functions for playing notes, loading patches, and managing the voice snapshot lifecycle. The play note on channel function sends MIDI note-on messages and returns a stop function that sends note-off. It guards against stale stops by checking whether the stop function is still the current one for that channel and note combination.
+
+The tick worker runs alongside the audio system. It's a separate Web Worker that provides precise timing for the sequencer. The worker creates a SharedArrayBuffer with two Int thirty-two slots — one for the stop flag and one reserved. The Atomics path sleeps using Atomics dot wait with a timeout, waking up one millisecond before the target and spinning for sub-millisecond precision. The fallback path uses setTimeout with the same spin logic.
+
+
+Chapter Seven: Recording and Playback Integration
+
+When the user presses the Record button, the toolbar registers a recording tick handler on the pianoroll and sends a start message to the tick worker with the current B P M. The tick worker begins emitting column indices at the precise sixteenth-note interval.
+
+The recording tick handler processes each tick by calculating the wrapped column position, checking for loop seams, and calling the pianoroll's tick recording method to play back existing notes that aren't flagged as just recorded. If the playhead crosses a loop boundary, it finalizes any held notes and clears the recording flags.
+
+When the user presses a key on the keyboard during recording, the start handler records the press time and column. The sound is played immediately through the play note function. When the key is released, the end handler calculates the duration from the elapsed time and adds a note to the pianoroll with the correct start position and duration. The note gets flagged so the tick recording method won't play it again during the same loop iteration.
+
+The undo system maintains a rolling stack of five note references. Each time a note is recorded, it gets pushed onto the stack. Pressing undo pops the last note and removes it from the pianoroll.
+
+The keyboard on mobile shows a single octave — defaulting to C three through B three — with six octave selector buttons below it. Tapping an octave button rebuilds the keyboard with the selected octave's notes. The voice select dropdown lets the user choose which voice bank slot to use for recording.
+
+
+Chapter Eight: The Edit Panel and Patch Model
+
+The edit panel provides three modes for modifying patches. Morph mode lets the user blend two patches together by assigning them to slots A and B and sliding a distance parameter. Params mode displays the individual DX seven parameters of a single patch — operator frequencies, levels, envelope rates — and lets the user modify them directly. Random mode generates mutations of a patch with adjustable mutation strength.
+
+The patch model module defines the unified data structures and local storage stores. A patch has an I D, a name, algorithm number, feedback amount, voice data as a base sixty-four string, distance score, tags, and a source field. The create patch function generates a unique I D and initializes defaults.
+
+The canvas store tracks two types of entries. Canvas patch entries map patch I Ds to their position on the screen, their container I D, and whether they're minimized. Container entries hold the container name, position, size, associated job I D, patch I D list, and tags.
+
+The tag editor component provides autocomplete tag editing for both patches and containers. Tags are stored as arrays of strings on the respective objects.
+
+
+Chapter Nine: Layout and Responsive Design
+
+The layout uses CSS custom properties for the header height — thirty-six pixels — and footer height — forty-two pixels. The page-content element is a CSS grid with two equal rows on desktop, filling the space between the header and footer.
+
+On mobile, defined as screens narrower than six hundred pixels, the layout switches to a block display. The piano dock becomes a fixed overlay filling the screen below the header. The night-sky element is moved into the canvas dock panel via JavaScript. The footer is hidden entirely.
+
+The dock panel system uses display none by default and display flex when active. Only one panel is visible at a time. The tab bar sits at the bottom of the dock on mobile, providing the primary navigation between Canvas, Piano Roll, Edit, Log, and Mute.
+
+The canvas dock panel on mobile contains the night-sky element, which in turn contains the night-sky-canvas background and all the floating patches and containers. Touch events are handled with custom handlers that support drag-to-reposition, long-press to create notes, and drag between containers.
+
+The voice bank compact mode on mobile displays as horizontal bars with vertical volume indication. The keyboard shows a single octave with octave selector buttons below. The pianoroll controls hide non-essential buttons behind an ellipsis menu.
+
+
+Chapter Ten: Data Flow and State Management
+
+All application state is persisted in the browser — there is no server-side session state. Patch data, canvas layout, voice bank entries, and pianoroll notes are stored in localStorage. WAV binary data is stored in IndexedDB because it can be too large for localStorage.
+
+When the application loads, it calls the restore function which reinitializes the canvas from stored data, checks for existing jobs that need polling resumed, and starts the tutorial if it's the first visit. The DEMO dot SYX file is offered automatically if no existing data is found.
+
+The synthesizer state is ephemeral — it lives only in the AudioWorklet's memory. When the page reloads, voice snapshots must be re-sent from the voice bank's stored entries. The emergency mute feature reinitializes the engine by calling init engine again and reloading all voice snapshots.
+
+The tick worker is also ephemeral — it's created fresh on each page load and destroyed when the page unloads. The SharedArrayBuffer enables zero-C P U sleeping but requires the C O O P and C O E P headers to be set by the server. Without them, the worker falls back to setTimeout, which works fine but uses slightly more C P U.
+
+
+Chapter Eleven: Build and Deploy
+
+The project has no build step for the frontend JavaScript — it's served as static files. The only build target is the WebAssembly module, compiled from C plus plus using Zig's C plus plus compiler targeting wasm thirty-two wasi.
+
+The deployment uses Docker Compose with two services. The Go backend runs the inference server on port eight thousand. Caddy serves the frontend static files and reverse-proxies A P I requests to the backend. The Caddyfile configures security headers including H S T S, C S P, and the C O O P and C O E P headers required for SharedArrayBuffer.
+
+For local development, a Python server script serves the frontend with the required cross-origin isolation headers on port eight thousand.
+
+This concludes the architectural walkthrough of OpenPatches. The system is designed to be fully functional offline once loaded, with the only network dependency being the inference server for W A V file matching. Everything else — synthesis, sequencing, editing, persistence — happens entirely in the browser.
