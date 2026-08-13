@@ -352,9 +352,6 @@ export function createToolbar(opts) {
     }
 
     let kbOctave = isMobileKb ? 2 : -1; // -1 = all octaves (desktop), 2 = C3-B3
-    const keyElements = {};
-    const activePresses = new Map(); // midi → { startTime, startCol }
-    const activeSounds = new Map(); // midi → stopFn
 
     function getKbNotes() {
         if (kbOctave < 0) return PIANO_NOTES; // desktop: all octaves
