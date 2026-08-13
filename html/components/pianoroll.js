@@ -1152,6 +1152,9 @@ export function createPianoroll(opts) {
             scroll.scrollLeft = scroll.scrollLeft % gridWidth();
             draw();
         },
+        clearRecordingFlags() {
+            for (const n of notes) delete n._recordedInSession;
+        },
         tickRecording(col) {
             // Play notes at this column and advance playhead
             const tc = totalCols();

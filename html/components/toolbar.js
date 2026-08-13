@@ -287,16 +287,17 @@ export function createToolbar(opts) {
                 const rawCol = Math.floor(elapsed / msPerSixteenth);
                 const wrappedCol = ((rawCol % tc) + tc) % tc;
 
-                // Split notes held across the loop seam
+                // At loop seam: finalize held notes and clear recording flags
                 if (wrappedCol === 0 && rawCol > 0) {
                     for (const [midi, press] of activePresses) {
                         const pressWrappedCol = ((press.startCol % tc) + tc) % tc;
                         if (pressWrappedCol > 0) {
-                            // Note started before the seam — end it at the seam
                             addRecordedNote(midi, press.startCol, rawCol, activeRecordSlot);
                             activePresses.delete(midi);
                         }
                     }
+                    // Clear flags so previously recorded notes play back next loop
+                    if (pianorollRef.clearRecordingFlags) pianorollRef.clearRecordingFlags();
                 }
 
                 if (pianorollRef.tickRecording) pianorollRef.tickRecording(rawCol);
