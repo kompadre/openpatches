@@ -3331,6 +3331,27 @@ footer {
         padding: 4px;
     }
     .kb-voice-select { max-width: 100px; }
+    .kb-octave-row {
+        display: flex;
+        gap: 4px;
+        padding: 4px;
+        justify-content: center;
+    }
+    .kb-octave-btn {
+        flex: 1;
+        padding: 6px 0;
+        border-radius: 4px;
+        border: 1px solid #444;
+        background: #0f0f23;
+        color: #888;
+        font-size: 0.8rem;
+        cursor: pointer;
+    }
+    .kb-octave-btn.active {
+        background: #1a2744;
+        color: #e94560;
+        border-color: #e94560;
+    }
     .pianoroll-more {
         display: flex !important;
         font-size: 1.1rem;

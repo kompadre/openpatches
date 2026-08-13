@@ -351,82 +351,118 @@ export function createToolbar(opts) {
         }
     }
 
-    const isMobileKb = window.matchMedia('(max-width: 600px)').matches;
-    const kbNotes = isMobileKb ? PIANO_NOTES.filter(n => n.midi >= 48 && n.midi <= 59) : PIANO_NOTES;
-    kbNotes.forEach(n => {
-        const key = document.createElement('div');
-        key.className = 'key ' + (n.white ? 'white' : 'black');
-        key.title = n.name;
-        if (n.white) key.textContent = n.name;
+    let kbOctave = isMobileKb ? 2 : -1; // -1 = all octaves (desktop), 2 = C3-B3
+    const keyElements = {};
+    const activePresses = new Map(); // midi → { startTime, startCol }
+    const activeSounds = new Map(); // midi → stopFn
 
-        const playFn = playNoteFn || (() => {});
+    function getKbNotes() {
+        if (kbOctave < 0) return PIANO_NOTES; // desktop: all octaves
+        const lo = (kbOctave + 1) * 12; // C of octave
+        const hi = lo + 11;             // B of octave
+        return PIANO_NOTES.filter(n => n.midi >= lo && n.midi <= hi);
+    }
 
-        function handleStart(e) {
-            if (e.type === 'mousedown' && e.button !== 0) return;
-            e.preventDefault();
-            key.classList.add('pressed');
+    function rebuildKeyboard() {
+        kb.innerHTML = '';
+        for (const midi of Object.keys(keyElements)) delete keyElements[midi];
+        const notes = getKbNotes();
+        notes.forEach(n => {
+            const key = document.createElement('div');
+            key.className = 'key ' + (n.white ? 'white' : 'black');
+            key.title = n.name;
+            if (n.white) key.textContent = n.name;
 
-            const entries = voiceBank ? voiceBank._getEntries() : [];
-            const activeEntry = entries[activeRecordSlot];
-            // playFn is async — resolve the promise to get the stop function
-            const result = playFn(n.midi, 30000, activeEntry ? activeEntry.voiceData : null, activeRecordSlot);
-            if (result && typeof result.then === 'function') {
-                result.then(stopFn => {
-                    if (typeof stopFn === 'function') activeSounds.set(n.midi, stopFn);
-                }).catch(() => {});
-            } else if (typeof result === 'function') {
-                activeSounds.set(n.midi, result);
+            const playFn = playNoteFn || (() => {});
+
+            function handleStart(e) {
+                if (e.type === 'mousedown' && e.button !== 0) return;
+                e.preventDefault();
+                key.classList.add('pressed');
+
+                const entries = voiceBank ? voiceBank._getEntries() : [];
+                const activeEntry = entries[activeRecordSlot];
+                const result = playFn(n.midi, 30000, activeEntry ? activeEntry.voiceData : null, activeRecordSlot);
+                if (result && typeof result.then === 'function') {
+                    result.then(stopFn => {
+                        if (typeof stopFn === 'function') activeSounds.set(n.midi, stopFn);
+                    }).catch(() => {});
+                } else if (typeof result === 'function') {
+                    activeSounds.set(n.midi, result);
+                }
+
+                if (recording) {
+                    const bpm = pianorollRef.getBpm ? pianorollRef.getBpm() : 120;
+                    const msPerSixteenth = (60000 / bpm) / 4;
+                    const elapsed = Date.now() - recordStartTime;
+                    const rawCol = Math.round(elapsed / msPerSixteenth);
+                    activePresses.set(n.midi, { startTime: Date.now(), startCol: rawCol });
+                    logRecord(`[record] note-on midi=${n.midi} slot=${activeRecordSlot} col=${rawCol}`);
+                }
+
+                if (onNoteClick) onNoteClick(n.midi);
             }
 
-            if (recording) {
-                const bpm = pianorollRef.getBpm ? pianorollRef.getBpm() : 120;
-                const msPerSixteenth = (60000 / bpm) / 4;
-                const elapsed = Date.now() - recordStartTime;
-                const rawCol = Math.round(elapsed / msPerSixteenth);
-                activePresses.set(n.midi, { startTime: Date.now(), startCol: rawCol });
-                logRecord(`[record] note-on midi=${n.midi} slot=${activeRecordSlot} col=${rawCol}`);
+            function handleEnd(e) {
+                e.preventDefault();
+                key.classList.remove('pressed');
+
+                if (activeSounds.has(n.midi)) {
+                    const stopFn = activeSounds.get(n.midi);
+                    activeSounds.delete(n.midi);
+                    if (typeof stopFn === 'function') stopFn();
+                }
+
+                if (recording && activePresses.has(n.midi)) {
+                    const press = activePresses.get(n.midi);
+                    activePresses.delete(n.midi);
+                    const bpm = pianorollRef.getBpm ? pianorollRef.getBpm() : 120;
+                    const msPerSixteenth = (60000 / bpm) / 4;
+                    const elapsed = Date.now() - recordStartTime;
+                    const endCol = Math.round(elapsed / msPerSixteenth);
+                    const durCols = endCol - press.startCol;
+                    logRecord(`[record] note-off midi=${n.midi} startCol=${press.startCol} endCol=${endCol} dur=${durCols} slot=${activeRecordSlot}`);
+                    addRecordedNote(n.midi, press.startCol, endCol, activeRecordSlot);
+                }
             }
 
-            if (onNoteClick) onNoteClick(n.midi);
-        }
+            key.addEventListener('mousedown', handleStart);
+            key.addEventListener('mouseup', handleEnd);
+            key.addEventListener('mouseleave', handleEnd);
 
-        function handleEnd(e) {
-            e.preventDefault();
-            key.classList.remove('pressed');
+            key.addEventListener('touchstart', handleStart, { passive: false });
+            key.addEventListener('touchend', handleEnd, { passive: false });
+            key.addEventListener('touchcancel', handleEnd, { passive: false });
 
-            // Stop the sustained sound
-            if (activeSounds.has(n.midi)) {
-                const stopFn = activeSounds.get(n.midi);
-                activeSounds.delete(n.midi);
-                if (typeof stopFn === 'function') stopFn();
-            }
+            keyElements[n.midi] = key;
+            kb.appendChild(key);
+        });
+        positionBlackKeys();
+    }
 
-            if (recording && activePresses.has(n.midi)) {
-                const press = activePresses.get(n.midi);
-                activePresses.delete(n.midi);
-                const bpm = pianorollRef.getBpm ? pianorollRef.getBpm() : 120;
-                const msPerSixteenth = (60000 / bpm) / 4;
-                const elapsed = Date.now() - recordStartTime;
-                const endCol = Math.round(elapsed / msPerSixteenth);
-                const durCols = endCol - press.startCol;
-                logRecord(`[record] note-off midi=${n.midi} startCol=${press.startCol} endCol=${endCol} dur=${durCols} slot=${activeRecordSlot}`);
-                addRecordedNote(n.midi, press.startCol, endCol, activeRecordSlot);
-            }
-        }
-
-        key.addEventListener('mousedown', handleStart);
-        key.addEventListener('mouseup', handleEnd);
-        key.addEventListener('mouseleave', handleEnd);
-
-        key.addEventListener('touchstart', handleStart, { passive: false });
-        key.addEventListener('touchend', handleEnd, { passive: false });
-        key.addEventListener('touchcancel', handleEnd, { passive: false });
-
-        keyElements[n.midi] = key;
-        kb.appendChild(key);
-    });
+    rebuildKeyboard();
 
     pianorollPanel.appendChild(kb);
+
+    // Octave selector (mobile)
+    let octaveBtns = [];
+    if (isMobileKb) {
+        const octaveRow = document.createElement('div');
+        octaveRow.className = 'kb-octave-row';
+        for (let i = 0; i < 6; i++) {
+            const btn = document.createElement('button');
+            btn.className = 'kb-octave-btn' + (i === kbOctave ? ' active' : '');
+            btn.textContent = i;
+            btn.addEventListener('click', () => {
+                kbOctave = i;
+                octaveBtns.forEach((b, idx) => b.classList.toggle('active', idx === i));
+                rebuildKeyboard();
+            });
+            octaveBtns.push(btn);
+            octaveRow.appendChild(btn);
+        }
+        pianorollPanel.appendChild(octaveRow);
+    }
 
     // Position black keys absolutely over white keys (mobile layout)
     function positionBlackKeys() {
@@ -439,7 +475,8 @@ export function createToolbar(opts) {
         const whiteKeyWidth = whiteKeys.length > 0 ? whiteKeys[0].offsetWidth : 0;
         const blackKeyWidth = 32; // matches CSS
         let whiteIdx = 0;
-        kbNotes.forEach(n => {
+        const notes = getKbNotes();
+        notes.forEach(n => {
             const key = keyElements[n.midi];
             if (n.white) {
                 whiteIdx++;
