@@ -333,6 +333,7 @@ export function createToolbar(opts) {
         const s = ((startCol % tc) + tc) % tc;
         const note = pianorollRef.addNote({ midi, start: s, dur, slot });
         if (note) {
+            note._recordedInSession = true;
             undoStack.push(note);
             if (undoStack.length > MAX_UNDO) undoStack.shift();
         }
@@ -353,6 +354,7 @@ export function createToolbar(opts) {
 
             const entries = voiceBank ? voiceBank._getEntries() : [];
             const activeEntry = entries[activeRecordSlot];
+            // Play sound immediately (not via tickRecording, to avoid doubling)
             const stopFn = playFn(n.midi, 30000, activeEntry ? activeEntry.voiceData : null, activeRecordSlot);
             if (stopFn) activeSounds.set(n.midi, stopFn);
 

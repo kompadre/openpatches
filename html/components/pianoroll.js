@@ -1148,6 +1148,7 @@ export function createPianoroll(opts) {
         stopRecording() {
             looping = false;
             playCol = -1;
+            for (const n of notes) delete n._recordedInSession;
             scroll.scrollLeft = scroll.scrollLeft % gridWidth();
             draw();
         },
@@ -1158,7 +1159,7 @@ export function createPianoroll(opts) {
             const bpm = Math.max(32, Math.min(255, parseInt(bpmInput.value) || 120));
             const msPerSixteenth = 60000 / bpm / 4;
             for (const n of notes) {
-                if (n.start === wrappedCol) {
+                if (n.start === wrappedCol && !n._recordedInSession) {
                     try {
                         const entry = getSlotData(n.slot);
                         const voiceData = entry ? entry.voiceData : null;
