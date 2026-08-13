@@ -437,6 +437,7 @@ export function createToolbar(opts) {
         }
         const whiteKeys = kb.querySelectorAll('.key.white');
         const whiteKeyWidth = whiteKeys.length > 0 ? whiteKeys[0].offsetWidth : 0;
+        const blackKeyWidth = 32; // matches CSS
         let whiteIdx = 0;
         kbNotes.forEach(n => {
             const key = keyElements[n.midi];
@@ -445,7 +446,7 @@ export function createToolbar(opts) {
             } else {
                 const prevWhite = whiteKeys[whiteIdx - 1];
                 if (prevWhite) {
-                    const left = prevWhite.offsetLeft + whiteKeyWidth * 0.55;
+                    const left = prevWhite.offsetLeft + whiteKeyWidth * 0.5 - blackKeyWidth / 2;
                     key.style.position = 'absolute';
                     key.style.left = left + 'px';
                 }
