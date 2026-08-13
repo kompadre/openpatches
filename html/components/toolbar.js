@@ -428,7 +428,7 @@ export function createToolbar(opts) {
         const midiSet = new Set((pianorollNotes || []).map(n => n.midi));
         for (const [midi, key] of Object.entries(keyElements)) {
             const m = parseInt(midi);
-            if (m >= 60 && m <= 77) {
+            if (m >= 36 && m <= 83) {
                 key.classList.toggle('pianoroll-active', midiSet.has(m));
             }
         }

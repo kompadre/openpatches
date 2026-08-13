@@ -40,6 +40,18 @@ const NOTES = [
     { midi: 50, name: 'D3',  white: true },
     { midi: 49, name: 'C#3', white: false },
     { midi: 48, name: 'C3',  white: true },
+    { midi: 47, name: 'B2',  white: true },
+    { midi: 46, name: 'A#2', white: false },
+    { midi: 45, name: 'A2',  white: true },
+    { midi: 44, name: 'G#2', white: false },
+    { midi: 43, name: 'G2',  white: true },
+    { midi: 42, name: 'F#2', white: false },
+    { midi: 41, name: 'F2',  white: true },
+    { midi: 40, name: 'E2',  white: true },
+    { midi: 39, name: 'D#2', white: false },
+    { midi: 38, name: 'D2',  white: true },
+    { midi: 37, name: 'C#2', white: false },
+    { midi: 36, name: 'C2',  white: true },
 ];
 
 const COLS_PER_MEASURE = 16; // 16 sixteenth notes = 1 measure of 4/4
