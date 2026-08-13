@@ -2918,6 +2918,12 @@ footer {
     color: #e94560;
     border-color: #e94560;
 }
+.kb-btn-undo.active,
+.kb-btn-undo:active {
+    background: #2a1a1a !important;
+    color: #e94560 !important;
+    border-color: #e94560 !important;
+}
 .dock-tab-canvas { display: none !important; }
 .kb-voice-select {
     padding: 4px 8px;
