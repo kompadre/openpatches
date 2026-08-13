@@ -23,10 +23,28 @@ let forkGain = null;
 
 // Tick worker for precise pianoroll heartbeat
 let tickWorker = null;
+let tickWorkerSab = null;
 try {
     tickWorker = new Worker(new URL('./synth/tick-worker.js', import.meta.url));
+    if (typeof SharedArrayBuffer !== 'undefined') {
+        tickWorkerSab = new SharedArrayBuffer(8); // 2 × Int32
+        tickWorker.postMessage({ type: 'init', sab: tickWorkerSab });
+    }
 } catch (e) {
     console.warn('[tick-worker] Failed to create worker:', e);
+}
+
+function stopTickWorker(tw) {
+    if (!tw) return;
+    if (tickWorkerSab) {
+        const flag = new Int32Array(tickWorkerSab);
+        Atomics.store(flag, 0, 1);
+        Atomics.notify(flag, 0);
+        // Reset flag after a brief delay so worker can detect the stop
+        setTimeout(() => Atomics.store(flag, 0, 0), 50);
+    } else {
+        tw.postMessage({ type: 'stop' });
+    }
 }
 
 // --- IndexedDB for WAV binary data ---
@@ -447,6 +465,7 @@ function initToolbar() {
         playNoteFn: playFn,
         initialTab: isMobile ? 'canvas' : 'pianoroll',
         tickWorker: tickWorker,
+        stopWorker: stopTickWorker,
         onNoteClick: (midi) => { activeKeyboardNote = midi; },
         onSnapshot: (entries) => {
             if (isReady()) {

@@ -996,9 +996,10 @@ export function createPianoroll(opts) {
         playBtn.disabled = false;
         stopBtn.disabled = true;
 
-        const tw = opts.tickWorker;
-        if (tw) {
-            tw.postMessage({ type: 'stop' });
+        if (opts.stopWorker) {
+            opts.stopWorker(opts.tickWorker);
+        } else if (opts.tickWorker) {
+            opts.tickWorker.postMessage({ type: 'stop' });
         }
 
         // Normalize scroll position within single copy

@@ -181,6 +181,8 @@ export function createToolbar(opts) {
         playNoteFn: pianorollPlayFn,
         onNotesChange: updateHighlights,
         activeSlot: null,
+        tickWorker: opts.tickWorker,
+        stopWorker: opts.stopWorker,
         getSlotData: (slot) => {
             const entries = voiceBank._getEntries ? voiceBank._getEntries() : [];
             return entries[slot] || null;
@@ -260,7 +262,11 @@ export function createToolbar(opts) {
         btnRecord.textContent = 'Record ●';
         btnPlayStop.textContent = 'Play ▶';
         btnPlayStop.classList.remove('active');
-        if (opts.tickWorker) opts.tickWorker.postMessage({ type: 'stop' });
+        if (opts.stopWorker) {
+            opts.stopWorker(opts.tickWorker);
+        } else if (opts.tickWorker) {
+            opts.tickWorker.postMessage({ type: 'stop' });
+        }
         if (pianorollRef && pianorollRef.stopRecording) pianorollRef.stopRecording();
         if (pianorollRef && pianorollRef.stopPlayback) pianorollRef.stopPlayback();
     }
