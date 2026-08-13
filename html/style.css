@@ -3105,10 +3105,15 @@ footer {
     }
     .dock-tab-stop {
         display: flex !important;
-        color: #e94560;
+        color: #e94560 !important;
+        border-bottom: none !important;
     }
-    .dock-tab-stop:active {
-        background: #2a1a1a;
+    .dock-tab-stop:active,
+    .dock-tab-stop:focus {
+        color: #e94560 !important;
+        background: #2a1a1a !important;
+        border-bottom: none !important;
+        outline: none;
     }
     
     /* Piano roll layout */

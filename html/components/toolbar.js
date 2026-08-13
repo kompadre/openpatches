@@ -90,7 +90,7 @@ export function createToolbar(opts) {
 
     const tabStop = document.createElement('button');
     tabStop.className = 'dock-tab dock-tab-stop';
-    tabStop.innerHTML = '<span>⚠</span><span>Stop</span>';
+    tabStop.innerHTML = '<span>🔇</span><span>Mute</span>';
     tabStop.addEventListener('click', () => {
         if (opts.onEmergencyStop) opts.onEmergencyStop();
     });
