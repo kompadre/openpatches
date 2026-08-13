@@ -476,7 +476,14 @@ function initToolbar() {
             if (pianoDockWrapper && pianoDockWrapper._pianoroll && pianoDockWrapper._pianoroll.stopPlayback) {
                 pianoDockWrapper._pianoroll.stopPlayback();
             }
-            appendLog('Emergency stop: MSFA engine reinitialized');
+            // Reload voices after engine reinit
+            setTimeout(() => {
+                if (pianoDockWrapper && pianoDockWrapper._voiceBank) {
+                    const entries = pianoDockWrapper._voiceBank._getEntries();
+                    if (entries.length > 0) sendVoiceSnapshot(entries);
+                }
+                appendLog('Emergency stop: MSFA engine reinitialized, voices reloaded');
+            }, 100);
         },
         onSnapshot: (entries) => {
             if (isReady()) {
