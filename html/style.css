@@ -3317,5 +3317,17 @@ footer {
     .edit-panel-inner { min-width: 0; width: 100%; padding: 10px; }
     .edit-row { flex-direction: column; align-items: stretch; gap: 4px; }
     .edit-row label { width: auto; margin-bottom: 2px; }
+
+    /* Pianoroll controls: hide non-essential on mobile */
+    .pianoroll-controls .pianoroll-btn:not(.pianoroll-play):not(.pianoroll-stop) {
+        display: none;
+    }
+    .pianoroll-bpm-label { display: none; }
+    .pianoroll-bpm { width: 50px; font-size: 0.75rem; }
+    .pianoroll-controls {
+        flex-wrap: wrap;
+        gap: 4px;
+        padding: 4px;
+    }
 }
 
