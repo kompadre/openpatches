@@ -220,14 +220,9 @@ export function createToolbar(opts) {
         if (voiceBank && voiceBank._setActiveSlot) voiceBank._setActiveSlot(activeRecordSlot);
     });
 
-    kbControls.appendChild(btnRecord);
-    kbControls.appendChild(btnPlayStop);
-
     const btnUndo = document.createElement('button');
     btnUndo.className = 'kb-btn kb-btn-undo';
     btnUndo.textContent = '↩ Undo';
-    btnUndo.style.display = 'none';
-    kbControls.appendChild(btnUndo);
 
     const undoStack = [];
     const MAX_UNDO = 5;
@@ -240,6 +235,9 @@ export function createToolbar(opts) {
         }
     });
 
+    kbControls.appendChild(btnUndo);
+    kbControls.appendChild(btnRecord);
+    kbControls.appendChild(btnPlayStop);
     kbControls.appendChild(kbVoices);
     pianorollPanel.appendChild(kbControls);
 
@@ -255,7 +253,6 @@ export function createToolbar(opts) {
         activePresses.clear();
         recording = false;
         undoStack.length = 0;
-        btnUndo.style.display = 'none';
         btnRecord.classList.remove('active');
         btnRecord.textContent = 'Record ●';
         btnPlayStop.textContent = 'Play ▶';
@@ -274,7 +271,6 @@ export function createToolbar(opts) {
             btnRecord.classList.add('active');
             btnRecord.textContent = 'Stop ■';
             btnPlayStop.textContent = 'Stop ■';
-            btnUndo.style.display = '';
             undoStack.length = 0;
             if (pianorollRef && pianorollRef.startRecording) pianorollRef.startRecording();
             // Tick recording: play notes, move playhead, scroll, handle seam splits
