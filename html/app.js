@@ -471,6 +471,13 @@ function initToolbar() {
         tickWorker: tickWorker,
         stopWorker: stopTickWorker,
         onNoteClick: (midi) => { activeKeyboardNote = midi; },
+        onEmergencyStop: () => {
+            emergencyStop();
+            if (pianoDockWrapper && pianoDockWrapper._pianoroll && pianoDockWrapper._pianoroll.stopPlayback) {
+                pianoDockWrapper._pianoroll.stopPlayback();
+            }
+            appendLog('Emergency stop: MSFA engine reinitialized');
+        },
         onSnapshot: (entries) => {
             if (isReady()) {
                 sendVoiceSnapshot(entries);

@@ -2926,6 +2926,7 @@ footer {
 }
 .pianoroll-more { display: none !important; }
 .dock-tab-canvas { display: none !important; }
+.dock-tab-stop { display: none !important; }
 .kb-voice-select {
     padding: 4px 8px;
     border-radius: 4px;
@@ -3101,6 +3102,13 @@ footer {
         border-bottom: 3px solid #e94560;
         background: #16213e;
         color: #fff;
+    }
+    .dock-tab-stop {
+        display: flex !important;
+        color: #e94560;
+    }
+    .dock-tab-stop:active {
+        background: #2a1a1a;
     }
     
     /* Piano roll layout */

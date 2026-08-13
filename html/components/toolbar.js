@@ -88,10 +88,18 @@ export function createToolbar(opts) {
     tabLog.className = 'dock-tab dock-tab-log' + (effectiveInitialTab === 'log' ? ' active' : '');
     tabLog.innerHTML = '<span>📋</span><span>Log</span>';
 
+    const tabStop = document.createElement('button');
+    tabStop.className = 'dock-tab dock-tab-stop';
+    tabStop.innerHTML = '<span>⚠</span><span>Stop</span>';
+    tabStop.addEventListener('click', () => {
+        if (opts.onEmergencyStop) opts.onEmergencyStop();
+    });
+
     tabBar.appendChild(tabCanvas);
     tabBar.appendChild(tabPianoroll);
     tabBar.appendChild(tabEdit);
     tabBar.appendChild(tabLog);
+    tabBar.appendChild(tabStop);
     wrapper.appendChild(tabBar);
 
     // Panels
