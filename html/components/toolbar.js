@@ -351,6 +351,7 @@ export function createToolbar(opts) {
         }
     }
 
+    const isMobileKb = window.matchMedia('(max-width: 600px)').matches;
     let kbOctave = isMobileKb ? 2 : -1; // -1 = all octaves (desktop), 2 = C3-B3
 
     function getKbNotes() {
