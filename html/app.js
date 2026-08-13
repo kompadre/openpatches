@@ -3,7 +3,7 @@
 
 import { parseSyxFile, voiceRawToBase64 } from './components/syx-parser.js';
 import { batchRenderWaveforms } from './synth/dx7-synth.js';
-import { acquire, shutdownAll, extendIdle, playNoteRealtime, playNoteOnChannel, releaseAllNotes, sendVoiceSnapshot, playSamplesInWorklet, setChannelVolume, base64ToUint8Array, renderOffline, isReady, getState, setOnStatusChange, setPianorollStop } from './synth/audio-manager.js';
+import { acquire, shutdownAll, extendIdle, playNoteRealtime, playNoteOnChannel, releaseAllNotes, sendVoiceSnapshot, playSamplesInWorklet, setChannelVolume, base64ToUint8Array, renderOffline, isReady, getState, setOnStatusChange, setPianorollStop, emergencyStop } from './synth/audio-manager.js';
 import { patchStore, canvasStore, jobStore, createPatch } from './components/patch-model.js';
 import { initCanvas, addContainer, addPatchToContainer, refreshCanvas } from './components/canvas.js';
 import { createToolbar } from './components/toolbar.js';
@@ -662,6 +662,13 @@ document.getElementById('menu-clear-history').addEventListener('click', async ()
     canvasStore.clear();
     initCanvas(getCanvasOpts());
     appendLog('History cleared');
+});
+document.getElementById('menu-emergency-stop').addEventListener('click', () => {
+    emergencyStop();
+    if (pianoDockWrapper && pianoDockWrapper._pianoroll && pianoDockWrapper._pianoroll.stopPlayback) {
+        pianoDockWrapper._pianoroll.stopPlayback();
+    }
+    appendLog('Emergency stop: MSFA engine reinitialized');
 });
 
 // Help modals

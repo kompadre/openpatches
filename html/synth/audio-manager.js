@@ -207,6 +207,16 @@ export function releaseAllNotes() {
 }
 
 /**
+ * Emergency stop: release all notes and reinitialize the MSFA engine.
+ */
+export function emergencyStop() {
+    releaseAllNotes();
+    if (dx7Node) {
+        dx7Node.port.postMessage({ type: 'reinit' });
+    }
+}
+
+/**
  * Legacy: play note with voiceData (loads patch on channel 0).
  */
 export function playNoteRealtime(voiceData, midi, velocity = 100) {

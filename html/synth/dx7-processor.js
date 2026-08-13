@@ -142,6 +142,22 @@ class DX7Processor extends AudioWorkletProcessor {
           this.exp.set_channel_volume(msg.channel, msg.volume);
         }
         break;
+      case 'reinit':
+        // Emergency stop: reinitialize the MSFA engine
+        if (this.exp && this.exp.init_engine) {
+          this.exp.init_engine(this.sr);
+          this.patchPtr = this.exp.get_patch_buffer();
+          this.patchView = new Uint8Array(this.exp.memory.buffer, this.patchPtr, 128);
+          // Clear ring buffer
+          this.ringWrite = 0;
+          this.ringRead = 0;
+          this.ringAvailable = 0;
+          // Clear preview
+          this.previewBuffer = null;
+          this.previewPos = 0;
+          this.previewRemaining = 0;
+        }
+        break;
     }
   }
 
