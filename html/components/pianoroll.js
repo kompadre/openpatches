@@ -249,7 +249,6 @@ export function createPianoroll(opts) {
 
     const ctx = canvas.getContext('2d');
     let playing = false;
-    let playTimer = null;
     let playCol = -1;
     let dragging = false;
     let dragStart = null;
@@ -981,65 +980,80 @@ export function createPianoroll(opts) {
         stopBtn.disabled = false;
 
         const bpm = Math.max(32, Math.min(255, parseInt(bpmInput.value) || 120));
-        const msPerSixteenth = 60000 / bpm / 4;
-        const gw = gridWidth();
-
-        function tick() {
-            if (!playing) return;
-
-            for (const n of notes) {
-                if (n.start === playCol) {
-                    try {
-                        const entry = getSlotData(n.slot);
-                        const voiceData = entry ? entry.voiceData : null;
-                        playNoteFn(n.midi, n.dur * msPerSixteenth, voiceData, n.slot);
-                        consecutiveErrors = 0;
-                    } catch (e) {
-                        consecutiveErrors++;
-                        console.warn(`[pianoroll] Note error (${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS}):`, e);
-                        if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-                            console.warn('[pianoroll] Too many errors, stopping playback');
-                            stopPlayback();
-                            return;
-                        }
-                    }
-                }
-            }
-
-            draw();
-
-            // Scroll to follow playhead
-            const scrollX = LABEL_W + playCol * COL_W;
-            scroll.scrollLeft = scrollX;
-
-            // Wrap: if scroll has passed one full grid width, jump back
-            if (scroll.scrollLeft >= LABEL_W + gw) {
-                scroll.scrollLeft -= gw;
-            }
-
-            const current = playCol;
-            playCol = (current + 1) % totalCols();
-
-            playTimer = setTimeout(tick, msPerSixteenth);
-        }
-
         draw();
         scroll.scrollLeft = LABEL_W;
-        playTimer = setTimeout(tick, msPerSixteenth);
+
+        const tw = opts.tickWorker;
+        if (tw) {
+            tw.postMessage({ type: 'start', bpm: bpm, startCol: 0 });
+        }
     }
 
     function stopPlayback() {
         playing = false;
         looping = false;
         playCol = -1;
-        if (playTimer) clearTimeout(playTimer);
-        playTimer = null;
         playBtn.disabled = false;
         stopBtn.disabled = true;
+
+        const tw = opts.tickWorker;
+        if (tw) {
+            tw.postMessage({ type: 'stop' });
+        }
 
         // Normalize scroll position within single copy
         scroll.scrollLeft = scroll.scrollLeft % gridWidth();
         draw();
+    }
+
+    // --- Tick Worker Handler ---
+    let recordingTickHandler = null;
+    const gw = gridWidth();
+
+    function handlePlaybackTick(rawCol) {
+        const tc = totalCols();
+        const wrappedCol = ((rawCol % tc) + tc) % tc;
+        const bpm = Math.max(32, Math.min(255, parseInt(bpmInput.value) || 120));
+        const msPerSixteenth = 60000 / bpm / 4;
+
+        for (const n of notes) {
+            if (n.start === wrappedCol) {
+                try {
+                    const entry = getSlotData(n.slot);
+                    const voiceData = entry ? entry.voiceData : null;
+                    playNoteFn(n.midi, n.dur * msPerSixteenth, voiceData, n.slot);
+                    consecutiveErrors = 0;
+                } catch (e) {
+                    consecutiveErrors++;
+                    if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+                        stopPlayback();
+                        return;
+                    }
+                }
+            }
+        }
+
+        playCol = wrappedCol;
+        draw();
+
+        const scrollX = LABEL_W + playCol * COL_W;
+        scroll.scrollLeft = scrollX;
+        if (scroll.scrollLeft >= LABEL_W + gw) {
+            scroll.scrollLeft -= gw;
+        }
+    }
+
+    // Register worker message listener
+    if (opts.tickWorker) {
+        opts.tickWorker.addEventListener('message', (e) => {
+            if (e.data.type !== 'tick') return;
+            const rawCol = e.data.col;
+            if (recordingTickHandler) {
+                recordingTickHandler(rawCol);
+            } else if (playing) {
+                handlePlaybackTick(rawCol);
+            }
+        });
     }
 
     playBtn.addEventListener('click', startPlayback);
@@ -1148,9 +1162,13 @@ export function createPianoroll(opts) {
         stopRecording() {
             looping = false;
             playCol = -1;
+            recordingTickHandler = null;
             for (const n of notes) delete n._recordedInSession;
             scroll.scrollLeft = scroll.scrollLeft % gridWidth();
             draw();
+        },
+        setRecordingTickHandler(handler) {
+            recordingTickHandler = handler;
         },
         clearRecordingFlags() {
             for (const n of notes) delete n._recordedInSession;
@@ -1167,6 +1185,7 @@ export function createPianoroll(opts) {
                         const entry = getSlotData(n.slot);
                         const voiceData = entry ? entry.voiceData : null;
                         playNoteFn(n.midi, n.dur * msPerSixteenth, voiceData, n.slot);
+                        console.log(`[record:playback] midi=${n.midi} col=${wrappedCol} dur=${n.dur} slot=${n.slot}`);
                     } catch (e) { /* ignore */ }
                 }
             }

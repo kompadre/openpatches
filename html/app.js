@@ -21,6 +21,14 @@ let activeSyxVoiceData = null;
 let forkOsc = null;
 let forkGain = null;
 
+// Tick worker for precise pianoroll heartbeat
+let tickWorker = null;
+try {
+    tickWorker = new Worker(new URL('./synth/tick-worker.js', import.meta.url));
+} catch (e) {
+    console.warn('[tick-worker] Failed to create worker:', e);
+}
+
 // --- IndexedDB for WAV binary data ---
 const DB_NAME = 'openpatches';
 const DB_VERSION = 1;
@@ -438,6 +446,7 @@ function initToolbar() {
         matchedMidi: activeKeyboardNote,
         playNoteFn: playFn,
         initialTab: isMobile ? 'canvas' : 'pianoroll',
+        tickWorker: tickWorker,
         onNoteClick: (midi) => { activeKeyboardNote = midi; },
         onSnapshot: (entries) => {
             if (isReady()) {

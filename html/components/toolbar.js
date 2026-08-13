@@ -134,7 +134,6 @@ export function createToolbar(opts) {
     let recording = false;
     let recordStartTime = 0;
     let activeRecordSlot = 0;
-    let recordInterval = null;
 
     const voiceSelect = document.createElement('select');
     voiceSelect.className = 'kb-voice-select';
@@ -261,7 +260,7 @@ export function createToolbar(opts) {
         btnRecord.textContent = 'Record ●';
         btnPlayStop.textContent = 'Play ▶';
         btnPlayStop.classList.remove('active');
-        if (recordInterval) { clearInterval(recordInterval); recordInterval = null; }
+        if (opts.tickWorker) opts.tickWorker.postMessage({ type: 'stop' });
         if (pianorollRef && pianorollRef.stopRecording) pianorollRef.stopRecording();
         if (pianorollRef && pianorollRef.stopPlayback) pianorollRef.stopPlayback();
     }
@@ -276,41 +275,37 @@ export function createToolbar(opts) {
             btnRecord.textContent = 'Stop ■';
             btnPlayStop.textContent = 'Stop ■';
             undoStack.length = 0;
-            lastRecordTickCol = -1;
             if (pianorollRef && pianorollRef.startRecording) pianorollRef.startRecording();
-            // Tick recording: play notes, move playhead, scroll, handle seam splits
-            let lastRecordTickCol = -1;
-            recordInterval = setInterval(() => {
-                if (!recording || !pianorollRef) return;
-                const bpm = pianorollRef.getBpm ? pianorollRef.getBpm() : 120;
-                const msPerSixteenth = (60000 / bpm) / 4;
-                const tc = pianorollRef.totalCols ? pianorollRef.totalCols() : 16;
-                const elapsed = Date.now() - recordStartTime;
-                const rawCol = Math.floor(elapsed / msPerSixteenth);
-                const wrappedCol = ((rawCol % tc) + tc) % tc;
 
-                // Skip if we already ticked this column
-                if (rawCol === lastRecordTickCol) return;
-                lastRecordTickCol = rawCol;
+            // Register recording tick handler on pianoroll
+            if (pianorollRef && pianorollRef.setRecordingTickHandler) {
+                pianorollRef.setRecordingTickHandler(function recordingTick(rawCol) {
+                    if (!recording || !pianorollRef) return;
+                    const tc = pianorollRef.totalCols ? pianorollRef.totalCols() : 16;
+                    const wrappedCol = ((rawCol % tc) + tc) % tc;
 
-                // At loop seam: finalize held notes and clear recording flags
-                if (wrappedCol === 0 && rawCol > 0) {
-                    console.log(`[record] seam at rawCol=${rawCol}, finalizing ${activePresses.size} held note(s)`);
-                    for (const [midi, press] of activePresses) {
-                        const pressWrappedCol = ((press.startCol % tc) + tc) % tc;
-                        if (pressWrappedCol > 0) {
-                            console.log(`[record] seam-split midi=${midi} startCol=${press.startCol} endCol=${rawCol}`);
-                            addRecordedNote(midi, press.startCol, rawCol, activeRecordSlot);
-                            activePresses.delete(midi);
+                    // At loop seam: finalize held notes and clear recording flags
+                    if (wrappedCol === 0 && rawCol > 0) {
+                        console.log(`[record] seam at rawCol=${rawCol}, finalizing ${activePresses.size} held note(s)`);
+                        for (const [midi, press] of activePresses) {
+                            const pressWrappedCol = ((press.startCol % tc) + tc) % tc;
+                            if (pressWrappedCol > 0) {
+                                console.log(`[record] seam-split midi=${midi} startCol=${press.startCol} endCol=${rawCol}`);
+                                addRecordedNote(midi, press.startCol, rawCol, activeRecordSlot);
+                                activePresses.delete(midi);
+                            }
                         }
+                        if (pianorollRef.clearRecordingFlags) pianorollRef.clearRecordingFlags();
                     }
-                    // Clear flags so previously recorded notes play back next loop
-                    if (pianorollRef.clearRecordingFlags) pianorollRef.clearRecordingFlags();
-                }
 
-                if (pianorollRef.tickRecording) pianorollRef.tickRecording(rawCol);
-                if (pianorollRef.scrollToCol) pianorollRef.scrollToCol(rawCol);
-            }, 100);
+                    if (pianorollRef.tickRecording) pianorollRef.tickRecording(rawCol);
+                    if (pianorollRef.scrollToCol) pianorollRef.scrollToCol(rawCol);
+                });
+            }
+
+            // Start the tick worker
+            const bpm = pianorollRef && pianorollRef.getBpm ? pianorollRef.getBpm() : 120;
+            if (opts.tickWorker) opts.tickWorker.postMessage({ type: 'start', bpm: bpm });
         }
     });
 
