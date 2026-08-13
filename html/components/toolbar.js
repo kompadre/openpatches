@@ -355,9 +355,15 @@ export function createToolbar(opts) {
 
             const entries = voiceBank ? voiceBank._getEntries() : [];
             const activeEntry = entries[activeRecordSlot];
-            // Play sound immediately (not via tickRecording, to avoid doubling)
-            const stopFn = playFn(n.midi, 30000, activeEntry ? activeEntry.voiceData : null, activeRecordSlot);
-            if (stopFn) activeSounds.set(n.midi, stopFn);
+            // playFn is async — resolve the promise to get the stop function
+            const result = playFn(n.midi, 30000, activeEntry ? activeEntry.voiceData : null, activeRecordSlot);
+            if (result && typeof result.then === 'function') {
+                result.then(stopFn => {
+                    if (typeof stopFn === 'function') activeSounds.set(n.midi, stopFn);
+                }).catch(() => {});
+            } else if (typeof result === 'function') {
+                activeSounds.set(n.midi, result);
+            }
 
             if (recording) {
                 const bpm = pianorollRef.getBpm ? pianorollRef.getBpm() : 120;
@@ -378,7 +384,7 @@ export function createToolbar(opts) {
             if (activeSounds.has(n.midi)) {
                 const stopFn = activeSounds.get(n.midi);
                 activeSounds.delete(n.midi);
-                if (stopFn) stopFn();
+                if (typeof stopFn === 'function') stopFn();
             }
 
             if (recording && activePresses.has(n.midi)) {
