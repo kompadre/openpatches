@@ -2,6 +2,8 @@
 // Click+drag creates notes, double-click removes, sequencer plays all notes.
 // Notes reference VoiceBank slot index. Data looked up via getSlotData(slot).
 
+const logRecord = () => {};
+
 const NOTES = [
     { midi: 84, name: 'C6',  white: true },
     { midi: 83, name: 'B5',  white: true },
@@ -1186,7 +1188,7 @@ export function createPianoroll(opts) {
                         const entry = getSlotData(n.slot);
                         const voiceData = entry ? entry.voiceData : null;
                         playNoteFn(n.midi, n.dur * msPerSixteenth, voiceData, n.slot);
-                        console.log(`[record:playback] midi=${n.midi} col=${wrappedCol} dur=${n.dur} slot=${n.slot}`);
+                        logRecord(`[record:playback] midi=${n.midi} col=${wrappedCol} dur=${n.dur} slot=${n.slot}`);
                     } catch (e) { /* ignore */ }
                 }
             }

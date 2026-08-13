@@ -1,6 +1,8 @@
 // DX7 AudioWorkletProcessor — WASM via processorOptions
 // Based on MSFA by Google (Apache 2.0), patched for openpatches
 
+const logMidi = () => {};
+
 const wasiStub = {
   fd_close: () => 0,
   fd_fdstat_get: () => 0,
@@ -123,7 +125,7 @@ class DX7Processor extends AudioWorkletProcessor {
           const note = msg.data[1];
           const vel = msg.data[2];
           const type = status === 0x90 ? 'note-on' : 'note-off';
-          console.log(`[wasm-midi] ${type} ch=${ch} note=${note} vel=${vel}`);
+          logMidi(`[wasm-midi] ${type} ch=${ch} note=${note} vel=${vel}`);
         }
         this.exp.send_midi(msg.data[0], msg.data[1], msg.data[2]);
         // Pre-render a few blocks so the note starts immediately

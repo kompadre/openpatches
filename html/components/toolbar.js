@@ -6,6 +6,8 @@ import { createPianoroll } from './pianoroll.js';
 import { createVoiceBank } from './voicebank.js';
 import { createEditPanel } from './edit-panel.js';
 
+const logRecord = () => {};
+
 const PIANO_NOTES = [
     { midi: 36, name: 'C2',  white: true },
     { midi: 37, name: 'C#2', white: false },
@@ -292,11 +294,11 @@ export function createToolbar(opts) {
 
                     // At loop seam: finalize held notes and clear recording flags
                     if (wrappedCol === 0 && rawCol > 0) {
-                        console.log(`[record] seam at rawCol=${rawCol}, finalizing ${activePresses.size} held note(s)`);
+                        logRecord(`[record] seam at rawCol=${rawCol}, finalizing ${activePresses.size} held note(s)`);
                         for (const [midi, press] of activePresses) {
                             const pressWrappedCol = ((press.startCol % tc) + tc) % tc;
                             if (pressWrappedCol > 0) {
-                                console.log(`[record] seam-split midi=${midi} startCol=${press.startCol} endCol=${rawCol}`);
+                                logRecord(`[record] seam-split midi=${midi} startCol=${press.startCol} endCol=${rawCol}`);
                                 addRecordedNote(midi, press.startCol, rawCol, activeRecordSlot);
                                 activePresses.delete(midi);
                             }
@@ -380,7 +382,7 @@ export function createToolbar(opts) {
                 const elapsed = Date.now() - recordStartTime;
                 const rawCol = Math.round(elapsed / msPerSixteenth);
                 activePresses.set(n.midi, { startTime: Date.now(), startCol: rawCol });
-                console.log(`[record] note-on midi=${n.midi} slot=${activeRecordSlot} col=${rawCol}`);
+                logRecord(`[record] note-on midi=${n.midi} slot=${activeRecordSlot} col=${rawCol}`);
             }
 
             if (onNoteClick) onNoteClick(n.midi);
@@ -405,7 +407,7 @@ export function createToolbar(opts) {
                 const elapsed = Date.now() - recordStartTime;
                 const endCol = Math.round(elapsed / msPerSixteenth);
                 const durCols = endCol - press.startCol;
-                console.log(`[record] note-off midi=${n.midi} startCol=${press.startCol} endCol=${endCol} dur=${durCols} slot=${activeRecordSlot}`);
+                logRecord(`[record] note-off midi=${n.midi} startCol=${press.startCol} endCol=${endCol} dur=${durCols} slot=${activeRecordSlot}`);
                 addRecordedNote(n.midi, press.startCol, endCol, activeRecordSlot);
             }
         }
