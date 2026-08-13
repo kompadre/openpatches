@@ -564,12 +564,6 @@ h1 {
     pointer-events: auto;
 }
 
-.sky-toolbar {
-    display: flex;
-    gap: 0.5rem;
-    margin-bottom: 0.4rem;
-}
-
 .sky-ctr-btn {
     position: absolute;
     top: 6px;
@@ -1577,12 +1571,6 @@ h1 {
     text-align: center;
 }
 
-.keyboard-wrapper .keyboard-label {
-    font-size: 0.75rem;
-    color: #666;
-    margin-bottom: 0.4rem;
-}
-
 .keyboard {
     display: inline-flex;
     position: relative;
@@ -2050,37 +2038,6 @@ h1 {
 }
 
 .dock-panel .key.black {
-    width: 24px;
-    height: 90px;
-}
-
-.dock-panel .keyboard-label {
-    font-size: 0.75rem;
-    color: #666;
-    margin-bottom: 0.4rem;
-}
-
-.pianoroll-placeholder {
-    color: #666;
-    font-size: 0.8rem;
-    padding: 1rem;
-}
-
-.piano-wrapper {
-    padding: 0.3rem 0;
-}
-
-.piano-wrapper .keyboard {
-    height: auto;
-    justify-content: center;
-}
-
-.piano-wrapper .key.white {
-    width: 36px;
-    height: 140px;
-}
-
-.piano-wrapper .key.black {
     width: 24px;
     height: 90px;
 }
