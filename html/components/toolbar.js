@@ -242,7 +242,7 @@ export function createToolbar(opts) {
     pianorollPanel.appendChild(kbControls);
 
     function stopAll() {
-        // Finalize any active presses
+        // Finalize any active presses and stop sounds
         for (const [midi, press] of activePresses) {
             const bpm = pianorollRef && pianorollRef.getBpm ? pianorollRef.getBpm() : 120;
             const msPerSixteenth = (60000 / bpm) / 4;
@@ -250,7 +250,11 @@ export function createToolbar(opts) {
             const endCol = Math.round(elapsed / msPerSixteenth);
             addRecordedNote(midi, press.startCol, endCol, activeRecordSlot);
         }
+        for (const [midi, stopFn] of activeSounds) {
+            if (stopFn) stopFn();
+        }
         activePresses.clear();
+        activeSounds.clear();
         recording = false;
         undoStack.length = 0;
         btnRecord.classList.remove('active');
@@ -318,21 +322,15 @@ export function createToolbar(opts) {
 
     const keyElements = {};
     const activePresses = new Map(); // midi → { startTime, startCol }
+    const activeSounds = new Map(); // midi → stopFn
 
     function addRecordedNote(midi, startCol, endCol, slot) {
         if (!pianorollRef || !pianorollRef.addNote) return;
         const tc = pianorollRef.totalCols ? pianorollRef.totalCols() : 16;
+        // Calculate duration from raw columns (before wrapping)
+        const rawDur = Math.max(1, endCol - startCol);
+        const dur = Math.min(rawDur, tc); // cap at total cols
         const s = ((startCol % tc) + tc) % tc;
-        const e = ((endCol % tc) + tc) % tc;
-        let dur;
-        if (e > s) {
-            dur = e - s;
-        } else if (e === s) {
-            dur = tc; // full loop
-        } else {
-            dur = tc - s; // wraps to end
-        }
-        dur = Math.max(1, dur);
         const note = pianorollRef.addNote({ midi, start: s, dur, slot });
         if (note) {
             undoStack.push(note);
@@ -355,7 +353,8 @@ export function createToolbar(opts) {
 
             const entries = voiceBank ? voiceBank._getEntries() : [];
             const activeEntry = entries[activeRecordSlot];
-            playFn(n.midi, 600, activeEntry ? activeEntry.voiceData : null, activeRecordSlot);
+            const stopFn = playFn(n.midi, 30000, activeEntry ? activeEntry.voiceData : null, activeRecordSlot);
+            if (stopFn) activeSounds.set(n.midi, stopFn);
 
             if (recording) {
                 const bpm = pianorollRef.getBpm ? pianorollRef.getBpm() : 120;
@@ -371,6 +370,13 @@ export function createToolbar(opts) {
         function handleEnd(e) {
             e.preventDefault();
             key.classList.remove('pressed');
+
+            // Stop the sustained sound
+            if (activeSounds.has(n.midi)) {
+                const stopFn = activeSounds.get(n.midi);
+                activeSounds.delete(n.midi);
+                if (stopFn) stopFn();
+            }
 
             if (recording && activePresses.has(n.midi)) {
                 const press = activePresses.get(n.midi);
