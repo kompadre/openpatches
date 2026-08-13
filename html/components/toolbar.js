@@ -351,7 +351,9 @@ export function createToolbar(opts) {
         }
     }
 
-    PIANO_NOTES.forEach(n => {
+    const isMobileKb = window.matchMedia('(max-width: 600px)').matches;
+    const kbNotes = isMobileKb ? PIANO_NOTES.filter(n => n.midi >= 48 && n.midi <= 59) : PIANO_NOTES;
+    kbNotes.forEach(n => {
         const key = document.createElement('div');
         key.className = 'key ' + (n.white ? 'white' : 'black');
         key.title = n.name;
