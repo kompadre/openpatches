@@ -26,7 +26,7 @@ The canvas module is the visual heart of the application. It manages the night s
 
 The canvas maintains its state through three stores defined in the patch model module: the patchStore holds the actual patch data, the canvasStore tracks where patches are positioned and which containers they belong to, and the jobStore manages the lifecycle of WAV import jobs.
 
-When the canvas initializes, it creates the night-sky-canvas element — a large background div that serves as the grid area. On desktop, this is inside the night-sky element which uses CSS grid to manage scrolling. On mobile, the night-sky is moved into the canvas dock panel via JavaScript.
+When the canvas initializes, it clears the night-sky element and sets up the container button. On desktop, the night-sky element uses CSS grid to manage scrolling, with background, border, and styling applied directly. On mobile, the night-sky is moved into the canvas dock panel via JavaScript.
 
 The canvas supports two types of elements: free-floating patches and containers. Free-floating patches are individual DX seven voices positioned anywhere on the canvas. Containers are grouping boxes that hold multiple patches — typically the results of a WAV import or a SYX file load.
 
@@ -36,7 +36,7 @@ The drag system is the most complex part of the canvas. On desktop, it uses the 
 
 When a patch is dragged out of a container onto the canvas, it becomes a free-floating patch. When a patch is dragged onto a container, it gets added to that container's patch list. The canvas also supports dragging containers by their headers and resizing them by their bottom-right corner.
 
-The canvas grows dynamically as elements are dragged near the edges. This is achieved through CSS — the night-sky uses display grid with a single cell, and the night-sky-canvas has minimum width and height of one hundred percent. When absolutely-positioned children extend beyond the canvas bounds, the canvas expands naturally.
+The canvas grows dynamically as elements are dragged near the edges. This is achieved through CSS — the night-sky uses display grid with minimum width and height of one hundred percent. When absolutely-positioned children extend beyond the canvas bounds, the canvas expands naturally.
 
 
 Chapter Three: The Toolbar and Tab System
@@ -129,7 +129,7 @@ On mobile, defined as screens narrower than six hundred pixels, the layout switc
 
 The dock panel system uses display none by default and display flex when active. Only one panel is visible at a time. The tab bar sits at the bottom of the dock on mobile, providing the primary navigation between Canvas, Piano Roll, Edit, Log, and Mute.
 
-The canvas dock panel on mobile contains the night-sky element, which in turn contains the night-sky-canvas background and all the floating patches and containers. Touch events are handled with custom handlers that support drag-to-reposition, long-press to create notes, and drag between containers.
+The canvas dock panel on mobile contains the night-sky element with all the floating patches and containers. Touch events are handled with custom handlers that support drag-to-reposition, long-press to create notes, and drag between containers.
 
 The voice bank compact mode on mobile displays as horizontal bars with vertical volume indication. The keyboard shows a single octave with octave selector buttons below. The pianoroll controls hide non-essential buttons behind an ellipsis menu.
 

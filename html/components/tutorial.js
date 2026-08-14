@@ -65,7 +65,7 @@ const STEPS = [
     {
         id: 'pianoroll',
         title: 'Piano Roll',
-        highlight: '#piano-dock',
+        highlight: '#piano-dock .dock-tabs',
         noBlur: true,
         illustration: null,
         description:

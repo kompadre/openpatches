@@ -60,6 +60,7 @@ const COLS_PER_MEASURE = 16; // 16 sixteenth notes = 1 measure of 4/4
 const ROW_H = 20;
 const COL_W = 30;
 const LABEL_W = 36;
+const HEADER_H = 14; // reserved for measure numbers above grid
 
 const STORAGE_KEY = 'openpatches_pianoroll';
 const DEFAULT_BPM = 120;
@@ -69,7 +70,7 @@ export function createPianoroll(opts) {
     const { playNoteFn, onNotesChange, onClear } = opts;
     const notes = [];
     let measures = 1;
-    const CANVAS_H = NOTES.length * ROW_H;
+    const CANVAS_H = HEADER_H + NOTES.length * ROW_H;
     let looping = false;
 
     function totalCols() { return measures * COLS_PER_MEASURE; }
@@ -126,6 +127,12 @@ export function createPianoroll(opts) {
     bpmInput.step = '1';
     controls.appendChild(bpmInput);
 
+    // Desktop clear button (also in moreMenu for mobile)
+    const clearBtnDesktop = document.createElement('button');
+    clearBtnDesktop.className = 'pianoroll-btn pianoroll-clear-desktop';
+    clearBtnDesktop.textContent = '\u{1F9F9} Clear';
+    controls.appendChild(clearBtnDesktop);
+
     // Ellipsis menu (mobile)
     const moreBtn = document.createElement('button');
     moreBtn.className = 'pianoroll-btn pianoroll-more';
@@ -142,27 +149,47 @@ export function createPianoroll(opts) {
     clearBtn.textContent = '\u{1F9F9} Clear';
     moreMenu.appendChild(clearBtn);
 
+    const addMeasureBtnMobile = document.createElement('button');
+    addMeasureBtnMobile.className = 'pianoroll-btn';
+    addMeasureBtnMobile.textContent = '+ Msr';
+    addMeasureBtnMobile.title = 'Add measure';
+    moreMenu.appendChild(addMeasureBtnMobile);
+
+    const cloneMeasureBtnMobile = document.createElement('button');
+    cloneMeasureBtnMobile.className = 'pianoroll-btn';
+    cloneMeasureBtnMobile.textContent = '\u29C9 Clone';
+    cloneMeasureBtnMobile.title = 'Clone last measure to new';
+    moreMenu.appendChild(cloneMeasureBtnMobile);
+
+    const removeMeasureBtnMobile = document.createElement('button');
+    removeMeasureBtnMobile.className = 'pianoroll-btn';
+    removeMeasureBtnMobile.textContent = '\u2715 Msr';
+    removeMeasureBtnMobile.title = 'Remove last measure';
+    removeMeasureBtnMobile.disabled = true;
+    moreMenu.appendChild(removeMeasureBtnMobile);
+
     const addMeasureBtn = document.createElement('button');
     addMeasureBtn.className = 'pianoroll-btn';
     addMeasureBtn.textContent = '+ Msr';
     addMeasureBtn.title = 'Add measure';
-    moreMenu.appendChild(addMeasureBtn);
+    controls.appendChild(addMeasureBtn);
 
     const cloneMeasureBtn = document.createElement('button');
     cloneMeasureBtn.className = 'pianoroll-btn';
     cloneMeasureBtn.textContent = '\u29C9 Clone';
     cloneMeasureBtn.title = 'Clone last measure to new';
-    moreMenu.appendChild(cloneMeasureBtn);
+    controls.appendChild(cloneMeasureBtn);
 
     const removeMeasureBtn = document.createElement('button');
     removeMeasureBtn.className = 'pianoroll-btn';
     removeMeasureBtn.textContent = '\u2715 Msr';
     removeMeasureBtn.title = 'Remove last measure';
     removeMeasureBtn.disabled = true;
-    moreMenu.appendChild(removeMeasureBtn);
+    controls.appendChild(removeMeasureBtn);
 
     function updateMeasureButtons() {
         removeMeasureBtn.disabled = measures <= 1;
+        removeMeasureBtnMobile.disabled = measures <= 1;
     }
 
     function toggleMoreMenu() {
@@ -191,11 +218,6 @@ export function createPianoroll(opts) {
 
     container.appendChild(controls);
     container.appendChild(moreMenu);
-
-    const hint = document.createElement('span');
-    hint.className = 'pianoroll-hint';
-    hint.textContent = 'Click+drag to add notes \u00B7 Double-click to remove';
-    controls.appendChild(hint);
 
     // --- Measure management ---
     addMeasureBtn.addEventListener('click', () => {
@@ -232,6 +254,10 @@ export function createPianoroll(opts) {
         onNotesChange();
         saveState();
     });
+
+    addMeasureBtnMobile.addEventListener('click', () => addMeasureBtn.click());
+    cloneMeasureBtnMobile.addEventListener('click', () => cloneMeasureBtn.click());
+    removeMeasureBtnMobile.addEventListener('click', () => removeMeasureBtn.click());
 
     // Scrollable canvas area
     const scroll = document.createElement('div');
@@ -308,7 +334,7 @@ export function createPianoroll(opts) {
         ctx.font = '10px monospace';
         ctx.textBaseline = 'middle';
         for (let r = 0; r < NOTES.length; r++) {
-            const y = r * ROW_H + ROW_H / 2;
+            const y = HEADER_H + r * ROW_H + ROW_H / 2;
             ctx.fillStyle = NOTES[r].white ? '#aaa' : '#666';
             ctx.textAlign = 'right';
             ctx.fillText(NOTES[r].name, LABEL_W - 4, y);
@@ -321,7 +347,7 @@ export function createPianoroll(opts) {
 
         // Row backgrounds
         for (let r = 0; r < NOTES.length; r++) {
-            const y = r * ROW_H;
+            const y = HEADER_H + r * ROW_H;
             ctx.fillStyle = NOTES[r].white ? '#1a1a2e' : '#12121f';
             ctx.fillRect(ox + LABEL_W, y, gridW, ROW_H);
         }
@@ -334,24 +360,40 @@ export function createPianoroll(opts) {
             ctx.strokeStyle = isMeasureStart ? '#666' : isBeat ? '#444' : '#2a2a3a';
             ctx.lineWidth = isMeasureStart ? 2 : isBeat ? 1.5 : 0.5;
             ctx.beginPath();
-            ctx.moveTo(x, 0);
+            ctx.moveTo(x, HEADER_H);
             ctx.lineTo(x, CANVAS_H);
             ctx.stroke();
         }
 
-        // Measure numbers
+        // Measure numbers in header area (left-aligned at each odd measure start)
         ctx.font = '9px monospace';
         ctx.textBaseline = 'top';
-        ctx.textAlign = 'center';
+        ctx.textAlign = 'left';
         for (let m = 0; m < measures; m++) {
-            const x = ox + LABEL_W + m * COLS_PER_MEASURE * COL_W + (COLS_PER_MEASURE * COL_W) / 2;
-            ctx.fillStyle = m === 0 ? '#e94560' : '#555';
-            ctx.fillText(String(m + 1), x, 2);
+            if (m % 2 === 0) continue;
+            const x = ox + LABEL_W + m * COLS_PER_MEASURE * COL_W + 2;
+            ctx.fillStyle = '#555';
+            ctx.fillText(String(m + 1), x, 1);
+        }
+
+        // C octave stamps at measure starts (notes draw over these)
+        ctx.font = '8px monospace';
+        ctx.textBaseline = 'middle';
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#3a3a4a';
+        for (let m = 0; m < measures; m++) {
+            const col = m * COLS_PER_MEASURE;
+            const x = ox + LABEL_W + col * COL_W + 2;
+            for (let r = 0; r < NOTES.length; r++) {
+                if (NOTES[r].midi % 12 === 0) {
+                    ctx.fillText(NOTES[r].name, x, HEADER_H + r * ROW_H + ROW_H / 2);
+                }
+            }
         }
 
         // Row lines
         for (let r = 0; r <= NOTES.length; r++) {
-            const y = r * ROW_H;
+            const y = HEADER_H + r * ROW_H;
             ctx.strokeStyle = '#2a2a3a';
             ctx.lineWidth = 0.5;
             ctx.beginPath();
@@ -366,7 +408,7 @@ export function createPianoroll(opts) {
             ctx.strokeStyle = '#e94560';
             ctx.lineWidth = 2;
             ctx.beginPath();
-            ctx.moveTo(ox + LABEL_W, 0);
+            ctx.moveTo(ox + LABEL_W, HEADER_H);
             ctx.lineTo(ox + LABEL_W, CANVAS_H);
             ctx.stroke();
 
@@ -375,7 +417,7 @@ export function createPianoroll(opts) {
             ctx.lineWidth = 1;
             ctx.setLineDash([4, 4]);
             ctx.beginPath();
-            ctx.moveTo(ox + baseWidth(), 0);
+            ctx.moveTo(ox + baseWidth(), HEADER_H);
             ctx.lineTo(ox + baseWidth(), CANVAS_H);
             ctx.stroke();
             ctx.setLineDash([]);
@@ -388,7 +430,7 @@ export function createPianoroll(opts) {
             const r = NOTES.findIndex(nn => nn.midi === n.midi);
             if (r < 0) continue;
             const x = ox + LABEL_W + n.start * COL_W;
-            const y = r * ROW_H;
+            const y = HEADER_H + r * ROW_H;
             const w = n.dur * COL_W - 1;
             const isActive = activeSlot == null || n.slot === activeSlot;
             ctx.fillStyle = slotColor(n.slot);
@@ -411,7 +453,7 @@ export function createPianoroll(opts) {
             const origRow = NOTES.findIndex(nn => nn.midi === moveOriginal.midi);
             if (origRow >= 0) {
                 const gx = ox + LABEL_W + moveOriginal.start * COL_W;
-                const gy = origRow * ROW_H;
+                const gy = HEADER_H + origRow * ROW_H;
                 const gw = movingNote.dur * COL_W - 1;
                 ctx.fillStyle = slotColor(movingNote.slot);
                 ctx.globalAlpha = 0.12;
@@ -429,7 +471,7 @@ export function createPianoroll(opts) {
         if (playCol >= 0) {
             const x = ox + LABEL_W + playCol * COL_W;
             ctx.fillStyle = 'rgba(255,255,255,0.15)';
-            ctx.fillRect(x, 0, COL_W, CANVAS_H);
+            ctx.fillRect(x, HEADER_H, COL_W, CANVAS_H - HEADER_H);
         }
 
         // Drag preview
@@ -444,7 +486,7 @@ export function createPianoroll(opts) {
                     const x = ox + LABEL_W + minC * COL_W;
                     const w = (maxC - minC + 1) * COL_W;
                     ctx.fillStyle = 'rgba(255,255,255,0.1)';
-                    ctx.fillRect(x, dragStart.row * ROW_H, w, ROW_H);
+                    ctx.fillRect(x, HEADER_H + dragStart.row * ROW_H, w, ROW_H);
                 }
             }
         }
@@ -470,7 +512,7 @@ export function createPianoroll(opts) {
     }
 
     function pixelToRow(py) {
-        return Math.max(0, Math.min(NOTES.length - 1, Math.floor(py / ROW_H)));
+        return Math.max(0, Math.min(NOTES.length - 1, Math.floor((py - HEADER_H) / ROW_H)));
     }
 
     function noteAt(row, col) {
@@ -1069,6 +1111,14 @@ export function createPianoroll(opts) {
         saveState();
         if (onClear) onClear();
     });
+    clearBtnDesktop.addEventListener('click', () => {
+        notes.length = 0;
+        draw();
+        renderLegend();
+        onNotesChange();
+        saveState();
+        if (onClear) onClear();
+    });
 
     bpmInput.addEventListener('change', saveState);
 
@@ -1133,7 +1183,7 @@ export function createPianoroll(opts) {
         scrollTo(col, midi) {
             const row = NOTES.findIndex(n => n.midi === midi);
             const x = LABEL_W + col * COL_W;
-            const y = row >= 0 ? row * ROW_H : 0;
+            const y = row >= 0 ? HEADER_H + row * ROW_H : 0;
             if (looping) {
                 scroll.scrollLeft = x;
             } else {

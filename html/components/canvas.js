@@ -9,7 +9,6 @@ import { decodeWavSamples, drawMiniWaveform } from './patch.js';
 import { batchRenderWaveforms } from '../synth/dx7-synth.js';
 
 let skyEl = null;
-let canvasEl = null;
 let optsRef = null;
 let docListeners = [];
 
@@ -19,11 +18,11 @@ export function initCanvas(opts) {
     optsRef = opts;
     skyEl = document.getElementById('night-sky');
     skyEl.innerHTML = '';
-    skyEl.classList.add('visible');
 
-    canvasEl = document.createElement('div');
-    canvasEl.className = 'night-sky-canvas';
-    skyEl.appendChild(canvasEl);
+    // Invisible spacer ensures scroll range so padding-top works
+    const spacer = document.createElement('div');
+    spacer.style.cssText = 'position:absolute;top:0;left:0;width:1px;height:100vh;pointer-events:none;';
+    skyEl.appendChild(spacer);
 
     // "+ Container" button inside canvas
     const ctrBtn = document.createElement('button');
@@ -73,6 +72,14 @@ export function initCanvas(opts) {
         clearDraggedPatch();
         window._draggedPatch = null;
     });
+
+    // Clamp negative top on load (containers stuck behind header)
+    for (const ctr of Object.values(canvasStore.getContainers())) {
+        if (ctr.top < 0) {
+            ctr.top = 0;
+            canvasStore.putContainer(ctr);
+        }
+    }
 
     renderAll();
 
@@ -252,43 +259,48 @@ function renderFloatingPatch(patchId, entry) {
     el.style.top = entry.top + 'px';
     el.dataset.patchId = patchId;
 
-    // Star (drag handle)
-    const star = document.createElement('button');
-    star.className = 'patch-star fav-active';
-    star.textContent = '★';
-    star.title = 'Drag to move';
-    el.appendChild(star);
+    // Header (both minified and expanded)
+    const header = document.createElement('div');
+    header.className = 'sky-container-header';
 
-    // Name
+    const headerLeft = document.createElement('div');
+    headerLeft.className = 'sky-container-header-left';
+
     const nameEl = document.createElement('span');
     nameEl.className = 'patch-name';
     nameEl.textContent = patch.name;
-    el.appendChild(nameEl);
+    headerLeft.appendChild(nameEl);
+    header.appendChild(headerLeft);
 
-    // Assign to voicebank
+    const headerRight = document.createElement('div');
+    headerRight.className = 'sky-container-header-right';
+
     const assignBtn = document.createElement('button');
-    assignBtn.className = 'patch-assign';
-    assignBtn.textContent = '♫';
+    assignBtn.className = 'sky-container-assign';
+    assignBtn.textContent = '🎵';
     assignBtn.title = 'Add to voicebank';
-    assignBtn.style.opacity = '1';
     assignBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         if (optsRef && optsRef.onSelect) optsRef.onSelect(patch);
     });
-    el.appendChild(assignBtn);
+    headerRight.appendChild(assignBtn);
 
-    // Edit button (new)
     const editBtn = document.createElement('button');
-    editBtn.className = 'patch-edit-btn-inline';
+    editBtn.className = 'sky-container-sort';
     editBtn.textContent = '🔧';
     editBtn.title = 'Edit patch';
     editBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         if (optsRef && optsRef.onEdit) optsRef.onEdit(patch);
     });
-    el.appendChild(editBtn);
+    headerRight.appendChild(editBtn);
 
-    // Remove button
+    const collapseBtn = document.createElement('button');
+    collapseBtn.className = 'sky-container-collapse';
+    collapseBtn.textContent = entry.minified ? '▶' : '▼';
+    collapseBtn.title = 'Collapse/expand';
+    headerRight.appendChild(collapseBtn);
+
     const removeBtn = document.createElement('button');
     removeBtn.className = 'sky-remove';
     removeBtn.textContent = '×';
@@ -297,19 +309,103 @@ function renderFloatingPatch(patchId, entry) {
         e.stopPropagation();
         removePatchFromCanvas(patchId);
     });
-    el.appendChild(removeBtn);
+    headerRight.appendChild(removeBtn);
 
-    // Expanded fields
-    if (!entry.minified) {
-        appendFullFields(el, patch);
+    // Mobile ⋮ menu
+    const moreBtn = document.createElement('button');
+    moreBtn.className = 'sky-container-more';
+    moreBtn.textContent = '⋮';
+    moreBtn.title = 'More options';
+    function toggleMoreMenu(e) {
+        e.stopPropagation();
+        if (e.cancelable) e.preventDefault();
+        const opening = moreMenu.style.display === 'none';
+        moreMenu.style.display = opening ? 'flex' : 'none';
+        const parent = moreBtn.closest('.patch-float, .sky-container');
+        if (parent) parent.style.zIndex = opening ? '50' : '';
     }
+    moreBtn.addEventListener('click', toggleMoreMenu);
+    moreBtn.addEventListener('touchend', toggleMoreMenu);
+    headerRight.appendChild(moreBtn);
 
-    // Drag to reposition (from star)
+    const moreMenu = document.createElement('div');
+    moreMenu.className = 'sky-container-more-menu';
+    moreMenu.style.display = 'none';
+
+    const menuItems = [
+        { icon: '🎵', label: 'Assign', action: () => assignBtn.click() },
+        { icon: '🔧', label: 'Edit', action: () => editBtn.click() },
+        { icon: '▼', label: 'Collapse', action: () => collapseBtn.click() },
+        { icon: '×', label: 'Remove', action: () => removeBtn.click() },
+    ];
+
+    menuItems.forEach(item => {
+        const btn = document.createElement('button');
+        btn.className = 'sky-container-more-item';
+        btn.innerHTML = '<span>' + item.icon + '</span><span>' + item.label + '</span>';
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            item.action();
+            moreMenu.style.display = 'none';
+        });
+        moreMenu.appendChild(btn);
+    });
+
+    document.addEventListener('click', () => {
+        moreMenu.style.display = 'none';
+        const parent = moreBtn.closest('.patch-float, .sky-container');
+        if (parent) parent.style.zIndex = '';
+    });
+
+    headerRight.appendChild(moreMenu);
+    header.appendChild(headerRight);
+    el.appendChild(header);
+
+    // Body (always created, hidden when minified)
+    const body = document.createElement('div');
+    body.className = 'sky-container-body';
+    if (entry.minified) body.style.display = 'none';
+    el.appendChild(body);
+    appendFullFields(el, patch, body);
+
+    // Collapse toggle
+    let collapsed = entry.minified;
+    function toggleCollapse() {
+        collapsed = !collapsed;
+        body.style.display = collapsed ? 'none' : '';
+        collapseBtn.textContent = collapsed ? '▶' : '▼';
+        entry.minified = collapsed;
+        el.classList.toggle('minified', collapsed);
+        canvasStore.putCanvasPatch(patchId, { minified: collapsed });
+    }
+    collapseBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleCollapse();
+    });
+
+    // Double-tap header to toggle collapse
+    let lastHeaderTap = 0;
+    function handleHeaderTap(e) {
+        if (e.target.closest('button')) return;
+        const now = Date.now();
+        if (now - lastHeaderTap < 350) {
+            toggleCollapse();
+            lastHeaderTap = 0;
+        } else {
+            lastHeaderTap = now;
+        }
+    }
+    header.addEventListener('click', handleHeaderTap);
+    header.addEventListener('touchend', handleHeaderTap);
+
+    // Drag to reposition (from header)
     let dragging = false;
     let startX, startY, origLeft, origTop;
     let didMove = false;
 
     function handleStart(e) {
+        if (e.target.closest('button')) return;
+        if (e.target.contentEditable === 'true') return;
         e.preventDefault();
         e.stopPropagation();
         dragging = true;
@@ -348,45 +444,30 @@ function renderFloatingPatch(patchId, entry) {
         const clientX = e.changedTouches ? e.changedTouches[0].clientX : e.clientX;
         const clientY = e.changedTouches ? e.changedTouches[0].clientY : e.clientY;
 
-        // Check if dropped over a container
         const hitContainer = findContainerUnder(clientX, clientY);
         if (hitContainer && hitContainer.id) {
-            // Snap into container
             removePatchFromCanvas(patchId);
             addPatchToContainer(patchId, hitContainer.id);
         } else {
-            // Save free-floating position
             canvasStore.putCanvasPatch(patchId, { left: entry.left, top: entry.top });
         }
     }
 
-    star.addEventListener('mousedown', handleStart);
+    header.addEventListener('mousedown', handleStart);
     onDoc('mousemove', handleMove);
     onDoc('mouseup', handleEnd);
 
-    star.addEventListener('touchstart', handleStart, { passive: false });
+    header.addEventListener('touchstart', handleStart, { passive: false });
     onDoc('touchmove', handleMove, { passive: false });
     onDoc('touchend', handleEnd);
-
-    // Click to expand/collapse (not on star)
-    el.addEventListener('click', (e) => {
-        if (e.target === star || didMove) return;
-        entry.minified = !entry.minified;
-        el.classList.toggle('minified', entry.minified);
-        if (entry.minified) {
-            el.querySelectorAll('.patch-spec, .patch-col, .patch-edit-btn').forEach(n => n.remove());
-        } else {
-            appendFullFields(el, patch);
-        }
-        canvasStore.putCanvasPatch(patchId, { minified: entry.minified });
-    });
 
     skyEl.appendChild(el);
 }
 
-function appendFullFields(el, patch) {
+function appendFullFields(el, patch, target) {
     const nameEl = el.querySelector('.patch-name');
     if (!nameEl) return;
+    const dest = target || el;
 
     // Spec
     const specWrap = document.createElement('div');
@@ -417,18 +498,24 @@ function appendFullFields(el, patch) {
     distEl.className = 'patch-col patch-dist';
     distEl.textContent = (patch.distance || 0).toFixed(4);
 
-    // Append in order after name
-    nameEl.insertAdjacentElement('afterend', distEl);
-
     // Tags
     const tagsWrapper = document.createElement('div');
     tagsWrapper.className = 'patch-tags-canvas';
     tagsWrapper.appendChild(createTagEditor(patch, (updated) => patchStore.put(updated)));
-    nameEl.insertAdjacentElement('afterend', tagsWrapper);
 
-    nameEl.insertAdjacentElement('afterend', fbEl);
-    nameEl.insertAdjacentElement('afterend', algoEl);
-    nameEl.insertAdjacentElement('afterend', specWrap);
+    // Append fields
+    if (target) {
+        // Fields go into target body (name is in header elsewhere)
+        dest.appendChild(specWrap);
+        dest.appendChild(tagsWrapper);
+    } else {
+        // Inline after name (container patch rows)
+        nameEl.insertAdjacentElement('afterend', distEl);
+        nameEl.insertAdjacentElement('afterend', tagsWrapper);
+        nameEl.insertAdjacentElement('afterend', fbEl);
+        nameEl.insertAdjacentElement('afterend', algoEl);
+        nameEl.insertAdjacentElement('afterend', specWrap);
+    }
 
     // Play handler
     if (optsRef && optsRef.onPlay) {
@@ -533,7 +620,7 @@ function renderContainer(ctr) {
     // Assign to pianoroll button (assigns first 8 patches to voicebank)
     const assignBtn = document.createElement('button');
     assignBtn.className = 'sky-container-assign';
-    assignBtn.textContent = '♫';
+    assignBtn.textContent = '🎵';
     assignBtn.title = 'Assign patches to pianoroll';
     assignBtn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -550,7 +637,7 @@ function renderContainer(ctr) {
     // Sort button
     const sortBtn = document.createElement('button');
     sortBtn.className = 'sky-container-sort';
-    sortBtn.textContent = '↕';
+    sortBtn.textContent = '↕️';
     sortBtn.title = 'Sort patches by algorithm';
     sortBtn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -576,14 +663,12 @@ function renderContainer(ctr) {
     });
     headerRight.appendChild(exportBtn);
 
-    // Minimize toggle for active job containers
-    if (isActiveJob || isFailedJob) {
-        const minBtn = document.createElement('button');
-        minBtn.className = 'sky-container-minimize';
-        minBtn.textContent = '▼';
-        minBtn.title = 'Minimize/expand';
-        headerRight.appendChild(minBtn);
-    }
+    // Collapse toggle
+    const collapseBtn = document.createElement('button');
+    collapseBtn.className = 'sky-container-collapse';
+    collapseBtn.textContent = '▼';
+    collapseBtn.title = 'Collapse/expand';
+    headerRight.appendChild(collapseBtn);
 
     const removeBtn = document.createElement('button');
     removeBtn.className = 'sky-remove';
@@ -594,6 +679,56 @@ function renderContainer(ctr) {
         removeContainer(ctr.id);
     });
     headerRight.appendChild(removeBtn);
+
+    // Mobile ⋯ menu (hides individual buttons, shows dropdown with icon+name)
+    const moreBtn = document.createElement('button');
+    moreBtn.className = 'sky-container-more';
+    moreBtn.textContent = '⋮';
+    moreBtn.title = 'More options';
+    moreBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        moreMenu.style.display = moreMenu.style.display === 'none' ? 'flex' : 'none';
+    });
+    moreBtn.addEventListener('touchend', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        moreMenu.style.display = moreMenu.style.display === 'none' ? 'flex' : 'none';
+    });
+    headerRight.appendChild(moreBtn);
+
+    const moreMenu = document.createElement('div');
+    moreMenu.className = 'sky-container-more-menu';
+    moreMenu.style.display = 'none';
+
+    const menuItems = [
+        { icon: '🎵', label: 'Assign', action: () => assignBtn.click() },
+        { icon: '↕️', label: 'Sort', action: () => sortBtn.click() },
+        { icon: '💾', label: 'Export .SYX', action: () => exportBtn.click() },
+        { icon: '▼', label: 'Collapse', action: () => collapseBtn.click() },
+        { icon: '×', label: 'Remove', action: () => removeBtn.click() },
+    ];
+
+    menuItems.forEach(item => {
+        const btn = document.createElement('button');
+        btn.className = 'sky-container-more-item';
+        btn.innerHTML = '<span>' + item.icon + '</span><span>' + item.label + '</span>';
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            item.action();
+            moreMenu.style.display = 'none';
+        });
+        moreMenu.appendChild(btn);
+    });
+
+    // Close menu on outside click
+    document.addEventListener('click', () => {
+        moreMenu.style.display = 'none';
+        const parent = moreBtn.closest('.patch-float, .sky-container');
+        if (parent) parent.style.zIndex = '';
+    });
+
+    headerRight.appendChild(moreMenu);
 
     header.appendChild(headerRight);
     el.appendChild(header);
@@ -715,18 +850,34 @@ function renderContainer(ctr) {
     onDoc('touchmove', handleResizeMove, { passive: false });
     onDoc('touchend', handleResizeEnd);
 
-    // Minimize toggle for probe containers
-    const minBtn = headerRight.querySelector('.sky-container-minimize');
-    if (minBtn) {
-        let minimized = false;
-        minBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            minimized = !minimized;
-            body.style.display = minimized ? 'none' : '';
-            minBtn.textContent = minimized ? '▶' : '▼';
-            el.style.minHeight = minimized ? '0' : '80px';
-        });
+    // Collapse toggle
+    let collapsed = false;
+    function toggleCollapse() {
+        collapsed = !collapsed;
+        body.style.display = collapsed ? 'none' : '';
+        collapseBtn.textContent = collapsed ? '▶' : '▼';
+        el.style.minHeight = collapsed ? '0' : '';
     }
+    collapseBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleCollapse();
+    });
+
+    // Double-tap header to toggle collapse
+    let lastHeaderTap = 0;
+    function handleHeaderTap(e) {
+        if (e.target.closest('button')) return;
+        if (e.target.contentEditable === 'true') return;
+        const now = Date.now();
+        if (now - lastHeaderTap < 350) {
+            toggleCollapse();
+            lastHeaderTap = 0;
+        } else {
+            lastHeaderTap = now;
+        }
+    }
+    header.addEventListener('click', handleHeaderTap);
+    header.addEventListener('touchend', handleHeaderTap);
 
     // Drag container by header
     let dragging = false;

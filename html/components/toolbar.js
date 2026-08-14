@@ -57,6 +57,7 @@ const PIANO_NOTES = [
     { midi: 81, name: 'A5',  white: true },
     { midi: 82, name: 'A#5', white: false },
     { midi: 83, name: 'B5',  white: true },
+    { midi: 84, name: 'C6',  white: true },
 ];
 
 export function createToolbar(opts) {
@@ -95,11 +96,18 @@ export function createToolbar(opts) {
         if (opts.onEmergencyStop) opts.onEmergencyStop();
     });
 
+    const tabCollapse = document.createElement('button');
+    tabCollapse.className = 'dock-tab dock-tab-collapse';
+    tabCollapse.innerHTML = '<span>▼</span>';
+
     tabBar.appendChild(tabCanvas);
     tabBar.appendChild(tabPianoroll);
     tabBar.appendChild(tabEdit);
     tabBar.appendChild(tabLog);
     tabBar.appendChild(tabStop);
+    if (!window.matchMedia('(max-width: 600px)').matches) {
+        tabBar.appendChild(tabCollapse);
+    }
     wrapper.appendChild(tabBar);
 
     // Panels
@@ -127,13 +135,43 @@ export function createToolbar(opts) {
         panel.classList.add('active');
     }
 
-    tabCanvas.addEventListener('click', () => activateTab(tabCanvas, canvasPanel));
+    // Desktop-only collapse: clicking active tab collapses, clicking any tab while collapsed expands
+    const isDesktop = !window.matchMedia('(max-width: 600px)').matches;
+    const pianoDock = document.getElementById('piano-dock');
+
+    function collapseDock() {
+        if (pianoDock) pianoDock.classList.add('collapsed');
+        const pageContent = document.getElementById('page-content');
+        if (pageContent) pageContent.classList.add('dock-collapsed');
+    }
+
+    function expandDock() {
+        if (pianoDock) pianoDock.classList.remove('collapsed');
+        const pageContent = document.getElementById('page-content');
+        if (pageContent) pageContent.classList.remove('dock-collapsed');
+    }
+
+    function handleTabClick(tab, panel) {
+        if (isDesktop && pianoDock && pianoDock.classList.contains('collapsed')) {
+            expandDock();
+        }
+        activateTab(tab, panel);
+    }
+
+    tabCanvas.addEventListener('click', () => handleTabClick(tabCanvas, canvasPanel));
     tabPianoroll.addEventListener('click', () => {
-        activateTab(tabPianoroll, pianorollPanel);
+        handleTabClick(tabPianoroll, pianorollPanel);
         requestAnimationFrame(positionBlackKeys);
     });
-    tabEdit.addEventListener('click', () => activateTab(tabEdit, editPanel));
-    tabLog.addEventListener('click', () => activateTab(tabLog, logPanel));
+    tabEdit.addEventListener('click', () => handleTabClick(tabEdit, editPanel));
+    tabLog.addEventListener('click', () => handleTabClick(tabLog, logPanel));
+    tabCollapse.addEventListener('click', () => {
+        if (pianoDock && pianoDock.classList.contains('collapsed')) {
+            expandDock();
+        } else {
+            collapseDock();
+        }
+    });
 
     // --- VoiceBank + Pianoroll (top section) ---
     const pianorollRow = document.createElement('div');
@@ -530,10 +568,10 @@ export function createToolbar(opts) {
     wrapper._updateHighlights = updateHighlights;
     wrapper._pianoroll = pianorollRef;
     wrapper._voiceBank = voiceBank;
-    wrapper._showCanvas = () => activateTab(tabCanvas, canvasPanel);
-    wrapper._showPianoroll = () => activateTab(tabPianoroll, pianorollPanel);
-    wrapper._showEdit = () => activateTab(tabEdit, editPanel);
-    wrapper._showLog = () => activateTab(tabLog, logPanel);
+    wrapper._showCanvas = () => { expandDock(); activateTab(tabCanvas, canvasPanel); };
+    wrapper._showPianoroll = () => { expandDock(); activateTab(tabPianoroll, pianorollPanel); };
+    wrapper._showEdit = () => { expandDock(); activateTab(tabEdit, editPanel); };
+    wrapper._showLog = () => { expandDock(); activateTab(tabLog, logPanel); };
     wrapper._logPanel = logPanel;
     return wrapper;
 }

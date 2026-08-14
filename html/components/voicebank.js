@@ -120,7 +120,7 @@ export function createVoiceBank(opts) {
                     overlay.style.top = 'auto';
                     overlay.style.width = '100%';
                     overlay.style.height = vol + '%';
-                    overlay.style.opacity = '0.3';
+                    overlay.style.opacity = entry.id === activeId ? '0.5' : '0.15';
                     overlay.style.pointerEvents = 'none';
                     overlay.style.zIndex = '0';
                 } else {
@@ -243,19 +243,20 @@ export function createVoiceBank(opts) {
                     let didDrag = false;
 
                     function onMove(ev) {
-                        const clientY = ev.touches ? ev.touches[0].clientY : ev.clientY;
-                        const y = rect.bottom - clientY;
-                        const pct = Math.max(0, Math.min(1, y / rect.height));
-                        const vol = Math.round(pct * 127);
-                        entry.volume = vol;
+                        let pct;
                         if (isCompact) {
+                            const clientY = ev.touches ? ev.touches[0].clientY : ev.clientY;
+                            const y = rect.bottom - clientY;
+                            pct = Math.max(0, Math.min(1, y / rect.height));
                             overlay.style.height = (pct * 100) + '%';
                         } else {
                             const clientX = ev.touches ? ev.touches[0].clientX : ev.clientX;
                             const x = clientX - rect.left;
-                            const pctH = Math.max(0, Math.min(1, x / rect.width));
-                            overlay.style.width = (pctH * 100) + '%';
+                            pct = Math.max(0, Math.min(1, x / rect.width));
+                            overlay.style.width = (pct * 100) + '%';
                         }
+                        const vol = Math.round(pct * 127);
+                        entry.volume = vol;
                         volEl.textContent = vol;
                         didDrag = true;
                         if (onVolumeChange) onVolumeChange(i, vol);
