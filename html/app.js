@@ -137,13 +137,14 @@ async function playNote(midi, voiceData, durationMs, channel) {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body)
             });
+            if (!resp.ok) throw new Error('Server returned ' + resp.status);
             const data = await resp.json();
             if (data.wav_url) {
                 new Audio(baseUrl + data.wav_url).play();
                 return;
             }
         } catch (err) {
-            console.warn('API play failed:', err);
+            showError('Playback failed: ' + err.message);
         }
     }
 
@@ -179,17 +180,22 @@ async function playPatch(patch, midi) {
                 return URL.createObjectURL(blob); // canvas draws waveform
             }
         } catch (err) {
-            console.warn('DX7 synth unavailable:', err);
+            showError('Synth preview failed: ' + err.message);
         }
-        const resp = await fetch(baseUrl + '/api/play', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ voice_data: patch.voice_data, note })
-        });
-        const data = await resp.json();
-        if (data.wav_url) {
-            new Audio(baseUrl + data.wav_url).play();
-            return baseUrl + data.wav_url;
+        try {
+            const resp = await fetch(baseUrl + '/api/play', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ voice_data: patch.voice_data, note })
+            });
+            if (!resp.ok) throw new Error('Server returned ' + resp.status);
+            const data = await resp.json();
+            if (data.wav_url) {
+                new Audio(baseUrl + data.wav_url).play();
+                return baseUrl + data.wav_url;
+            }
+        } catch (err) {
+            showError('Playback failed: ' + err.message);
         }
     }
     return null;
@@ -214,7 +220,6 @@ function appendLog(message) {
 
 function showProgress(pct) {
     const wrapper = document.getElementById('progress-modal');
-    // document.getElementById('help-modal').style.display = '';
     if (wrapper) wrapper.style.display = '';
     const fill = document.getElementById('progress-fill');
     if (fill) fill.style.width = pct + '%';
@@ -224,6 +229,34 @@ function hideProgress() {
     const wrapper = document.getElementById('progress-modal');
     if (wrapper) wrapper.style.display = 'none';
 }
+
+// --- Error modal ---
+
+function showError(message) {
+    let overlay = document.getElementById('error-modal');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'error-modal';
+        overlay.className = 'modal-overlay';
+        overlay.style.zIndex = '600';
+        overlay.innerHTML =
+            '<div class="modal-dialog">' +
+            '<div class="modal-header"><h3>Error</h3><button class="modal-close" id="error-close">×</button></div>' +
+            '<div class="modal-body"><p id="error-message"></p></div>' +
+            '</div>';
+        document.body.appendChild(overlay);
+        overlay.addEventListener('click', (e) => {
+            if (e.target === e.currentTarget) overlay.style.display = 'none';
+        });
+        overlay.querySelector('#error-close').addEventListener('click', () => {
+            overlay.style.display = 'none';
+        });
+    }
+    document.getElementById('error-message').textContent = message;
+    overlay.style.display = '';
+}
+
+window._showError = showError;
 
 // --- Tuning fork ---
 

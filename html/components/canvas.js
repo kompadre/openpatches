@@ -526,12 +526,14 @@ function appendFullFields(el, patch, target) {
                 const wavUrl = await optsRef.onPlay(patch);
                 if (wavUrl) {
                     const resp = await fetch(wavUrl);
+                    if (!resp.ok) throw new Error('Failed to load waveform');
                     const buf = await resp.arrayBuffer();
                     const samples = decodeWavSamples(buf);
                     if (samples && samples.length > 0) drawMiniWaveform(canvas, samples);
                 }
             } catch (err) {
-                console.warn('[canvas] play failed:', err);
+                if (window._showError) window._showError('Waveform load failed: ' + err.message);
+                else console.warn('[canvas] play failed:', err);
             }
         });
     }

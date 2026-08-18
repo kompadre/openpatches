@@ -524,6 +524,7 @@ async function fetchVoiceData(patch) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ syx_url: patch.syx_url, slot: patch.slot || 0 })
         });
+        if (!resp.ok) throw new Error('Voice fetch failed: ' + resp.status);
         const d = await resp.json();
         return d.voice_data;
     }
@@ -559,6 +560,7 @@ async function runMorphEdit() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ source_data: srcData, target_data: tgtData, note: 60, ratio })
         });
+        if (!resp.ok) throw new Error('Morph failed: ' + resp.status);
         const data = await resp.json();
         if (data.error) {
             statusEl.textContent = 'Error: ' + data.error;
@@ -628,6 +630,7 @@ async function previewParamsEdit() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ voice_data: voiceData, note: 60 })
         });
+        if (!resp.ok) throw new Error('Preview failed: ' + resp.status);
         const d = await resp.json();
         if (d.wav_url) {
             new Audio(baseUrlRef + d.wav_url).play();
@@ -654,6 +657,7 @@ async function saveParamsEdit() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ voice_data: voiceData, note: 60 })
         });
+        if (!resp.ok) throw new Error('Render failed: ' + resp.status);
         const playData = await resp.json();
 
         const newPatch = createPatch({
@@ -738,6 +742,7 @@ async function runRandomMutate() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ voice_data: mutatedB64, note: 60 })
         });
+        if (!resp.ok) throw new Error('Mutation preview failed: ' + resp.status);
         const playData = await resp.json();
         if (playData.wav_url) {
             currentMutation.wav_url = playData.wav_url;
@@ -763,6 +768,7 @@ async function saveMutation() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ voice_data: currentMutation.voice_data, note: 60 })
             });
+            if (!resp.ok) throw new Error('Render failed: ' + resp.status);
             const playData = await resp.json();
             if (playData.wav_url) currentMutation.wav_url = playData.wav_url;
         }

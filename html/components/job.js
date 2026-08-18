@@ -198,6 +198,12 @@ export class Job {
 
         try {
             const response = await fetch(baseUrl + this.statusUrl);
+            if (!response.ok) {
+                appendLog(`[${this.fileName}] Server error: ${response.status}`);
+                hideProgress();
+                this.fail(opts);
+                return;
+            }
             const text = await response.text();
             let data;
             try { data = JSON.parse(text); } catch {

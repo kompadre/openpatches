@@ -92,11 +92,14 @@ export function createPatchRow(patch, opts = {}) {
                         if (wavUrl && !waveformDrawn) {
                             waveformDrawn = true;
                             const wavResp = await fetch(wavUrl);
+                            if (!wavResp.ok) throw new Error('Waveform fetch failed');
                             const wavBuf = await wavResp.arrayBuffer();
                             const samples = decodeWavSamples(wavBuf);
                             if (samples && samples.length > 0) drawMiniWaveform(specCanvas, samples);
                         }
-                    } catch (_) {}
+                    } catch (err) {
+                        if (window._showError) window._showError('Failed to load waveform');
+                    }
                 }
             });
         }
@@ -336,11 +339,14 @@ export function createPatchRow(patch, opts = {}) {
                         if (wavUrl && !waveformDrawn) {
                             waveformDrawn = true;
                             const wavResp = await fetch(wavUrl);
+                            if (!wavResp.ok) throw new Error('Waveform fetch failed');
                             const wavBuf = await wavResp.arrayBuffer();
                             const samples = decodeWavSamples(wavBuf);
                             if (samples && samples.length > 0) drawMiniWaveform(canvas, samples);
                         }
-                    } catch (_) {}
+                    } catch (err) {
+                        if (window._showError) window._showError('Failed to load waveform');
+                    }
                 }
             });
         }
@@ -363,7 +369,9 @@ export function createPatchRow(patch, opts = {}) {
                             drawMiniWaveform(canvas, samples);
                         }
                     })
-                    .catch(() => {});
+                    .catch(() => {
+                        if (window._showError) window._showError('Failed to load cached waveform');
+                    });
             }
         }
 
