@@ -235,6 +235,8 @@ function renderEditSlot(container, patch, slotIdx, showRemove) {
 function renderMorphMode(slotArea, sliderRow, paramsArea, goBtn, statusEl) {
     sliderRow.style.display = '';
     paramsArea.style.display = 'none';
+    const playBtn = document.querySelector('.btn-edit-play');
+    if (playBtn) playBtn.remove();
 
     const slider = document.getElementById('edit-slider');
     const sliderLabel = document.getElementById('edit-slider-label');
@@ -522,17 +524,20 @@ function renderParamsMode(slotArea, sliderRow, paramsArea, goBtn, statusEl) {
     paramsArea.appendChild(layout);
 
     // Add play button to actions (below slot)
-    const existingPlayBtn = actions.querySelector('.btn-edit-play');
-    if (existingPlayBtn) existingPlayBtn.remove();
-    const playBtn = document.createElement('button');
-    playBtn.textContent = '▶ Play';
-    playBtn.className = 'btn-edit-action btn-edit-play';
-    playBtn.type = 'button';
-    playBtn.addEventListener('click', previewParamsEdit);
-    actions.insertBefore(playBtn, goBtn);
+    const actions = document.querySelector('.edit-actions');
+    if (actions) {
+        const existingPlayBtn = actions.querySelector('.btn-edit-play');
+        if (existingPlayBtn) existingPlayBtn.remove();
+        const playBtn = document.createElement('button');
+        playBtn.textContent = '▶ Play';
+        playBtn.className = 'btn-edit-action btn-edit-play';
+        playBtn.type = 'button';
+        playBtn.addEventListener('click', previewParamsEdit);
+        actions.insertBefore(playBtn, goBtn);
+    }
 
     goBtn.disabled = false;
-    goBtn.textContent = 'Save as new';
+    goBtn.textContent = 'Save';
     statusEl.textContent = `Editing ${editSlot.name} — tweak sliders, then save`;
 }
 
@@ -571,6 +576,8 @@ function makeSlider(label, value, min, max, onChange, displayFn) {
 function renderRandomMode(slotArea, sliderRow, paramsArea, goBtn, statusEl) {
     sliderRow.style.display = '';
     paramsArea.style.display = 'none';
+    const playBtn = document.querySelector('.btn-edit-play');
+    if (playBtn) playBtn.remove();
 
     const slider = document.getElementById('edit-slider');
     const sliderLabel = document.getElementById('edit-slider-label');
