@@ -1322,11 +1322,6 @@ h1 {
     cursor: pointer;
     padding: 0;
     line-height: 1;
-    opacity: 0;
-    transition: opacity 0.15s;
-}
-
-.patch-row:hover .patch-play {
     opacity: 1;
 }
 
