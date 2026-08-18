@@ -3,6 +3,7 @@
 
 import { createPatch, patchStore, patchIdFromVoiceData } from './patch-model.js';
 import { createTagEditor } from './tag-editor.js';
+import { decodeVoiceData, encodeVoiceData, readOp, writeOp, readGlobal, writeGlobal, freqDisplay, CURVE_NAMES, WAVEFORM_NAMES, renderAlgoSvg, renderEnvGraph } from './dx7-params.js';
 
 let editSlot = null;
 let editSlotB = null;
@@ -323,115 +324,202 @@ function renderParamsMode(slotArea, sliderRow, paramsArea, goBtn, statusEl) {
     slotsDiv.appendChild(slotA);
     slotArea.appendChild(slotsDiv);
 
-    if (!currentMutation) {
-        currentMutation = JSON.parse(JSON.stringify(editSlot));
-        if (editSlot.voice_data && !editSlot.ops) {
-            try {
-                const bytes = atob(editSlot.voice_data);
-                const arr = new Uint8Array(bytes.length);
-                for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
-                currentMutation.ops = [];
-                for (let i = 0; i < 6; i++) {
-                    const base = i * 17;
-                    currentMutation.ops.push({
-                        outputLevel: arr[base + 14],
-                        freqCoarse: (arr[base + 15] >> 1) & 0x1F,
-                    });
-                }
-                currentMutation.feedback = arr[111] & 0x07;
-                currentMutation.algorithm = arr[110];
-            } catch {
-                currentMutation.ops = Array.from({length: 6}, () => ({ outputLevel: 0, freqCoarse: 1 }));
-                currentMutation.feedback = editSlot.feedback || 0;
-            }
-        }
-        if (!currentMutation.ops) {
-            currentMutation.ops = Array.from({length: 6}, () => ({ outputLevel: 0, freqCoarse: 1 }));
+    // Parse voice data into currentMutation.ops and .globals
+    if (!currentMutation) currentMutation = JSON.parse(JSON.stringify(editSlot));
+    if (editSlot.voice_data && !currentMutation._dx7Parsed) {
+        try {
+            const bytes = decodeVoiceData(editSlot.voice_data);
+            currentMutation.ops = [];
+            for (let i = 0; i < 6; i++) currentMutation.ops.push(readOp(bytes, i));
+            currentMutation.globals = readGlobal(bytes);
+            currentMutation._dx7Parsed = true;
+        } catch {
+            currentMutation.ops = Array.from({ length: 6 }, () => ({
+                r1: 99, r2: 99, r3: 99, r4: 99, l1: 99, l2: 0, l3: 0, l4: 0,
+                breakPoint: 60, lDepth: 0, rDepth: 0, lCurve: 0, rCurve: 0,
+                rateScaling: 0, detune: 4, velSens: 0, amSens: 0,
+                outputLevel: 0, oscMode: 0, freqCoarse: 1, freqFine: 0,
+            }));
+            currentMutation.globals = {
+                algorithm: editSlot.algorithm || 0, feedback: editSlot.feedback || 0,
+                keySync: 0, lfoSpeed: 35, lfoDelay: 0, lfoPmDepth: 0, lfoAmd: 0,
+                lfoSync: 0, lfoWaveform: 0, lfoPmSens: 0, transpose: 24,
+                pitchR1: 99, pitchR2: 99, pitchR3: 99, pitchR4: 99,
+                pitchL1: 99, pitchL2: 0, pitchL3: 0, pitchL4: 0,
+                name: editSlot.name || '',
+            };
         }
     }
 
     paramsArea.innerHTML = '';
-    const grid = document.createElement('div');
-    grid.className = 'edit-params-grid';
 
+    // Main layout: algo diagram left, params right
+    const layout = document.createElement('div');
+    layout.className = 'dx7-layout';
+
+    // Algorithm diagram (left)
+    const algoPanel = document.createElement('div');
+    algoPanel.className = 'dx7-algo-panel';
+    const algoLabel = document.createElement('div');
+    algoLabel.className = 'dx7-algo-label';
+    algoLabel.textContent = 'Algorithm';
+    algoPanel.appendChild(algoLabel);
+    const algoSvgContainer = document.createElement('div');
+    algoSvgContainer.className = 'dx7-algo-svg-container';
+    algoPanel.appendChild(algoSvgContainer);
+    renderAlgoSvg(currentMutation.globals.algorithm, algoSvgContainer);
+    layout.appendChild(algoPanel);
+
+    // Parameters (right)
+    const paramsPanel = document.createElement('div');
+    paramsPanel.className = 'dx7-params-panel';
+
+    // Operator sections (Op6 → Op1)
     for (let i = 0; i < 6; i++) {
-        const op = currentMutation.ops[i] || { outputLevel: 0, freqCoarse: 1 };
+        const opNum = 6 - i;
+        const op = currentMutation.ops[i];
+        const details = document.createElement('details');
+        details.className = 'dx7-op-section';
+        if (i === 0) details.open = true;
 
-        const rowOL = document.createElement('div');
-        rowOL.className = 'edit-param-row';
-        const lblOL = document.createElement('span');
-        lblOL.className = 'edit-param-label';
-        lblOL.textContent = `Op${6-i} `;
-        const smallOL = document.createElement('small');
-        smallOL.textContent = 'Level';
-        lblOL.appendChild(smallOL);
-        rowOL.appendChild(lblOL);
-        const slOL = document.createElement('input');
-        slOL.type = 'range'; slOL.min = '0'; slOL.max = '99'; slOL.value = String(op.outputLevel);
-        slOL.className = 'edit-param-slider';
-        const valOL = document.createElement('span');
-        valOL.className = 'edit-param-val';
-        valOL.textContent = op.outputLevel;
-        slOL.addEventListener('input', () => {
-            currentMutation.ops[i].outputLevel = parseInt(slOL.value);
-            valOL.textContent = slOL.value;
-        });
-        rowOL.appendChild(slOL);
-        rowOL.appendChild(valOL);
-        grid.appendChild(rowOL);
+        const summary = document.createElement('summary');
+        summary.className = 'dx7-op-summary';
+        summary.textContent = `Op${opNum}`;
+        details.appendChild(summary);
 
-        const rowFC = document.createElement('div');
-        rowFC.className = 'edit-param-row';
-        const lblFC = document.createElement('span');
-        lblFC.className = 'edit-param-label';
-        const smallFC = document.createElement('small');
-        smallFC.textContent = 'Freq';
-        lblFC.appendChild(smallFC);
-        rowFC.appendChild(lblFC);
-        const slFC = document.createElement('input');
-        slFC.type = 'range'; slFC.min = '0'; slFC.max = '31'; slFC.value = String(op.freqCoarse);
-        slFC.className = 'edit-param-slider';
-        const valFC = document.createElement('span');
-        valFC.className = 'edit-param-val';
-        valFC.textContent = op.freqCoarse;
-        slFC.addEventListener('input', () => {
-            currentMutation.ops[i].freqCoarse = parseInt(slFC.value);
-            valFC.textContent = slFC.value;
-        });
-        rowFC.appendChild(slFC);
-        rowFC.appendChild(valFC);
-        grid.appendChild(rowFC);
+        const body = document.createElement('div');
+        body.className = 'dx7-op-body';
 
-        if (i < 5) {
-            const sep = document.createElement('hr');
-            sep.className = 'edit-param-sep';
-            grid.appendChild(sep);
+        // Envelope graph
+        const envGraph = document.createElement('canvas');
+        envGraph.width = 160; envGraph.height = 40;
+        envGraph.className = 'dx7-env-graph';
+        renderEnvGraph(envGraph, [op.r1, op.r2, op.r3, op.r4], [op.l1, op.l2, op.l3, op.l4]);
+        body.appendChild(envGraph);
+
+        // Frequency group
+        const freqGroup = document.createElement('div');
+        freqGroup.className = 'dx7-param-group';
+        freqGroup.appendChild(makeGroupLabel('Frequency'));
+        freqGroup.appendChild(makeSlider('Mode', op.oscMode, 0, 1, (v) => { op.oscMode = v; }, () => op.oscMode ? 'Fixed' : 'Ratio'));
+        freqGroup.appendChild(makeSlider('Coarse', op.freqCoarse, 0, 31, (v) => { op.freqCoarse = v; }, () => freqDisplay(op.oscMode, op.freqCoarse, op.freqFine)));
+        freqGroup.appendChild(makeSlider('Fine', op.freqFine, 0, 99, (v) => { op.freqFine = v; }, () => freqDisplay(op.oscMode, op.freqCoarse, op.freqFine)));
+        freqGroup.appendChild(makeSlider('Detune', op.detune, 0, 7, (v) => { op.detune = v; }, () => op.detune === 4 ? '0' : (op.detune < 4 ? '-' + (4 - op.detune) : '+' + (op.detune - 4))));
+        body.appendChild(freqGroup);
+
+        // Envelope group
+        const envGroup = document.createElement('div');
+        envGroup.className = 'dx7-param-group';
+        envGroup.appendChild(makeGroupLabel('Envelope'));
+        envGroup.appendChild(makeSlider('R1', op.r1, 0, 99, (v) => { op.r1 = v; refreshEnv(); }));
+        envGroup.appendChild(makeSlider('R2', op.r2, 0, 99, (v) => { op.r2 = v; refreshEnv(); }));
+        envGroup.appendChild(makeSlider('R3', op.r3, 0, 99, (v) => { op.r3 = v; refreshEnv(); }));
+        envGroup.appendChild(makeSlider('R4', op.r4, 0, 99, (v) => { op.r4 = v; refreshEnv(); }));
+        envGroup.appendChild(makeSlider('L1', op.l1, 0, 99, (v) => { op.l1 = v; refreshEnv(); }));
+        envGroup.appendChild(makeSlider('L2', op.l2, 0, 99, (v) => { op.l2 = v; refreshEnv(); }));
+        envGroup.appendChild(makeSlider('L3', op.l3, 0, 99, (v) => { op.l3 = v; refreshEnv(); }));
+        envGroup.appendChild(makeSlider('L4', op.l4, 0, 99, (v) => { op.l4 = v; refreshEnv(); }));
+        body.appendChild(envGroup);
+
+        function refreshEnv() {
+            renderEnvGraph(envGraph, [op.r1, op.r2, op.r3, op.r4], [op.l1, op.l2, op.l3, op.l4]);
         }
+
+        // Output group
+        const outGroup = document.createElement('div');
+        outGroup.className = 'dx7-param-group';
+        outGroup.appendChild(makeGroupLabel('Output'));
+        outGroup.appendChild(makeSlider('Level', op.outputLevel, 0, 99, (v) => { op.outputLevel = v; }));
+        outGroup.appendChild(makeSlider('Vel Sens', op.velSens, 0, 3, (v) => { op.velSens = v; }));
+        outGroup.appendChild(makeSlider('AM Sens', op.amSens, 0, 3, (v) => { op.amSens = v; }));
+        body.appendChild(outGroup);
+
+        // Scaling group
+        const scaleGroup = document.createElement('div');
+        scaleGroup.className = 'dx7-param-group';
+        scaleGroup.appendChild(makeGroupLabel('Keyboard Scaling'));
+        scaleGroup.appendChild(makeSlider('Break Pt', op.breakPoint, 0, 99, (v) => { op.breakPoint = v; }));
+        scaleGroup.appendChild(makeSlider('L Depth', op.lDepth, 0, 99, (v) => { op.lDepth = v; }));
+        scaleGroup.appendChild(makeSlider('R Depth', op.rDepth, 0, 99, (v) => { op.rDepth = v; }));
+        scaleGroup.appendChild(makeSlider('L Curve', op.lCurve, 0, 3, (v) => { op.lCurve = v; }, () => CURVE_NAMES[op.lCurve]));
+        scaleGroup.appendChild(makeSlider('R Curve', op.rCurve, 0, 3, (v) => { op.rCurve = v; }, () => CURVE_NAMES[op.rCurve]));
+        scaleGroup.appendChild(makeSlider('Rate Scaling', op.rateScaling, 0, 7, (v) => { op.rateScaling = v; }));
+        body.appendChild(scaleGroup);
+
+        details.appendChild(body);
+        paramsPanel.appendChild(details);
     }
 
-    const fbRow = document.createElement('div');
-    fbRow.className = 'edit-feedback-row';
-    const fbLbl = document.createElement('span');
-    fbLbl.className = 'edit-feedback-label';
-    fbLbl.textContent = 'Feedback';
-    fbRow.appendChild(fbLbl);
-    const fbSl = document.createElement('input');
-    fbSl.type = 'range'; fbSl.min = '0'; fbSl.max = '7';
-    fbSl.value = String(currentMutation.feedback || 0);
-    fbSl.className = 'edit-param-slider';
-    const fbVal = document.createElement('span');
-    fbVal.className = 'edit-param-val';
-    fbVal.textContent = currentMutation.feedback || 0;
-    fbSl.addEventListener('input', () => {
-        currentMutation.feedback = parseInt(fbSl.value);
-        fbVal.textContent = fbSl.value;
-    });
-    fbRow.appendChild(fbSl);
-    fbRow.appendChild(fbVal);
-    grid.appendChild(fbRow);
+    // Global parameters
+    const g = currentMutation.globals;
+    const globalSection = document.createElement('details');
+    globalSection.className = 'dx7-op-section';
+    globalSection.open = true;
 
-    paramsArea.appendChild(grid);
+    const gSummary = document.createElement('summary');
+    gSummary.className = 'dx7-op-summary';
+    gSummary.textContent = 'Global';
+    globalSection.appendChild(gSummary);
 
+    const gBody = document.createElement('div');
+    gBody.className = 'dx7-op-body';
+
+    // Algorithm + Feedback
+    const algoGroup = document.createElement('div');
+    algoGroup.className = 'dx7-param-group';
+    algoGroup.appendChild(makeGroupLabel('Algorithm & Feedback'));
+    algoGroup.appendChild(makeSlider('Algorithm', g.algorithm, 0, 31, (v) => {
+        g.algorithm = v;
+        renderAlgoSvg(v, algoSvgContainer);
+    }));
+    algoGroup.appendChild(makeSlider('Feedback', g.feedback, 0, 7, (v) => { g.feedback = v; }));
+    algoGroup.appendChild(makeSlider('Key Sync', g.keySync, 0, 1, (v) => { g.keySync = v; }, () => g.keySync ? 'On' : 'Off'));
+    gBody.appendChild(algoGroup);
+
+    // LFO
+    const lfoGroup = document.createElement('div');
+    lfoGroup.className = 'dx7-param-group';
+    lfoGroup.appendChild(makeGroupLabel('LFO'));
+    lfoGroup.appendChild(makeSlider('Speed', g.lfoSpeed, 0, 99, (v) => { g.lfoSpeed = v; }));
+    lfoGroup.appendChild(makeSlider('Delay', g.lfoDelay, 0, 99, (v) => { g.lfoDelay = v; }));
+    lfoGroup.appendChild(makeSlider('PM Depth', g.lfoPmDepth, 0, 99, (v) => { g.lfoPmDepth = v; }));
+    lfoGroup.appendChild(makeSlider('AMD', g.lfoAmd, 0, 99, (v) => { g.lfoAmd = v; }));
+    lfoGroup.appendChild(makeSlider('Waveform', g.lfoWaveform, 0, 5, (v) => { g.lfoWaveform = v; }, () => WAVEFORM_NAMES[g.lfoWaveform]));
+    lfoGroup.appendChild(makeSlider('Sync', g.lfoSync, 0, 1, (v) => { g.lfoSync = v; }, () => g.lfoSync ? 'On' : 'Off'));
+    lfoGroup.appendChild(makeSlider('PM Sens', g.lfoPmSens, 0, 7, (v) => { g.lfoPmSens = v; }));
+    gBody.appendChild(lfoGroup);
+
+    // Pitch EG
+    const pitchGroup = document.createElement('div');
+    pitchGroup.className = 'dx7-param-group';
+    pitchGroup.appendChild(makeGroupLabel('Pitch Envelope'));
+    pitchGroup.appendChild(makeSlider('R1', g.pitchR1, 0, 99, (v) => { g.pitchR1 = v; }));
+    pitchGroup.appendChild(makeSlider('R2', g.pitchR2, 0, 99, (v) => { g.pitchR2 = v; }));
+    pitchGroup.appendChild(makeSlider('R3', g.pitchR3, 0, 99, (v) => { g.pitchR3 = v; }));
+    pitchGroup.appendChild(makeSlider('R4', g.pitchR4, 0, 99, (v) => { g.pitchR4 = v; }));
+    pitchGroup.appendChild(makeSlider('L1', g.pitchL1, 0, 99, (v) => { g.pitchL1 = v; }));
+    pitchGroup.appendChild(makeSlider('L2', g.pitchL2, 0, 99, (v) => { g.pitchL2 = v; }));
+    pitchGroup.appendChild(makeSlider('L3', g.pitchL3, 0, 99, (v) => { g.pitchL3 = v; }));
+    pitchGroup.appendChild(makeSlider('L4', g.pitchL4, 0, 99, (v) => { g.pitchL4 = v; }));
+    gBody.appendChild(pitchGroup);
+
+    // Transpose
+    const trGroup = document.createElement('div');
+    trGroup.className = 'dx7-param-group';
+    trGroup.appendChild(makeGroupLabel('Transpose'));
+    trGroup.appendChild(makeSlider('Semitones', g.transpose, 0, 48, (v) => { g.transpose = v; }, () => {
+        const diff = g.transpose - 24;
+        return diff === 0 ? 'C4' : (diff > 0 ? '+' + diff : String(diff));
+    }));
+    gBody.appendChild(trGroup);
+
+    globalSection.appendChild(gBody);
+    paramsPanel.appendChild(globalSection);
+
+    layout.appendChild(paramsPanel);
+    paramsArea.appendChild(layout);
+
+    // Play button
     const playBtn = document.createElement('button');
     playBtn.textContent = '▶ Play';
     playBtn.className = 'edit-play-btn';
@@ -442,6 +530,36 @@ function renderParamsMode(slotArea, sliderRow, paramsArea, goBtn, statusEl) {
     goBtn.disabled = false;
     goBtn.textContent = 'Save as new';
     statusEl.textContent = `Editing ${editSlot.name} — tweak sliders, then save`;
+}
+
+function makeGroupLabel(text) {
+    const el = document.createElement('div');
+    el.className = 'dx7-group-label';
+    el.textContent = text;
+    return el;
+}
+
+function makeSlider(label, value, min, max, onChange, displayFn) {
+    const row = document.createElement('div');
+    row.className = 'dx7-slider-row';
+    const lbl = document.createElement('span');
+    lbl.className = 'dx7-slider-label';
+    lbl.textContent = label;
+    row.appendChild(lbl);
+    const sl = document.createElement('input');
+    sl.type = 'range'; sl.min = String(min); sl.max = String(max); sl.value = String(value);
+    sl.className = 'dx7-slider';
+    row.appendChild(sl);
+    const val = document.createElement('span');
+    val.className = 'dx7-slider-val';
+    val.textContent = displayFn ? displayFn() : value;
+    row.appendChild(val);
+    sl.addEventListener('input', () => {
+        const v = parseInt(sl.value);
+        onChange(v);
+        val.textContent = displayFn ? displayFn() : v;
+    });
+    return row;
 }
 
 // --- Random Mode ---
@@ -600,22 +718,14 @@ async function buildModifiedVoiceData() {
     let voiceData = await fetchVoiceData(editSlot);
     if (!voiceData || !currentMutation.ops) return voiceData;
 
-    const bytes = atob(voiceData);
-    const arr = new Uint8Array(bytes.length);
-    for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+    const bytes = decodeVoiceData(voiceData);
 
     for (let i = 0; i < 6; i++) {
-        const op = currentMutation.ops[i];
-        if (!op) continue;
-        const base = i * 17;
-        arr[base + 14] = op.outputLevel;
-        arr[base + 15] = ((op.freqCoarse & 0x1F) << 1) | (arr[base + 15] & 1);
+        if (currentMutation.ops[i]) writeOp(bytes, i, currentMutation.ops[i]);
     }
-    arr[111] = (arr[111] & 0xF8) | (currentMutation.feedback & 0x07);
+    if (currentMutation.globals) writeGlobal(bytes, currentMutation.globals);
 
-    let newB64 = '';
-    for (let i = 0; i < arr.length; i++) newB64 += String.fromCharCode(arr[i]);
-    return btoa(newB64);
+    return encodeVoiceData(bytes);
 }
 
 async function previewParamsEdit() {

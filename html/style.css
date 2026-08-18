@@ -2443,6 +2443,186 @@ h1 {
 }
 
 /* ============================================================
+   11b. DX7 Parameter Editor
+   ============================================================ */
+
+.dx7-layout {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    gap: 0.75rem;
+    margin-bottom: 0.5rem;
+}
+
+.dx7-algo-panel {
+    position: sticky;
+    top: 0;
+    align-self: start;
+}
+
+.dx7-algo-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 0.3rem;
+}
+
+.dx7-algo-svg-container {
+    background: rgba(0,0,0,0.3);
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 0.3rem;
+}
+
+.dx7-algo-svg {
+    width: 100%;
+    height: auto;
+}
+
+.dx7-params-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.dx7-op-section {
+    border: 1px solid #2a2a3e;
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.dx7-op-section + .dx7-op-section {
+    margin-top: 0.25rem;
+}
+
+.dx7-op-summary {
+    cursor: pointer;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #ccc;
+    padding: 0.4rem 0.6rem;
+    background: rgba(0,0,0,0.25);
+    border-radius: 6px;
+    user-select: none;
+    outline: none;
+    list-style: none;
+    display: flex;
+    align-items: center;
+}
+
+.dx7-op-summary::-webkit-details-marker {
+    display: none;
+}
+
+.dx7-op-summary::marker {
+    display: none;
+}
+
+.dx7-op-summary::before {
+    content: '▸';
+    font-size: 0.6rem;
+    margin-right: 0.4rem;
+    display: inline-block;
+    transition: transform 0.15s;
+}
+
+.dx7-op-section[open] > .dx7-op-summary::before {
+    transform: rotate(90deg);
+}
+
+.dx7-op-summary:hover {
+    color: #fff;
+    background: rgba(255,255,255,0.05);
+}
+
+.dx7-op-body {
+    padding: 0.4rem 0.6rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.dx7-env-graph {
+    width: 100%;
+    height: 40px;
+    background: rgba(0,0,0,0.2);
+    border-radius: 4px;
+    border: 1px solid #2a2a3e;
+}
+
+.dx7-param-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+.dx7-group-label {
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding-bottom: 0.15rem;
+    border-bottom: 1px solid #2a2a3e;
+    margin-bottom: 0.1rem;
+}
+
+.dx7-slider-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.dx7-slider-label {
+    font-size: 0.7rem;
+    color: #888;
+    min-width: 60px;
+    flex-shrink: 0;
+}
+
+.dx7-slider {
+    flex: 1;
+    height: 4px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: #333;
+    border-radius: 2px;
+    outline: none;
+}
+
+.dx7-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #4caf50;
+    cursor: pointer;
+}
+
+.dx7-slider-val {
+    font-size: 0.7rem;
+    color: #4caf50;
+    min-width: 36px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Mobile: stack layout */
+@media (max-width: 600px) {
+    .dx7-layout {
+        grid-template-columns: 1fr;
+    }
+    .dx7-algo-panel {
+        position: static;
+    }
+    .dx7-algo-svg-container {
+        max-width: 180px;
+        margin: 0 auto;
+    }
+}
+
+/* ============================================================
    12. Footer / log
    ============================================================ */
 
