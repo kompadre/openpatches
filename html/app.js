@@ -498,6 +498,8 @@ function initToolbar() {
         },
         editOpts: {
             baseUrl,
+            showProgress,
+            hideProgress,
             onPatchCreated: (patch) => {
                 addContainer(patch.name, { patchIds: [patch.id] });
                 initCanvas(getCanvasOpts());

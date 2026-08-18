@@ -10,10 +10,14 @@ let editMode = 'morph';
 let currentMutation = null;
 let baseUrlRef = '';
 let onPatchCreated = null; // callback(patch) when a new patch is saved
+let showProgressRef = null;
+let hideProgressRef = null;
 
 export function createEditPanel(opts) {
     baseUrlRef = opts.baseUrl || '';
     onPatchCreated = opts.onPatchCreated || null;
+    showProgressRef = opts.showProgress || null;
+    hideProgressRef = opts.hideProgress || null;
 
     const panel = document.createElement('div');
     panel.className = 'edit-panel-inner';
@@ -533,6 +537,7 @@ async function runMorphEdit() {
     const ratio = parseFloat(document.getElementById('edit-slider').value);
 
     goBtn.disabled = true;
+    if (showProgressRef) showProgressRef(10);
     statusEl.textContent = 'Fetching patches...';
 
     try {
@@ -542,10 +547,12 @@ async function runMorphEdit() {
         ]);
         if (!srcData || !tgtData) {
             statusEl.textContent = 'Error: could not fetch voice data';
+            if (hideProgressRef) hideProgressRef();
             goBtn.disabled = false;
             return;
         }
 
+        if (showProgressRef) showProgressRef(50);
         statusEl.textContent = 'Morphing...';
         const resp = await fetch(baseUrlRef + '/api/morph', {
             method: 'POST',
@@ -555,12 +562,15 @@ async function runMorphEdit() {
         const data = await resp.json();
         if (data.error) {
             statusEl.textContent = 'Error: ' + data.error;
+            if (hideProgressRef) hideProgressRef();
             goBtn.disabled = false;
             return;
         }
 
+        if (showProgressRef) showProgressRef(100);
         statusEl.textContent = `Done — distance: ${data.source_dist.toFixed(4)} → ${data.morph_dist.toFixed(4)} (${ratioLabel(data.ratio)})`;
         if (data.wav_url) new Audio(baseUrlRef + data.wav_url).play();
+        if (hideProgressRef) setTimeout(hideProgressRef, 500);
 
         const morphPatch = createPatch({
             name: morphName(editSlot.name, editSlotB.name),
@@ -578,6 +588,7 @@ async function runMorphEdit() {
         renderEditPanel();
     } catch (err) {
         statusEl.textContent = 'Error: ' + err.message;
+        if (hideProgressRef) hideProgressRef();
         goBtn.disabled = false;
     }
 }
