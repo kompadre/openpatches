@@ -2457,6 +2457,14 @@ h1 {
     position: sticky;
     top: 0;
     align-self: start;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.dx7-algo-panel .dx7-op-section {
+    position: sticky;
+    bottom: 0;
 }
 
 .dx7-algo-label {

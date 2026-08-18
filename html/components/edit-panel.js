@@ -362,7 +362,7 @@ function renderParamsMode(slotArea, sliderRow, paramsArea, goBtn, statusEl) {
     algoPanel.className = 'dx7-algo-panel';
     const algoLabel = document.createElement('div');
     algoLabel.className = 'dx7-algo-label';
-    algoLabel.textContent = 'Algorithm';
+    algoLabel.textContent = 'Algorithm ' + (currentMutation.globals.algorithm + 1);
     algoPanel.appendChild(algoLabel);
     const algoSvgContainer = document.createElement('div');
     algoSvgContainer.className = 'dx7-algo-svg-container';
@@ -470,6 +470,7 @@ function renderParamsMode(slotArea, sliderRow, paramsArea, goBtn, statusEl) {
     algoGroup.appendChild(makeGroupLabel('Algorithm & Feedback'));
     algoGroup.appendChild(makeSlider('Algorithm', g.algorithm, 0, 31, (v) => {
         g.algorithm = v;
+        algoLabel.textContent = 'Algorithm ' + (v + 1);
         renderAlgoSvg(v, algoSvgContainer);
     }));
     algoGroup.appendChild(makeSlider('Feedback', g.feedback, 0, 7, (v) => { g.feedback = v; }));
@@ -514,8 +515,9 @@ function renderParamsMode(slotArea, sliderRow, paramsArea, goBtn, statusEl) {
     gBody.appendChild(trGroup);
 
     globalSection.appendChild(gBody);
-    paramsPanel.appendChild(globalSection);
+    algoPanel.appendChild(globalSection);
 
+    layout.appendChild(algoPanel);
     layout.appendChild(paramsPanel);
     paramsArea.appendChild(layout);
 
