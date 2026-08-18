@@ -983,10 +983,15 @@ h1 {
     display: none;
 }
 
+.container-group summary::marker {
+    display: none;
+}
+
 .container-group summary::before {
     content: '▸';
     font-size: 0.6rem;
     margin-right: 0.3rem;
+    display: inline-block;
     transition: transform 0.2s;
 }
 
