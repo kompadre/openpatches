@@ -165,7 +165,7 @@ async function playNote(midi, voiceData, durationMs, channel) {
 }
 
 async function playPatch(patch, midi) {
-    const note = midi || activeKeyboardNote || 60;
+    const note = midi || patch.midi_note || activeKeyboardNote || 60;
     if (patch.voice_data) {
         try {
             await acquire();
@@ -213,14 +213,15 @@ function appendLog(message) {
 // --- Progress bar ---
 
 function showProgress(pct) {
-    const wrapper = document.getElementById('progress-wrapper');
-    if (wrapper) wrapper.style.display = 'block';
+    const wrapper = document.getElementById('progress-modal');
+    // document.getElementById('help-modal').style.display = '';
+    if (wrapper) wrapper.style.display = '';
     const fill = document.getElementById('progress-fill');
     if (fill) fill.style.width = pct + '%';
 }
 
 function hideProgress() {
-    const wrapper = document.getElementById('progress-wrapper');
+    const wrapper = document.getElementById('progress-modal');
     if (wrapper) wrapper.style.display = 'none';
 }
 

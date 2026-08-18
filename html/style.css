@@ -356,6 +356,7 @@ textarea:focus {
     width: 100%;
     max-width: 500px;
     margin-bottom: 0.5rem;
+    margin: auto;
 }
 
 #progress-bar {
@@ -914,7 +915,7 @@ h1 {
     padding: 0 0.2rem;
     line-height: 1;
     transition: color 0.15s;
-    opacity: 0;
+    /* opacity: 0; */
     flex-shrink: 0;
 }
 
@@ -958,6 +959,48 @@ h1 {
     border-top: 1px dashed #333;
     margin: 0.5rem 0;
     width: 100%;
+}
+
+.container-group {
+    margin: 0;
+    padding: 0;
+}
+
+.container-group summary {
+    cursor: pointer;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #888;
+    padding: 0.3rem 0.5rem;
+    background: rgba(0,0,0,0.2);
+    border-radius: 4px;
+    user-select: none;
+    outline: none;
+    list-style: none;
+}
+
+.container-group summary::-webkit-details-marker {
+    display: none;
+}
+
+.container-group summary::before {
+    content: '▸';
+    font-size: 0.6rem;
+    margin-right: 0.3rem;
+    transition: transform 0.2s;
+}
+
+.container-group[open] summary::before {
+    transform: rotate(90deg);
+}
+
+.container-group summary:hover {
+    color: #ccc;
+    background: rgba(255,255,255,0.05);
+}
+
+.container-group-body {
+    padding: 2px 0;
 }
 
 .sky-container-body .probe-panel {
@@ -2712,7 +2755,7 @@ footer {
     display: flex;
     flex-wrap: wrap;
     gap: 0.25rem;
-    margin-top: 0.25rem;
+    /* margin-top: 0.25rem; */
 }
 
 .tag-chip {
@@ -2771,7 +2814,8 @@ footer {
 
 /* Container tags placement */
 .sky-container-tags {
-    margin-top: 0.2rem;
+    background-color: #111;
+    /* margin-top: 0.2rem; */
     padding: 0 0.5rem;
 }
 

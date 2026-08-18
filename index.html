@@ -49,7 +49,9 @@
         <a href="https://github.com/kompadre/openpatches/issues" target="_blank" class="bug-report-link">Report Bugs</a>
         <a href="https://github.com/kompadre/openpatches" target="_blank" class="github-link" title="Source Code">
             <svg height="16" viewBox="0 0 16 16" width="16" aria-hidden="true">
-                <path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path>
+                <path fill="currentColor"
+                    d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z">
+                </path>
             </svg>
         </a>
     </nav>
@@ -57,113 +59,152 @@
     <div id="page-content">
         <input type="file" id="wav-input" accept=".wav,.syx" style="display:none;">
 
-        <div id="progress-wrapper" style="display:none;">
-            <div id="progress-bar">
-                <div id="progress-fill"></div>
-            </div>
-            <div id="progress-label"></div>
-        </div>
 
         <div id="night-sky"></div>
 
         <!-- Credits Modal -->
-    <div id="credits-modal" class="modal-overlay" style="display:none;">
-        <div class="modal-dialog">
-            <div class="modal-header">
-                <h3>Acknowledgements</h3>
-                <button class="modal-close" id="credits-close">×</button>
-            </div>
-            <div class="modal-body">
-                <p><strong>Raph Levien</strong> and MSFA contributors — <a href="https://github.com/google/music-synthesizer-for-android" target="_blank">github.com/google/music-synthesizer-for-android</a></p>
-                <p><strong>Jari Kleimola</strong> — webdx7 build tooling — <a href="https://github.com/jariseon/webdx7" target="_blank">github.com/jariseon/webdx7</a></p>
-                <p><strong>Alexey S. Kompaniets</strong> — <a href="https://github.com/kompadre" target="_blank">github.com/kompadre</a></p>
-            </div>
-        </div>
-    </div>
-
-    <!-- About Modal -->
-    <div id="about-modal" class="modal-overlay" style="display:none;">
-        <div class="modal-dialog">
-            <div class="modal-header">
-                <h3>About OpenPatches</h3>
-                <button class="modal-close" id="about-close">×</button>
-            </div>
-            <div class="modal-body">
-                <p>OpenPatches is a sound synthesis curation and archiving utility built around the Yamaha DX7 FM synthesis engine.</p>
-                <p>FM synthesis is uniquely suited for this purpose: it consumes very little CPU, needs minimal storage, and sounds consistent across the entire pitch range without temporal distortions. A single 128-byte patch can reproduce a sound at any MIDI note, instantly.</p>
-                <p>This makes FM ideal for drafting musical ideas on low-end hardware — devices where sample-based playback would be too expensive. Projects like <a href="https://github.com/djdiskmachine/LittleGPTracker" target="_blank">LittleGPTracker</a> and <a href="https://github.com/kompadre/trkr" target="_blank">trkr</a> already use FM for this reason.</p>
-                <p>OpenPatches takes any audio recording and finds the closest DX7 patch using linear approximation and spectral analysis. The result is a portable, lightweight voice you can use anywhere — from a tracker on a Raspberry Pi to a browser on a phone.</p>
-                <hr>
-                <p>Source code and documentation: <a href="https://github.com/kompadre/openpatches" target="_blank">github.com/kompadre/openpatches</a></p>
-            </div>
-        </div>
-    </div>
-
-    <!-- Help Modal -->
-    <div id="help-modal" class="modal-overlay" style="display:none;">
-        <div class="modal-dialog">
-            <div class="modal-header">
-                <h3>Help</h3>
-                <button class="modal-close" id="help-close">×</button>
-            </div>
-            <div class="modal-body">
-                <p><strong>Import a .WAV</strong> — Upload an audio recording. The server analyzes it and returns the closest DX7 patches. Patches appear in containers on the canvas.</p>
-                <p><strong>Load a .SYX</strong> — Load a DX7 sysex bank (32 voices). All patches appear in a container on the canvas. Click to play, drag to reorganize.</p>
-                <p><strong>Canvas</strong> — The main area where patches and containers live. Drag patches by their star. Create containers to group patches. Containers are resizable.</p>
-                <p><strong>Toolbar</strong> — Bottom panel with Keyboard (click to play), Piano Roll (draw note sequences), Edit (morph/params/random), and Log.</p>
-                <p><strong>Edit</strong> — Morph between two patches, tweak individual parameters, or generate random mutations.</p>
-                <p><strong>Export .SYX</strong> — Export patches from a container as a standard DX7 sysex file.</p>
-            </div>
-        </div>
-    </div>
-
-    <!-- Legal Modal -->
-    <div id="legal-modal" class="modal-overlay" style="display:none;">
-        <div class="modal-dialog">
-            <div class="modal-header">
-                <h3>Legal & Privacy</h3>
-                <button class="modal-close" id="legal-close">×</button>
-            </div>
-            <div class="modal-body">
-                <h4>Terms of Service</h4>
-                <div class="legal-scroll">
-                    <p>By using OpenPatches, you agree to these terms. OpenPatches is provided "as is", without warranty of any kind. You are responsible for the content you upload. Unauthorized abuse of the matching API is prohibited.</p>
-                    <p>DX7 is a trademark of Yamaha Corporation. OpenPatches is not affiliated with Yamaha.</p>
+        <div id="credits-modal" class="modal-overlay" style="display:none;">
+            <div class="modal-dialog">
+                <div class="modal-header">
+                    <h3>Acknowledgements</h3>
+                    <button class="modal-close" id="credits-close">×</button>
                 </div>
-                
-                <h4>Privacy Policy</h4>
-                <div class="legal-scroll">
-                    <p>We do not collect personal data. Uploaded audio is processed to find matches and stored temporarily. Application data (patches, canvas) is stored <strong>locally in your browser</strong> (LocalStorage/IndexedDB) and never sent to our servers unless you explicitly export it.</p>
+                <div class="modal-body">
+                    <p><strong>Raph Levien</strong> and MSFA contributors — <a
+                            href="https://github.com/google/music-synthesizer-for-android"
+                            target="_blank">github.com/google/music-synthesizer-for-android</a></p>
+                    <p><strong>Jari Kleimola</strong> — webdx7 build tooling — <a
+                            href="https://github.com/jariseon/webdx7" target="_blank">github.com/jariseon/webdx7</a></p>
+                    <p><strong>Alexey S. Kompaniets</strong> — <a href="https://github.com/kompadre"
+                            target="_blank">github.com/kompadre</a></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- About Modal -->
+        <div id="about-modal" class="modal-overlay" style="display:none;">
+            <div class="modal-dialog">
+                <div class="modal-header">
+                    <h3>About OpenPatches</h3>
+                    <button class="modal-close" id="about-close">×</button>
+                </div>
+                <div class="modal-body">
+                    <p>OpenPatches is a sound synthesis curation and archiving utility built around the Yamaha DX7 FM
+                        synthesis engine.</p>
+                    <p>FM synthesis is uniquely suited for this purpose: it consumes very little CPU, needs minimal
+                        storage, and sounds consistent across the entire pitch range without temporal distortions. A
+                        single 128-byte patch can reproduce a sound at any MIDI note, instantly.</p>
+                    <p>This makes FM ideal for drafting musical ideas on low-end hardware — devices where sample-based
+                        playback would be too expensive. Projects like <a
+                            href="https://github.com/djdiskmachine/LittleGPTracker" target="_blank">LittleGPTracker</a>
+                        and <a href="https://github.com/kompadre/trkr" target="_blank">trkr</a> already use FM for this
+                        reason.</p>
+                    <p>OpenPatches takes any audio recording and finds the closest DX7 patch using linear approximation
+                        and spectral analysis. The result is a portable, lightweight voice you can use anywhere — from a
+                        tracker on a Raspberry Pi to a browser on a phone.</p>
+                    <hr>
+                    <p>Source code and documentation: <a href="https://github.com/kompadre/openpatches"
+                            target="_blank">github.com/kompadre/openpatches</a></p>
+                </div>
+            </div>
+        </div>
+
+
+        <div id="progress-modal" class="modal-overlay" style="display: none">
+            <div class="modal-dialog">
+                <div class="modal-header"></div>
+                <div class="modal-body">
+                    <div id="progress-bar">
+                        <div id="progress-fill"></div>
+                    </div>
+                    <div id="progress-label"></div>
                 </div>
 
-                <hr>
-                <p>OpenPatches is licensed under the <strong>MIT License</strong>.</p>
-                <p>This project includes:</p>
-                <p>• <strong>MSFA</strong> (Apache 2.0) — Music Synthesizer for Android by Raph Levien and contributors</p>
             </div>
         </div>
-    </div>
 
-    <!-- Donate Modal -->
-    <div id="donate-modal" class="modal-overlay" style="display:none;">
-        <div class="modal-dialog">
-            <div class="modal-header">
-                <h3>Support OpenPatches</h3>
-                <button class="modal-close" id="donate-close">×</button>
-            </div>
-            <div class="modal-body">
-                <p>Hey! Hope you're finding some cool sounds with OpenPatches.</p>
-                <p>Running the inference server (the brain that matches your audio to DX7 patches) actually costs a bit of money every month because it requires a decent CPU to run those genetic algorithms in real-time.</p>
-                <p>If you like the project and want to help keep the lights on, consider buying me a coffee! Every little bit helps keep this tool free and accessible for everyone.</p>
-                <div style="text-align: center; margin-top: 1.5rem;">
-                    <button id="donate-btn-kofi" style="background-color: #29abe0; color: #fff; font-weight: bold;">Support on Ko-fi</button>
+        <!-- Help Modal -->
+        <div id="help-modal" class="modal-overlay" style="display:none;">
+            <div class="modal-dialog">
+                <div class="modal-header">
+                    <h3>Help</h3>
+                    <button class="modal-close" id="help-close">×</button>
                 </div>
-                <p style="font-size: 0.75rem; color: #777; margin-top: 1.2rem; text-align: center; font-style: italic;">(No pressure though, happy patching!)</p>
+                <div class="modal-body">
+                    <p><strong>Import a .WAV</strong> — Upload an audio recording. The server analyzes it and returns
+                        the closest DX7 patches. Patches appear in containers on the canvas.</p>
+                    <p><strong>Load a .SYX</strong> — Load a DX7 sysex bank (32 voices). All patches appear in a
+                        container on the canvas. Click to play, drag to reorganize.</p>
+                    <p><strong>Canvas</strong> — The main area where patches and containers live. Drag patches by their
+                        star. Create containers to group patches. Containers are resizable.</p>
+                    <p><strong>Toolbar</strong> — Bottom panel with Keyboard (click to play), Piano Roll (draw note
+                        sequences), Edit (morph/params/random), and Log.</p>
+                    <p><strong>Edit</strong> — Morph between two patches, tweak individual parameters, or generate
+                        random mutations.</p>
+                    <p><strong>Export .SYX</strong> — Export patches from a container as a standard DX7 sysex file.</p>
+                </div>
             </div>
         </div>
-    </div>
 
-    <div id="piano-dock"></div>
+        <!-- Legal Modal -->
+        <div id="legal-modal" class="modal-overlay" style="display:none;">
+            <div class="modal-dialog">
+                <div class="modal-header">
+                    <h3>Legal & Privacy</h3>
+                    <button class="modal-close" id="legal-close">×</button>
+                </div>
+                <div class="modal-body">
+                    <h4>Terms of Service</h4>
+                    <div class="legal-scroll">
+                        <p>By using OpenPatches, you agree to these terms. OpenPatches is provided "as is", without
+                            warranty of any kind. You are responsible for the content you upload. Unauthorized abuse of
+                            the matching API is prohibited.</p>
+                        <p>DX7 is a trademark of Yamaha Corporation. OpenPatches is not affiliated with Yamaha.</p>
+                    </div>
+
+                    <h4>Privacy Policy</h4>
+                    <div class="legal-scroll">
+                        <p>We do not collect personal data. Uploaded audio is processed to find matches and stored
+                            temporarily. Application data (patches, canvas) is stored <strong>locally in your
+                                browser</strong> (LocalStorage/IndexedDB) and never sent to our servers unless you
+                            explicitly export it.</p>
+                    </div>
+
+                    <hr>
+                    <p>OpenPatches is licensed under the <strong>MIT License</strong>.</p>
+                    <p>This project includes:</p>
+                    <p>• <strong>MSFA</strong> (Apache 2.0) — Music Synthesizer for Android by Raph Levien and
+                        contributors</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Donate Modal -->
+        <div id="donate-modal" class="modal-overlay" style="display:none;">
+            <div class="modal-dialog">
+                <div class="modal-header">
+                    <h3>Support OpenPatches</h3>
+                    <button class="modal-close" id="donate-close">×</button>
+                </div>
+                <div class="modal-body">
+                    <p>Hey! Hope you're finding some cool sounds with OpenPatches.</p>
+                    <p>Running the inference server (the brain that matches your audio to DX7 patches) actually costs a
+                        bit of money every month because it requires a decent CPU to run those genetic algorithms in
+                        real-time.</p>
+                    <p>If you like the project and want to help keep the lights on, consider buying me a coffee! Every
+                        little bit helps keep this tool free and accessible for everyone.</p>
+                    <div style="text-align: center; margin-top: 1.5rem;">
+                        <button id="donate-btn-kofi"
+                            style="background-color: #29abe0; color: #fff; font-weight: bold;">Support on Ko-fi</button>
+                    </div>
+                    <p
+                        style="font-size: 0.75rem; color: #777; margin-top: 1.2rem; text-align: center; font-style: italic;">
+                        (No pressure though, happy patching!)</p>
+                </div>
+            </div>
+        </div>
+
+        <div id="piano-dock"></div>
 
     </div> <!-- /page-content -->
 

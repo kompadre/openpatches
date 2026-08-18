@@ -126,7 +126,7 @@ export class Job {
             });
             this.containerId = ctr.id;
             this.save();
-
+            hideProgress();
             return true;
         } catch (err) {
             appendLog(`Error: ${err.message}`);
@@ -244,14 +244,22 @@ export class Job {
         if (!data) return;
 
         const baseName = this.fileName.replace(/\.[^.]+$/, '');
+        const rootMidi = data.midi_note;
         const groups = [
-            { key: 'matches', prefix: 'NEAREST' },
-            { key: 'timbral_matches', prefix: 'TIMBRAL' },
-            { key: 'full_matches', prefix: 'FORMANT' },
+            { key: 'matches',          prefix: 'NEAREST' },
+            { key: 'timbral_matches',  prefix: 'TIMBRAL' },
+            { key: 'full_matches',     prefix: 'FULL' },
+            { key: 'favorites',        prefix: 'FAVORITES' },
+            { key: 'formant_matches',  prefix: 'FORMANT' },
         ];
 
         const ctrId = this.containerId;
         if (!ctrId) return;
+
+        const ctr = canvasStore.getContainer(ctrId);
+        if (!ctr) return;
+
+        const containerGroups = [];
 
         for (const group of groups) {
             const matches = data[group.key];
@@ -263,13 +271,21 @@ export class Job {
                 feedback: m.feedback,
                 voice_data: m.voice_data || null,
                 source: 'wav',
+                midi_note: rootMidi,
             }));
             patchStore.bulkPut(patches);
 
+            const patchIds = [];
             for (const p of patches) {
                 addPatchToContainer(p.id, ctrId);
+                patchIds.push(p.id);
             }
+
+            containerGroups.push({ label: group.prefix, patchIds });
         }
+
+        ctr.groups = containerGroups;
+        canvasStore.putContainer(ctr);
 
         refreshCanvas();
         appendLog(`Match complete: ${baseName}`);

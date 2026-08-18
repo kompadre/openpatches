@@ -753,13 +753,60 @@ function renderContainer(ctr) {
         optsRef.renderJobBody(job, body);
     }
 
-    const patches = (ctr.patchIds || []).map(id => patchStore.get(id)).filter(Boolean);
-    if (patches.length > 0) {
-        if (hasJobUI) {
-            const hr = document.createElement('hr');
-            hr.className = 'container-results-sep';
-            body.appendChild(hr);
+    const allPatchIds = ctr.patchIds || [];
+    const hasGroups = ctr.groups && ctr.groups.length > 0;
+
+    if (hasJobUI && allPatchIds.length > 0) {
+        const hr = document.createElement('hr');
+        hr.className = 'container-results-sep';
+        body.appendChild(hr);
+    }
+
+    if (hasGroups) {
+        // Render collapsible subsections per group
+        for (let gi = 0; gi < ctr.groups.length; gi++) {
+            const group = ctr.groups[gi];
+            const groupPatches = (group.patchIds || []).map(id => patchStore.get(id)).filter(Boolean);
+            if (groupPatches.length === 0) continue;
+
+            const details = document.createElement('details');
+            details.className = 'container-group';
+            if (gi === 0) details.open = true;
+
+            const summary = document.createElement('summary');
+            summary.className = 'container-group-summary';
+            summary.textContent = group.label + ' (' + groupPatches.length + ')';
+            details.appendChild(summary);
+
+            const groupBody = document.createElement('div');
+            groupBody.className = 'container-group-body';
+
+            for (const patch of groupPatches) {
+                const row = createPatchRow(patch, {
+                    isMinified: true,
+                    onPlay: optsRef ? optsRef.onPlay : null,
+                    onSelect: optsRef ? optsRef.onSelect : null,
+                    onEdit: optsRef ? optsRef.onEdit : null,
+                    onRemove: (p) => {
+                        group.patchIds = (group.patchIds || []).filter(id => id !== p.id);
+                        ctr.patchIds = (ctr.patchIds || []).filter(id => id !== p.id);
+                        canvasStore.putContainer(ctr);
+                        const canvasPatch = canvasStore.getCanvasPatch(p.id);
+                        if (canvasPatch && canvasPatch.containerId === ctr.id) {
+                            canvasStore.removeCanvasPatch(p.id);
+                        }
+                        renderAll();
+                    },
+                });
+                groupBody.appendChild(row);
+            }
+
+            details.appendChild(groupBody);
+            body.appendChild(details);
         }
+    } else if (allPatchIds.length > 0) {
+        // Flat list (no groups — SYX, manual containers)
+        const patches = allPatchIds.map(id => patchStore.get(id)).filter(Boolean);
 
         for (const patch of patches) {
             const row = createPatchRow(patch, {
@@ -779,12 +826,15 @@ function renderContainer(ctr) {
             });
             body.appendChild(row);
         }
+    }
 
-        // Batch render waveforms for minimized patches
+    // Batch render waveforms
+    const allPatches = allPatchIds.map(id => patchStore.get(id)).filter(Boolean);
+    if (allPatches.length > 0) {
         const patchEls = [];
         body.querySelectorAll('.patch-row').forEach(row => {
             const pid = row.dataset.patchId;
-            const p = patches.find(pp => pp.id === pid);
+            const p = allPatches.find(pp => pp.id === pid);
             if (p && p.voice_data) {
                 const cvs = row.querySelector('.patch-canvas');
                 if (cvs) patchEls.push({ voiceData: p.voice_data, canvas: cvs });

@@ -37,6 +37,7 @@ export function createPatch(partial) {
         source: partial.source || 'unknown',
         created: partial.created || Date.now(),
         tags: partial.tags || [],
+        midi_note: partial.midi_note || null,
     };
 }
 
