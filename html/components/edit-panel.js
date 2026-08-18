@@ -42,6 +42,28 @@ export function createEditPanel(opts) {
     slotArea.id = 'edit-slot-area';
     panel.appendChild(slotArea);
 
+    // Actions (below slot)
+    const actions = document.createElement('div');
+    actions.className = 'edit-actions';
+    const clearBtn = document.createElement('button');
+    clearBtn.className = 'btn-edit-action';
+    clearBtn.textContent = 'Clear';
+    clearBtn.addEventListener('click', () => {
+        editSlot = null;
+        editSlotB = null;
+        currentMutation = null;
+        renderEditPanel();
+    });
+    actions.appendChild(clearBtn);
+    const goBtn = document.createElement('button');
+    goBtn.className = 'btn-edit-action btn-edit-primary';
+    goBtn.id = 'edit-go';
+    goBtn.disabled = true;
+    goBtn.textContent = 'Morph';
+    goBtn.addEventListener('click', runEditAction);
+    actions.appendChild(goBtn);
+    panel.appendChild(actions);
+
     // Slider row
     const sliderRow = document.createElement('div');
     sliderRow.className = 'edit-slider-row';
@@ -83,28 +105,6 @@ export function createEditPanel(opts) {
     paramsArea.id = 'edit-params-area';
     paramsArea.style.display = 'none';
     panel.appendChild(paramsArea);
-
-    // Actions
-    const actions = document.createElement('div');
-    actions.className = 'edit-actions';
-    const clearBtn = document.createElement('button');
-    clearBtn.className = 'btn-edit-clear';
-    clearBtn.textContent = 'Clear';
-    clearBtn.addEventListener('click', () => {
-        editSlot = null;
-        editSlotB = null;
-        currentMutation = null;
-        renderEditPanel();
-    });
-    actions.appendChild(clearBtn);
-    const goBtn = document.createElement('button');
-    goBtn.className = 'btn-edit-primary';
-    goBtn.id = 'edit-go';
-    goBtn.disabled = true;
-    goBtn.textContent = 'Morph';
-    goBtn.addEventListener('click', runEditAction);
-    actions.appendChild(goBtn);
-    panel.appendChild(actions);
 
     // Status
     const statusEl = document.createElement('div');
@@ -521,13 +521,15 @@ function renderParamsMode(slotArea, sliderRow, paramsArea, goBtn, statusEl) {
     layout.appendChild(paramsPanel);
     paramsArea.appendChild(layout);
 
-    // Play button
+    // Add play button to actions (below slot)
+    const existingPlayBtn = actions.querySelector('.btn-edit-play');
+    if (existingPlayBtn) existingPlayBtn.remove();
     const playBtn = document.createElement('button');
     playBtn.textContent = '▶ Play';
-    playBtn.className = 'edit-play-btn';
+    playBtn.className = 'btn-edit-action btn-edit-play';
     playBtn.type = 'button';
     playBtn.addEventListener('click', previewParamsEdit);
-    paramsArea.appendChild(playBtn);
+    actions.insertBefore(playBtn, goBtn);
 
     goBtn.disabled = false;
     goBtn.textContent = 'Save as new';

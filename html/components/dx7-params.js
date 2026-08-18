@@ -177,6 +177,22 @@ export function renderAlgoSvg(algorithm, container) {
     ap.setAttribute('fill', '#666');
     marker.appendChild(ap);
     defs.appendChild(marker);
+
+    // Feedback arrow marker (red)
+    const fbMarker = document.createElementNS(ns, 'marker');
+    fbMarker.setAttribute('id', 'algo-fb-arrow');
+    fbMarker.setAttribute('viewBox', '0 0 10 10');
+    fbMarker.setAttribute('refX', '8');
+    fbMarker.setAttribute('refY', '5');
+    fbMarker.setAttribute('markerWidth', '5');
+    fbMarker.setAttribute('markerHeight', '5');
+    fbMarker.setAttribute('orient', 'auto-start-reverse');
+    const fbp = document.createElementNS(ns, 'path');
+    fbp.setAttribute('d', 'M 0 0 L 10 5 L 0 10 z');
+    fbp.setAttribute('fill', '#e94560');
+    fbMarker.appendChild(fbp);
+    defs.appendChild(fbMarker);
+
     svg.appendChild(defs);
 
     const carrierSet = new Set(algo.carriers);
@@ -191,6 +207,16 @@ export function renderAlgoSvg(algorithm, container) {
         l.setAttribute('marker-end', 'url(#algo-arrow)');
         svg.appendChild(l);
     }
+
+    // Feedback loop on Op6 (curved arrow back to itself)
+    const fb = document.createElementNS(ns, 'path');
+    const op6 = OP_POS[0]; // Op6 is at index 0
+    fb.setAttribute('d', `M${op6.x - 14},${op6.y - 10} C${op6.x - 30},${op6.y - 30} ${op6.x + 30},${op6.y - 30} ${op6.x + 14},${op6.y - 10}`);
+    fb.setAttribute('fill', 'none');
+    fb.setAttribute('stroke', '#e94560');
+    fb.setAttribute('stroke-width', '1.5');
+    fb.setAttribute('marker-end', 'url(#algo-fb-arrow)');
+    svg.appendChild(fb);
 
     // Operator boxes
     for (let i = 0; i < 6; i++) {
