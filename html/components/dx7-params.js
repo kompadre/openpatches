@@ -159,7 +159,7 @@ const ALGO_EXTRA_CONNS = [
 function interleaveLayout(layout, algoIndex) {
     const rows = layout.length;
     const maxCols = Math.max(...layout.map(r => r.length));
-    const gridRows = rows * 2 - 1;
+    const gridRows = rows * 2; // +1 for output bus row
     const gridCols = maxCols * 2 - 1;
 
     const grid = Array.from({ length: gridRows }, () => Array(gridCols).fill(null));
@@ -184,6 +184,23 @@ function interleaveLayout(layout, algoIndex) {
             if (a === b) continue;
             if (a.c === b.c && b.r === a.r + 2) vconns.push({ r: a.r + 1, c: a.c });
             if (a.r === b.r && b.c === a.c + 2) hconns.push({ r: a.r, c: a.c + 1 });
+        }
+    }
+
+    // Output bus: connect all carriers (bottom row ops) to a horizontal line
+    const bottomRow = (rows - 1) * 2;
+    const busRow = gridRows - 1;
+    const carrierCols = [];
+    for (const p of positions) {
+        if (p.r === bottomRow) {
+            vconns.push({ r: p.r + 1, c: p.c });
+            carrierCols.push(p.c);
+        }
+    }
+    carrierCols.sort((a, b) => a - b);
+    if (carrierCols.length >= 2) {
+        for (let c = carrierCols[0] + 1; c < carrierCols[carrierCols.length - 1]; c++) {
+            hconns.push({ r: busRow, c });
         }
     }
 
