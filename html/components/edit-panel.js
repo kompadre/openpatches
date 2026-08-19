@@ -14,6 +14,7 @@ let baseUrlRef = '';
 let onPatchCreated = null; // callback(patch) when a new patch is saved
 let showProgressRef = null;
 let hideProgressRef = null;
+let previewPlaying = false;
 
 async function playVoiceDataLocally(voiceData, note = 60) {
     await acquire();
@@ -47,6 +48,13 @@ export function createEditPanel(opts) {
         modes.appendChild(btn);
     });
     panel.appendChild(modes);
+
+    // Status (above slot)
+    const statusEl = document.createElement('div');
+    statusEl.className = 'edit-status';
+    statusEl.id = 'edit-status';
+    statusEl.textContent = 'Open Edit on any patch to begin';
+    panel.appendChild(statusEl);
 
     // Slot area
     const slotArea = document.createElement('div');
@@ -116,13 +124,6 @@ export function createEditPanel(opts) {
     paramsArea.id = 'edit-params-area';
     paramsArea.style.display = 'none';
     panel.appendChild(paramsArea);
-
-    // Status
-    const statusEl = document.createElement('div');
-    statusEl.className = 'edit-status';
-    statusEl.id = 'edit-status';
-    statusEl.textContent = 'Open Edit on any patch to begin';
-    panel.appendChild(statusEl);
 
     // Tags area (global for active patch)
     const tagsArea = document.createElement('div');
@@ -755,16 +756,20 @@ async function buildModifiedVoiceData() {
 }
 
 async function previewParamsEdit() {
-    if (!currentMutation) return;
+    if (!currentMutation || previewPlaying) return;
     const statusEl = document.getElementById('edit-status');
+    const playBtn = document.querySelector('.btn-edit-play');
     try {
+        previewPlaying = true;
+        if (playBtn) playBtn.classList.add('playing');
         statusEl.textContent = 'Rendering preview...';
         const voiceData = await buildModifiedVoiceData();
-        if (!voiceData) { statusEl.textContent = 'Error: no voice data'; return; }
+        if (!voiceData) { statusEl.textContent = 'Error: no voice data'; previewPlaying = false; if (playBtn) playBtn.classList.remove('playing'); return; }
 
         try {
             if (await playVoiceDataLocally(voiceData, 60)) {
                 statusEl.textContent = 'Playing preview...';
+                setTimeout(() => { previewPlaying = false; if (playBtn) playBtn.classList.remove('playing'); }, 3000);
                 return;
             }
         } catch (_) {}
@@ -777,13 +782,19 @@ async function previewParamsEdit() {
         if (!resp.ok) throw new Error('Preview failed: ' + resp.status);
         const d = await resp.json();
         if (d.wav_url) {
-            new Audio(baseUrlRef + d.wav_url).play();
+            const audio = new Audio(baseUrlRef + d.wav_url);
+            audio.play();
             statusEl.textContent = 'Playing preview...';
+            audio.addEventListener('ended', () => { previewPlaying = false; if (playBtn) playBtn.classList.remove('playing'); });
         } else {
             statusEl.textContent = 'Error: no WAV returned';
+            previewPlaying = false;
+            if (playBtn) playBtn.classList.remove('playing');
         }
     } catch (err) {
         statusEl.textContent = 'Error: ' + err.message;
+        previewPlaying = false;
+        if (playBtn) playBtn.classList.remove('playing');
     }
 }
 

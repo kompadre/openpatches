@@ -2418,6 +2418,12 @@ h1 {
     color: #fff;
 }
 
+.btn-edit-play.playing {
+    background: #4caf50;
+    color: #fff;
+    cursor: not-allowed;
+}
+
 .edit-status {
     font-size: 0.75rem;
     color: #aaa;
