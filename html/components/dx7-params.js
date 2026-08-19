@@ -281,8 +281,8 @@ export function renderAlgoSvg(algorithm, container) {
             } else if (vSet.has(key)) {
                 cell.classList.add('vconn');
             } else if (hSet.has(key)) {
-                if (busEdgeStart !== busEdgeEnd && key === busEdgeStart) cell.classList.add('hconn-bus-start');
-                else if (busEdgeStart !== busEdgeEnd && key === busEdgeEnd) cell.classList.add('hconn-bus-end');
+                if (key === busEdgeStart) cell.classList.add('hconn-bus-start');
+                else if (key === busEdgeEnd) cell.classList.add('hconn-bus-end');
                 else cell.classList.add('hconn');
             } else if (busBeforeStart && key === busBeforeStart) {
                 cell.classList.add('hconn-bus-before');

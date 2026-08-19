@@ -2534,14 +2534,14 @@ h1 {
 }
 
 .dx7-algo-cell.hconn-bus-start {
-    width: 50%;
+    width: 100%;
     height: 2px;
     background: #555;
-    margin: auto 0 auto auto;
+    margin: auto 0;
 }
 
 .dx7-algo-cell.hconn-bus-end {
-    width: 50%;
+    width: 100%;
     height: 2px;
     background: #555;
     margin: auto 0;
