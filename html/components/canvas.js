@@ -198,6 +198,11 @@ export function removeContainer(id) {
         if (!confirm(`Remove "${ctr.name}" and its ${ctr.patchIds.length} patch(es)?`)) return;
     }
 
+    // Clean up IndexedDB WAV data if this was a job container
+    if (ctr.jobId && window._dbDelete) {
+        window._dbDelete(ctr.jobId).catch(() => {});
+    }
+
     // Only remove canvas entries that belong to this container
     if (ctr.patchIds) {
         for (const pid of ctr.patchIds) {

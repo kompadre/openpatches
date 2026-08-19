@@ -75,6 +75,18 @@ async function dbGet(key) {
     });
 }
 
+async function dbDelete(key) {
+    const db = await dbPromise;
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    return new Promise((resolve, reject) => {
+        const req = tx.objectStore(STORE_NAME).delete(key);
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+    });
+}
+
+window._dbDelete = dbDelete;
+
 // --- Audio status indicator ---
 
 let pendingSnapshot = null;
