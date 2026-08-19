@@ -768,7 +768,6 @@ async function previewParamsEdit() {
 
         try {
             if (await playVoiceDataLocally(voiceData, 60)) {
-                statusEl.textContent = 'Playing preview...';
                 setTimeout(() => { previewPlaying = false; if (playBtn) playBtn.classList.remove('playing'); }, 3000);
                 return;
             }
@@ -784,7 +783,6 @@ async function previewParamsEdit() {
         if (d.wav_url) {
             const audio = new Audio(baseUrlRef + d.wav_url);
             audio.play();
-            statusEl.textContent = 'Playing preview...';
             audio.addEventListener('ended', () => { previewPlaying = false; if (playBtn) playBtn.classList.remove('playing'); });
         } else {
             statusEl.textContent = 'Error: no WAV returned';
