@@ -200,11 +200,15 @@ function interleaveLayout(layout, algoIndex) {
         }
     }
     carrierCols.sort((a, b) => a - b);
+    const busHconnSet = new Set();
     if (carrierCols.length >= 2) {
         for (let c = carrierCols[0] + 1; c < carrierCols[carrierCols.length - 1]; c++) {
             hconns.push({ r: busLineRow, c });
+            busHconnSet.add(`${busLineRow},${c}`);
         }
     }
+    const busEdgeStart = carrierCols.length >= 2 ? `${busLineRow},${carrierCols[0] + 1}` : '';
+    const busEdgeEnd = carrierCols.length >= 2 ? `${busLineRow},${carrierCols[carrierCols.length - 1] - 1}` : '';
 
     const extraConns = ALGO_EXTRA_CONNS[algoIndex] || [];
     const posMap = {};
@@ -240,13 +244,13 @@ function interleaveLayout(layout, algoIndex) {
         }
     }
 
-    return { grid, gridRows, gridCols, vconns, hconns };
+    return { grid, gridRows, gridCols, vconns, hconns, busHconnSet, busEdgeStart, busEdgeEnd };
 }
 
 export function renderAlgoSvg(algorithm, container) {
     const layout = ALGO_LAYOUTS[algorithm] || ALGO_LAYOUTS[0];
     const carriers = new Set(ALGO_CARRIERS[algorithm] || ALGO_CARRIERS[0]);
-    const { grid: iGrid, gridRows, gridCols, vconns, hconns } = interleaveLayout(layout, algorithm);
+    const { grid: iGrid, gridRows, gridCols, vconns, hconns, busHconnSet, busEdgeStart, busEdgeEnd } = interleaveLayout(layout, algorithm);
 
     const vSet = new Set(vconns.map(v => `${v.r},${v.c}`));
     const hSet = new Set(hconns.map(h => `${h.r},${h.c}`));
@@ -264,6 +268,7 @@ export function renderAlgoSvg(algorithm, container) {
             const cell = document.createElement('div');
             cell.className = 'dx7-algo-cell';
             const t = iGrid[r][c];
+            const key = `${r},${c}`;
 
             if (t && t.startsWith('Op')) {
                 const opNum = parseInt(t.slice(2));
@@ -271,10 +276,12 @@ export function renderAlgoSvg(algorithm, container) {
                 cell.classList.add(carriers.has(opNum) ? 'carrier' : 'modulator');
                 cell.textContent = opNum;
                 if (opNum === 6) cell.classList.add('fb-source');
-            } else if (vSet.has(`${r},${c}`)) {
+            } else if (vSet.has(key)) {
                 cell.classList.add('vconn');
-            } else if (hSet.has(`${r},${c}`)) {
-                cell.classList.add('hconn');
+            } else if (hSet.has(key)) {
+                if (busEdgeStart !== busEdgeEnd && key === busEdgeStart) cell.classList.add('hconn-bus-start');
+                else if (busEdgeStart !== busEdgeEnd && key === busEdgeEnd) cell.classList.add('hconn-bus-end');
+                else cell.classList.add('hconn');
             } else {
                 cell.classList.add('empty');
             }

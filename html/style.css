@@ -2533,6 +2533,20 @@ h1 {
     margin: auto 0;
 }
 
+.dx7-algo-cell.hconn-bus-start {
+    width: 50%;
+    height: 2px;
+    background: #555;
+    margin: auto 0 auto auto;
+}
+
+.dx7-algo-cell.hconn-bus-end {
+    width: 50%;
+    height: 2px;
+    background: #555;
+    margin: auto 0;
+}
+
 .dx7-algo-cell.fb-source {
     border-top: 2px solid #e94560;
 }
