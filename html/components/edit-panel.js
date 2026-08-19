@@ -355,9 +355,13 @@ function renderParamsMode(slotArea, sliderRow, paramsArea, goBtn, statusEl) {
 
     paramsArea.innerHTML = '';
 
-    // Main layout: algo diagram left, params right
+    // Main layout
     const layout = document.createElement('div');
     layout.className = 'dx7-layout';
+
+    // Top row: algo diagram + global parameters
+    const topRow = document.createElement('div');
+    topRow.className = 'dx7-top-row';
 
     // Algorithm diagram (left)
     const algoPanel = document.createElement('div');
@@ -370,9 +374,67 @@ function renderParamsMode(slotArea, sliderRow, paramsArea, goBtn, statusEl) {
     algoSvgContainer.className = 'dx7-algo-svg-container';
     algoPanel.appendChild(algoSvgContainer);
     renderAlgoSvg(currentMutation.globals.algorithm, algoSvgContainer);
-    layout.appendChild(algoPanel);
+    topRow.appendChild(algoPanel);
 
-    // Parameters (right)
+    // Global parameters (right)
+    const g = currentMutation.globals;
+    const globalPanel = document.createElement('div');
+    globalPanel.className = 'dx7-global-panel';
+
+    // Algorithm + Feedback
+    const algoGroup = document.createElement('div');
+    algoGroup.className = 'dx7-param-group';
+    algoGroup.appendChild(makeGroupLabel('Algorithm & Feedback'));
+    algoGroup.appendChild(makeSlider('Algorithm', g.algorithm, 0, 31, (v) => {
+        g.algorithm = v;
+        algoLabel.textContent = 'Algorithm ' + (v + 1);
+        renderAlgoSvg(v, algoSvgContainer);
+    }));
+    algoGroup.appendChild(makeSlider('Feedback', g.feedback, 0, 7, (v) => { g.feedback = v; }));
+    algoGroup.appendChild(makeSlider('Key Sync', g.keySync, 0, 1, (v) => { g.keySync = v; }, () => g.keySync ? 'On' : 'Off'));
+    globalPanel.appendChild(algoGroup);
+
+    // LFO
+    const lfoGroup = document.createElement('div');
+    lfoGroup.className = 'dx7-param-group';
+    lfoGroup.appendChild(makeGroupLabel('LFO'));
+    lfoGroup.appendChild(makeSlider('Speed', g.lfoSpeed, 0, 99, (v) => { g.lfoSpeed = v; }));
+    lfoGroup.appendChild(makeSlider('Delay', g.lfoDelay, 0, 99, (v) => { g.lfoDelay = v; }));
+    lfoGroup.appendChild(makeSlider('PM Depth', g.lfoPmDepth, 0, 99, (v) => { g.lfoPmDepth = v; }));
+    lfoGroup.appendChild(makeSlider('AMD', g.lfoAmd, 0, 99, (v) => { g.lfoAmd = v; }));
+    lfoGroup.appendChild(makeSlider('Waveform', g.lfoWaveform, 0, 5, (v) => { g.lfoWaveform = v; }, () => WAVEFORM_NAMES[g.lfoWaveform]));
+    lfoGroup.appendChild(makeSlider('Sync', g.lfoSync, 0, 1, (v) => { g.lfoSync = v; }, () => g.lfoSync ? 'On' : 'Off'));
+    lfoGroup.appendChild(makeSlider('PM Sens', g.lfoPmSens, 0, 7, (v) => { g.lfoPmSens = v; }));
+    globalPanel.appendChild(lfoGroup);
+
+    // Pitch EG
+    const pitchGroup = document.createElement('div');
+    pitchGroup.className = 'dx7-param-group';
+    pitchGroup.appendChild(makeGroupLabel('Pitch Envelope'));
+    pitchGroup.appendChild(makeSlider('R1', g.pitchR1, 0, 99, (v) => { g.pitchR1 = v; }));
+    pitchGroup.appendChild(makeSlider('R2', g.pitchR2, 0, 99, (v) => { g.pitchR2 = v; }));
+    pitchGroup.appendChild(makeSlider('R3', g.pitchR3, 0, 99, (v) => { g.pitchR3 = v; }));
+    pitchGroup.appendChild(makeSlider('R4', g.pitchR4, 0, 99, (v) => { g.pitchR4 = v; }));
+    pitchGroup.appendChild(makeSlider('L1', g.pitchL1, 0, 99, (v) => { g.pitchL1 = v; }));
+    pitchGroup.appendChild(makeSlider('L2', g.pitchL2, 0, 99, (v) => { g.pitchL2 = v; }));
+    pitchGroup.appendChild(makeSlider('L3', g.pitchL3, 0, 99, (v) => { g.pitchL3 = v; }));
+    pitchGroup.appendChild(makeSlider('L4', g.pitchL4, 0, 99, (v) => { g.pitchL4 = v; }));
+    globalPanel.appendChild(pitchGroup);
+
+    // Transpose
+    const trGroup = document.createElement('div');
+    trGroup.className = 'dx7-param-group';
+    trGroup.appendChild(makeGroupLabel('Transpose'));
+    trGroup.appendChild(makeSlider('Semitones', g.transpose, 0, 48, (v) => { g.transpose = v; }, () => {
+        const diff = g.transpose - 24;
+        return diff === 0 ? 'C4' : (diff > 0 ? '+' + diff : String(diff));
+    }));
+    globalPanel.appendChild(trGroup);
+
+    topRow.appendChild(globalPanel);
+    layout.appendChild(topRow);
+
+    // Operator sections (full width)
     const paramsPanel = document.createElement('div');
     paramsPanel.className = 'dx7-params-panel';
 
@@ -392,14 +454,16 @@ function renderParamsMode(slotArea, sliderRow, paramsArea, goBtn, statusEl) {
         const body = document.createElement('div');
         body.className = 'dx7-op-body';
 
-        // Envelope graph
+        // Left: envelope graph + frequency
+        const left = document.createElement('div');
+        left.className = 'dx7-op-left';
+
         const envGraph = document.createElement('canvas');
         envGraph.width = 160; envGraph.height = 40;
         envGraph.className = 'dx7-env-graph';
         renderEnvGraph(envGraph, [op.r1, op.r2, op.r3, op.r4], [op.l1, op.l2, op.l3, op.l4]);
-        body.appendChild(envGraph);
+        left.appendChild(envGraph);
 
-        // Frequency group
         const freqGroup = document.createElement('div');
         freqGroup.className = 'dx7-param-group';
         freqGroup.appendChild(makeGroupLabel('Frequency'));
@@ -407,7 +471,12 @@ function renderParamsMode(slotArea, sliderRow, paramsArea, goBtn, statusEl) {
         freqGroup.appendChild(makeSlider('Coarse', op.freqCoarse, 0, 31, (v) => { op.freqCoarse = v; }, () => freqDisplay(op.oscMode, op.freqCoarse, op.freqFine)));
         freqGroup.appendChild(makeSlider('Fine', op.freqFine, 0, 99, (v) => { op.freqFine = v; }, () => freqDisplay(op.oscMode, op.freqCoarse, op.freqFine)));
         freqGroup.appendChild(makeSlider('Detune', op.detune, 0, 7, (v) => { op.detune = v; }, () => op.detune === 4 ? '0' : (op.detune < 4 ? '-' + (4 - op.detune) : '+' + (op.detune - 4))));
-        body.appendChild(freqGroup);
+        left.appendChild(freqGroup);
+        body.appendChild(left);
+
+        // Right: envelope, output, scaling
+        const right = document.createElement('div');
+        right.className = 'dx7-op-right';
 
         // Envelope group
         const envGroup = document.createElement('div');
@@ -421,7 +490,7 @@ function renderParamsMode(slotArea, sliderRow, paramsArea, goBtn, statusEl) {
         envGroup.appendChild(makeSlider('L2', op.l2, 0, 99, (v) => { op.l2 = v; refreshEnv(); }));
         envGroup.appendChild(makeSlider('L3', op.l3, 0, 99, (v) => { op.l3 = v; refreshEnv(); }));
         envGroup.appendChild(makeSlider('L4', op.l4, 0, 99, (v) => { op.l4 = v; refreshEnv(); }));
-        body.appendChild(envGroup);
+        right.appendChild(envGroup);
 
         function refreshEnv() {
             renderEnvGraph(envGraph, [op.r1, op.r2, op.r3, op.r4], [op.l1, op.l2, op.l3, op.l4]);
@@ -434,7 +503,7 @@ function renderParamsMode(slotArea, sliderRow, paramsArea, goBtn, statusEl) {
         outGroup.appendChild(makeSlider('Level', op.outputLevel, 0, 99, (v) => { op.outputLevel = v; }));
         outGroup.appendChild(makeSlider('Vel Sens', op.velSens, 0, 3, (v) => { op.velSens = v; }));
         outGroup.appendChild(makeSlider('AM Sens', op.amSens, 0, 3, (v) => { op.amSens = v; }));
-        body.appendChild(outGroup);
+        right.appendChild(outGroup);
 
         // Scaling group
         const scaleGroup = document.createElement('div');
@@ -446,80 +515,13 @@ function renderParamsMode(slotArea, sliderRow, paramsArea, goBtn, statusEl) {
         scaleGroup.appendChild(makeSlider('L Curve', op.lCurve, 0, 3, (v) => { op.lCurve = v; }, () => CURVE_NAMES[op.lCurve]));
         scaleGroup.appendChild(makeSlider('R Curve', op.rCurve, 0, 3, (v) => { op.rCurve = v; }, () => CURVE_NAMES[op.rCurve]));
         scaleGroup.appendChild(makeSlider('Rate Scaling', op.rateScaling, 0, 7, (v) => { op.rateScaling = v; }));
-        body.appendChild(scaleGroup);
+        right.appendChild(scaleGroup);
 
+        body.appendChild(right);
         details.appendChild(body);
         paramsPanel.appendChild(details);
     }
 
-    // Global parameters
-    const g = currentMutation.globals;
-    const globalSection = document.createElement('details');
-    globalSection.className = 'dx7-op-section';
-    globalSection.open = true;
-
-    const gSummary = document.createElement('summary');
-    gSummary.className = 'dx7-op-summary';
-    gSummary.textContent = 'Global';
-    globalSection.appendChild(gSummary);
-
-    const gBody = document.createElement('div');
-    gBody.className = 'dx7-op-body';
-
-    // Algorithm + Feedback
-    const algoGroup = document.createElement('div');
-    algoGroup.className = 'dx7-param-group';
-    algoGroup.appendChild(makeGroupLabel('Algorithm & Feedback'));
-    algoGroup.appendChild(makeSlider('Algorithm', g.algorithm, 0, 31, (v) => {
-        g.algorithm = v;
-        algoLabel.textContent = 'Algorithm ' + (v + 1);
-        renderAlgoSvg(v, algoSvgContainer);
-    }));
-    algoGroup.appendChild(makeSlider('Feedback', g.feedback, 0, 7, (v) => { g.feedback = v; }));
-    algoGroup.appendChild(makeSlider('Key Sync', g.keySync, 0, 1, (v) => { g.keySync = v; }, () => g.keySync ? 'On' : 'Off'));
-    gBody.appendChild(algoGroup);
-
-    // LFO
-    const lfoGroup = document.createElement('div');
-    lfoGroup.className = 'dx7-param-group';
-    lfoGroup.appendChild(makeGroupLabel('LFO'));
-    lfoGroup.appendChild(makeSlider('Speed', g.lfoSpeed, 0, 99, (v) => { g.lfoSpeed = v; }));
-    lfoGroup.appendChild(makeSlider('Delay', g.lfoDelay, 0, 99, (v) => { g.lfoDelay = v; }));
-    lfoGroup.appendChild(makeSlider('PM Depth', g.lfoPmDepth, 0, 99, (v) => { g.lfoPmDepth = v; }));
-    lfoGroup.appendChild(makeSlider('AMD', g.lfoAmd, 0, 99, (v) => { g.lfoAmd = v; }));
-    lfoGroup.appendChild(makeSlider('Waveform', g.lfoWaveform, 0, 5, (v) => { g.lfoWaveform = v; }, () => WAVEFORM_NAMES[g.lfoWaveform]));
-    lfoGroup.appendChild(makeSlider('Sync', g.lfoSync, 0, 1, (v) => { g.lfoSync = v; }, () => g.lfoSync ? 'On' : 'Off'));
-    lfoGroup.appendChild(makeSlider('PM Sens', g.lfoPmSens, 0, 7, (v) => { g.lfoPmSens = v; }));
-    gBody.appendChild(lfoGroup);
-
-    // Pitch EG
-    const pitchGroup = document.createElement('div');
-    pitchGroup.className = 'dx7-param-group';
-    pitchGroup.appendChild(makeGroupLabel('Pitch Envelope'));
-    pitchGroup.appendChild(makeSlider('R1', g.pitchR1, 0, 99, (v) => { g.pitchR1 = v; }));
-    pitchGroup.appendChild(makeSlider('R2', g.pitchR2, 0, 99, (v) => { g.pitchR2 = v; }));
-    pitchGroup.appendChild(makeSlider('R3', g.pitchR3, 0, 99, (v) => { g.pitchR3 = v; }));
-    pitchGroup.appendChild(makeSlider('R4', g.pitchR4, 0, 99, (v) => { g.pitchR4 = v; }));
-    pitchGroup.appendChild(makeSlider('L1', g.pitchL1, 0, 99, (v) => { g.pitchL1 = v; }));
-    pitchGroup.appendChild(makeSlider('L2', g.pitchL2, 0, 99, (v) => { g.pitchL2 = v; }));
-    pitchGroup.appendChild(makeSlider('L3', g.pitchL3, 0, 99, (v) => { g.pitchL3 = v; }));
-    pitchGroup.appendChild(makeSlider('L4', g.pitchL4, 0, 99, (v) => { g.pitchL4 = v; }));
-    gBody.appendChild(pitchGroup);
-
-    // Transpose
-    const trGroup = document.createElement('div');
-    trGroup.className = 'dx7-param-group';
-    trGroup.appendChild(makeGroupLabel('Transpose'));
-    trGroup.appendChild(makeSlider('Semitones', g.transpose, 0, 48, (v) => { g.transpose = v; }, () => {
-        const diff = g.transpose - 24;
-        return diff === 0 ? 'C4' : (diff > 0 ? '+' + diff : String(diff));
-    }));
-    gBody.appendChild(trGroup);
-
-    globalSection.appendChild(gBody);
-    algoPanel.appendChild(globalSection);
-
-    layout.appendChild(algoPanel);
     layout.appendChild(paramsPanel);
     paramsArea.appendChild(layout);
 

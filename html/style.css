@@ -2454,33 +2454,24 @@ h1 {
    ============================================================ */
 
 .dx7-layout {
-    display: grid;
-    grid-template-columns: 200px 1fr;
-    gap: 0.75rem;
-    margin-bottom: 0.5rem;
-}
-
-.dx7-algo-panel {
-    position: sticky;
-    top: 0;
-    align-self: start;
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
+    margin-bottom: 0.5rem;
 }
 
-.dx7-algo-panel .dx7-op-section {
-    position: sticky;
-    bottom: 0;
+.dx7-top-row {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    gap: 0.75rem;
+    height: 300px;
 }
 
-.dx7-algo-label {
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: #888;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    margin-bottom: 0.3rem;
+.dx7-algo-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    min-height: 0;
 }
 
 .dx7-algo-svg-container {
@@ -2488,6 +2479,9 @@ h1 {
     border: 1px solid #333;
     border-radius: 6px;
     padding: 0.3rem;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
 }
 
 .dx7-algo-grid {
@@ -2546,7 +2540,46 @@ h1 {
     border-top: 2px solid #e94560;
 }
 
+.dx7-algo-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.dx7-global-panel {
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
 .dx7-params-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.dx7-op-body {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+    padding: 0.4rem 0.6rem;
+    max-height: 300px;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.dx7-op-left {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.dx7-op-right {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
@@ -2600,16 +2633,6 @@ h1 {
 .dx7-op-summary:hover {
     color: #fff;
     background: rgba(255,255,255,0.05);
-}
-
-.dx7-op-body {
-    padding: 0.4rem 0.6rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-    max-height: 300px;
-    overflow-y: auto;
-    overflow-x: hidden;
 }
 
 .dx7-env-graph {
@@ -2679,15 +2702,16 @@ h1 {
 
 /* Mobile: stack layout */
 @media (max-width: 600px) {
-    .dx7-layout {
+    .dx7-top-row {
         grid-template-columns: 1fr;
-    }
-    .dx7-algo-panel {
-        position: static;
+        height: auto;
     }
     .dx7-algo-svg-container {
         max-width: 200px;
         margin: 0 auto;
+    }
+    .dx7-op-body {
+        grid-template-columns: 1fr;
     }
 }
 
