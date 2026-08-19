@@ -109,141 +109,57 @@ export function freqDisplay(oscMode, coarse, fine) {
 // --- DX732 Algorithm routing ---
 // Op numbering 1-6 (DX7 convention). Op6 = byte index 0.
 
-const ALGO_ROUTING = [
-    { carriers: [1,2], mods: [[6,5],[5,4],[4,3],[3,2]] },
-    { carriers: [1,2,4], mods: [[6,5],[5,4],[3,2]] },
-    { carriers: [1,3], mods: [[6,5],[5,4],[4,3],[2,1]] },
-    { carriers: [1,2,5], mods: [[6,5],[4,3],[3,2]] },
-    { carriers: [1,4], mods: [[6,5],[5,4],[3,2],[2,1]] },
-    { carriers: [1,2,3,5], mods: [[6,5],[4,3]] },
-    { carriers: [1], mods: [[6,5],[5,4],[4,3],[3,2],[2,1]] },
-    { carriers: [1,3,5], mods: [[6,5],[4,3],[2,1]] },
-    { carriers: [1,3], mods: [[6,5],[5,4],[4,3],[2,1]] },
-    { carriers: [1,5], mods: [[6,5],[4,3],[3,2],[2,1]] },
-    { carriers: [1,2,4], mods: [[6,5],[5,4],[3,2]] },
-    { carriers: [1,3,5], mods: [[6,5],[4,3],[2,1]] },
-    { carriers: [1,2], mods: [[6,5],[5,4],[4,3],[3,2]] },
-    { carriers: [1,2,5], mods: [[6,5],[4,3],[3,2]] },
-    { carriers: [1,4], mods: [[6,5],[5,4],[3,2],[2,1]] },
-    { carriers: [1,5], mods: [[6,5],[4,3],[3,2],[2,1]] },
-    { carriers: [1], mods: [[6,5],[5,4],[4,3],[3,2],[2,1]] },
-    { carriers: [1,4], mods: [[6,5],[5,4],[3,2],[2,1]] },
-    { carriers: [1,2,4], mods: [[6,5],[5,4],[3,2]] },
-    { carriers: [1,4], mods: [[6,5],[5,4],[3,2],[2,1]] },
-    { carriers: [1,5], mods: [[6,5],[4,3],[3,2],[2,1]] },
-    { carriers: [1,3,5], mods: [[6,5],[4,3],[2,1]] },
-    { carriers: [1], mods: [[6,5],[5,4],[4,3],[3,2],[2,1]] },
-    { carriers: [1,2,4], mods: [[6,5],[5,4],[3,2]] },
-    { carriers: [1,3], mods: [[6,5],[5,4],[4,3],[2,1]] },
-    { carriers: [1,5], mods: [[6,5],[4,3],[3,2],[2,1]] },
-    { carriers: [1,4], mods: [[6,5],[5,4],[3,2],[2,1]] },
-    { carriers: [1,3,5], mods: [[6,5],[4,3],[2,1]] },
-    { carriers: [1], mods: [[6,5],[5,4],[4,3],[3,2],[2,1]] },
-    { carriers: [1,4], mods: [[6,5],[5,4],[3,2],[2,1]] },
-    { carriers: [1,5], mods: [[6,5],[4,3],[3,2],[2,1]] },
-    { carriers: [1,2,3,4,5,6], mods: [] },
-];
+// --- Algorithm grid diagram ---
+// 6 columns × 5 rows: operators in rows 0,2,4; connections in rows 1,3
 
-// --- Algorithm SVG diagram ---
-
-const OP_POS = [
-    { x: 40, y: 30 },  // Op6
-    { x: 140, y: 30 }, // Op5
-    { x: 40, y: 90 },  // Op4
-    { x: 140, y: 90 }, // Op3
-    { x: 40, y: 150 }, // Op2
-    { x: 140, y: 150 },// Op1
+const ALGO_CARRIER_SETS = [
+    new Set([1,2]), new Set([1,2,4]), new Set([1,3]), new Set([1,2,5]),
+    new Set([1,4]), new Set([1,2,3,5]), new Set([1]), new Set([1,3,5]),
+    new Set([1,3]), new Set([1,5]), new Set([1,2,4]), new Set([1,3,5]),
+    new Set([1,2]), new Set([1,2,5]), new Set([1,4]), new Set([1,5]),
+    new Set([1]), new Set([1,4]), new Set([1,2,4]), new Set([1,4]),
+    new Set([1,5]), new Set([1,3,5]), new Set([1]), new Set([1,2,4]),
+    new Set([1,3]), new Set([1,5]), new Set([1,4]), new Set([1,3,5]),
+    new Set([1]), new Set([1,4]), new Set([1,5]), new Set([1,2,3,4,5,6]),
 ];
 
 export function renderAlgoSvg(algorithm, container) {
-    const algo = ALGO_ROUTING[algorithm] || ALGO_ROUTING[0];
-    const ns = 'http://www.w3.org/2000/svg';
-    const svg = document.createElementNS(ns, 'svg');
-    svg.setAttribute('viewBox', '0 0 180 190');
-    svg.setAttribute('class', 'dx7-algo-svg');
+    const carriers = ALGO_CARRIER_SETS[algorithm] || ALGO_CARRIER_SETS[0];
+    const grid = document.createElement('div');
+    grid.className = 'dx7-algo-grid';
 
-    // Defs: arrow marker
-    const defs = document.createElementNS(ns, 'defs');
-    const marker = document.createElementNS(ns, 'marker');
-    marker.setAttribute('id', 'algo-arrow');
-    marker.setAttribute('viewBox', '0 0 10 10');
-    marker.setAttribute('refX', '8');
-    marker.setAttribute('refY', '5');
-    marker.setAttribute('markerWidth', '5');
-    marker.setAttribute('markerHeight', '5');
-    marker.setAttribute('orient', 'auto-start-reverse');
-    const ap = document.createElementNS(ns, 'path');
-    ap.setAttribute('d', 'M 0 0 L 10 5 L 0 10 z');
-    ap.setAttribute('fill', '#666');
-    marker.appendChild(ap);
-    defs.appendChild(marker);
+    const layout = [
+        ['op6','vconn','space','space','vconn','op5'],
+        ['hconn','hconn','space','space','hconn','hconn'],
+        ['op4','vconn','space','space','vconn','op3'],
+        ['hconn','hconn','space','space','hconn','hconn'],
+        ['op2','vconn','space','space','vconn','op1'],
+    ];
 
-    // Feedback arrow marker (red)
-    const fbMarker = document.createElementNS(ns, 'marker');
-    fbMarker.setAttribute('id', 'algo-fb-arrow');
-    fbMarker.setAttribute('viewBox', '0 0 10 10');
-    fbMarker.setAttribute('refX', '8');
-    fbMarker.setAttribute('refY', '5');
-    fbMarker.setAttribute('markerWidth', '5');
-    fbMarker.setAttribute('markerHeight', '5');
-    fbMarker.setAttribute('orient', 'auto-start-reverse');
-    const fbp = document.createElementNS(ns, 'path');
-    fbp.setAttribute('d', 'M 0 0 L 10 5 L 0 10 z');
-    fbp.setAttribute('fill', '#e94560');
-    fbMarker.appendChild(fbp);
-    defs.appendChild(fbMarker);
+    for (let r = 0; r < 5; r++) {
+        for (let c = 0; c < 6; c++) {
+            const cell = document.createElement('div');
+            cell.className = 'dx7-algo-cell';
+            const t = layout[r][c];
 
-    svg.appendChild(defs);
+            if (t.startsWith('op')) {
+                const opNum = parseInt(t.slice(2));
+                cell.classList.add('dx7-op');
+                cell.classList.add(carriers.has(opNum) ? 'carrier' : 'modulator');
+                cell.textContent = opNum;
+                if (opNum === 6) cell.classList.add('fb-source');
+            } else if (t === 'vconn') {
+                cell.classList.add('vconn');
+            } else if (t === 'hconn') {
+                cell.classList.add('hconn');
+            }
 
-    const carrierSet = new Set(algo.carriers);
-
-    // Connections
-    for (const [from, to] of algo.mods) {
-        const fi = 6 - from, ti = 6 - to;
-        const l = document.createElementNS(ns, 'line');
-        l.setAttribute('x1', OP_POS[fi].x); l.setAttribute('y1', OP_POS[fi].y);
-        l.setAttribute('x2', OP_POS[ti].x); l.setAttribute('y2', OP_POS[ti].y);
-        l.setAttribute('stroke', '#555'); l.setAttribute('stroke-width', '1.5');
-        l.setAttribute('marker-end', 'url(#algo-arrow)');
-        svg.appendChild(l);
-    }
-
-    // Feedback loop on Op6 (curved arrow back to itself)
-    const fb = document.createElementNS(ns, 'path');
-    const op6 = OP_POS[0]; // Op6 is at index 0
-    fb.setAttribute('d', `M${op6.x - 14},${op6.y - 10} C${op6.x - 30},${op6.y - 30} ${op6.x + 30},${op6.y - 30} ${op6.x + 14},${op6.y - 10}`);
-    fb.setAttribute('fill', 'none');
-    fb.setAttribute('stroke', '#e94560');
-    fb.setAttribute('stroke-width', '1.5');
-    fb.setAttribute('marker-end', 'url(#algo-fb-arrow)');
-    svg.appendChild(fb);
-
-    // Operator boxes
-    for (let i = 0; i < 6; i++) {
-        const opNum = 6 - i;
-        const p = OP_POS[i];
-        const isC = carrierSet.has(opNum);
-
-        const r = document.createElementNS(ns, 'rect');
-        r.setAttribute('x', p.x - 20); r.setAttribute('y', p.y - 14);
-        r.setAttribute('width', '40'); r.setAttribute('height', '28');
-        r.setAttribute('rx', '4');
-        r.setAttribute('fill', isC ? '#1b5e20' : '#311b92');
-        r.setAttribute('stroke', isC ? '#4caf50' : '#7c4dff');
-        r.setAttribute('stroke-width', '1.5');
-        svg.appendChild(r);
-
-        const t = document.createElementNS(ns, 'text');
-        t.setAttribute('x', p.x); t.setAttribute('y', p.y + 4);
-        t.setAttribute('text-anchor', 'middle');
-        t.setAttribute('fill', '#fff'); t.setAttribute('font-size', '11');
-        t.setAttribute('font-family', 'monospace');
-        t.textContent = 'Op' + opNum;
-        svg.appendChild(t);
+            grid.appendChild(cell);
+        }
     }
 
     container.innerHTML = '';
-    container.appendChild(svg);
+    container.appendChild(grid);
 }
 
 // --- Envelope graph renderer ---
