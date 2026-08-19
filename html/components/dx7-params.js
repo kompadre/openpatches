@@ -131,7 +131,7 @@ const ALGO_EXTRA_CONNS = [
     [],             // 7
     [],             // 8
     [],             // 9
-    [],             // 10
+    [[4, 5]],       // 10
     [],             // 11
     [],             // 12
     [],             // 13
@@ -206,6 +206,17 @@ function interleaveLayout(layout, algoIndex) {
             const minC = Math.min(a.c, b.c), maxC = Math.max(a.c, b.c);
             for (let c = minC + 1; c < maxC; c++) {
                 if (grid[a.r][c] === null) hconns.push({ r: a.r, c });
+            }
+        } else {
+            // Diagonal: L-shaped path through corner
+            const corner = { r: a.r, c: b.c };
+            const hMinC = Math.min(a.c, corner.c), hMaxC = Math.max(a.c, corner.c);
+            for (let c = hMinC + 1; c < hMaxC; c++) {
+                if (grid[a.r][c] === null) hconns.push({ r: a.r, c });
+            }
+            const vMinR = Math.min(a.r, corner.r), vMaxR = Math.max(a.r, corner.r);
+            for (let r = vMinR + 1; r < vMaxR; r++) {
+                if (grid[r][corner.c] === null) vconns.push({ r, c: corner.c });
             }
         }
     }
