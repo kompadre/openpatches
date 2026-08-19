@@ -1,5 +1,5 @@
 export const ALGO_LAYOUTS = [
-    [[null,null,null,"Op1","Op3",null],[null,null,null,"Op2","Op4",null],[null,null,null,null,"Op5",null],[null,null,null,null,"Op6",null]],
+    [[null,null,"Op1","Op3",null,null],[null,null,"Op2","Op4",null,null],[null,null,null,"Op5",null,null],[null,null,null,"Op6",null,null]],
     [[null,null,"Op1","Op3",null,null],[null,null,"Op2","Op4",null,null],[null,null,null,"Op5",null,null],[null,null,null,"Op6",null,null]],
     [[null,null,"Op1","Op4",null,null],[null,null,"Op2","Op5",null,null],[null,null,"Op3","Op6",null,null],[null,null,null,null,null,null]],
     [[null,null,"Op1","Op4",null,null],[null,null,"Op2","Op5",null,null],[null,null,"Op3","Op6",null,null],[null,null,null,null,null,null]],
