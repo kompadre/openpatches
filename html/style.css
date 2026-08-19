@@ -2486,8 +2486,6 @@ h1 {
 
 .dx7-algo-grid {
     display: grid;
-    grid-template-columns: repeat(6, 1fr);
-    grid-template-rows: repeat(5, auto);
     gap: 2px;
     width: 100%;
 }

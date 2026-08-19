@@ -1,0 +1,160 @@
+{
+  "1": [
+    [null, null, "Op4", "Op1", null, null],
+    [null, null, "Op5", "Op2", null, null],
+    [null, null, "Op6", "Op3"]
+  ],
+  "2": [
+    [null, null, "Op2", "Op1", null, null],
+    [null, null, "Op4", "Op3", null, null],
+    [null, null, "Op6", "Op5"]
+  ],
+  "3": [
+    [null, null, null, "Op1", null, null, null],
+    [null, null, "Op3", "Op2", null, null, null],
+    [null, null, "Op6", "Op5", null, "Op4"]
+  ],
+  "4": [
+    ["Op1", null, null, "Op2", null, null, "Op3"],
+    [null, null, "Op4", null, null, "Op5", null],
+    [null, null, null, null, null, "Op6"]
+  ],
+  "5": [
+    [null, null, "Op1", "Op2", null, null, "Op3"],
+    [null, null, "Op5", "Op3", null, "Op4", null],
+    [null, null, null, null, null, "Op6"]
+  ],
+  "6": [
+    [null, null, "Op1", "Op2", null, "Op3", "Op4"],
+    [null, null, "Op5", "Op3", null, "Op4", null],
+    [null, null, null, null, null, "Op6"]
+  ],
+  "7": [
+    [null, null, "Op4", "Op1", null, null, null],
+    [null, null, "Op5", "Op3", null, null, null],
+    [null, null, "Op6", "Op4", null, null, null]
+  ],
+  "8": [
+    [null, null, "Op1", null, null, "Op4", null],
+    [null, null, "Op2", "Op3", null, "Op5", null],
+    [null, null, null, null, null, "Op6"]
+  ],
+  "9": [
+    [null, null, "Op1", null, null, "Op2", null],
+    [null, null, "Op5", "Op3", null, "Op4", null],
+    [null, null, null, null, null, "Op6"]
+  ],
+  "10": [
+    [null, null, "Op1", null, null, "Op2", null],
+    [null, null, "Op5", "Op3", null, "Op4", null],
+    [null, null, null, null, null, "Op6"]
+  ],
+  "11": [
+    [null, null, null, "Op1", null, null, null],
+    [null, null, "Op5", null, null, "Op3", "Op2"],
+    [null, null, null, null, null, "Op6"]
+  ],
+  "12": [
+    [null, null, "Op1", null, null, "Op2", null],
+    [null, null, "Op5", "Op3", null, "Op4", null],
+    [null, null, null, null, null, "Op6"]
+  ],
+  "13": [
+    [null, null, null, "Op1", null, null, "Op2"],
+    [null, null, "Op5", null, null, "Op3", null],
+    [null, null, null, null, null, "Op6"]
+  ],
+  "14": [
+    [null, null, null, "Op1", null, "Op2", null],
+    [null, null, "Op4", null, null, "Op5", "Op3"],
+    [null, null, null, null, null, "Op6"]
+  ],
+  "15": [
+    [null, null, "Op1", null, null, "Op2", null],
+    [null, null, "Op3", null, null, "Op5", "Op4"],
+    [null, null, null, null, null, "Op6"]
+  ],
+  "16": [
+    [null, null, null, "Op1", null, "Op2", null],
+    [null, null, "Op3", null, null, "Op4", null],
+    [null, null, null, null, null, "Op6"]
+  ],
+  "17": [
+    [null, null, null, "Op1", null, "Op2", null],
+    [null, null, null, null, null, "Op4", "Op3"],
+    [null, null, null, null, null, "Op6"]
+  ],
+  "18": [
+    [null, null, null, "Op1", null, "Op2", null],
+    [null, null, "Op3", null, "Op4", "Op5", null],
+    [null, null, null, null, null, "Op6"]
+  ],
+  "19": [
+    [null, null, "Op1", null, null, "Op2", null],
+    [null, null, "Op2", "Op3", null, "Op5", "Op4"],
+    [null, null, null, null, null, "Op6"]
+  ],
+  "20": [
+    [null, null, "Op1", null, null, "Op2", null],
+    [null, null, "Op2", "Op3", null, "Op5", "Op4"],
+    [null, null, null, null, null, "Op6"]
+  ],
+  "21": [
+    [null, null, "Op1", null, null, "Op2", null],
+    [null, null, "Op2", "Op3", null, "Op5", "Op4"],
+    [null, null, null, null, null, "Op6"]
+  ],
+  "22": [
+    [null, null, "Op4", "Op1", null, null, null],
+    [null, null, "Op5", "Op2", null, null, null],
+    [null, null, "Op6", "Op3", null, null, null]
+  ],
+  "23": [
+    [null, null, null, null, "Op1", null, null],
+    [null, null, "Op5", "Op2", null, "Op3", "Op4"],
+    [null, null, null, null, null, null, "Op6"]
+  ],
+  "24": [
+    [null, null, null, "Op1", null, null, null],
+    [null, null, "Op5", "Op2", null, null, null],
+    [null, null, "Op6", "Op3", null, "Op4", null]
+  ],
+  "25": [
+    [null, null, null, "Op1", "Op2", "Op4", null],
+    [null, null, "Op5", "Op2", null, null, null],
+    [null, null, null, null, null, "Op6", "Op3"]
+  ],
+  "26": [
+    [null, null, "Op1", null, "Op2", null, null],
+    [null, null, "Op5", "Op3", null, null, "Op4"],
+    [null, null, null, null, null, null, "Op6"]
+  ],
+  "27": [
+    [null, null, "Op1", null, null, "Op2", null],
+    [null, null, "Op5", "Op3", null, null, "Op4"],
+    [null, null, null, null, null, null, "Op6"]
+  ],
+  "28": [
+    [null, null, "Op1", null, null, "Op2", null],
+    [null, null, "Op4", "Op3", null, "Op5", null],
+    [null, null, null, null, null, "Op6"]
+  ],
+  "29": [
+    [null, null, "Op1", "Op2", null, null, null],
+    [null, null, "Op5", "Op3", null, null, null],
+    [null, null, null, null, null, "Op6", "Op4"]
+  ],
+  "30": [
+    [null, null, "Op1", "Op2", "Op3", null, "Op6"],
+    [null, null, "Op5", null, null, null, null],
+    [null, null, null, null, null, null, "Op6"]
+  ],
+  "31": [
+    [null, null, "Op1", null, "Op2", null, "Op3"],
+    [null, null, "Op4", null, "Op5", null, null],
+    [null, null, null, null, "Op6", null, null]
+  ],
+  "32": [
+    ["Op1", "Op2", "Op3", "Op4", "Op5", "Op6"]
+  ]
+}

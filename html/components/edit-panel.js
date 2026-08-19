@@ -472,6 +472,16 @@ function renderParamsMode(slotArea, sliderRow, paramsArea, goBtn, statusEl) {
         freqGroup.appendChild(makeSlider('Fine', op.freqFine, 0, 99, (v) => { op.freqFine = v; }, () => freqDisplay(op.oscMode, op.freqCoarse, op.freqFine)));
         freqGroup.appendChild(makeSlider('Detune', op.detune, 0, 7, (v) => { op.detune = v; }, () => op.detune === 4 ? '0' : (op.detune < 4 ? '-' + (4 - op.detune) : '+' + (op.detune - 4))));
         left.appendChild(freqGroup);
+
+        // Output group
+        const outGroup = document.createElement('div');
+        outGroup.className = 'dx7-param-group';
+        outGroup.appendChild(makeGroupLabel('Output'));
+        outGroup.appendChild(makeSlider('Level', op.outputLevel, 0, 99, (v) => { op.outputLevel = v; }));
+        outGroup.appendChild(makeSlider('Vel Sens', op.velSens, 0, 3, (v) => { op.velSens = v; }));
+        outGroup.appendChild(makeSlider('AM Sens', op.amSens, 0, 3, (v) => { op.amSens = v; }));
+        left.appendChild(outGroup);
+
         body.appendChild(left);
 
         // Right: envelope, output, scaling
@@ -495,15 +505,6 @@ function renderParamsMode(slotArea, sliderRow, paramsArea, goBtn, statusEl) {
         function refreshEnv() {
             renderEnvGraph(envGraph, [op.r1, op.r2, op.r3, op.r4], [op.l1, op.l2, op.l3, op.l4]);
         }
-
-        // Output group
-        const outGroup = document.createElement('div');
-        outGroup.className = 'dx7-param-group';
-        outGroup.appendChild(makeGroupLabel('Output'));
-        outGroup.appendChild(makeSlider('Level', op.outputLevel, 0, 99, (v) => { op.outputLevel = v; }));
-        outGroup.appendChild(makeSlider('Vel Sens', op.velSens, 0, 3, (v) => { op.velSens = v; }));
-        outGroup.appendChild(makeSlider('AM Sens', op.amSens, 0, 3, (v) => { op.amSens = v; }));
-        right.appendChild(outGroup);
 
         // Scaling group
         const scaleGroup = document.createElement('div');

@@ -106,52 +106,45 @@ export function freqDisplay(oscMode, coarse, fine) {
     return (coarse + fine / 100).toFixed(2) + '×';
 }
 
-// --- DX732 Algorithm routing ---
-// Op numbering 1-6 (DX7 convention). Op6 = byte index 0.
+// --- DX7 32 Algorithm grid layouts ---
+// Loaded from algorithms.json via JS module.
+// Each algo: array of rows (bottom-up), each row is array of cell strings.
+// Cell: null=empty, "Op1"-"Op6"=operator
 
-// --- Algorithm grid diagram ---
-// 6 columns × 5 rows: operators in rows 0,2,4; connections in rows 1,3
+import { ALGO_LAYOUTS } from '../algo-layouts.js';
 
-const ALGO_CARRIER_SETS = [
-    new Set([1,2]), new Set([1,2,4]), new Set([1,3]), new Set([1,2,5]),
-    new Set([1,4]), new Set([1,2,3,5]), new Set([1]), new Set([1,3,5]),
-    new Set([1,3]), new Set([1,5]), new Set([1,2,4]), new Set([1,3,5]),
-    new Set([1,2]), new Set([1,2,5]), new Set([1,4]), new Set([1,5]),
-    new Set([1]), new Set([1,4]), new Set([1,2,4]), new Set([1,4]),
-    new Set([1,5]), new Set([1,3,5]), new Set([1]), new Set([1,2,4]),
-    new Set([1,3]), new Set([1,5]), new Set([1,4]), new Set([1,3,5]),
-    new Set([1]), new Set([1,4]), new Set([1,5]), new Set([1,2,3,4,5,6]),
+// Carrier sets for each algorithm (which operators output to mix)
+const ALGO_CARRIERS = [
+    [1,2], [1,2], [1,4], [1,4], [1], [1], [1], [1],
+    [1,5], [1,5], [1,5], [1,5], [1], [1], [1,2], [1],
+    [1], [1], [1,2], [1,2], [1,2], [1], [1], [1],
+    [1], [1], [1], [1], [1,2], [1], [1], [1,2,3,4,5,6],
 ];
 
 export function renderAlgoSvg(algorithm, container) {
-    const carriers = ALGO_CARRIER_SETS[algorithm] || ALGO_CARRIER_SETS[0];
+    const layout = ALGO_LAYOUTS[algorithm] || ALGO_LAYOUTS[0];
+    const carriers = new Set(ALGO_CARRIERS[algorithm] || ALGO_CARRIERS[0]);
     const grid = document.createElement('div');
     grid.className = 'dx7-algo-grid';
 
-    const layout = [
-        ['op6','vconn','space','space','vconn','op5'],
-        ['hconn','hconn','space','space','hconn','hconn'],
-        ['op4','vconn','space','space','vconn','op3'],
-        ['hconn','hconn','space','space','hconn','hconn'],
-        ['op2','vconn','space','space','vconn','op1'],
-    ];
+    const maxCols = Math.max(...layout.map(r => r.length));
+    grid.style.gridTemplateColumns = `repeat(${maxCols}, 1fr)`;
+    grid.style.gridTemplateRows = `repeat(${layout.length}, auto)`;
 
-    for (let r = 0; r < 5; r++) {
-        for (let c = 0; c < 6; c++) {
+    for (let r = 0; r < layout.length; r++) {
+        for (let c = 0; c < layout[r].length; c++) {
             const cell = document.createElement('div');
             cell.className = 'dx7-algo-cell';
             const t = layout[r][c];
 
-            if (t.startsWith('op')) {
+            if (t && t.startsWith('Op')) {
                 const opNum = parseInt(t.slice(2));
                 cell.classList.add('dx7-op');
                 cell.classList.add(carriers.has(opNum) ? 'carrier' : 'modulator');
                 cell.textContent = opNum;
                 if (opNum === 6) cell.classList.add('fb-source');
-            } else if (t === 'vconn') {
-                cell.classList.add('vconn');
-            } else if (t === 'hconn') {
-                cell.classList.add('hconn');
+            } else {
+                cell.classList.add('empty');
             }
 
             grid.appendChild(cell);
