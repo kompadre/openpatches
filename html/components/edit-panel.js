@@ -425,7 +425,7 @@ function renderParamsMode(slotArea, sliderRow, paramsArea, goBtn, statusEl) {
         g.algorithm = v;
         algoLabel.textContent = 'Algorithm ' + (v + 1);
         renderAlgoSvg(v, algoSvgContainer);
-    }));
+    }, () => String(g.algorithm + 1)));
     algoGroup.appendChild(makeSlider('Feedback', g.feedback, 0, 7, (v) => { g.feedback = v; }));
     algoGroup.appendChild(makeSlider('Key Sync', g.keySync, 0, 1, (v) => { g.keySync = v; }, () => g.keySync ? 'On' : 'Off'));
     globalPanel.appendChild(algoGroup);
