@@ -770,6 +770,60 @@ document.getElementById('menu-restart-tutorial').addEventListener('click', () =>
     });
 });
 
+// --- Grid Resize Handle (desktop only) ---
+
+{
+    const handle = document.getElementById('grid-resize-handle');
+    const pageContent = document.getElementById('page-content');
+    const pianoDock = document.getElementById('piano-dock');
+
+    if (handle && pageContent && pianoDock) {
+        let startY = 0;
+        let startDockH = 0;
+        let pageH = 0;
+
+        function onMouseMove(e) {
+            const delta = e.clientY - startY;
+            let newDockH = startDockH - delta;
+            const minH = pageH * 0.1;
+            const maxH = pageH * 0.8;
+            if (newDockH < minH) newDockH = minH;
+            if (newDockH > maxH) newDockH = maxH;
+            pageContent.style.gridTemplateRows = `auto 6px ${newDockH}px`;
+        }
+
+        function onMouseUp() {
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+        }
+
+        handle.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            startY = e.clientY;
+            startDockH = pianoDock.offsetHeight;
+            pageH = pageContent.offsetHeight;
+            pageContent.style.gridTemplateRows = `auto 6px ${startDockH}px`;
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+        });
+
+        // Reset grid when dock collapses, restore when it expands
+        const observer = new MutationObserver(() => {
+            if (pageContent.classList.contains('dock-collapsed')) {
+                pageContent.style.gridTemplateRows = '';
+            } else {
+                let h = pianoDock.clientHeight;
+                const pageH = pageContent.offsetHeight;
+                const minSky = pageH * 0.1;
+                const maxDock = pageH - minSky - 6;
+                if (h > maxDock) h = maxDock;
+                if (h > 0) pageContent.style.gridTemplateRows = `auto 6px ${h}px`;
+            }
+        });
+        observer.observe(pageContent, { attributes: true, attributeFilter: ['class'] });
+    }
+}
+
 // --- Init ---
 
 initToolbar();

@@ -1991,6 +1991,24 @@ h1 {
     display: inline-block;
 }
 
+/* Grid resize handle — draggable separator between night-sky and piano-dock */
+
+#grid-resize-handle {
+    height: 6px;
+    cursor: row-resize;
+    background: #333;
+    flex-shrink: 0;
+    transition: background 0.15s;
+}
+
+#grid-resize-handle:hover {
+    background: #555;
+}
+
+#page-content.dock-collapsed #grid-resize-handle {
+    display: none;
+}
+
 /* Piano wrapper — sticky above footer */
 
 #piano-dock {
@@ -3303,6 +3321,7 @@ footer {
     /* Hide desktop-only elements */
     footer { display: none; }
     .dock-tab-collapse { display: none !important; }
+    #grid-resize-handle { display: none !important; }
     .menu-brand { font-size: 0.75rem; padding: 0 0.4rem; }
 
     /* Always show close/remove buttons on mobile (no hover) */
