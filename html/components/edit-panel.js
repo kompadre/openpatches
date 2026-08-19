@@ -4,6 +4,7 @@
 import { createPatch, patchStore, patchIdFromVoiceData } from './patch-model.js';
 import { createTagEditor } from './tag-editor.js';
 import { decodeVoiceData, encodeVoiceData, readOp, writeOp, readGlobal, writeGlobal, freqDisplay, CURVE_NAMES, WAVEFORM_NAMES, renderAlgoSvg, renderEnvGraph } from './dx7-params.js';
+import { acquire, isReady, renderOffline, playSamplesInWorklet } from '../synth/audio-manager.js';
 
 let editSlot = null;
 let editSlotB = null;
@@ -13,6 +14,16 @@ let baseUrlRef = '';
 let onPatchCreated = null; // callback(patch) when a new patch is saved
 let showProgressRef = null;
 let hideProgressRef = null;
+
+async function playVoiceDataLocally(voiceData, note = 60) {
+    await acquire();
+    if (!isReady()) return false;
+    const blob = await renderOffline(voiceData, note, 3000);
+    const audioCtx = await acquire();
+    const audioBuffer = await audioCtx.decodeAudioData(await blob.arrayBuffer());
+    playSamplesInWorklet(audioBuffer.getChannelData(0));
+    return true;
+}
 
 export function createEditPanel(opts) {
     baseUrlRef = opts.baseUrl || '';
@@ -339,7 +350,7 @@ function renderParamsMode(slotArea, sliderRow, paramsArea, goBtn, statusEl) {
             currentMutation.ops = Array.from({ length: 6 }, () => ({
                 r1: 99, r2: 99, r3: 99, r4: 99, l1: 99, l2: 0, l3: 0, l4: 0,
                 breakPoint: 60, lDepth: 0, rDepth: 0, lCurve: 0, rCurve: 0,
-                rateScaling: 0, detune: 4, velSens: 0, amSens: 0,
+                rateScaling: 0, detune: 7, velSens: 0, amSens: 0,
                 outputLevel: 0, oscMode: 0, freqCoarse: 1, freqFine: 0,
             }));
             currentMutation.globals = {
@@ -374,10 +385,35 @@ function renderParamsMode(slotArea, sliderRow, paramsArea, goBtn, statusEl) {
     algoSvgContainer.className = 'dx7-algo-svg-container';
     algoPanel.appendChild(algoSvgContainer);
     renderAlgoSvg(currentMutation.globals.algorithm, algoSvgContainer);
+
+    // Pitch EG (left column, under algo diagram)
+    const g = currentMutation.globals;
+    const pitchGroup = document.createElement('div');
+    pitchGroup.className = 'dx7-param-group';
+    pitchGroup.appendChild(makeGroupLabel('Pitch Envelope'));
+    pitchGroup.appendChild(makeSlider('R1', g.pitchR1, 0, 99, (v) => { g.pitchR1 = v; }));
+    pitchGroup.appendChild(makeSlider('R2', g.pitchR2, 0, 99, (v) => { g.pitchR2 = v; }));
+    pitchGroup.appendChild(makeSlider('R3', g.pitchR3, 0, 99, (v) => { g.pitchR3 = v; }));
+    pitchGroup.appendChild(makeSlider('R4', g.pitchR4, 0, 99, (v) => { g.pitchR4 = v; }));
+    pitchGroup.appendChild(makeSlider('L1', g.pitchL1, 0, 99, (v) => { g.pitchL1 = v; }));
+    pitchGroup.appendChild(makeSlider('L2', g.pitchL2, 0, 99, (v) => { g.pitchL2 = v; }));
+    pitchGroup.appendChild(makeSlider('L3', g.pitchL3, 0, 99, (v) => { g.pitchL3 = v; }));
+    pitchGroup.appendChild(makeSlider('L4', g.pitchL4, 0, 99, (v) => { g.pitchL4 = v; }));
+    algoPanel.appendChild(pitchGroup);
+
+    // Transpose (left column, under pitch envelope)
+    const trGroup = document.createElement('div');
+    trGroup.className = 'dx7-param-group';
+    trGroup.appendChild(makeGroupLabel('Transpose'));
+    trGroup.appendChild(makeSlider('Semitones', g.transpose, 0, 48, (v) => { g.transpose = v; }, () => {
+        const diff = g.transpose - 24;
+        return diff === 0 ? 'C4' : (diff > 0 ? '+' + diff : String(diff));
+    }));
+    algoPanel.appendChild(trGroup);
+
     topRow.appendChild(algoPanel);
 
     // Global parameters (right)
-    const g = currentMutation.globals;
     const globalPanel = document.createElement('div');
     globalPanel.className = 'dx7-global-panel';
 
@@ -406,30 +442,6 @@ function renderParamsMode(slotArea, sliderRow, paramsArea, goBtn, statusEl) {
     lfoGroup.appendChild(makeSlider('Sync', g.lfoSync, 0, 1, (v) => { g.lfoSync = v; }, () => g.lfoSync ? 'On' : 'Off'));
     lfoGroup.appendChild(makeSlider('PM Sens', g.lfoPmSens, 0, 7, (v) => { g.lfoPmSens = v; }));
     globalPanel.appendChild(lfoGroup);
-
-    // Pitch EG
-    const pitchGroup = document.createElement('div');
-    pitchGroup.className = 'dx7-param-group';
-    pitchGroup.appendChild(makeGroupLabel('Pitch Envelope'));
-    pitchGroup.appendChild(makeSlider('R1', g.pitchR1, 0, 99, (v) => { g.pitchR1 = v; }));
-    pitchGroup.appendChild(makeSlider('R2', g.pitchR2, 0, 99, (v) => { g.pitchR2 = v; }));
-    pitchGroup.appendChild(makeSlider('R3', g.pitchR3, 0, 99, (v) => { g.pitchR3 = v; }));
-    pitchGroup.appendChild(makeSlider('R4', g.pitchR4, 0, 99, (v) => { g.pitchR4 = v; }));
-    pitchGroup.appendChild(makeSlider('L1', g.pitchL1, 0, 99, (v) => { g.pitchL1 = v; }));
-    pitchGroup.appendChild(makeSlider('L2', g.pitchL2, 0, 99, (v) => { g.pitchL2 = v; }));
-    pitchGroup.appendChild(makeSlider('L3', g.pitchL3, 0, 99, (v) => { g.pitchL3 = v; }));
-    pitchGroup.appendChild(makeSlider('L4', g.pitchL4, 0, 99, (v) => { g.pitchL4 = v; }));
-    globalPanel.appendChild(pitchGroup);
-
-    // Transpose
-    const trGroup = document.createElement('div');
-    trGroup.className = 'dx7-param-group';
-    trGroup.appendChild(makeGroupLabel('Transpose'));
-    trGroup.appendChild(makeSlider('Semitones', g.transpose, 0, 48, (v) => { g.transpose = v; }, () => {
-        const diff = g.transpose - 24;
-        return diff === 0 ? 'C4' : (diff > 0 ? '+' + diff : String(diff));
-    }));
-    globalPanel.appendChild(trGroup);
 
     topRow.appendChild(globalPanel);
     layout.appendChild(topRow);
@@ -470,7 +482,7 @@ function renderParamsMode(slotArea, sliderRow, paramsArea, goBtn, statusEl) {
         freqGroup.appendChild(makeSlider('Mode', op.oscMode, 0, 1, (v) => { op.oscMode = v; }, () => op.oscMode ? 'Fixed' : 'Ratio'));
         freqGroup.appendChild(makeSlider('Coarse', op.freqCoarse, 0, 31, (v) => { op.freqCoarse = v; }, () => freqDisplay(op.oscMode, op.freqCoarse, op.freqFine)));
         freqGroup.appendChild(makeSlider('Fine', op.freqFine, 0, 99, (v) => { op.freqFine = v; }, () => freqDisplay(op.oscMode, op.freqCoarse, op.freqFine)));
-        freqGroup.appendChild(makeSlider('Detune', op.detune, 0, 7, (v) => { op.detune = v; }, () => op.detune === 4 ? '0' : (op.detune < 4 ? '-' + (4 - op.detune) : '+' + (op.detune - 4))));
+        freqGroup.appendChild(makeSlider('Detune', op.detune, 0, 14, (v) => { op.detune = v; }, () => op.detune === 7 ? '0' : (op.detune < 7 ? '-' + (7 - op.detune) : '+' + (op.detune - 7))));
         left.appendChild(freqGroup);
 
         // Output group
@@ -749,6 +761,14 @@ async function previewParamsEdit() {
         statusEl.textContent = 'Rendering preview...';
         const voiceData = await buildModifiedVoiceData();
         if (!voiceData) { statusEl.textContent = 'Error: no voice data'; return; }
+
+        try {
+            if (await playVoiceDataLocally(voiceData, 60)) {
+                statusEl.textContent = 'Playing preview...';
+                return;
+            }
+        } catch (_) {}
+
         const resp = await fetch(baseUrlRef + '/api/play', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -861,6 +881,15 @@ async function runRandomMutate() {
             name: editSlot.name + ' *',
         };
 
+        try {
+            if (await playVoiceDataLocally(mutatedB64, 60)) {
+                const goBtn = document.getElementById('edit-go');
+                goBtn.textContent = 'Save as new';
+                statusEl.textContent = `Mutation ready — save or mutate again (intensity: ${Math.round(intensity*100)}%)`;
+                return;
+            }
+        } catch (_) {}
+
         const resp = await fetch(baseUrlRef + '/api/play', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -887,14 +916,21 @@ async function saveMutation() {
 
     try {
         if (!currentMutation.wav_url && currentMutation.voice_data) {
-            const resp = await fetch(baseUrlRef + '/api/play', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ voice_data: currentMutation.voice_data, note: 60 })
-            });
-            if (!resp.ok) throw new Error('Render failed: ' + resp.status);
-            const playData = await resp.json();
-            if (playData.wav_url) currentMutation.wav_url = playData.wav_url;
+            let playedLocally = false;
+            try {
+                playedLocally = await playVoiceDataLocally(currentMutation.voice_data, 60);
+            } catch (_) {}
+
+            if (!playedLocally) {
+                const resp = await fetch(baseUrlRef + '/api/play', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ voice_data: currentMutation.voice_data, note: 60 })
+                });
+                if (!resp.ok) throw new Error('Render failed: ' + resp.status);
+                const playData = await resp.json();
+                if (playData.wav_url) currentMutation.wav_url = playData.wav_url;
+            }
         }
 
         const newPatch = createPatch({

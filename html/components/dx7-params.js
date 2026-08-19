@@ -18,7 +18,7 @@ export function readOp(bytes, opIndex) {
         breakPoint: bytes[base + 8],
         lDepth: bytes[base + 9], rDepth: bytes[base + 10],
         lCurve: b11 & 0x03, rCurve: (b11 >> 2) & 0x03,
-        rateScaling: b12 & 0x07, detune: (b12 >> 3) & 0x07,
+        rateScaling: b12 & 0x07, detune: (b12 >> 3) & 0x0F,
         velSens: b13 & 0x03, amSens: (b13 >> 2) & 0x03,
         outputLevel: bytes[base + 14],
         oscMode: b15 & 0x01, freqCoarse: (b15 >> 1) & 0x1F,
@@ -40,7 +40,7 @@ export function writeOp(bytes, opIndex, op) {
     bytes[base + 9] = op.lDepth & 0x7F;
     bytes[base + 10] = op.rDepth & 0x7F;
     bytes[base + 11] = (op.lCurve & 0x03) | ((op.rCurve & 0x03) << 2);
-    bytes[base + 12] = (op.rateScaling & 0x07) | ((op.detune & 0x07) << 3);
+    bytes[base + 12] = (op.rateScaling & 0x07) | ((op.detune & 0x0F) << 3);
     bytes[base + 13] = (op.velSens & 0x03) | ((op.amSens & 0x03) << 2);
     bytes[base + 14] = op.outputLevel & 0x7F;
     bytes[base + 15] = (op.oscMode & 0x01) | ((op.freqCoarse & 0x1F) << 1);
@@ -59,8 +59,8 @@ export function readGlobal(bytes) {
         lfoSpeed: bytes[112], lfoDelay: bytes[113],
         lfoPmDepth: bytes[114], lfoAmd: bytes[115],
         lfoSync: bytes[116] & 0x01, lfoWaveform: (bytes[116] >> 1) & 0x07,
-        lfoPmSens: bytes[117] & 0x07,
-        transpose: bytes[117],
+        lfoPmSens: (bytes[116] >> 4) & 0x0F,
+        transpose: bytes[117] & 0x7F,
         name: String.fromCharCode(...bytes.slice(118, 128)).replace(/\0/g, ''),
     };
 }
@@ -74,8 +74,7 @@ export function writeGlobal(bytes, g) {
     bytes[111] = (g.feedback & 0x07) | ((g.keySync & 0x01) << 3);
     bytes[112] = g.lfoSpeed & 0x7F; bytes[113] = g.lfoDelay & 0x7F;
     bytes[114] = g.lfoPmDepth & 0x7F; bytes[115] = g.lfoAmd & 0x7F;
-    bytes[116] = (g.lfoSync & 0x01) | ((g.lfoWaveform & 0x07) << 1);
-    bytes[117] = (g.lfoPmSens & 0x07);
+    bytes[116] = (g.lfoSync & 0x01) | ((g.lfoWaveform & 0x07) << 1) | ((g.lfoPmSens & 0x0F) << 4);
     bytes[117] = g.transpose & 0x7F;
     const n = (g.name || '').padEnd(10, '\0').slice(0, 10);
     for (let i = 0; i < 10; i++) bytes[118 + i] = n.charCodeAt(i);
@@ -121,21 +120,61 @@ const ALGO_CARRIERS = [
     [1], [1], [1], [1], [1,2], [1], [1], [1,2,3,4,5,6],
 ];
 
+function interleaveLayout(layout) {
+    const rows = layout.length;
+    const maxCols = Math.max(...layout.map(r => r.length));
+    const gridRows = rows * 2 + 1;
+    const gridCols = maxCols * 2 - 1;
+
+    const grid = Array.from({ length: gridRows }, () => Array(gridCols).fill(null));
+    const positions = [];
+
+    for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < layout[r].length; c++) {
+            const t = layout[r][c];
+            if (t && t.startsWith('Op')) {
+                const gr = (rows - r) * 2, gc = c * 2;
+                grid[gr][gc] = t;
+                positions.push({ r: gr, c: gc });
+            }
+        }
+    }
+
+    const vconns = [];
+    const hconns = [];
+
+    for (const a of positions) {
+        for (const b of positions) {
+            if (a === b) continue;
+            if (a.c === b.c && b.r === a.r + 2) vconns.push({ r: a.r + 1, c: a.c });
+            if (a.r === b.r && b.c === a.c + 2) hconns.push({ r: a.r, c: a.c + 1 });
+        }
+    }
+
+    return { grid, gridRows, gridCols, vconns, hconns };
+}
+
 export function renderAlgoSvg(algorithm, container) {
     const layout = ALGO_LAYOUTS[algorithm] || ALGO_LAYOUTS[0];
     const carriers = new Set(ALGO_CARRIERS[algorithm] || ALGO_CARRIERS[0]);
-    const grid = document.createElement('div');
-    grid.className = 'dx7-algo-grid';
+    const { grid: iGrid, gridRows, gridCols, vconns, hconns } = interleaveLayout(layout);
 
-    const maxCols = Math.max(...layout.map(r => r.length));
-    grid.style.gridTemplateColumns = `repeat(${maxCols}, 1fr)`;
-    grid.style.gridTemplateRows = `repeat(${layout.length}, auto)`;
+    const vSet = new Set(vconns.map(v => `${v.r},${v.c}`));
+    const hSet = new Set(hconns.map(h => `${h.r},${h.c}`));
 
-    for (let r = 0; r < layout.length; r++) {
-        for (let c = 0; c < layout[r].length; c++) {
+    const el = document.createElement('div');
+    el.className = 'dx7-algo-grid';
+
+    const colSizes = [];
+    for (let c = 0; c < gridCols; c++) colSizes.push(c % 2 === 0 ? '1fr' : '8px');
+
+    el.style.gridTemplateColumns = colSizes.join(' ');
+
+    for (let r = 0; r < gridRows; r++) {
+        for (let c = 0; c < gridCols; c++) {
             const cell = document.createElement('div');
             cell.className = 'dx7-algo-cell';
-            const t = layout[r][c];
+            const t = iGrid[r][c];
 
             if (t && t.startsWith('Op')) {
                 const opNum = parseInt(t.slice(2));
@@ -143,16 +182,20 @@ export function renderAlgoSvg(algorithm, container) {
                 cell.classList.add(carriers.has(opNum) ? 'carrier' : 'modulator');
                 cell.textContent = opNum;
                 if (opNum === 6) cell.classList.add('fb-source');
+            } else if (vSet.has(`${r},${c}`)) {
+                cell.classList.add('vconn');
+            } else if (hSet.has(`${r},${c}`)) {
+                cell.classList.add('hconn');
             } else {
                 cell.classList.add('empty');
             }
 
-            grid.appendChild(cell);
+            el.appendChild(cell);
         }
     }
 
     container.innerHTML = '';
-    container.appendChild(grid);
+    container.appendChild(el);
 }
 
 // --- Envelope graph renderer ---
