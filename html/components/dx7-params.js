@@ -123,7 +123,7 @@ const ALGO_CARRIERS = [
 function interleaveLayout(layout) {
     const rows = layout.length;
     const maxCols = Math.max(...layout.map(r => r.length));
-    const gridRows = rows * 2 + 1;
+    const gridRows = rows * 2 - 1;
     const gridCols = maxCols * 2 - 1;
 
     const grid = Array.from({ length: gridRows }, () => Array(gridCols).fill(null));
@@ -133,7 +133,7 @@ function interleaveLayout(layout) {
         for (let c = 0; c < layout[r].length; c++) {
             const t = layout[r][c];
             if (t && t.startsWith('Op')) {
-                const gr = (rows - r) * 2, gc = c * 2;
+                const gr = (rows - 1 - r) * 2, gc = c * 2;
                 grid[gr][gc] = t;
                 positions.push({ r: gr, c: gc });
             }

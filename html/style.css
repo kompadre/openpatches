@@ -2490,7 +2490,7 @@ h1 {
     display: grid;
     gap: 2px;
     width: 100%;
-    grid-template-rows: repeat(4, auto 8px) auto;
+    grid-template-rows: repeat(3, auto 8px) auto;
 }
 
 .dx7-algo-cell {
