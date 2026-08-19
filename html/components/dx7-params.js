@@ -201,6 +201,8 @@ function interleaveLayout(layout, algoIndex) {
     }
     carrierCols.sort((a, b) => a - b);
     const busHconnSet = new Set();
+    const busBeforeStart = carrierCols.length >= 2 ? `${busLineRow},${carrierCols[0]}` : '';
+    const busAfterEnd = carrierCols.length >= 2 ? `${busLineRow},${carrierCols[carrierCols.length - 1]}` : '';
     if (carrierCols.length >= 2) {
         for (let c = carrierCols[0] + 1; c < carrierCols[carrierCols.length - 1]; c++) {
             hconns.push({ r: busLineRow, c });
@@ -244,13 +246,13 @@ function interleaveLayout(layout, algoIndex) {
         }
     }
 
-    return { grid, gridRows, gridCols, vconns, hconns, busHconnSet, busEdgeStart, busEdgeEnd };
+    return { grid, gridRows, gridCols, vconns, hconns, busHconnSet, busEdgeStart, busEdgeEnd, busBeforeStart, busAfterEnd };
 }
 
 export function renderAlgoSvg(algorithm, container) {
     const layout = ALGO_LAYOUTS[algorithm] || ALGO_LAYOUTS[0];
     const carriers = new Set(ALGO_CARRIERS[algorithm] || ALGO_CARRIERS[0]);
-    const { grid: iGrid, gridRows, gridCols, vconns, hconns, busHconnSet, busEdgeStart, busEdgeEnd } = interleaveLayout(layout, algorithm);
+    const { grid: iGrid, gridRows, gridCols, vconns, hconns, busHconnSet, busEdgeStart, busEdgeEnd, busBeforeStart, busAfterEnd } = interleaveLayout(layout, algorithm);
 
     const vSet = new Set(vconns.map(v => `${v.r},${v.c}`));
     const hSet = new Set(hconns.map(h => `${h.r},${h.c}`));
@@ -282,6 +284,10 @@ export function renderAlgoSvg(algorithm, container) {
                 if (busEdgeStart !== busEdgeEnd && key === busEdgeStart) cell.classList.add('hconn-bus-start');
                 else if (busEdgeStart !== busEdgeEnd && key === busEdgeEnd) cell.classList.add('hconn-bus-end');
                 else cell.classList.add('hconn');
+            } else if (busBeforeStart && key === busBeforeStart) {
+                cell.classList.add('hconn-bus-before');
+            } else if (busAfterEnd && key === busAfterEnd) {
+                cell.classList.add('hconn-bus-after');
             } else {
                 cell.classList.add('empty');
             }
