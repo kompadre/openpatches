@@ -235,6 +235,10 @@ function showProgress(pct) {
     if (wrapper) wrapper.style.display = '';
     const fill = document.getElementById('progress-fill');
     if (fill) fill.style.width = pct + '%';
+    if (pct === 0) {
+        const label = document.getElementById('progress-label');
+        if (label) label.textContent = '';
+    }
 }
 
 function hideProgress() {
