@@ -20,7 +20,7 @@ export const ALGO_LAYOUTS = [
     [[null,"Op1","Op4","Op5",null,null],[null,"Op2",null,"Op6",null,null],[null,"Op3",null,null,null,null],[null,null,null,null,null,null]],
     [[null,"Op1","Op2","Op4",null,null],[null,"Op3","Op5","Op6",null,null],[null,null,null,null,null,null],[null,null,null,null,null,null]],
     [[null,"Op1","Op2","Op4","Op5",null],[null,"Op3",null,"Op6",null,null],[null,null,null,null,null,null],[null,null,null,null,null,null]],
-    [[null,"Op1",null,"Op3","Op4","Op5"],[null,"Op2",null,null,null,"Op6"],[null,null,null,null,null,null],[null,null,null,null,null,null]],
+    [[null,"Op1","Op3","Op4","Op5",null],[null,"Op2",null,null,"Op6",null],[null,null,null,null,null,null],[null,null,null,null,null,null]],
     [[null,"Op1","Op2","Op4","Op5",null],[null,null,"Op3",null,"Op6",null],[null,null,null,null,null,null],[null,null,null,null,null,null]],
     [[null,"Op1","Op2","Op3","Op4","Op5"],[null,null,null,null,null,"Op6"],[null,null,null,null,null,null],[null,null,null,null,null,null]],
     [[null,"Op1","Op2","Op3","Op4","Op5"],[null,null,null,null,"Op6",null],[null,null,null,null,null,null],[null,null,null,null,null,null]],
