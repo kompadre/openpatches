@@ -271,14 +271,17 @@ export class Job {
             const matches = data[group.key];
             if (!matches || matches.length === 0) continue;
 
-            const patches = matches.map(m => createPatch({
-                name: `${group.prefix} ${m.name || (`#${m.rank}`)}`,
-                algorithm: m.algorithm,
-                feedback: m.feedback,
-                voice_data: m.voice_data || null,
-                source: 'wav',
-                midi_note: rootMidi,
-            }));
+            const patches = matches.map(m => {
+                const dist = m.distance != null ? ` (dist: ${m.distance.toFixed(4)})` : '';
+                return createPatch({
+                    name: `${group.prefix} ${m.name || (`#${m.rank}`)}${dist}`,
+                    algorithm: m.algorithm,
+                    feedback: m.feedback,
+                    voice_data: m.voice_data || null,
+                    source: 'wav',
+                    midi_note: rootMidi,
+                });
+            });
             patchStore.bulkPut(patches);
 
             const patchIds = [];
