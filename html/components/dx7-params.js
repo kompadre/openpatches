@@ -120,7 +120,43 @@ const ALGO_CARRIERS = [
     [1], [1], [1], [1], [1,2], [1], [1], [1,2,3,4,5,6],
 ];
 
-function interleaveLayout(layout) {
+// Extra connections not captured by adjacency. [fromOp, toOp] per algorithm.
+const ALGO_EXTRA_CONNS = [
+    [],             // 1
+    [],             // 2
+    [],             // 3
+    [[4, 6]],       // 4
+    [],             // 5
+    [],             // 6
+    [],             // 7
+    [],             // 8
+    [],             // 9
+    [],             // 10
+    [],             // 11
+    [],             // 12
+    [],             // 13
+    [],             // 14
+    [],             // 15
+    [],             // 16
+    [],             // 17
+    [],             // 18
+    [],             // 19
+    [],             // 20
+    [],             // 21
+    [],             // 22
+    [],             // 23
+    [],             // 24
+    [],             // 25
+    [],             // 26
+    [],             // 27
+    [],             // 28
+    [],             // 29
+    [],             // 30
+    [],             // 31
+    [],             // 32
+];
+
+function interleaveLayout(layout, algoIndex) {
     const rows = layout.length;
     const maxCols = Math.max(...layout.map(r => r.length));
     const gridRows = rows * 2 - 1;
@@ -151,13 +187,36 @@ function interleaveLayout(layout) {
         }
     }
 
+    const extraConns = ALGO_EXTRA_CONNS[algoIndex] || [];
+    const posMap = {};
+    for (const p of positions) {
+        const name = grid[p.r][p.c];
+        if (name) posMap[name] = p;
+    }
+
+    for (const [from, to] of extraConns) {
+        const a = posMap['Op' + from], b = posMap['Op' + to];
+        if (!a || !b) continue;
+        if (a.c === b.c) {
+            const minR = Math.min(a.r, b.r), maxR = Math.max(a.r, b.r);
+            for (let r = minR + 1; r < maxR; r++) {
+                if (grid[r][a.c] === null) vconns.push({ r, c: a.c });
+            }
+        } else if (a.r === b.r) {
+            const minC = Math.min(a.c, b.c), maxC = Math.max(a.c, b.c);
+            for (let c = minC + 1; c < maxC; c++) {
+                if (grid[a.r][c] === null) hconns.push({ r: a.r, c });
+            }
+        }
+    }
+
     return { grid, gridRows, gridCols, vconns, hconns };
 }
 
 export function renderAlgoSvg(algorithm, container) {
     const layout = ALGO_LAYOUTS[algorithm] || ALGO_LAYOUTS[0];
     const carriers = new Set(ALGO_CARRIERS[algorithm] || ALGO_CARRIERS[0]);
-    const { grid: iGrid, gridRows, gridCols, vconns, hconns } = interleaveLayout(layout);
+    const { grid: iGrid, gridRows, gridCols, vconns, hconns } = interleaveLayout(layout, algorithm);
 
     const vSet = new Set(vconns.map(v => `${v.r},${v.c}`));
     const hSet = new Set(hconns.map(h => `${h.r},${h.c}`));
