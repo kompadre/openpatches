@@ -731,7 +731,6 @@ async function runMorphEdit() {
         if (onPatchCreated) onPatchCreated(morphPatch);
 
         editSlot = morphPatch;
-        editSlotB = null;
         renderEditPanel();
     } catch (err) {
         statusEl.textContent = 'Error: ' + err.message;
