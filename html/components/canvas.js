@@ -551,7 +551,7 @@ function appendFullFields(el, patch, target) {
                 blob.arrayBuffer().then(buf => {
                     const samples = decodeWavSamples(buf);
                     if (samples && samples.length > 0) drawMiniWaveform(cvs, samples);
-                });
+                }).catch(() => {});
             }
         );
     }
@@ -852,7 +852,7 @@ function renderContainer(ctr) {
                 blob.arrayBuffer().then(buf => {
                     const samples = decodeWavSamples(buf);
                     if (samples && samples.length > 0) drawMiniWaveform(canvas, samples);
-                });
+                }).catch(() => {});
             });
         }
     }

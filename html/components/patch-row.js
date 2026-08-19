@@ -471,7 +471,7 @@ export function batchRenderPatchRows(container, patches, baseUrl, midiNote) {
             blob.arrayBuffer().then(buf => {
                 const samples = decodeWavSamples(buf);
                 if (samples && samples.length > 0) drawMiniWaveform(canvas, samples);
-            });
+            }).catch(() => {});
         }, midiNote);
     }
 }
