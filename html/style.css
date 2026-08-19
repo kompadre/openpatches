@@ -2481,8 +2481,7 @@ h1 {
     border: 1px solid #333;
     border-radius: 6px;
     padding: 0.3rem;
-    min-height: 120px;
-    max-height: 120px;
+    height: 150px;
     overflow: hidden;
 }
 
