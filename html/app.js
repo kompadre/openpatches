@@ -454,7 +454,7 @@ function getCanvasOpts() {
         onLoadJobWav: (jobId, callback) => {
             dbGet(jobId).then(arrayBuffer => {
                 if (arrayBuffer) callback(arrayBuffer);
-            });
+            }).catch(() => {});
         },
         onSortContainer: (ctr) => {
             const sorted = (ctr.patchIds || [])
