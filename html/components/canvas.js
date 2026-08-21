@@ -75,16 +75,7 @@ export function initCanvas(opts) {
         const left = e.clientX - rect.left + (skyEl.scrollLeft || 0);
         const top = e.clientY - rect.top + (skyEl.scrollTop || 0);
 
-        // Remove original from source container
-        for (const ctr of Object.values(canvasStore.getContainers())) {
-            if (ctr.patchIds && ctr.patchIds.includes(patch.id)) {
-                ctr.patchIds = ctr.patchIds.filter(id => id !== patch.id);
-                canvasStore.putContainer(ctr);
-                break;
-            }
-        }
-
-        // Deep clone with new unique ID
+        // Deep clone with new unique ID — original stays in container
         const clone = clonePatchForDragOut(patch);
         addPatchToCanvas(clone.id, left, top, null);
         clearDraggedPatch();
@@ -107,25 +98,10 @@ export function initCanvas(opts) {
         const containerId = window._touchDropContainerId;
         if (patch) {
             if (containerId) {
-                // Cross-container drop — remove from old container, add to new
-                for (const ctr of Object.values(canvasStore.getContainers())) {
-                    if (ctr.patchIds && ctr.patchIds.includes(patch.id)) {
-                        ctr.patchIds = ctr.patchIds.filter(id => id !== patch.id);
-                        canvasStore.putContainer(ctr);
-                        break;
-                    }
-                }
+                // Cross-container drop — add to new container, original stays in old
                 addPatchToContainer(patch.id, containerId);
             } else if (window._touchDropX != null) {
-                // Free-floating on canvas — remove from old container
-                for (const ctr of Object.values(canvasStore.getContainers())) {
-                    if (ctr.patchIds && ctr.patchIds.includes(patch.id)) {
-                        ctr.patchIds = ctr.patchIds.filter(id => id !== patch.id);
-                        canvasStore.putContainer(ctr);
-                        break;
-                    }
-                }
-                // Deep clone with new unique ID
+                // Free-floating on canvas — clone with new unique ID
                 const clone = clonePatchForDragOut(patch);
                 const rect = skyEl.getBoundingClientRect();
                 const left = window._touchDropX - rect.left + (skyEl.scrollLeft || 0);
