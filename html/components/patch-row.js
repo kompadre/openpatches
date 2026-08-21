@@ -52,8 +52,8 @@ export function createPatchRow(patch, opts = {}) {
 
     // Star (drag handle)
     const star = document.createElement('button');
-    star.className = 'patch-star fav-active';
-    star.textContent = '★';
+    star.className = 'patch-drag';
+    star.textContent = '⠿';
     star.title = 'Drag to canvas';
     row.appendChild(star);
     makeStarDraggable(star, row, patch);

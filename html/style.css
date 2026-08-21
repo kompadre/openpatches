@@ -1349,11 +1349,11 @@ h1 {
     white-space: nowrap;
 }
 
-.patch-star {
+.patch-drag {
     background: none;
     border: 1px solid transparent;
     border-radius: 4px;
-    cursor: pointer;
+    cursor: grab;
     font-size: 0.9rem;
     color: #555;
     transition: color 0.15s;
@@ -1363,17 +1363,16 @@ h1 {
     opacity: 0;
 }
 
-.patch-row:hover .patch-star {
+.patch-row:hover .patch-drag {
     opacity: 1;
 }
 
-.patch-star:hover {
-    color: #f5c542;
+.patch-drag:hover {
+    color: #d0d8e8;
 }
 
-.patch-star.fav-active {
-    color: #f5c542;
-    opacity: 1;
+.patch-drag:active {
+    cursor: grabbing;
 }
 
 .patch-col {
@@ -1412,7 +1411,7 @@ h1 {
     flex-shrink: 0;
 }
 
-.patch-row-minified .patch-star {
+.patch-row-minified .patch-drag {
     opacity: 1;
     flex-shrink: 0;
 }
