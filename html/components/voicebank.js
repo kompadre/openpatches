@@ -62,21 +62,71 @@ export function createVoiceBank(opts) {
         const patch = window._draggedPatch;
         const items = [...list.querySelectorAll('.voicebank-item')];
         const afterItem = getInsertAfterItem(items, e.clientY);
+        console.log('[voicebank] drop afterItem:', afterItem?.dataset?.vbIdx, 'entries:', entries.length, 'patch:', patch.name, 'voice_data type:', typeof patch.voice_data, 'length:', patch.voice_data?.length);
 
+        // Determine target slot index
+        let targetIdx = entries.length; // default: append
         if (afterItem) {
             const idx = parseInt(afterItem.dataset.vbIdx);
-            if (entries[idx]) {
-                entries[idx].name = patch.name || entries[idx].name;
-                entries[idx].voiceData = patch.voice_data || entries[idx].voiceData;
-                entries[idx].patchId = patch.name || entries[idx].patchId;
-                activeId = entries[idx].id;
-                render();
-                fireSelect();
-                saveState();
+            // If targeting bottom half of previous slot, use that slot
+            if (idx > 0 && !entries[idx] && entries[idx - 1]) {
+                targetIdx = idx - 1;
+            } else {
+                targetIdx = idx;
             }
-        } else {
-            addEntry(patch.name || 'Untitled', patch.voice_data || null, patch.name);
         }
+        console.log('[voicebank] targetIdx:', targetIdx, 'entries[targetIdx]:', entries[targetIdx]?.name || null);
+
+        // Deep copy voice data
+        let voiceCopy;
+        if (typeof patch.voice_data === 'string') {
+            voiceCopy = patch.voice_data;
+        } else if (patch.voice_data instanceof Uint8Array) {
+            voiceCopy = new Uint8Array(patch.voice_data);
+        } else if (Array.isArray(patch.voice_data)) {
+            voiceCopy = patch.voice_data.slice();
+        } else {
+            console.log('[voicebank] voice_data not a recognized type, aborting');
+            window._draggedPatch = null;
+            return;
+        }
+        console.log('[voicebank] voiceCopy ready, type:', typeof voiceCopy, 'length:', voiceCopy?.length);
+
+        // Dedup: remove existing entry with same voice data
+        const voiceKey = typeof voiceCopy === 'string' ? voiceCopy : Array.from(voiceCopy).join(',');
+        const existingIdx = entries.findIndex(e => {
+            if (!e) return false;
+            if (typeof e.voiceData === 'string' && typeof voiceCopy === 'string') return e.voiceData === voiceCopy;
+            if (Array.isArray(e.voiceData) && Array.isArray(voiceCopy)) return Array.from(e.voiceData).join(',') === voiceKey;
+            return false;
+        });
+        if (existingIdx >= 0) {
+            console.log('[voicebank] dedup: removing existing at', existingIdx);
+            entries.splice(existingIdx, 1);
+            if (existingIdx < targetIdx) targetIdx--;
+        }
+        console.log('[voicebank] inserting at', targetIdx, 'entries before:', entries.length);
+
+        // Insert at target position, shift others down
+        const color = PATCH_COLORS[targetIdx % PATCH_COLORS.length];
+        const newEntry = {
+            id: 'vb_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+            name: patch.name || 'Untitled',
+            voiceData: voiceCopy,
+            patchId: patch.name,
+            color,
+            volume: DEFAULT_VOLUME,
+        };
+        entries.splice(targetIdx, 0, newEntry);
+
+        // Trim to max slots
+        while (entries.length > MAX_SLOTS) entries.pop();
+
+        activeId = newEntry.id;
+        render();
+        fireSelect();
+        saveState();
+        notifySnapshot();
 
         window._draggedPatch = null;
     });
@@ -90,7 +140,7 @@ export function createVoiceBank(opts) {
     }
 
     function fireSelect() {
-        const active = entries.find(e => e.id === activeId);
+        const active = entries.find(e => e && e.id === activeId);
         if (onSelect && active) {
             const slot = entries.indexOf(active);
             onSelect(active, slot);
@@ -209,11 +259,15 @@ export function createVoiceBank(opts) {
                 });
                 item.addEventListener('drop', (e) => {
                     e.preventDefault();
-                    e.stopPropagation();
                     item.classList.remove('drag-over-top', 'drag-over-bottom');
+                    if (window._draggedPatch) {
+                        // External drop — let it bubble to container handler
+                        return;
+                    }
+                    e.stopPropagation();
                     if (!window._vbDragSourceId) return;
                     const fromId = window._vbDragSourceId;
-                    const fromIdx = entries.findIndex(en => en.id === fromId);
+                    const fromIdx = entries.findIndex(en => en && en.id === fromId);
                     let toIdx = i;
                     const rect = item.getBoundingClientRect();
                     if (e.clientY >= rect.top + rect.height / 2) toIdx = i + 1;
@@ -320,6 +374,7 @@ export function createVoiceBank(opts) {
         // Dedup by content (string compare for base64, byte compare for arrays)
         const voiceKey = typeof voiceCopy === 'string' ? voiceCopy : Array.from(voiceCopy).join(',');
         const existing = entries.find(e => {
+            if (!e) return false;
             if (typeof e.voiceData === 'string' && typeof voiceCopy === 'string') {
                 return e.voiceData === voiceCopy;
             }
@@ -336,16 +391,39 @@ export function createVoiceBank(opts) {
             return;
         }
 
-        const color = PATCH_COLORS[entries.length % PATCH_COLORS.length];
-        entries.push({
+        insertEntry(entries.length, name, voiceCopy, patchId);
+    }
+
+    function addEntryAt(idx, name, voiceData, patchId) {
+        if (!voiceData || idx < 0 || idx >= MAX_SLOTS) return;
+
+        let voiceCopy;
+        if (typeof voiceData === 'string') {
+            voiceCopy = voiceData;
+        } else if (voiceData instanceof Uint8Array) {
+            voiceCopy = new Uint8Array(voiceData);
+        } else if (Array.isArray(voiceData)) {
+            voiceCopy = voiceData.slice();
+        } else {
+            return;
+        }
+
+        insertEntry(idx, name, voiceCopy, patchId);
+    }
+
+    function insertEntry(idx, name, voiceCopy, patchId) {
+        const color = PATCH_COLORS[idx % PATCH_COLORS.length];
+        const newEntry = {
             id: 'vb_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
             name: name || 'Untitled',
             voiceData: voiceCopy,
             patchId: patchId || name,
             color,
             volume: DEFAULT_VOLUME,
-        });
-        activeId = entries[entries.length - 1].id;
+        };
+
+        entries[idx] = newEntry;
+        activeId = newEntry.id;
         render();
         fireSelect();
         saveState();
@@ -353,9 +431,13 @@ export function createVoiceBank(opts) {
     }
 
     function removeEntry(id) {
-        entries = entries.filter(e => e.id !== id);
+        const idx = entries.findIndex(e => e && e.id === id);
+        if (idx >= 0) {
+            entries.splice(idx, 1);
+        }
         if (activeId === id) {
-            activeId = entries.length > 0 ? entries[0].id : null;
+            const first = entries[0] || null;
+            activeId = first ? first.id : null;
             if (activeId) fireSelect();
         }
         render();
@@ -364,11 +446,11 @@ export function createVoiceBank(opts) {
     }
 
     function getActive() {
-        return entries.find(e => e.id === activeId) || null;
+        return entries.find(e => e && e.id === activeId) || null;
     }
 
     function setActive(id) {
-        if (entries.find(e => e.id === id)) {
+        if (entries.find(e => e && e.id === id)) {
             activeId = id;
             render();
             fireSelect();
@@ -389,7 +471,7 @@ export function createVoiceBank(opts) {
             const raw = localStorage.getItem(STORAGE_KEY);
             if (!raw) return;
             const data = JSON.parse(raw);
-            entries = data.entries || [];
+            entries = (data.entries || []).filter(e => e != null);
             activeId = data.activeId || null;
             if (activeId && !entries.find(e => e.id === activeId)) {
                 activeId = entries.length > 0 ? entries[0].id : null;

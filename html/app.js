@@ -184,7 +184,7 @@ async function playPatch(patch, midi) {
             await acquire();
             if (isReady()) {
                 // Render offline on main thread (separate WASM instance)
-                const blob = await renderOffline(patch.voice_data, note, 3000);
+                const blob = await renderOffline(patch.voice_data, note, 10000);
                 // Decode WAV → float samples → feed into live worklet
                 const audioCtx = await acquire();
                 const audioBuffer = await audioCtx.decodeAudioData(await blob.arrayBuffer());

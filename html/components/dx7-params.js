@@ -317,7 +317,7 @@ export function renderEnvGraph(canvas, rates, levels) {
     let acc = 0;
     for (let i = 0; i < 4; i++) {
         acc += times[i];
-        pts.push({ x: acc / total, y: 1 - levels[i] / 99 });
+        pts.push({ x: acc / total, y: 1 - levels[Math.min(i + 1, 3)] / 99 });
     }
 
     ctx.beginPath();

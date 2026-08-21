@@ -2598,6 +2598,7 @@ h1 {
 .dx7-global-panel {
     overflow-y: auto;
     overflow-x: hidden;
+    padding-right: 8px;
 }
 
 .dx7-params-panel {

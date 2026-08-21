@@ -19,7 +19,7 @@ let previewPlaying = false;
 async function playVoiceDataLocally(voiceData, note = 60) {
     await acquire();
     if (!isReady()) return false;
-    const blob = await renderOffline(voiceData, note, 3000);
+    const blob = await renderOffline(voiceData, note, 10000);
     const audioCtx = await acquire();
     const audioBuffer = await audioCtx.decodeAudioData(await blob.arrayBuffer());
     playSamplesInWorklet(audioBuffer.getChannelData(0));
@@ -66,12 +66,17 @@ export function createEditPanel(opts) {
     actions.className = 'edit-actions';
     const clearBtn = document.createElement('button');
     clearBtn.className = 'btn-edit-action';
-    clearBtn.textContent = 'Clear';
+    clearBtn.textContent = 'Reset';
     clearBtn.addEventListener('click', () => {
-        editSlot = null;
-        editSlotB = null;
-        currentMutation = null;
-        renderEditPanel();
+        if (editMode === 'params' && editSlot) {
+            currentMutation = JSON.parse(JSON.stringify(editSlot));
+            renderParamsMode();
+        } else {
+            editSlot = null;
+            editSlotB = null;
+            currentMutation = null;
+            renderEditPanel();
+        }
     });
     actions.appendChild(clearBtn);
     const goBtn = document.createElement('button');
@@ -381,6 +386,8 @@ function renderParamsMode(slotArea, sliderRow, paramsArea, goBtn, statusEl) {
     const leftPanel = document.createElement('div');
     leftPanel.className = 'dx7-algo-panel';
 
+    leftPanel.appendChild(makeGroupLabel('Pitch Envelope'));
+
     const pitchEnvCanvas = document.createElement('canvas');
     pitchEnvCanvas.className = 'dx7-env-graph';
     pitchEnvCanvas.width = 160;
@@ -390,7 +397,6 @@ function renderParamsMode(slotArea, sliderRow, paramsArea, goBtn, statusEl) {
 
     const pitchGroup = document.createElement('div');
     pitchGroup.className = 'dx7-param-group';
-    pitchGroup.appendChild(makeGroupLabel('Pitch Envelope'));
     pitchGroup.appendChild(makeSlider('R1', g.pitchR1, 0, 99, (v) => { g.pitchR1 = v; renderEnvGraph(pitchEnvCanvas, [g.pitchR1, g.pitchR2, g.pitchR3, g.pitchR4], [g.pitchL1, g.pitchL2, g.pitchL3, g.pitchL4]); }));
     pitchGroup.appendChild(makeSlider('R2', g.pitchR2, 0, 99, (v) => { g.pitchR2 = v; renderEnvGraph(pitchEnvCanvas, [g.pitchR1, g.pitchR2, g.pitchR3, g.pitchR4], [g.pitchL1, g.pitchL2, g.pitchL3, g.pitchL4]); }));
     pitchGroup.appendChild(makeSlider('R3', g.pitchR3, 0, 99, (v) => { g.pitchR3 = v; renderEnvGraph(pitchEnvCanvas, [g.pitchR1, g.pitchR2, g.pitchR3, g.pitchR4], [g.pitchL1, g.pitchL2, g.pitchL3, g.pitchL4]); }));
@@ -401,9 +407,16 @@ function renderParamsMode(slotArea, sliderRow, paramsArea, goBtn, statusEl) {
     pitchGroup.appendChild(makeSlider('L4', g.pitchL4, 0, 99, (v) => { g.pitchL4 = v; renderEnvGraph(pitchEnvCanvas, [g.pitchR1, g.pitchR2, g.pitchR3, g.pitchR4], [g.pitchL1, g.pitchL2, g.pitchL3, g.pitchL4]); }));
     leftPanel.appendChild(pitchGroup);
 
+    // Preview Note
+    const mnGroup = document.createElement('div');
+    mnGroup.className = 'dx7-param-group';
+    mnGroup.appendChild(makeGroupLabel('Preview Note'));
+    mnGroup.appendChild(makeSlider('Note', editSlot.midi_note || 60, 36, 84, (v) => { editSlot.midi_note = v; }, () => midiToNoteName(editSlot.midi_note || 60)));
+    leftPanel.appendChild(mnGroup);
+
     topRow.appendChild(leftPanel);
 
-    // Right column: Algorithm diagram, Preview Note, Algorithm & Feedback, LFO
+    // Right column: Algorithm diagram, Algorithm & Feedback, LFO
     const globalPanel = document.createElement('div');
     globalPanel.className = 'dx7-global-panel';
 
@@ -419,13 +432,6 @@ function renderParamsMode(slotArea, sliderRow, paramsArea, goBtn, statusEl) {
     algoPanel.appendChild(algoSvgContainer);
     renderAlgoSvg(g.algorithm, algoSvgContainer);
     globalPanel.appendChild(algoPanel);
-
-    // Preview Note
-    const mnGroup = document.createElement('div');
-    mnGroup.className = 'dx7-param-group';
-    mnGroup.appendChild(makeGroupLabel('Preview Note'));
-    mnGroup.appendChild(makeSlider('Note', editSlot.midi_note || 60, 36, 84, (v) => { editSlot.midi_note = v; }, () => midiToNoteName(editSlot.midi_note || 60)));
-    globalPanel.appendChild(mnGroup);
 
     // Algorithm + Feedback
     const algoGroup = document.createElement('div');
