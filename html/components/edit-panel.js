@@ -375,38 +375,50 @@ function renderParamsMode(slotArea, sliderRow, paramsArea, goBtn, statusEl) {
     const topRow = document.createElement('div');
     topRow.className = 'dx7-top-row';
 
-    // Algorithm diagram (left)
+    const g = currentMutation.globals;
+
+    // Left column: Pitch envelope
+    const leftPanel = document.createElement('div');
+    leftPanel.className = 'dx7-algo-panel';
+
+    const pitchEnvCanvas = document.createElement('canvas');
+    pitchEnvCanvas.className = 'dx7-env-graph';
+    pitchEnvCanvas.width = 160;
+    pitchEnvCanvas.height = 40;
+    leftPanel.appendChild(pitchEnvCanvas);
+    renderEnvGraph(pitchEnvCanvas, [g.pitchR1, g.pitchR2, g.pitchR3, g.pitchR4], [g.pitchL1, g.pitchL2, g.pitchL3, g.pitchL4]);
+
+    const pitchGroup = document.createElement('div');
+    pitchGroup.className = 'dx7-param-group';
+    pitchGroup.appendChild(makeGroupLabel('Pitch Envelope'));
+    pitchGroup.appendChild(makeSlider('R1', g.pitchR1, 0, 99, (v) => { g.pitchR1 = v; renderEnvGraph(pitchEnvCanvas, [g.pitchR1, g.pitchR2, g.pitchR3, g.pitchR4], [g.pitchL1, g.pitchL2, g.pitchL3, g.pitchL4]); }));
+    pitchGroup.appendChild(makeSlider('R2', g.pitchR2, 0, 99, (v) => { g.pitchR2 = v; renderEnvGraph(pitchEnvCanvas, [g.pitchR1, g.pitchR2, g.pitchR3, g.pitchR4], [g.pitchL1, g.pitchL2, g.pitchL3, g.pitchL4]); }));
+    pitchGroup.appendChild(makeSlider('R3', g.pitchR3, 0, 99, (v) => { g.pitchR3 = v; renderEnvGraph(pitchEnvCanvas, [g.pitchR1, g.pitchR2, g.pitchR3, g.pitchR4], [g.pitchL1, g.pitchL2, g.pitchL3, g.pitchL4]); }));
+    pitchGroup.appendChild(makeSlider('R4', g.pitchR4, 0, 99, (v) => { g.pitchR4 = v; renderEnvGraph(pitchEnvCanvas, [g.pitchR1, g.pitchR2, g.pitchR3, g.pitchR4], [g.pitchL1, g.pitchL2, g.pitchL3, g.pitchL4]); }));
+    pitchGroup.appendChild(makeSlider('L1', g.pitchL1, 0, 99, (v) => { g.pitchL1 = v; renderEnvGraph(pitchEnvCanvas, [g.pitchR1, g.pitchR2, g.pitchR3, g.pitchR4], [g.pitchL1, g.pitchL2, g.pitchL3, g.pitchL4]); }));
+    pitchGroup.appendChild(makeSlider('L2', g.pitchL2, 0, 99, (v) => { g.pitchL2 = v; renderEnvGraph(pitchEnvCanvas, [g.pitchR1, g.pitchR2, g.pitchR3, g.pitchR4], [g.pitchL1, g.pitchL2, g.pitchL3, g.pitchL4]); }));
+    pitchGroup.appendChild(makeSlider('L3', g.pitchL3, 0, 99, (v) => { g.pitchL3 = v; renderEnvGraph(pitchEnvCanvas, [g.pitchR1, g.pitchR2, g.pitchR3, g.pitchR4], [g.pitchL1, g.pitchL2, g.pitchL3, g.pitchL4]); }));
+    pitchGroup.appendChild(makeSlider('L4', g.pitchL4, 0, 99, (v) => { g.pitchL4 = v; renderEnvGraph(pitchEnvCanvas, [g.pitchR1, g.pitchR2, g.pitchR3, g.pitchR4], [g.pitchL1, g.pitchL2, g.pitchL3, g.pitchL4]); }));
+    leftPanel.appendChild(pitchGroup);
+
+    topRow.appendChild(leftPanel);
+
+    // Right column: Algorithm diagram, Preview Note, Algorithm & Feedback, LFO
+    const globalPanel = document.createElement('div');
+    globalPanel.className = 'dx7-global-panel';
+
+    // Algorithm diagram
     const algoPanel = document.createElement('div');
-    algoPanel.className = 'dx7-algo-panel';
+    algoPanel.className = 'dx7-param-group';
     const algoLabel = document.createElement('div');
     algoLabel.className = 'dx7-algo-label';
-    algoLabel.textContent = 'Algorithm ' + (currentMutation.globals.algorithm + 1);
+    algoLabel.textContent = 'Algorithm ' + (g.algorithm + 1);
     algoPanel.appendChild(algoLabel);
     const algoSvgContainer = document.createElement('div');
     algoSvgContainer.className = 'dx7-algo-svg-container';
     algoPanel.appendChild(algoSvgContainer);
-    renderAlgoSvg(currentMutation.globals.algorithm, algoSvgContainer);
-
-    // Pitch EG (left column, under algo diagram)
-    const g = currentMutation.globals;
-    const pitchGroup = document.createElement('div');
-    pitchGroup.className = 'dx7-param-group';
-    pitchGroup.appendChild(makeGroupLabel('Pitch Envelope'));
-    pitchGroup.appendChild(makeSlider('R1', g.pitchR1, 0, 99, (v) => { g.pitchR1 = v; }));
-    pitchGroup.appendChild(makeSlider('R2', g.pitchR2, 0, 99, (v) => { g.pitchR2 = v; }));
-    pitchGroup.appendChild(makeSlider('R3', g.pitchR3, 0, 99, (v) => { g.pitchR3 = v; }));
-    pitchGroup.appendChild(makeSlider('R4', g.pitchR4, 0, 99, (v) => { g.pitchR4 = v; }));
-    pitchGroup.appendChild(makeSlider('L1', g.pitchL1, 0, 99, (v) => { g.pitchL1 = v; }));
-    pitchGroup.appendChild(makeSlider('L2', g.pitchL2, 0, 99, (v) => { g.pitchL2 = v; }));
-    pitchGroup.appendChild(makeSlider('L3', g.pitchL3, 0, 99, (v) => { g.pitchL3 = v; }));
-    pitchGroup.appendChild(makeSlider('L4', g.pitchL4, 0, 99, (v) => { g.pitchL4 = v; }));
-    algoPanel.appendChild(pitchGroup);
-
-    topRow.appendChild(algoPanel);
-
-    // Global parameters (right)
-    const globalPanel = document.createElement('div');
-    globalPanel.className = 'dx7-global-panel';
+    renderAlgoSvg(g.algorithm, algoSvgContainer);
+    globalPanel.appendChild(algoPanel);
 
     // Preview Note
     const mnGroup = document.createElement('div');
