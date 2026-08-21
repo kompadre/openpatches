@@ -2,7 +2,7 @@
 // Owns: probe → match → poll → complete/fail, container, rendering.
 
 import { jobStore, canvasStore, patchStore, createPatch, patchIdFromVoiceData } from './patch-model.js';
-import { addContainer, addPatchToContainer, refreshCanvas } from './canvas.js';
+import { addContainer, addPatchToContainer, refreshCanvas, activateContainer } from './canvas.js';
 import { decodeWavSamples, drawMiniWaveform } from './patch.js';
 
 const PROBE_FIELDS = ['attack_ms', 'decay_ms', 'sustain_level', 'release_ms', 'gate_ms', 'brightness', 'harmonicity'];
@@ -123,6 +123,7 @@ export class Job {
             // Create container linked to this job
             const ctr = addContainer(this.fileName.replace(/\.[^.]+$/, ''), {
                 jobId: this.id,
+                isNew: true,
             });
             this.containerId = ctr.id;
             this.save();
@@ -250,7 +251,8 @@ export class Job {
         if (!data) return;
 
         const baseName = this.fileName.replace(/\.[^.]+$/, '');
-        const rootMidi = data.midi_note;
+        // Use server's midi_note, fall back to probe's detected F0, then to 60
+        const rootMidi = data.midi_note || this.probeData?.midi_note || 60;
         const groups = [
             { key: 'matches',          prefix: 'NEAREST' },
             { key: 'timbral_matches',  prefix: 'TIMBRAL' },
@@ -297,6 +299,12 @@ export class Job {
         canvasStore.putContainer(ctr);
 
         refreshCanvas();
+
+        // Activate this container after patches are populated
+        const sky = document.getElementById('night-sky');
+        const ctrEl = sky?.querySelector(`[data-container-id="${ctrId}"]`);
+        if (ctrEl) activateContainer(ctrEl);
+
         appendLog(`Match complete: ${baseName}`);
     }
 

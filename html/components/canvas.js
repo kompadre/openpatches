@@ -14,7 +14,7 @@ let docListeners = [];
 
 // --- Container activation ---
 
-function activateContainer(el) {
+export function activateContainer(el) {
     // Remove .active from all container headers
     skyEl.querySelectorAll('.sky-container-header.active').forEach(h => h.classList.remove('active'));
     // Add .active to this container's header
