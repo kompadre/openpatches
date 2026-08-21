@@ -2,7 +2,7 @@
 // Replaces night-sky.js. Manages free-floating patches, PatchContainers,
 // drag-to-reposition (star handle), and snap-into-container behavior.
 
-import { canvasStore, patchStore, jobStore } from './patch-model.js';
+import { canvasStore, patchStore, jobStore, createPatch, patchIdFromVoiceData } from './patch-model.js';
 import { createTagEditor } from './tag-editor.js';
 import { createPatchRow, getDraggedPatch, clearDraggedPatch } from './patch-row.js';
 import { decodeWavSamples, drawMiniWaveform } from './patch.js';
@@ -20,6 +20,17 @@ export function activateContainer(el) {
     // Add .active to this container's header
     const header = el.querySelector ? el.querySelector('.sky-container-header') : null;
     if (header) header.classList.add('active');
+}
+
+// Clone a patch with a new unique ID so drag-out creates an independent copy
+function clonePatchForDragOut(patch) {
+    const clone = createPatch({
+        ...patch,
+        id: patchIdFromVoiceData(patch.voice_data + '_' + Date.now()),
+        created: Date.now(),
+    });
+    patchStore.put(clone);
+    return clone;
 }
 
 // --- Init ---
@@ -64,21 +75,18 @@ export function initCanvas(opts) {
         const left = e.clientX - rect.left + (skyEl.scrollLeft || 0);
         const top = e.clientY - rect.top + (skyEl.scrollTop || 0);
 
-        // Store patch in patchStore if not already there
-        const stored = patchStore.get(patch.id);
-        if (!stored) patchStore.put(patch);
-
-        // Remove from source container if it was in one
-        const existing = canvasStore.getCanvasPatch(patch.id);
-        if (existing && existing.containerId) {
-            const srcCtr = canvasStore.getContainer(existing.containerId);
-            if (srcCtr) {
-                srcCtr.patchIds = (srcCtr.patchIds || []).filter(id => id !== patch.id);
-                canvasStore.putContainer(srcCtr);
+        // Remove original from source container
+        for (const ctr of Object.values(canvasStore.getContainers())) {
+            if (ctr.patchIds && ctr.patchIds.includes(patch.id)) {
+                ctr.patchIds = ctr.patchIds.filter(id => id !== patch.id);
+                canvasStore.putContainer(ctr);
+                break;
             }
         }
 
-        addPatchToCanvas(patch.id, left, top, null);
+        // Deep clone with new unique ID
+        const clone = clonePatchForDragOut(patch);
+        addPatchToCanvas(clone.id, left, top, null);
         clearDraggedPatch();
         window._draggedPatch = null;
     });
@@ -98,30 +106,31 @@ export function initCanvas(opts) {
         const patch = window._touchDropPatch;
         const containerId = window._touchDropContainerId;
         if (patch) {
-            const existing = canvasStore.getCanvasPatch(patch.id);
             if (containerId) {
-                // Cross-container drop
-                if (existing && existing.containerId) {
-                    const srcCtr = canvasStore.getContainer(existing.containerId);
-                    if (srcCtr) {
-                        srcCtr.patchIds = (srcCtr.patchIds || []).filter(id => id !== patch.id);
-                        canvasStore.putContainer(srcCtr);
+                // Cross-container drop — remove from old container, add to new
+                for (const ctr of Object.values(canvasStore.getContainers())) {
+                    if (ctr.patchIds && ctr.patchIds.includes(patch.id)) {
+                        ctr.patchIds = ctr.patchIds.filter(id => id !== patch.id);
+                        canvasStore.putContainer(ctr);
+                        break;
                     }
                 }
                 addPatchToContainer(patch.id, containerId);
             } else if (window._touchDropX != null) {
-                // Free-floating on canvas — remove from old container if any
-                if (existing && existing.containerId) {
-                    const srcCtr = canvasStore.getContainer(existing.containerId);
-                    if (srcCtr) {
-                        srcCtr.patchIds = (srcCtr.patchIds || []).filter(id => id !== patch.id);
-                        canvasStore.putContainer(srcCtr);
+                // Free-floating on canvas — remove from old container
+                for (const ctr of Object.values(canvasStore.getContainers())) {
+                    if (ctr.patchIds && ctr.patchIds.includes(patch.id)) {
+                        ctr.patchIds = ctr.patchIds.filter(id => id !== patch.id);
+                        canvasStore.putContainer(ctr);
+                        break;
                     }
                 }
+                // Deep clone with new unique ID
+                const clone = clonePatchForDragOut(patch);
                 const rect = skyEl.getBoundingClientRect();
                 const left = window._touchDropX - rect.left + (skyEl.scrollLeft || 0);
                 const top = window._touchDropY - rect.top + (skyEl.scrollTop || 0);
-                addPatchToCanvas(patch.id, left, top, null);
+                addPatchToCanvas(clone.id, left, top, null);
             }
         }
         renderAll();
