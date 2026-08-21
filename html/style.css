@@ -2488,7 +2488,7 @@ h1 {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 0.75rem;
-    height: 240px;
+    height: 250px;
 }
 
 .dx7-algo-panel {
@@ -2694,6 +2694,10 @@ h1 {
     display: flex;
     flex-direction: column;
     gap: 0.15rem;
+}
+
+.dx7-param-group:not(:last-child) {
+    margin-bottom: 2px;
 }
 
 .dx7-group-label {

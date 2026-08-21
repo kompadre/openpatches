@@ -402,21 +402,18 @@ function renderParamsMode(slotArea, sliderRow, paramsArea, goBtn, statusEl) {
     pitchGroup.appendChild(makeSlider('L4', g.pitchL4, 0, 99, (v) => { g.pitchL4 = v; }));
     algoPanel.appendChild(pitchGroup);
 
-    // Transpose (left column, under pitch envelope)
-    const trGroup = document.createElement('div');
-    trGroup.className = 'dx7-param-group';
-    trGroup.appendChild(makeGroupLabel('Transpose'));
-    trGroup.appendChild(makeSlider('Semitones', g.transpose, 0, 48, (v) => { g.transpose = v; }, () => {
-        const diff = g.transpose - 24;
-        return diff === 0 ? 'C4' : (diff > 0 ? '+' + diff : String(diff));
-    }));
-    algoPanel.appendChild(trGroup);
-
     topRow.appendChild(algoPanel);
 
     // Global parameters (right)
     const globalPanel = document.createElement('div');
     globalPanel.className = 'dx7-global-panel';
+
+    // Preview Note
+    const mnGroup = document.createElement('div');
+    mnGroup.className = 'dx7-param-group';
+    mnGroup.appendChild(makeGroupLabel('Preview Note'));
+    mnGroup.appendChild(makeSlider('Note', editSlot.midi_note || 60, 36, 84, (v) => { editSlot.midi_note = v; }, () => midiToNoteName(editSlot.midi_note || 60)));
+    globalPanel.appendChild(mnGroup);
 
     // Algorithm + Feedback
     const algoGroup = document.createElement('div');
@@ -555,6 +552,11 @@ function renderParamsMode(slotArea, sliderRow, paramsArea, goBtn, statusEl) {
     goBtn.disabled = false;
     goBtn.textContent = 'Save';
     statusEl.textContent = `Editing ${editSlot.name} — tweak sliders, then save`;
+}
+
+const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+function midiToNoteName(midi) {
+    return NOTE_NAMES[midi % 12] + (Math.floor(midi / 12) - 1);
 }
 
 function makeGroupLabel(text) {
@@ -703,7 +705,7 @@ async function runMorphEdit() {
         const resp = await fetch(baseUrlRef + '/api/morph', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ source_data: srcData, target_data: tgtData, note: 60, ratio })
+            body: JSON.stringify({ source_data: srcData, target_data: tgtData, note: editSlot.midi_note || 60, ratio })
         });
         if (!resp.ok) throw new Error('Morph failed: ' + resp.status);
         const data = await resp.json();
@@ -766,7 +768,8 @@ async function previewParamsEdit() {
         if (!voiceData) { statusEl.textContent = 'Error: no voice data'; previewPlaying = false; if (playBtn) playBtn.classList.remove('playing'); return; }
 
         try {
-            if (await playVoiceDataLocally(voiceData, 60)) {
+            const note = editSlot.midi_note || 60;
+            if (await playVoiceDataLocally(voiceData, note)) {
                 setTimeout(() => { previewPlaying = false; if (playBtn) playBtn.classList.remove('playing'); }, 3000);
                 return;
             }
@@ -775,7 +778,7 @@ async function previewParamsEdit() {
         const resp = await fetch(baseUrlRef + '/api/play', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ voice_data: voiceData, note: 60 })
+            body: JSON.stringify({ voice_data: voiceData, note: editSlot.midi_note || 60 })
         });
         if (!resp.ok) throw new Error('Preview failed: ' + resp.status);
         const d = await resp.json();
@@ -890,7 +893,8 @@ async function runRandomMutate() {
         };
 
         try {
-            if (await playVoiceDataLocally(mutatedB64, 60)) {
+            const note = editSlot.midi_note || 60;
+            if (await playVoiceDataLocally(mutatedB64, note)) {
                 const goBtn = document.getElementById('edit-go');
                 goBtn.textContent = 'Save as new';
                 statusEl.textContent = `Mutation ready — save or mutate again (intensity: ${Math.round(intensity*100)}%)`;
@@ -901,7 +905,7 @@ async function runRandomMutate() {
         const resp = await fetch(baseUrlRef + '/api/play', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ voice_data: mutatedB64, note: 60 })
+            body: JSON.stringify({ voice_data: mutatedB64, note: editSlot.midi_note || 60 })
         });
         if (!resp.ok) throw new Error('Mutation preview failed: ' + resp.status);
         const playData = await resp.json();
@@ -926,7 +930,7 @@ async function saveMutation() {
         if (!currentMutation.wav_url && currentMutation.voice_data) {
             let playedLocally = false;
             try {
-                playedLocally = await playVoiceDataLocally(currentMutation.voice_data, 60);
+                playedLocally = await playVoiceDataLocally(currentMutation.voice_data, editSlot.midi_note || 60);
             } catch (_) {}
 
             if (!playedLocally) {
