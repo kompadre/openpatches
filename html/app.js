@@ -405,7 +405,7 @@ function getCanvasOpts() {
                     pianoDockWrapper._voiceBank._addEntry(patch.name || 'Untitled', patch.voice_data, patch.name);
                 }
             }
-            return playPatch(patch, activeKeyboardNote);
+            return playPatch(patch);
         },
         onSelect: (patch) => {
             if (patch.voice_data) {
