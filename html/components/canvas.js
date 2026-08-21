@@ -12,6 +12,16 @@ let skyEl = null;
 let optsRef = null;
 let docListeners = [];
 
+// --- Container activation ---
+
+function activateContainer(el) {
+    // Remove .active from all container headers
+    skyEl.querySelectorAll('.sky-container-header.active').forEach(h => h.classList.remove('active'));
+    // Add .active to this container's header
+    const header = el.querySelector ? el.querySelector('.sky-container-header') : null;
+    if (header) header.classList.add('active');
+}
+
 // --- Init ---
 
 export function initCanvas(opts) {
@@ -586,7 +596,7 @@ function renderContainer(ctr) {
 
     // Header
     const header = document.createElement('div');
-    header.className = 'sky-container-header' + (ctr.isNew ? ' new' : '');
+    header.className = 'sky-container-header' + (ctr.isNew ? ' active' : '');
 
     const headerLeft = document.createElement('div');
     headerLeft.className = 'sky-container-header-left';
@@ -647,6 +657,7 @@ function renderContainer(ctr) {
     assignBtn.title = 'Assign patches to pianoroll';
     assignBtn.addEventListener('click', (e) => {
         e.stopPropagation();
+        activateContainer(el);
         if (optsRef && optsRef.onAssignToPianoroll) {
             const patches = (ctr.patchIds || [])
                 .slice(0, 8)
@@ -664,6 +675,7 @@ function renderContainer(ctr) {
     sortBtn.title = 'Sort patches by algorithm';
     sortBtn.addEventListener('click', (e) => {
         e.stopPropagation();
+        activateContainer(el);
         if (optsRef && optsRef.onSortContainer) {
             optsRef.onSortContainer(ctr);
         }
@@ -677,6 +689,7 @@ function renderContainer(ctr) {
     exportBtn.title = 'Export as .SYX';
     exportBtn.addEventListener('click', (e) => {
         e.stopPropagation();
+        activateContainer(el);
         if (optsRef && optsRef.onExportContainer) {
             const patches = (ctr.patchIds || [])
                 .map(id => patchStore.get(id))
@@ -699,6 +712,7 @@ function renderContainer(ctr) {
     removeBtn.title = 'Remove container';
     removeBtn.addEventListener('click', (e) => {
         e.stopPropagation();
+        activateContainer(el);
         removeContainer(ctr.id);
     });
     headerRight.appendChild(removeBtn);
@@ -711,6 +725,7 @@ function renderContainer(ctr) {
     moreBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         e.preventDefault();
+        activateContainer(el);
         moreMenu.style.display = moreMenu.style.display === 'none' ? 'flex' : 'none';
     });
     moreBtn.addEventListener('touchend', (e) => {
@@ -894,6 +909,7 @@ function renderContainer(ctr) {
         resizeStartW = el.offsetWidth;
         resizeStartH = el.offsetHeight;
         el.style.zIndex = 60;
+        activateContainer(el);
     }
 
     function handleResizeMove(e) {
@@ -934,6 +950,7 @@ function renderContainer(ctr) {
     collapseBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         toggleCollapse();
+        activateContainer(el);
     });
 
     // Double-tap header to toggle collapse
@@ -947,6 +964,7 @@ function renderContainer(ctr) {
             lastHeaderTap = 0;
         } else {
             lastHeaderTap = now;
+            activateContainer(el);
         }
     }
     header.addEventListener('click', handleHeaderTap);
@@ -970,6 +988,7 @@ function renderContainer(ctr) {
         origLeft = ctr.left;
         origTop = ctr.top;
         el.style.zIndex = 50;
+        activateContainer(el);
     }
 
     function handleDragMove(e) {
@@ -1030,6 +1049,7 @@ function renderContainer(ctr) {
         addPatchToContainer(patch.id, ctr.id);
         clearDraggedPatch();
         window._draggedPatch = null;
+        activateContainer(el);
     });
 
     skyEl.appendChild(el);

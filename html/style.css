@@ -731,7 +731,7 @@ h1 {
     width: 100%;
 }
 
-.sky-container-header.new {
+.sky-container-header.active {
     background: #2a3a5e;
     color: #d0d8e8;
 }
