@@ -658,11 +658,17 @@ function ratioLabel(r) {
 }
 
 function morphName(nameA, nameB) {
-    let a = '?';
-    for (const ch of nameA) { if (/[A-Za-z0-9]/.test(ch)) { a = ch.toUpperCase(); break; } }
-    let b = '?';
-    for (const ch of nameB) { if (/[A-Za-z0-9]/.test(ch)) { b = ch.toUpperCase(); break; } }
-    return a + '_' + b;
+    const extractUpTo5 = (name) => {
+        const letters = [];
+        for (const ch of name) {
+            if (/[A-Za-z0-9]/.test(ch)) {
+                letters.push(ch);
+                if (letters.length >= 5) break;
+            }
+        }
+        return letters.length > 0 ? letters.join('') : '?';
+    };
+    return extractUpTo5(nameA) + '_' + extractUpTo5(nameB);
 }
 
 // --- Actions ---

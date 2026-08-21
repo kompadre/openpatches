@@ -731,6 +731,11 @@ h1 {
     width: 100%;
 }
 
+.sky-container-header.new {
+    background: #2a3a5e;
+    color: #d0d8e8;
+}
+
 .sky-container-header-left {
     display: flex;
     align-items: center;

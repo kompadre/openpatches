@@ -550,8 +550,11 @@ function initToolbar() {
             showProgress,
             hideProgress,
             onPatchCreated: (patch) => {
-                addContainer(patch.name, { patchIds: [patch.id] });
+                addContainer(patch.name, { patchIds: [patch.id], isNew: true });
                 initCanvas(getCanvasOpts());
+                // Minimize piano-dock to show the night-sky
+                const pd = document.getElementById('piano-dock');
+                if (pd) pd.classList.add('collapsed');
             },
         },
     });

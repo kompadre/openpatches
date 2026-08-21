@@ -160,15 +160,31 @@ export function removePatchFromCanvas(patchId) {
 // --- Container ---
 
 export function addContainer(name, opts = {}) {
+    let left = opts.left;
+    let top = opts.top;
+    // Center new containers on the night-sky if no position specified
+    if (left === undefined || top === undefined) {
+        const sky = document.getElementById('night-sky');
+        if (sky) {
+            const skyRect = sky.getBoundingClientRect();
+            const ctrWidth = opts.width || 260;
+            left = Math.max(10, (skyRect.width - ctrWidth) / 2);
+            top = Math.max(10, skyRect.height / 2 - 60);
+        } else {
+            left = left || 50 + Math.random() * 100;
+            top = top || 50 + Math.random() * 100;
+        }
+    }
     const ctr = {
         id: opts.id || ('ctr_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5)),
         name: name || 'Container',
-        left: opts.left || 50 + Math.random() * 100,
-        top: opts.top || 50 + Math.random() * 100,
+        left: left,
+        top: top,
         width: opts.width || 260,
         jobId: opts.jobId || null,
         patchIds: opts.patchIds || [],
         tags: opts.tags || [],
+        isNew: opts.isNew || false,
     };
     canvasStore.putContainer(ctr);
     renderAll();
@@ -570,7 +586,7 @@ function renderContainer(ctr) {
 
     // Header
     const header = document.createElement('div');
-    header.className = 'sky-container-header';
+    header.className = 'sky-container-header' + (ctr.isNew ? ' new' : '');
 
     const headerLeft = document.createElement('div');
     headerLeft.className = 'sky-container-header-left';
