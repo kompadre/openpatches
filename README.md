@@ -1,5 +1,7 @@
 # OpenPatches — Sound Archeology & FM Curation
 
+![Screenshot](screenshot.png)
+
 OpenPatches is a next-generation platform for **Sound Archeology** and **FM Curation**, built around the legendary Yamaha DX7 synthesis engine.
 
 Treat the DX7 not just as a static instrument, but as a living, searchable database of timbres. OpenPatches allows you to reverse-engineer audio, curate bespoke patch banks, and compose with iconic FM sounds entirely in your browser. expansion to more synths and drum machines is in the works!
