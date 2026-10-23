@@ -133,20 +133,6 @@ export function sendVoiceSnapshot(entries) {
 }
 
 /**
- * Load a patch into the preview slot (slot 15, channel 15).
- * Must be called before playNoteOnChannel(15, ...) for correct timbre.
- */
-export function loadPreviewPatch(voiceData) {
-    if (!isReady() || !dx7Node) return;
-    const patch = normalizeVoiceData(voiceData);
-    if (!patch) return;
-    dx7Node.port.postMessage({
-        type: 'voice-snapshot',
-        voices: [{ slot: PREVIEW_SLOT, channel: PREVIEW_CHANNEL, data: patch.buffer }],
-    });
-}
-
-/**
  * Send rendered samples to the live AudioWorklet for playback.
  * Samples are mixed with synth output (pianoroll notes keep playing).
  * Calling again overwrites any active preview (new preview replaces old).
@@ -217,15 +203,17 @@ export function emergencyStop() {
 }
 
 /**
- * Legacy: play note with voiceData (loads patch on channel 0).
+ * Preview a patch with its own voiceData, on the dedicated preview slot/channel.
+ * Never touches slots 0-7 — the VoiceBank's patches stay loaded.
  */
 export function playNoteRealtime(voiceData, midi, velocity = 100) {
     if (!isReady() || !dx7Node) return null;
-    const patch = typeof voiceData === 'string' ? base64ToUint8Array(voiceData) : voiceData;
-    dx7Node.port.postMessage({ type: 'patch', slot: 0, data: patch.buffer });
-    dx7Node.port.postMessage({ type: 'midi', data: [0x90, midi, velocity] });
+    const patch = normalizeVoiceData(voiceData);
+    if (!patch) return null;
+    dx7Node.port.postMessage({ type: 'patch', slot: PREVIEW_SLOT, data: patch.buffer });
+    dx7Node.port.postMessage({ type: 'midi', data: [0x90 | PREVIEW_CHANNEL, midi, velocity] });
     return () => {
-        if (dx7Node) dx7Node.port.postMessage({ type: 'midi', data: [0x80, midi, 0] });
+        if (dx7Node) dx7Node.port.postMessage({ type: 'midi', data: [0x80 | PREVIEW_CHANNEL, midi, 0] });
     };
 }
 

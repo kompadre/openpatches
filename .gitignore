@@ -17,3 +17,5 @@ node_modules/
 
 # Deploy staging
 deploy/app/
+
+.tmp/

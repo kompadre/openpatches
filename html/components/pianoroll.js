@@ -1053,7 +1053,6 @@ export function createPianoroll(opts) {
 
     // --- Tick Worker Handler ---
     let recordingTickHandler = null;
-    const gw = gridWidth();
 
     function handlePlaybackTick(rawCol) {
         const tc = totalCols();
@@ -1081,6 +1080,8 @@ export function createPianoroll(opts) {
         playCol = wrappedCol;
         draw();
 
+        // Recompute each tick — measures can change after construction (loadState, +/- Msr)
+        const gw = gridWidth();
         const scrollX = LABEL_W + playCol * COL_W;
         scroll.scrollLeft = scrollX;
         if (scroll.scrollLeft >= LABEL_W + gw) {

@@ -8,6 +8,12 @@ import { decodeWavSamples, drawMiniWaveform } from './patch.js';
 const PROBE_FIELDS = ['attack_ms', 'decay_ms', 'sustain_level', 'release_ms', 'gate_ms', 'brightness', 'harmonicity'];
 const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
 
+// HTTP statuses worth retrying — proxy restarts, rate limits, gateway hiccups.
+// Everything else (404, 400, ...) means the job is genuinely gone.
+export function isTransientStatus(status) {
+    return status === 408 || status === 429 || status >= 500;
+}
+
 export class Job {
     constructor(data) {
         this.id = data.id;
@@ -197,14 +203,28 @@ export class Job {
 
         if (!this.statusUrl) return;
 
+        let response;
         try {
-            const response = await fetch(baseUrl + this.statusUrl);
-            if (!response.ok) {
-                appendLog(`[${this.fileName}] Server error: ${response.status}`);
-                hideProgress();
-                this.fail(opts);
-                return;
+            response = await fetch(baseUrl + this.statusUrl);
+        } catch (err) {
+            // Network blip — transient. Let jobManager count it and retry.
+            appendLog(`[${this.fileName}] Connection error: ${err.message} (will retry)`);
+            throw err;
+        }
+
+        if (!response.ok) {
+            if (isTransientStatus(response.status)) {
+                // Server hiccup — transient. Let jobManager count it and retry.
+                appendLog(`[${this.fileName}] Server error ${response.status} (will retry)`);
+                throw new Error(`Server returned ${response.status}`);
             }
+            appendLog(`[${this.fileName}] Server error: ${response.status}`);
+            hideProgress();
+            this.fail(opts);
+            return;
+        }
+
+        try {
             const text = await response.text();
             let data;
             try { data = JSON.parse(text); } catch {
@@ -524,25 +544,29 @@ export const jobManager = {
     start(job, interval = 3000) {
         if (this._active.has(job.id)) return;
         const entry = { failures: 0 };
-        entry.intervalId = setInterval(async () => {
+
+        const poll = async () => {
             try {
                 await job.checkStatus(jobManager._opts);
                 entry.failures = 0; // reset on success
             } catch (e) {
                 entry.failures++;
-                if (entry.failures >= this._maxFailures) {
+                if (entry.failures >= jobManager._maxFailures) {
                     console.warn(`[jobManager] ${job.id}: ${entry.failures} consecutive failures, stopping poll`);
                     if (jobManager._opts && jobManager._opts.appendLog) {
                         jobManager._opts.appendLog(`[${job.fileName}] Polling stopped: ${entry.failures} connection failures`);
                     }
                     job.fail(jobManager._opts);
-                    this.stop(job.id);
+                    jobManager.stop(job.id);
                 }
             }
-        }, interval);
+        };
+
+        entry.intervalId = setInterval(poll, interval);
         this._active.set(job.id, entry);
-        // Immediate first check
-        job.checkStatus(jobManager._opts).catch(() => {});
+        entry.poll = poll;
+        // Immediate first check — counts toward the same failure budget
+        poll();
     },
 
     stop(jobId) {

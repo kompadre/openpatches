@@ -1,9 +1,19 @@
 # AGENTS.md
 
+## Rule 0 — Do not modify this file
+- **NEVER edit AGENTS.md** unless the user explicitly asks for an AGENTS.md change *and* supplies the literal text to add or change. Do not paraphrase, reorder, "tidy up", or append rules you inferred on your own.
+- Everything you learn, decide, or want to record goes in `SESSION.md`, not here. AGENTS.md is the stable contract; SESSION.md is the living state.
+
+## Project State → SESSION.md
+- `SESSION.md` holds the project state: current tasks, goals, open questions, and the architecture map. **Read it at the start of a session** before touching code.
+- **Keep it current.** When you finish a task, change the architecture, or discover a gotcha the next agent needs, update `SESSION.md` in the same change — tasks and goals under "Current Tasks & Goals", structural facts under "Architecture".
+- Prune as you go: SESSION.md is a working set, not a changelog. Git history is the changelog.
+
 ## Rules
 - Read enough context before editing. Don't creep offsets line-by-line.
 - If Edit fails twice, stop and explain the issue.
 - Verify JS changes with `node --check html/app.js`, `node --check html/components/*.js`, `node --check html/synth/*.js`.
+- Run the regression tests with `node --test test/`. They use `test/harness.js`, a dependency-free browser stub — extend it rather than adding a DOM library.
 - WASM build: `make -f Makefile.msfa` in `html/synth/wasm/` (uses `zig c++ -target wasm32-wasi`). Do NOT use emscripten.
 - Never export `malloc`/`free` from WASM. Use static pre-allocated buffers (`get_patch_buffer()`, `load_voice_from_buffer()`).
 - AudioManager is a singleton — `initAudio()` runs once. Never re-call `addModule()` after initial setup.
@@ -30,45 +40,7 @@ python3 server.py                    # Serves on port 8000
 
 # WASM synth build
 make -f Makefile.msfa                # Build msfa.wasm (in html/synth/wasm/)
+
+# Regression tests (no dependencies — uses node:test + test/harness.js)
+node --test test/
 ```
-
-## Architecture
-
-OpenPatches is a browser-based DX7 patch editor and sequencer. It communicates with the fmguessr inference server via REST API (see API.md).
-
-**Frontend (Vanilla JS, no framework):**
-- `html/app.js`: main orchestrator. Wires file input, menu bar, canvas, toolbar. Creates tick worker, `stopTickWorker` helper. PlayNote/playPatch with multi-channel support. Emergency stop with voice reload.
-- `html/components/canvas.js`: Canvas — patches + PatchContainers on night-sky. Drag-to-reposition, snap-into-container, resize containers. State derived from linked Job. Uses `onDoc()` helper for document-level listeners with cleanup via `clearDocListeners()` on each `renderAll()` to prevent stale closures. All interactive elements in `#night-sky`.
-- `html/components/toolbar.js`: Unified Piano Roll + Keyboard panel with tabs: Canvas | Piano Roll | Edit | Log | Mute. Keyboard integrated into Piano Roll panel (recording controls + octave selector + piano keys below pianoroll grid). VoiceBank select dropdown. Undo button for recording. Mobile octave selector (0–7). Uses tick worker for precise playback/recording timing.
-- `html/components/edit-panel.js`: Morph / Params / Random editing.
-- `html/components/job.js`: Job class — steering object for WAV import lifecycle. Owns: probe → match → poll → complete/fail.
-- `html/components/patch-model.js`: Unified data model + stores (localStorage). `patchStore`, `canvasStore`, `jobStore`.
-- `html/components/patch-row.js`: Unified patch row rendering with star drag handle, mini spectrogram, assign/edit/remove buttons. Touch drag between containers with floating clone.
-- `html/components/patch.js`: Waveform helpers only — `decodeWavSamples`, `drawMiniWaveform`, `wavSampleCache`.
-- `html/components/voicebank.js`: Voice palette (8 slots). Persists to localStorage. Each entry has static channel assignment (0-7). Compact mode on mobile: vertical bars, tap to select, vertical drag for volume. Exposes `_render()` for re-rendering after class changes.
-- `html/components/pianoroll.js`: Sequencer with looping. Notes store per-note `voiceData` and `channel`. Touch support: `TOUCH_RESIZE_MARGIN = 20`, visual resize handles, double-tap to delete. Long-press (1s) to create note when stopped, drag to scroll. Looping: double-wide canvas, content drawn twice for seamless loop. `handlePlaybackTick(col)` driven by tick worker. `setRecordingTickHandler` for recording delegation.
-- `html/components/tag-editor.js`: Tag editor component with autocomplete.
-- `html/components/tutorial.js`: First-run tutorial modal with overlay highlights. Skips clip-path on mobile.
-- `html/synth/audio-manager.js`: Singleton AudioContext + AudioWorklet. `acquire()` creates once, `initAudio()` loads modules once. Multi-channel: `sendVoiceSnapshot()`, `playNoteOnChannel()`. `emergencyStop()` reinitializes MSFA engine. No malloc/free — uses static WASM buffers. `playNoteOnChannel` guards against stale note-off via self-reference check.
-- `html/synth/tick-worker.js`: Web Worker heartbeat for pianoroll. Atomics.wait path (SharedArrayBuffer) for zero-CPU sleeping, setTimeout fallback. Absolute targeting (`t0 + col * msPer`), spin for sub-ms precision. Stop via `Atomics.store` + `Atomics.notify` (shared memory flag). Worker stays alive for reuse.
-- `html/synth/dx7-synth.js`: Batch waveform rendering only (main thread WASM). No realtime synth code.
-- `html/synth/dx7-processor.js`: AudioWorkletProcessor wrapping MSFA DX7 engine. Ring buffer (~300ms lookahead) for audio stability. Handles `voice-snapshot`, `midi`, `patch`, `play-samples`, `channel-volume`, `reinit` messages. MIDI logging via `logMidi` no-op (override to enable).
-- WASM: `html/synth/wasm/msfa.wasm` (zig c++ build). Binary fetched on main thread, passed to AudioWorklet via `processorOptions`. Static buffers: `get_patch_buffer()`, `load_voice_from_buffer()`. Voice stealing with 64-sample fade-out.
-
-**Layout (CSS Grid):**
-- `#page-content`: CSS grid, `grid-template-rows: 1fr 1fr`, `height: calc(100vh - header - footer)`. Top half: night-sky, bottom half: piano dock.
-- `#night-sky`: CSS grid (`grid-template: 1fr / 1fr`), `overflow: auto`. Background, border, and border-radius applied directly. `pointer-events` managed on children.
-- `#piano-dock`: `overflow: auto`. Tab bar + active panel.
-- Mobile (≤600px): `#page-content` is `display: block`. `#piano-dock` is `position: fixed`, full-screen below header. 5 tabs: Canvas | Piano Roll | Edit | Log | Mute. Hamburger menu.
-
-**MSFA DX7 synth architecture (multitimbral):**
-- 16 MIDI channels, 32 patch slots, 16 polyphonic voices, 16 LFOs.
-- Fixed channel→slot mapping: channel N always reads from slot N. Set at init via `ProgramChange(ch, ch)`.
-- `SetVoice(slot, data)` → `memcpy` into `patch_data_[slot*128]` + `UnpackPatch` into `unpacked_patch_[slot]` + LFO reset. Channel uses new patch immediately on next note-on.
-- Default patch: silent INIT (all output levels 0). All 32 slots initialized with it.
-- Note-on reads `unpacked_patch_[cmd_ch]` where `cmd_ch = MIDI_status & 0x0f`.
-- VoiceBank → synth via `sendVoiceSnapshot(entries)`: worklet receives `voice-snapshot` message, loops `loadPatch(data, slot)` per entry. No ProgramChange needed.
-- Preview: offline render on main thread (`offlineWasm`) + sample injection into worklet (`play-samples` message). Uses slot 0 / channel 0.
-- Pianoroll playback: `playNoteOnChannel(channel, midi)` via worklet `send_midi(0x90 | ch, ...)`. Channel = VoiceBank array index.
-
-**Deploy:** Docker via `deploy/Dockerfile` + `deploy/docker-compose.yml`. Caddy reverse proxy for static files + API proxy to fmguessr server. COOP + COEP headers enabled for SharedArrayBuffer support.
