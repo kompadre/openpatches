@@ -263,8 +263,8 @@ export async function renderOffline(voiceData, midi, durationMs) {
         throw new Error('Offline WASM init failed');
     }
 
-    // Reset engine state for clean render
-    offlineWasm.init_engine(sr);
+    // Fresh engine for a clean render (lookup tables were built once in ensureOfflineWasm)
+    offlineWasm.reset_engine();
 
     // Load patch into static buffer
     const patch = typeof voiceData === 'string' ? base64ToUint8Array(voiceData) : voiceData;

@@ -35,6 +35,7 @@ class SynthUnit {
   static void Init(double sample_rate);
 
   explicit SynthUnit(RingBuffer *ring_buffer);
+  ~SynthUnit();
 
   void GetSamples(int n_samples, int16_t *buffer);
   // Read per-channel pre-filter audio (int32, captured via save/diff in render loop).

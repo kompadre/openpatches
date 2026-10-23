@@ -4,21 +4,27 @@
 // Fallback path: setTimeout-based with spin for sub-ms precision.
 //
 // Messages IN:
-//   { type: 'init', sab: SharedArrayBuffer }   — enable Atomics path
-//   { type: 'start', bpm, startCol? }           — start ticking
-//   { type: 'stop' }                             — stop (fallback path only)
+//   { type: 'init', sab: SharedArrayBuffer }        — enable Atomics path
+//   { type: 'start', bpm, startCol?, gen? }          — start ticking (gen: Atomics path only)
+//   { type: 'stop' }                                  — stop (fallback path only)
 //
 // Messages OUT:
 //   { type: 'tick', col }
 //   { type: 'stopped' }
+//
+// Both paths are driven by a *generation counter*: every start or stop on the
+// main thread bumps it, and a loop only runs while the counter still equals the
+// generation it was started with. This makes a stale `start` (one that was
+// queued while the worker was busy looping) a no-op, and means a `stop` issued
+// at any moment reliably ends whatever loop is running — with no flag to reset.
 
 // SharedArrayBuffer layout: Int32Array[2]
-//   [0] = control flag (0 = running, 1 = stop)
+//   [0] = generation counter (main thread bumps on every start/stop)
 //   [1] = reserved
 
 let i32 = null;       // Int32Array view of SharedArrayBuffer
 let useAtomics = false;
-let running = false;  // for setTimeout fallback
+let gen = 0;          // generation for setTimeout fallback (worker-local)
 
 self.onmessage = function (e) {
     var msg = e.data;
@@ -33,22 +39,26 @@ self.onmessage = function (e) {
         var bpm = msg.bpm || 120;
         var startCol = msg.startCol || 0;
         if (useAtomics) {
-            startAtomics(bpm, startCol);
+            startAtomics(bpm, startCol, msg.gen);
         } else {
             startTimeout(bpm, startCol);
         }
     }
 
     if (msg.type === 'stop') {
-        // Only used by setTimeout fallback
-        running = false;
+        // Only used by setTimeout fallback (Atomics path stops via the counter)
+        gen++;
     }
 };
 
 // --- Atomics path ---
 
-function startAtomics(bpm, startCol) {
-    Atomics.store(i32, 0, 0); // clear stop flag
+function startAtomics(bpm, startCol, myGen) {
+    var current = Atomics.load(i32, 0);
+    if (myGen == null) myGen = current;
+    // Stale start: a newer start/stop was issued while we were still looping.
+    if (myGen !== current) return;
+
     var msPerSixteenth = 60000 / bpm / 4;
     var t0 = performance.now();
     var col = startCol;
@@ -58,27 +68,27 @@ function startAtomics(bpm, startCol) {
     col++;
 
     while (true) {
-        // Check stop flag
-        if (Atomics.load(i32, 0) === 1) break;
+        // Any bump of the generation counter means "this loop is over"
+        if (Atomics.load(i32, 0) !== myGen) break;
 
         // Calculate absolute target time
         var target = t0 + (col - startCol) * msPerSixteenth;
         var now = performance.now();
         var remaining = target - now;
 
-        // Sleep until ~1ms before target
+        // Sleep until ~1ms before target. Returns at once if the counter already moved.
         if (remaining > 2) {
-            Atomics.wait(i32, 0, 0, remaining - 1);
+            Atomics.wait(i32, 0, myGen, remaining - 1);
         }
 
-        // Check flag after wake (notify or timeout)
-        if (Atomics.load(i32, 0) === 1) break;
+        // Check after wake (notify or timeout)
+        if (Atomics.load(i32, 0) !== myGen) break;
 
         // Spin for sub-ms precision
         while (performance.now() < target) { /* spin */ }
 
-        // Final flag check before emitting
-        if (Atomics.load(i32, 0) === 1) break;
+        // Final check before emitting
+        if (Atomics.load(i32, 0) !== myGen) break;
 
         self.postMessage({ type: 'tick', col: col });
         col++;
@@ -90,7 +100,7 @@ function startAtomics(bpm, startCol) {
 // --- setTimeout fallback ---
 
 function startTimeout(bpm, startCol) {
-    running = true;
+    var myGen = ++gen;  // invalidates any chain still running
     var msPerSixteenth = 60000 / bpm / 4;
     var t0 = performance.now();
     var col = startCol;
@@ -99,8 +109,19 @@ function startTimeout(bpm, startCol) {
     self.postMessage({ type: 'tick', col: col });
     col++;
 
+    // Post one tick and schedule the next — or finish if a newer start/stop arrived.
+    function step() {
+        if (gen !== myGen) {
+            self.postMessage({ type: 'stopped' });
+            return;
+        }
+        self.postMessage({ type: 'tick', col: col });
+        col++;
+        tick();
+    }
+
     function tick() {
-        if (!running) {
+        if (gen !== myGen) {
             self.postMessage({ type: 'stopped' });
             return;
         }
@@ -111,23 +132,18 @@ function startTimeout(bpm, startCol) {
 
         if (remaining > 4) {
             setTimeout(function () {
+                if (gen !== myGen) { self.postMessage({ type: 'stopped' }); return; }
                 // Spin for sub-ms precision
                 while (performance.now() < target) { }
-                self.postMessage({ type: 'tick', col: col });
-                col++;
-                tick();
+                step();
             }, remaining - 2);
         } else if (remaining > 0) {
             // Too short to sleep — spin
             while (performance.now() < target) { }
-            self.postMessage({ type: 'tick', col: col });
-            col++;
-            tick();
+            step();
         } else {
             // Overslept — emit immediately
-            self.postMessage({ type: 'tick', col: col });
-            col++;
-            tick();
+            step();
         }
     }
 

@@ -230,6 +230,7 @@ export function createToolbar(opts) {
         onNotesChange: updateHighlights,
         activeSlot: null,
         tickWorker: opts.tickWorker,
+        startWorker: opts.startWorker,
         stopWorker: opts.stopWorker,
         getSlotData: (slot) => {
             const entries = voiceBank._getEntries ? voiceBank._getEntries() : [];
@@ -323,6 +324,11 @@ export function createToolbar(opts) {
         if (recording) {
             stopAll();
         } else {
+            // Recording replaces any running playback — stop it first so the
+            // worker isn't asked to start while it is already looping.
+            if (pianorollRef && pianorollRef.isPlaying && pianorollRef.isPlaying()) {
+                pianorollRef.stopPlayback();
+            }
             recording = true;
             recordStartTime = Date.now();
             btnRecord.classList.add('active');
@@ -359,7 +365,11 @@ export function createToolbar(opts) {
 
             // Start the tick worker
             const bpm = pianorollRef && pianorollRef.getBpm ? pianorollRef.getBpm() : 120;
-            if (opts.tickWorker) opts.tickWorker.postMessage({ type: 'start', bpm: bpm });
+            if (opts.startWorker) {
+                opts.startWorker(opts.tickWorker, bpm, 0);
+            } else if (opts.tickWorker) {
+                opts.tickWorker.postMessage({ type: 'start', bpm: bpm, startCol: 0 });
+            }
         }
     });
 

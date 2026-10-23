@@ -89,6 +89,13 @@ SynthUnit::SynthUnit(RingBuffer *ring_buffer) {
   channel_samples_written_ = 0;
 }
 
+SynthUnit::~SynthUnit() {
+  for (int note = 0; note < max_active_notes; ++note) {
+    delete active_note_[note].dx7_note;
+    active_note_[note].dx7_note = nullptr;
+  }
+}
+
 // Transfer as many bytes as possible from ring buffer to input buffer.
 // Note that this implementation has a fair amount of copying - we'd probably
 // do it a bit differently if it were bulk data, but in this case we're

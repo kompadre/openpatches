@@ -25,6 +25,11 @@ RingBuffer::RingBuffer() {
   wr_ix_ = 0;
 }
 
+void RingBuffer::Reset() {
+  rd_ix_ = 0;
+  wr_ix_ = 0;
+}
+
 int RingBuffer::BytesAvailable() {
   return (wr_ix_ - rd_ix_) & (kBufSize - 1);
 }

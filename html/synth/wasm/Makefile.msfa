@@ -34,6 +34,7 @@ $(TARGET): $(SRC)
 		-Wl,--no-entry \
 		-Wl,--export-table \
 		-Wl,--export=init_engine \
+		-Wl,--export=reset_engine \
 		-Wl,--export=get_patch_buffer \
 		-Wl,--export=load_voice_from_buffer \
 		-Wl,--export=load_voice_channel_from_buffer \

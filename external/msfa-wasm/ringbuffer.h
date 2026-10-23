@@ -34,6 +34,9 @@ class RingBuffer {
   // Writes bytes into the buffer. If the buffer is full, the method will
   // block until space is available.
   void Write(const uint8_t *bytes, int size);
+
+  // Discards any unread bytes. Only safe when no reader is running.
+  void Reset();
  private:
   static const unsigned int kBufSize = 65536;
   uint8_t buf_[kBufSize];

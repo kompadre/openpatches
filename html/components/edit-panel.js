@@ -506,7 +506,7 @@ function renderParamsMode(slotArea, sliderRow, paramsArea, goBtn, statusEl) {
         outGroup.className = 'dx7-param-group';
         outGroup.appendChild(makeGroupLabel('Output'));
         outGroup.appendChild(makeSlider('Level', op.outputLevel, 0, 99, (v) => { op.outputLevel = v; }));
-        outGroup.appendChild(makeSlider('Vel Sens', op.velSens, 0, 3, (v) => { op.velSens = v; }));
+        outGroup.appendChild(makeSlider('Vel Sens', op.velSens, 0, 7, (v) => { op.velSens = v; }));
         outGroup.appendChild(makeSlider('AM Sens', op.amSens, 0, 3, (v) => { op.amSens = v; }));
         left.appendChild(outGroup);
 

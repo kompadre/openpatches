@@ -17,13 +17,24 @@ static int16_t g_render_buffer[88200]; // max ~2s at 44100Hz
 
 extern "C" {
 
+// Replace the engine with a fresh one: silences every voice, forgets every
+// loaded patch, and drops any MIDI still queued in the ring buffer. Lookup
+// tables and channel volumes are untouched. Cheap enough to call before every
+// offline render — this is how renders are kept independent of one another.
+void reset_engine() {
+  delete synth;   // SynthUnit owns 16 Dx7Notes and ~13 MB of channel buffers
+  synth = nullptr;
+  rb.Reset();
+  synth = new SynthUnit(&rb);
+}
+
 void init_engine(int sample_rate) {
   Freqlut::init(sample_rate);
   Exp2::init();
   Sin::init();
   Lfo::init(sample_rate);
   PitchEnv::init(sample_rate);
-  synth = new SynthUnit(&rb);
+  reset_engine();
   // Default all channels to volume 100 (out of 127)
   for (int ch = 0; ch < 16; ch++) {
     SynthUnit::SetChannelVolume(ch, 100 * 256 / 127);

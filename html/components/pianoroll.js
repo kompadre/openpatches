@@ -1014,6 +1014,9 @@ export function createPianoroll(opts) {
 
     function startPlayback() {
         if (playing) stopPlayback();
+        // While recording, the worker is already ticking for the recorder;
+        // starting playback on top would route its ticks to the wrong handler.
+        if (recordingTickHandler) return;
         if (notes.length === 0) return;
 
         playing = true;
@@ -1027,9 +1030,10 @@ export function createPianoroll(opts) {
         draw();
         scroll.scrollLeft = LABEL_W;
 
-        const tw = opts.tickWorker;
-        if (tw) {
-            tw.postMessage({ type: 'start', bpm: bpm, startCol: 0 });
+        if (opts.startWorker) {
+            opts.startWorker(opts.tickWorker, bpm, 0);
+        } else if (opts.tickWorker) {
+            opts.tickWorker.postMessage({ type: 'start', bpm: bpm, startCol: 0 });
         }
     }
 

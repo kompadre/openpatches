@@ -19,7 +19,7 @@ export function readOp(bytes, opIndex) {
         lDepth: bytes[base + 9], rDepth: bytes[base + 10],
         lCurve: b11 & 0x03, rCurve: (b11 >> 2) & 0x03,
         rateScaling: b12 & 0x07, detune: (b12 >> 3) & 0x0F,
-        velSens: b13 & 0x03, amSens: (b13 >> 2) & 0x03,
+        amSens: b13 & 0x03, velSens: (b13 >> 2) & 0x07,
         outputLevel: bytes[base + 14],
         oscMode: b15 & 0x01, freqCoarse: (b15 >> 1) & 0x1F,
         freqFine: bytes[base + 16],
@@ -41,7 +41,7 @@ export function writeOp(bytes, opIndex, op) {
     bytes[base + 10] = op.rDepth & 0x7F;
     bytes[base + 11] = (op.lCurve & 0x03) | ((op.rCurve & 0x03) << 2);
     bytes[base + 12] = (op.rateScaling & 0x07) | ((op.detune & 0x0F) << 3);
-    bytes[base + 13] = (op.velSens & 0x03) | ((op.amSens & 0x03) << 2);
+    bytes[base + 13] = (op.amSens & 0x03) | ((op.velSens & 0x07) << 2);
     bytes[base + 14] = op.outputLevel & 0x7F;
     bytes[base + 15] = (op.oscMode & 0x01) | ((op.freqCoarse & 0x1F) << 1);
     bytes[base + 16] = op.freqFine & 0x7F;

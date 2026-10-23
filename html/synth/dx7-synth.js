@@ -32,6 +32,7 @@ async function ensureWasmExports() {
             env: envStub,
         });
         wasmExports = instance.exports;
+        wasmExports.init_engine(44100);  // once — builds lookup tables; per-render resets use reset_engine()
         wasmHeapI16 = new Int16Array(wasmExports.memory.buffer);
 
         // Get static patch buffer address and create view
@@ -90,12 +91,15 @@ export async function batchRenderWaveforms(patches, onResult, midiNote = 60) {
 
     const sr = 44100;
     const nSamples = Math.ceil(sr * 0.8); // 800ms render
-    wasmExports.init_engine(sr);
 
     for (const { voiceData, canvas } of patches) {
         try {
             const patch = typeof voiceData === 'string' ? base64ToUint8Array(voiceData) : voiceData;
             if (patch.length < 128) continue;
+
+            // Fresh engine per patch: the previous note has no note-off and would
+            // otherwise keep ringing into this render (up to 16 voices deep).
+            wasmExports.reset_engine();
 
             // Copy directly into static patch buffer — no malloc/free
             refreshHeapViews();

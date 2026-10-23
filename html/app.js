@@ -34,16 +34,29 @@ try {
     console.warn('[tick-worker] Failed to create worker:', e);
 }
 
+// Both helpers bump the shared generation counter: the worker's loop exits as
+// soon as the counter no longer matches the generation it started with, and a
+// `start` carrying an outdated generation is ignored. See tick-worker.js.
 function stopTickWorker(tw) {
     if (!tw) return;
     if (tickWorkerSab) {
-        const flag = new Int32Array(tickWorkerSab);
-        Atomics.store(flag, 0, 1);
-        Atomics.notify(flag, 0);
-        // Reset flag after a brief delay so worker can detect the stop
-        setTimeout(() => Atomics.store(flag, 0, 0), 50);
+        const ctl = new Int32Array(tickWorkerSab);
+        Atomics.add(ctl, 0, 1);
+        Atomics.notify(ctl, 0);
     } else {
         tw.postMessage({ type: 'stop' });
+    }
+}
+
+function startTickWorker(tw, bpm, startCol = 0) {
+    if (!tw) return;
+    if (tickWorkerSab) {
+        const ctl = new Int32Array(tickWorkerSab);
+        const gen = Atomics.add(ctl, 0, 1) + 1;  // ends any running loop
+        Atomics.notify(ctl, 0);
+        tw.postMessage({ type: 'start', bpm, startCol, gen });
+    } else {
+        tw.postMessage({ type: 'start', bpm, startCol });
     }
 }
 
@@ -519,6 +532,7 @@ function initToolbar() {
         stopNoteFn: stopNoteFn,
         initialTab: isMobile ? 'canvas' : 'pianoroll',
         tickWorker: tickWorker,
+        startWorker: startTickWorker,
         stopWorker: stopTickWorker,
         onNoteClick: (midi) => { activeKeyboardNote = midi; },
         onEmergencyStop: () => {
