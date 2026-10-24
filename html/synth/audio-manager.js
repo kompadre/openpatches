@@ -1,6 +1,10 @@
 // Audio Manager — singleton audio engine.
 // AudioContext + AudioWorklet initialized once, live for page lifetime.
 // No repeated addModule(), no blob URLs, no re-initialization.
+// Offline (non-realtime) rendering lives in dx7-synth.js; re-exported here
+// so callers keep a single synth entry point.
+
+export { renderOffline } from './dx7-synth.js';
 
 const VOICE_BANK_SLOTS = 8;   // Voice bank uses channels 0-7
 const MIDI_CHANNELS = 16;     // DX7 has 16 MIDI channels (0-15)
@@ -112,10 +116,22 @@ function normalizeVoiceData(voiceData) {
     return null;
 }
 
+// Last patch bytes sent per slot. SetVoice resets the slot's LFO phase, so
+// re-sending an unchanged patch mid-playback audibly re-phases that channel —
+// only slots whose bytes actually changed are sent. Cleared on emergencyStop
+// (the fresh engine has forgotten everything).
+const lastSentPatch = new Array(VOICE_BANK_SLOTS).fill(null);
+
+function patchBytesEqual(a, b) {
+    if (!a || !b || a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+    return true;
+}
+
 /**
- * Send full VoiceBank snapshot to the synth.
+ * Send the VoiceBank snapshot to the synth.
  * Each entry loads into its slot (array index) and maps channel = slot.
- * Idempotent — overwrites whatever was loaded before.
+ * Idempotent — only slots whose patch bytes changed are actually sent.
  */
 export function sendVoiceSnapshot(entries) {
     if (!isReady() || !dx7Node) return;
@@ -125,6 +141,8 @@ export function sendVoiceSnapshot(entries) {
         if (!entry || !entry.voiceData) continue;
         const patch = normalizeVoiceData(entry.voiceData);
         if (!patch) continue;
+        if (patchBytesEqual(lastSentPatch[i], patch)) continue;
+        lastSentPatch[i] = patch.slice();
         voices.push({ slot: i, data: patch.buffer });
     }
     if (voices.length > 0) {
@@ -193,144 +211,52 @@ export function releaseAllNotes() {
 }
 
 /**
- * Emergency stop: release all notes and reinitialize the MSFA engine.
+ * Release every voice in the engine (64-sample fade), including notes the
+ * main thread lost track of. Patches and volumes stay loaded.
+ */
+export function allNotesOff() {
+    releaseAllNotes();
+    if (dx7Node) {
+        dx7Node.port.postMessage({ type: 'all-notes-off' });
+    }
+}
+
+/**
+ * Emergency stop: silence everything and reset the MSFA engine to a fresh
+ * SynthUnit. Channel volumes survive (static in WASM); loaded patches do
+ * not — the caller must re-send the voice snapshot.
  */
 export function emergencyStop() {
     releaseAllNotes();
+    lastSentPatch.fill(null);
     if (dx7Node) {
         dx7Node.port.postMessage({ type: 'reinit' });
     }
 }
 
+// Stop function of the currently ringing preview note. A note-off matches
+// every active note with the same channel+midi, so overlapping previews on
+// the shared channel 15 would kill each other — release the old one first.
+let previewStop = null;
+
 /**
  * Preview a patch with its own voiceData, on the dedicated preview slot/channel.
  * Never touches slots 0-7 — the VoiceBank's patches stay loaded.
+ * Starting a new preview releases the previous one.
  */
 export function playNoteRealtime(voiceData, midi, velocity = 100) {
     if (!isReady() || !dx7Node) return null;
     const patch = normalizeVoiceData(voiceData);
     if (!patch) return null;
+    if (previewStop) previewStop();
     dx7Node.port.postMessage({ type: 'patch', slot: PREVIEW_SLOT, data: patch.buffer });
     dx7Node.port.postMessage({ type: 'midi', data: [0x90 | PREVIEW_CHANNEL, midi, velocity] });
-    return () => {
+    const stop = () => {
+        if (previewStop === stop) previewStop = null;
         if (dx7Node) dx7Node.port.postMessage({ type: 'midi', data: [0x80 | PREVIEW_CHANNEL, midi, 0] });
     };
-}
-
-// --- Offline rendering (main-thread WASM, no AudioWorklet) ---
-
-// Cached offline WASM instance (separate from realtime AudioWorklet)
-let offlineWasm = null;
-let offlineHeapI16 = null;
-let offlinePatchView = null;
-
-async function ensureOfflineWasm() {
-    if (offlineWasm) return true;
-    if (!cachedWasmBytes) {
-        const base = new URL('./wasm/', import.meta.url).pathname;
-        const wasmResp = await fetch(base + 'msfa.wasm');
-        cachedWasmBytes = await wasmResp.arrayBuffer();
-    }
-    const wasiStub = {
-        fd_close: () => 0, fd_fdstat_get: () => 0, fd_seek: () => 0,
-        fd_write: () => 0, poll_oneoff: () => 0, proc_exit: () => {},
-    };
-    const { instance } = await WebAssembly.instantiate(cachedWasmBytes, {
-        wasi_snapshot_preview1: wasiStub,
-    });
-    offlineWasm = instance.exports;
-    offlineWasm.init_engine(44100);
-    offlineHeapI16 = new Int16Array(offlineWasm.memory.buffer);
-    const patchPtr = offlineWasm.get_patch_buffer();
-    offlinePatchView = new Uint8Array(offlineWasm.memory.buffer, patchPtr, 128);
-    return true;
-}
-
-function offlineRefreshHeap() {
-    if (offlineHeapI16.buffer !== offlineWasm.memory.buffer) {
-        offlineHeapI16 = new Int16Array(offlineWasm.memory.buffer);
-        const patchPtr = offlineWasm.get_patch_buffer();
-        offlinePatchView = new Uint8Array(offlineWasm.memory.buffer, patchPtr, 128);
-    }
-}
-
-export async function renderOffline(voiceData, midi, durationMs) {
-    const sr = 44100;
-    const renderDur = Math.max(durationMs, 500);
-    const totalSamples = Math.ceil(((renderDur / 1000) + 0.5) * sr);
-
-    if (!(await ensureOfflineWasm())) {
-        throw new Error('Offline WASM init failed');
-    }
-
-    // Fresh engine for a clean render (lookup tables were built once in ensureOfflineWasm)
-    offlineWasm.reset_engine();
-
-    // Load patch into static buffer
-    const patch = typeof voiceData === 'string' ? base64ToUint8Array(voiceData) : voiceData;
-    offlineRefreshHeap();
-    offlinePatchView.set(patch.subarray(0, 128));
-    offlineWasm.load_voice_from_buffer();
-
-    // Trigger note
-    offlineWasm.note_on(midi, 100);
-
-    // Render in chunks (WASM buffer max 88200 samples ~2s)
-    const MAX_CHUNK = 88200;
-    const result = new Float32Array(totalSamples);
-    let offset = 0;
-
-    while (offset < totalSamples) {
-        const chunk = Math.min(MAX_CHUNK, totalSamples - offset);
-        const ptr = offlineWasm.render_audio(chunk);
-        if (!ptr) break;
-
-        offlineRefreshHeap();
-        const i16base = ptr >> 1;
-        for (let i = 0; i < chunk; i++) {
-            result[offset + i] = offlineHeapI16[i16base + i] * (1.0 / 32768.0);
-        }
-        offset += chunk;
-    }
-
-    // Fade-out over last 50ms
-    const fadeLen = Math.min(Math.ceil(0.05 * sr), totalSamples);
-    for (let i = 0; i < fadeLen; i++) {
-        result[totalSamples - fadeLen + i] *= (1 - i / fadeLen);
-    }
-
-    return samplesToWavBlob(result, sr);
-}
-
-function samplesToWavBlob(samples, sr) {
-    const numSamples = samples.length;
-    const buffer = new ArrayBuffer(44 + numSamples * 2);
-    const view = new DataView(buffer);
-
-    function writeStr(offset, str) {
-        for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
-    }
-
-    writeStr(0, 'RIFF');
-    view.setUint32(4, 36 + numSamples * 2, true);
-    writeStr(8, 'WAVE');
-    writeStr(12, 'fmt ');
-    view.setUint32(16, 16, true);
-    view.setUint16(20, 1, true);
-    view.setUint16(22, 1, true);
-    view.setUint32(24, sr, true);
-    view.setUint32(28, sr * 2, true);
-    view.setUint16(32, 2, true);
-    view.setUint16(34, 16, true);
-    writeStr(36, 'data');
-    view.setUint32(40, numSamples * 2, true);
-
-    for (let i = 0; i < numSamples; i++) {
-        const s = Math.max(-1, Math.min(1, samples[i]));
-        view.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
-    }
-
-    return new Blob([buffer], { type: 'audio/wav' });
+    previewStop = stop;
+    return stop;
 }
 
 // --- Shutdown hooks (disabled for testing) ---

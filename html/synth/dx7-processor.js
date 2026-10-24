@@ -20,9 +20,11 @@ class DX7Processor extends AudioWorkletProcessor {
     this.ready = false;
     this.hasError = false;
 
-    // Ring buffer for pre-rendered audio (~300ms lookahead)
-    this.bufferMs = 300;
-    this.ringBlocks = Math.ceil((this.sr * this.bufferMs / 1000) / this.bufsize);
+    // Small pre-render lookahead. MIDI is only consumed when the engine
+    // renders, so buffered audio IS the note-on latency: 4 blocks ~= 12 ms
+    // at 44.1k. A 16-voice block renders in ~43 us, so a deep cushion is
+    // unnecessary and the old 300 ms one delayed every note by 300 ms.
+    this.ringBlocks = 4;
     this.ringSize = this.ringBlocks * this.bufsize;
     this.ringBuffer = new Float32Array(this.ringSize);
     this.ringWrite = 0;
@@ -142,13 +144,20 @@ class DX7Processor extends AudioWorkletProcessor {
           this.exp.set_channel_volume(msg.channel, msg.volume);
         }
         break;
+      case 'all-notes-off':
+        // Release every voice with the engine's 64-sample fade. Patches and
+        // volumes stay loaded; buffered audio (~12 ms) drains naturally.
+        if (this.exp && this.exp.all_notes_off) {
+          this.exp.all_notes_off();
+        }
+        break;
       case 'reinit':
-        // Emergency stop: reinitialize the MSFA engine
-        if (this.exp && this.exp.init_engine) {
-          this.exp.init_engine(this.sr);
-          this.patchPtr = this.exp.get_patch_buffer();
-          this.patchView = new Uint8Array(this.exp.memory.buffer, this.patchPtr, 128);
-          // Clear ring buffer
+        // Emergency stop: fresh SynthUnit, drop queued MIDI. reset_engine
+        // keeps LUTs and channel volumes but forgets loaded patches — the
+        // main thread re-sends the voice snapshot afterwards.
+        if (this.exp && this.exp.reset_engine) {
+          this.exp.reset_engine();
+          // Discard buffered audio so the stop is immediate
           this.ringWrite = 0;
           this.ringRead = 0;
           this.ringAvailable = 0;

@@ -38,6 +38,10 @@ class SynthUnit {
   ~SynthUnit();
 
   void GetSamples(int n_samples, int16_t *buffer);
+  // Release every active note (keyup + 64-sample fade). Safe mid-render;
+  // the voices die on the next GetSamples block. Patches, volumes and
+  // controllers are untouched.
+  void AllNotesOff();
   // Read per-channel pre-filter audio (int32, captured via save/diff in render loop).
   // Must be called after GetSamples. Buffer must hold at least n_samples int32s.
   void GetChannelSamples(int channel, int n_samples, int32_t *buffer);

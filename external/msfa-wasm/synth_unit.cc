@@ -138,6 +138,20 @@ int SynthUnit::AllocateNote() {
   return steal;
 }
 
+void SynthUnit::AllNotesOff() {
+  for (int note = 0; note < max_active_notes; ++note) {
+    if (active_note_[note].live) {
+      active_note_[note].dx7_note->keyup();
+      active_note_[note].keydown = false;
+      active_note_[note].sustained = false;
+      if (active_note_[note].fadeSamplesRemaining == 0) {
+        // Fade + !keydown makes GetSamples mark the voice dead after one block.
+        active_note_[note].fadeSamplesRemaining = N;
+      }
+    }
+  }
+}
+
 void SynthUnit::ProgramChange(int p, int ch) {
   current_patch_[ch] = p;
   const uint8_t *patch = patch_data_ + 128 * current_patch_[ch];
@@ -204,6 +218,9 @@ int SynthUnit::ProcessMidiMessage(const uint8_t *buf, int buf_size) {
         filter_control_[1] = value * 528416;
       } else if (controller == 3) {
         filter_control_[2] = value * 528416;
+      } else if (controller == 120 || controller == 123) {
+        // CC 120 All Sound Off / CC 123 All Notes Off
+        AllNotesOff();
       } else if (controller == 64) {
         sustain_ = value != 0;
         if (!sustain_) {

@@ -17,7 +17,8 @@ Bug survey 2026-10-23 (all confirmed by code trace, none fixed yet). Ordered by 
 - [ ] Keyboard `mouseleave` always fires `handleEnd` → `stopNoteFn` note-off even if key wasn't pressed; sweeping the mouse cuts sequencer notes on the active slot. `activeSounds` is never populated because `playNote` returns undefined.
 - [ ] Key released before `acquire()` resolves → `stopNoteFn` skipped (`isReady()` false) → 30 s stuck note.
 - [ ] `audio-manager initAudio()` never clears `initPromise`/`ctx` on rejection → one failed load kills audio until reload. Also ready-handshake resolves unconditionally after 2 s.
-- [ ] Menu "Emergency stop" (app.js) reinits engine but never re-sends voice snapshot or channel volumes → silent INIT patches. Persisted volumes are never pushed to synth on load either.
+- [x] Menu "Emergency stop" never re-sent snapshot/volumes — fixed: shared `doEmergencyStop()` in app.js re-sends the snapshot on both paths, and worklet `reinit` now calls `reset_engine()` (channel volumes are static in WASM and survive). Remaining: persisted volumes still aren't pushed to the synth on initial page load.
+- [ ] Persisted channel volumes are never pushed to the synth on initial load (split from the emergency-stop item above).
 - [ ] `voicebank.js` `entry.volume || DEFAULT_VOLUME` treats 0 as unset (UI shows 100 while muted). Colors not reassigned after splice/remove; drop color computed before index clamp. Removing a slot shifts channels but pianoroll notes keep old `slot`.
 - [ ] `patch-row.js` touch drag: `isOutside` latches → drag out and back in creates a clone; no `touchcancel` handlers (also canvas.js, pianoroll.js) leave stale drag state. Touch reorder writes `ctr.patchIds` but grouped containers render `group.patchIds`.
 - [ ] `canvas.js` floating-patch `handleEnd` ignores `didMove` → tap on header absorbs patch into any overlapping container. `addPatchToContainer` onto a grouped container makes the patch invisible.
@@ -25,7 +26,7 @@ Bug survey 2026-10-23 (all confirmed by code trace, none fixed yet). Ordered by 
 - [ ] `edit-panel.js`: `createTagEditor(editSlot)` throws when A removed while B set; `status.textContent` typo (→ `statusEl`) in Random error path; Params Save stores stale `algorithm`/`feedback` metadata; shared slider clamps value on mode switch; Save requires `/api/play`.
 - [ ] `pianoroll.js` hit-testing ignores loop wrap (second copy unclickable, creates duplicates); Stop doesn't `releaseAllNotes()`; notes can extend past loop end; Play button label desyncs on empty roll.
 - [ ] Listener leaks: `makeStarDraggable` document mouseup, more-menu document click (not via `onDoc`), `initCanvas` re-registers drop/`touch-drop-patch` handlers per call.
-- [ ] `dx7-processor` `fillRingBuffer()` after MIDI is a no-op (ring always full) → fixed ~300 ms latency on every note.
+- [x] `dx7-processor` 300 ms note-on latency — fixed by shrinking the ring lookahead to 4 blocks (~12 ms); underrun fallback still renders inline. 16-voice block renders in ~43 µs, so the cushion is ample.
 - [x] `msfa_bridge.cpp init_engine()` SynthUnit leak (~13 MB per preview) — fixed: `SynthUnit` destructor, `RingBuffer::Reset()`, new `reset_engine()` export; `renderOffline` and `batchRenderWaveforms` call it per render. WASM rebuilt. `test/wasm-engine-reset.test.js`.
 - [x] Canvas thumbnails identical on load, correct after preview — same root cause: `batchRenderWaveforms` rendered patches back-to-back with no note-off and no engine reset, so each thumbnail contained every earlier patch still ringing (up to 16 voices). Preview re-initialised the engine, hence the "fix on preview". Fixed by the per-patch `reset_engine()` above.
 - [ ] Minor: WAV import doesn't reset `fileInput.value`; WAV decoder requires `data` right after `fmt`; syx parser skips format/checksum; patch IDs hash voice_data so duplicate voices collide; `createObjectURL` never revoked; "Start Matching" not disabled on click; fixed-mode freq display formula wrong.
@@ -34,6 +35,8 @@ Bug survey 2026-10-23 (all confirmed by code trace, none fixed yet). Ordered by 
 
 _(Things discovered mid-task that the next agent needs to know, but that aren't
 yet stable enough to be an AGENTS.md rule.)_
+
+- 2026-10-24: single-engine refactor implemented (not yet committed, pending user verification). One long-lived worklet engine for all audible output; previews (canvas playPatch, edit panel) now play realtime on channel 15 instead of offline-render → decode → inject. `playNoteRealtime` releases the previous preview note before starting a new one (note-off matches all notes with same channel+midi). One shared main-thread offline instance (`dx7-synth.js` `renderOffline` + `batchRenderWaveforms`, re-exported by audio-manager) — was two. New WASM exports: `all_notes_off()` (keyup+fade, state survives; also CC 120/123) and `get_channel_samples(ch, n)` (pre-filter int32 capture of last render; single static buffer — read before the next call). `send_midi` drops messages instead of nanosleep-spinning when the ring is full. Deliberately ONE wasm build: compile-flagging `channel_outputs_` out would have meant either losing per-channel capture everywhere or shipping two binaries. `playSamplesInWorklet`/`play-samples` kept but currently unused.
 
 ## Architecture
 

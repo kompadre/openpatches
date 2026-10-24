@@ -41,10 +41,12 @@ $(TARGET): $(SRC)
 		-Wl,--export=load_voice \
 		-Wl,--export=load_voice_channel \
 		-Wl,--export=send_midi \
+		-Wl,--export=all_notes_off \
 		-Wl,--export=note_on \
 		-Wl,--export=note_off \
 		-Wl,--export=set_channel_volume \
 		-Wl,--export=render_audio \
+		-Wl,--export=get_channel_samples \
 		-o $(TARGET) $(SRC)
 
 clean:

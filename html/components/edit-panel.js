@@ -4,7 +4,7 @@
 import { createPatch, patchStore, patchIdFromVoiceData } from './patch-model.js';
 import { createTagEditor } from './tag-editor.js';
 import { decodeVoiceData, encodeVoiceData, readOp, writeOp, readGlobal, writeGlobal, freqDisplay, CURVE_NAMES, WAVEFORM_NAMES, renderAlgoSvg, renderEnvGraph } from './dx7-params.js';
-import { acquire, isReady, renderOffline, playSamplesInWorklet } from '../synth/audio-manager.js';
+import { acquire, isReady, playNoteRealtime } from '../synth/audio-manager.js';
 
 let editSlot = null;
 let editSlotB = null;
@@ -19,11 +19,10 @@ let previewPlaying = false;
 async function playVoiceDataLocally(voiceData, note = 60) {
     await acquire();
     if (!isReady()) return false;
-    const blob = await renderOffline(voiceData, note, 10000);
-    const audioCtx = await acquire();
-    const audioBuffer = await audioCtx.decodeAudioData(await blob.arrayBuffer());
-    playSamplesInWorklet(audioBuffer.getChannelData(0));
-    return true;
+    // Realtime note on the preview channel — no offline render round trip
+    const stop = playNoteRealtime(voiceData, note);
+    if (stop) setTimeout(stop, 10000);
+    return !!stop;
 }
 
 export function createEditPanel(opts) {

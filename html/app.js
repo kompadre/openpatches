@@ -3,7 +3,7 @@
 
 import { parseSyxFile, voiceRawToBase64 } from './components/syx-parser.js';
 import { batchRenderWaveforms } from './synth/dx7-synth.js';
-import { acquire, shutdownAll, extendIdle, playNoteRealtime, playNoteOnChannel, releaseAllNotes, sendVoiceSnapshot, playSamplesInWorklet, setChannelVolume, base64ToUint8Array, renderOffline, isReady, getState, setOnStatusChange, setPianorollStop, emergencyStop } from './synth/audio-manager.js';
+import { acquire, shutdownAll, extendIdle, playNoteRealtime, playNoteOnChannel, releaseAllNotes, sendVoiceSnapshot, setChannelVolume, base64ToUint8Array, renderOffline, isReady, getState, setOnStatusChange, setPianorollStop, emergencyStop } from './synth/audio-manager.js';
 import { patchStore, canvasStore, jobStore, createPatch } from './components/patch-model.js';
 import { initCanvas, addContainer, addPatchToContainer, refreshCanvas } from './components/canvas.js';
 import { createToolbar } from './components/toolbar.js';
@@ -117,6 +117,25 @@ setOnStatusChange((state) => {
     }
 });
 
+// --- Emergency stop ---
+
+// Silences everything and resets the engine to a fresh SynthUnit. Channel
+// volumes survive the reset (static in WASM); loaded patches don't, so the
+// VoiceBank snapshot is re-sent once the fresh engine is up.
+function doEmergencyStop() {
+    emergencyStop();
+    if (pianoDockWrapper && pianoDockWrapper._pianoroll && pianoDockWrapper._pianoroll.stopPlayback) {
+        pianoDockWrapper._pianoroll.stopPlayback();
+    }
+    setTimeout(() => {
+        if (pianoDockWrapper && pianoDockWrapper._voiceBank) {
+            const entries = pianoDockWrapper._voiceBank._getEntries();
+            if (entries.length > 0) sendVoiceSnapshot(entries);
+        }
+        appendLog('Emergency stop: MSFA engine reset, voices reloaded');
+    }, 100);
+}
+
 // --- Playback ---
 
 function noteToFreq(note, octave) {
@@ -196,12 +215,11 @@ async function playPatch(patch, midi) {
         try {
             await acquire();
             if (isReady()) {
-                // Render offline on main thread (separate WASM instance)
+                // Audible preview: realtime note on the dedicated channel 15
+                const stop = playNoteRealtime(patch.voice_data, note);
+                if (stop) setTimeout(stop, 10000);
+                // Offline render only feeds the waveform drawing
                 const blob = await renderOffline(patch.voice_data, note, 10000);
-                // Decode WAV → float samples → feed into live worklet
-                const audioCtx = await acquire();
-                const audioBuffer = await audioCtx.decodeAudioData(await blob.arrayBuffer());
-                playSamplesInWorklet(audioBuffer.getChannelData(0));
                 return URL.createObjectURL(blob); // canvas draws waveform
             }
         } catch (err) {
@@ -535,20 +553,7 @@ function initToolbar() {
         startWorker: startTickWorker,
         stopWorker: stopTickWorker,
         onNoteClick: (midi) => { activeKeyboardNote = midi; },
-        onEmergencyStop: () => {
-            emergencyStop();
-            if (pianoDockWrapper && pianoDockWrapper._pianoroll && pianoDockWrapper._pianoroll.stopPlayback) {
-                pianoDockWrapper._pianoroll.stopPlayback();
-            }
-            // Reload voices after engine reinit
-            setTimeout(() => {
-                if (pianoDockWrapper && pianoDockWrapper._voiceBank) {
-                    const entries = pianoDockWrapper._voiceBank._getEntries();
-                    if (entries.length > 0) sendVoiceSnapshot(entries);
-                }
-                appendLog('Emergency stop: MSFA engine reinitialized, voices reloaded');
-            }, 100);
-        },
+        onEmergencyStop: doEmergencyStop,
         onSnapshot: (entries) => {
             if (isReady()) {
                 sendVoiceSnapshot(entries);
@@ -746,13 +751,7 @@ document.getElementById('menu-clear-history').addEventListener('click', async ()
     initCanvas(getCanvasOpts());
     appendLog('History cleared');
 });
-document.getElementById('menu-emergency-stop').addEventListener('click', () => {
-    emergencyStop();
-    if (pianoDockWrapper && pianoDockWrapper._pianoroll && pianoDockWrapper._pianoroll.stopPlayback) {
-        pianoDockWrapper._pianoroll.stopPlayback();
-    }
-    appendLog('Emergency stop: MSFA engine reinitialized');
-});
+document.getElementById('menu-emergency-stop').addEventListener('click', doEmergencyStop);
 
 // Help modals
 document.getElementById('menu-help').addEventListener('click', () => {

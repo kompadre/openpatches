@@ -1,5 +1,6 @@
-// DX7 Batch Waveform Rendering — main thread WASM for spectrogram thumbnails.
-// Realtime synth is in audio-manager.js.
+// DX7 offline rendering — the single main-thread WASM instance.
+// Owns batch waveform rendering (thumbnails) and renderOffline (preview WAV
+// blobs for the canvas). Realtime synth is the AudioWorklet in audio-manager.js.
 // Uses static pre-allocated buffers in WASM — no malloc/free from JS.
 
 let wasmExports = null;
@@ -84,6 +85,56 @@ function samplesToWavBlob(samples, sr) {
     }
 
     return new Blob([buffer], { type: 'audio/wav' });
+}
+
+/**
+ * Render a single patch to a WAV blob (44.1k mono). Used for the canvas
+ * preview waveform. Resets the engine first so renders are independent.
+ */
+export async function renderOffline(voiceData, midi, durationMs) {
+    const sr = 44100;
+    const renderDur = Math.max(durationMs, 500);
+    const totalSamples = Math.ceil(((renderDur / 1000) + 0.5) * sr);
+
+    if (!(await ensureWasmExports())) {
+        throw new Error('Offline WASM init failed');
+    }
+
+    // Fresh engine for a clean render (lookup tables persist from init)
+    wasmExports.reset_engine();
+
+    const patch = typeof voiceData === 'string' ? base64ToUint8Array(voiceData) : voiceData;
+    refreshHeapViews();
+    wasmPatchView.set(patch.subarray(0, 128));
+    wasmExports.load_voice_from_buffer();
+
+    wasmExports.note_on(midi, 100);
+
+    // Render in chunks (WASM buffer max 88200 samples ~2s)
+    const MAX_CHUNK = 88200;
+    const result = new Float32Array(totalSamples);
+    let offset = 0;
+
+    while (offset < totalSamples) {
+        const chunk = Math.min(MAX_CHUNK, totalSamples - offset);
+        const ptr = wasmExports.render_audio(chunk);
+        if (!ptr) break;
+
+        refreshHeapViews();
+        const i16base = ptr >> 1;
+        for (let i = 0; i < chunk; i++) {
+            result[offset + i] = wasmHeapI16[i16base + i] * (1.0 / 32768.0);
+        }
+        offset += chunk;
+    }
+
+    // Fade-out over last 50ms
+    const fadeLen = Math.min(Math.ceil(0.05 * sr), totalSamples);
+    for (let i = 0; i < fadeLen; i++) {
+        result[totalSamples - fadeLen + i] *= (1 - i / fadeLen);
+    }
+
+    return samplesToWavBlob(result, sr);
 }
 
 export async function batchRenderWaveforms(patches, onResult, midiNote = 60) {

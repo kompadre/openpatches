@@ -14,6 +14,17 @@ static SynthUnit* synth = nullptr;
 // Static pre-allocated buffers — no malloc/free from JS
 static uint8_t g_patch_buffer[128];
 static int16_t g_render_buffer[88200]; // max ~2s at 44100Hz
+static int32_t g_channel_buffer[88200]; // per-channel capture, same chunk limit
+
+// RingBuffer::Write blocks (nanosleep-spins) when full. In single-threaded
+// WASM nothing can drain it while we spin, so a full buffer would hang the
+// page. Drop the message instead — the buffer holds ~21k messages, so this
+// only triggers under pathological queueing.
+static bool write_midi(const uint8_t* msg, int size) {
+  if (rb.WriteBytesAvailable() < size) return false;
+  rb.Write(msg, size);
+  return true;
+}
 
 extern "C" {
 
@@ -76,17 +87,24 @@ void load_voice_channel(int slot, const uint8_t* voice_data) {
 
 void send_midi(uint8_t status, uint8_t data1, uint8_t data2) {
   uint8_t msg[3] = { status, data1, data2 };
-  rb.Write(msg, 3);
+  write_midi(msg, 3);
 }
 
 void note_on(int note, int velocity) {
   uint8_t msg[3] = { 0x90, (uint8_t)note, (uint8_t)velocity };
-  rb.Write(msg, 3);
+  write_midi(msg, 3);
 }
 
 void note_off(int note) {
   uint8_t msg[3] = { 0x80, (uint8_t)note, 0 };
-  rb.Write(msg, 3);
+  write_midi(msg, 3);
+}
+
+// Immediate (not queued) release of every active note with the standard
+// 64-sample fade. Patches, channel volumes and LUTs are untouched.
+void all_notes_off() {
+  if (!synth) return;
+  synth->AllNotesOff();
 }
 
 void set_channel_volume(int channel, int volume) {
@@ -103,6 +121,16 @@ int render_audio(int n_samples) {
   if (!synth) return 0;
   synth->GetSamples(n_samples, g_render_buffer);
   return (int)(uintptr_t)g_render_buffer;
+}
+
+// Per-channel pre-filter capture of the most recent render_audio() call.
+// Returns pointer to int32 samples; n_samples is clamped to the render
+// chunk limit and to what the last render actually produced.
+int get_channel_samples(int channel, int n_samples) {
+  if (!synth || channel < 0 || channel >= 16) return 0;
+  if (n_samples > 88200) n_samples = 88200;
+  synth->GetChannelSamples(channel, n_samples, g_channel_buffer);
+  return (int)(uintptr_t)g_channel_buffer;
 }
 
 int main() { return 0; }
