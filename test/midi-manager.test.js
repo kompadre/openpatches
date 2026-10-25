@@ -206,26 +206,26 @@ describe('panic', () => {
     });
 });
 
-describe('bulk transport stubs', () => {
+describe('bulk transport guards', () => {
     test('receiveBank refuses without sysex permission', async () => {
         await midi.requestMidi();
         await assert.rejects(() => midi.receiveBank(), /SysEx permission/);
     });
 
-    test('receiveBank reports progress and then fails as unimplemented', async () => {
-        await midi.requestMidi({ sysex: true });
-        const seen = [];
-        await assert.rejects(
-            () => midi.receiveBank({ onProgress: p => seen.push(p) }),
-            /not implemented yet/,
-        );
-        assert.ok(seen.length > 0, 'progress was reported');
-        assert.equal(seen.at(-1), 100);
+    test('sendBank refuses without sysex permission', async () => {
+        await midi.requestMidi();
+        await assert.rejects(() => midi.sendBank(null), /SysEx permission/);
     });
 
-    test('sendBank fails as unimplemented rather than silently succeeding', async () => {
+    test('receiveBank refuses without an input device', async () => {
         await midi.requestMidi({ sysex: true });
-        await assert.rejects(() => midi.sendBank(null), /not implemented yet/);
+        midi.setSelectedOutput('out0');
+        await assert.rejects(() => midi.receiveBank(), /No MIDI input device/);
+    });
+
+    test('sendBank refuses without an output device', async () => {
+        await midi.requestMidi({ sysex: true });
+        await assert.rejects(() => midi.sendBank(null), /No MIDI output device/);
     });
 });
 

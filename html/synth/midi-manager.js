@@ -12,6 +12,15 @@
 // so every iOS browser is out. Callers must check isSupported() and hide their
 // UI rather than surfacing controls that can never work.
 
+import {
+    BULK_DUMP_SIZE,
+    buildBulkDumpRequest,
+    buildVoiceDump,
+    isBulkDump,
+    toPacked128,
+    validateBulkDump,
+} from '../components/syx-builder.js';
+
 const STORAGE_KEY = 'openpatches_midi';
 
 const ALL_SOUND_OFF = 120;
@@ -35,6 +44,8 @@ let selectedOutputId = null;
 let deviceChannel = 0;      // SysEx sub-status / basic channel (0-15)
 let inputChannel = -1;      // -1 = omni, else only accept this channel (0-15)
 let outputMode = 'internal';            // internal | midi | both
+let auditionEnabled = false;            // send previews to the device's edit buffer
+let lastAuditionVoice = null;           // dedupe key for the loaded edit buffer
 let slotChannels = defaultSlotChannels();
 
 // VoiceBank slot → MIDI out channel. Identity by default, matching the
@@ -240,7 +251,12 @@ function attachInputListener() {
     if (boundInput) boundInput.onmidimessage = null;
     boundInput = port;
     if (port) {
-        port.onmidimessage = (e) => { if (onMidiMessage) onMidiMessage(e); };
+        port.onmidimessage = (e) => {
+            // A pending SysEx receive gets first look and swallows what it
+            // consumes; the note handler never wants SysEx anyway.
+            if (consumeSysex(e.data)) return;
+            if (onMidiMessage) onMidiMessage(e);
+        };
     }
 }
 
@@ -322,11 +338,15 @@ const outNotes = new Map();
  *
  * @returns {function|null} stop function
  */
-export function playNoteOut(slot, midi, velocity = 100, durMs = 0, { schedule = true } = {}) {
+export function playNoteOut(slot, midi, velocity = 100, durMs = 0, opts = {}) {
+    return sendNoteOnChannel(getSlotChannel(slot), midi, velocity, durMs, opts);
+}
+
+/** Same contract as playNoteOut, but on an explicit MIDI channel. */
+function sendNoteOnChannel(ch, midi, velocity = 100, durMs = 0, { schedule = true } = {}) {
     const port = getOutputPort();
     if (!port) return null;
 
-    const ch = getSlotChannel(slot);
     const key = ch + ':' + midi;
 
     const prev = outNotes.get(key);
@@ -402,20 +422,134 @@ export function panic() {
     return true;
 }
 
-// --- Bulk dump transport (Phase 4 — stubs) ---
+// --- Bulk dump transport ---
 
-export class MidiNotImplementedError extends Error {
-    constructor(what) {
-        super(`${what} is not implemented yet (planned for Phase 4)`);
-        this.name = 'MidiNotImplementedError';
+// Time for one byte over a 31250-baud MIDI DIN cable (10 bits per byte).
+const MS_PER_MIDI_BYTE = 10 / 31.25;
+
+// How long to wait for a device to answer a dump request before giving up.
+// Generous on purpose: the original DX7 Mk I ignores dump requests entirely
+// and the user has to start the transfer from its front panel.
+const RECEIVE_TIMEOUT_MS = 45000;
+
+// A SysEx receive in progress: { buf, expect, match, settle, onProgress }.
+let sysexCollector = null;
+
+/**
+ * Feed an inbound MIDI message to a pending SysEx receive.
+ * @returns {boolean} true if the message was consumed
+ */
+function consumeSysex(data) {
+    const c = sysexCollector;
+    if (!c || !data || data.length === 0) return false;
+
+    if (data[0] === 0xF0) c.buf = [];
+    // Mid-stream bytes with no start byte seen: not ours.
+    if (!c.buf) return false;
+
+    for (let i = 0; i < data.length; i++) c.buf.push(data[i]);
+
+    if (data[data.length - 1] !== 0xF7) {
+        // Web MIDI usually delivers a whole SysEx in one event, but the spec
+        // permits splitting, so report partial progress and keep collecting.
+        if (c.onProgress) c.onProgress(Math.min(99, (c.buf.length / c.expect) * 100));
+        return true;
     }
+
+    const bytes = Uint8Array.from(c.buf);
+    c.buf = null;
+    // Anything that is not what we asked for (an ID reply, a parameter
+    // change) is ignored and we keep waiting.
+    if (c.match(bytes)) c.settle(bytes);
+    return true;
 }
 
-// Roughly how long 4104 SysEx bytes take over a 31250-baud DIN cable. The
-// stubs burn this time so the progress UI can be exercised honestly.
-const BULK_DUMP_MS = 1300;
+function awaitSysex({ match, expect, timeoutMs, signal, onProgress }) {
+    return new Promise((resolve, reject) => {
+        let finished = false;
+        const finish = (fn, arg) => {
+            if (finished) return;
+            finished = true;
+            clearTimeout(timer);
+            sysexCollector = null;
+            fn(arg);
+        };
+        const timer = setTimeout(
+            () => finish(reject, new Error('Timed out waiting for the device to send its bank')),
+            timeoutMs);
+        if (signal) {
+            signal.addEventListener('abort', () => finish(reject, new Error('Cancelled')), { once: true });
+        }
+        sysexCollector = {
+            buf: null,
+            expect,
+            match,
+            onProgress,
+            settle: (bytes) => finish(resolve, bytes),
+        };
+    });
+}
 
-function stubProgress(onProgress, signal) {
+/**
+ * Request a 32-voice bulk dump and resolve with the raw 4104-byte message.
+ *
+ * A dump request is sent optimistically, but the original DX7 Mk I does not
+ * implement it — on that machine the user must start the transfer from the
+ * front panel, which is why the timeout is long and its message says so.
+ *
+ * @returns {Promise<Uint8Array>}
+ */
+export async function receiveBank({ onProgress, signal, timeoutMs = RECEIVE_TIMEOUT_MS } = {}) {
+    if (!hasSysex()) throw new Error('SysEx permission has not been granted');
+    const inPort = getInputPort();
+    if (!inPort) {
+        throw new Error('No MIDI input device is selected. Receiving a bank needs one — ' +
+            'open MIDI \u203a Devices and pick the input your synth sends on.');
+    }
+
+    const pending = awaitSysex({
+        match: isBulkDump,
+        expect: BULK_DUMP_SIZE,
+        timeoutMs,
+        signal,
+        onProgress,
+    });
+
+    const out = getOutputPort();
+    if (out) {
+        try { out.send(buildBulkDumpRequest({ channel: deviceChannel })); } catch { /* front panel it is */ }
+    }
+
+    const bytes = await pending;
+    const check = validateBulkDump(bytes);
+    if (!check.ok) throw new Error(check.error);
+    if (onProgress) onProgress(100);
+    return bytes;
+}
+
+/**
+ * Send a 4104-byte bulk dump to the device.
+ *
+ * Sent as a single message: MIDI has no flow control, and splitting a dump
+ * across sends risks a gap mid-transfer that some synths treat as a truncated
+ * message. Progress is therefore an estimate from the cable's byte rate —
+ * there is no completion signal to wait on.
+ */
+export async function sendBank(bytes, { onProgress, signal } = {}) {
+    if (!hasSysex()) throw new Error('SysEx permission has not been granted');
+    const port = getOutputPort();
+    if (!port) throw new Error('No MIDI output device is selected');
+
+    const check = validateBulkDump(bytes);
+    if (!check.ok) throw new Error('Refusing to send a malformed bank: ' + check.error);
+
+    port.send(bytes);
+    await estimateTransfer(bytes.length, onProgress, signal);
+}
+
+// Walk a progress bar across the time the bytes physically take on the wire.
+function estimateTransfer(byteCount, onProgress, signal) {
+    const total = Math.max(200, byteCount * MS_PER_MIDI_BYTE);
     return new Promise((resolve, reject) => {
         const t0 = Date.now();
         const timer = setInterval(() => {
@@ -424,37 +558,67 @@ function stubProgress(onProgress, signal) {
                 reject(new Error('Cancelled'));
                 return;
             }
-            const pct = Math.min(100, ((Date.now() - t0) / BULK_DUMP_MS) * 100);
+            const pct = Math.min(100, ((Date.now() - t0) / total) * 100);
             if (onProgress) onProgress(pct);
             if (pct >= 100) {
                 clearInterval(timer);
                 resolve();
             }
-        }, 60);
+        }, 50);
     });
 }
 
-/**
- * STUB. Will request a bulk dump from the device and resolve with the raw
- * 4104-byte SysEx bank. Always rejects for now — callers must treat a failed
- * backup as a hard stop, never as "proceed anyway".
- *
- * @returns {Promise<Uint8Array>}
- */
-export async function receiveBank({ onProgress, signal } = {}) {
-    if (!hasSysex()) throw new Error('SysEx permission has not been granted');
-    await stubProgress(onProgress, signal);
-    throw new MidiNotImplementedError('Receiving a bank from the device');
+// --- Live audition ------------------------------------------------------
+
+export function isAuditionEnabled() {
+    return auditionEnabled && hasSysex() && !!getOutputPort();
+}
+
+export function getAuditionEnabled() { return auditionEnabled; }
+
+export function setAuditionEnabled(on) {
+    auditionEnabled = !!on;
+    lastAuditionVoice = null;
+    saveState();
 }
 
 /**
- * STUB. Will send a 4104-byte bulk dump to the device.
- * @returns {Promise<void>}
+ * Load a voice into the device's edit buffer. Repeated calls with identical
+ * bytes are skipped: a 163-byte VCED costs ~50 ms on the wire, which is
+ * audible latency in front of a preview note.
+ * @returns {boolean} whether the device was (or already was) loaded
  */
-export async function sendBank(bytes, { onProgress, signal } = {}) {
-    if (!hasSysex()) throw new Error('SysEx permission has not been granted');
-    await stubProgress(onProgress, signal);
-    throw new MidiNotImplementedError('Sending a bank to the device');
+export function sendVoiceToEditBuffer(voiceData) {
+    const port = getOutputPort();
+    if (!port || !hasSysex()) return false;
+
+    const packed = toPacked128(voiceData);
+    if (!packed) return false;
+
+    const key = packed.join(',');
+    if (key === lastAuditionVoice) return true;
+
+    const msg = buildVoiceDump(packed, { channel: deviceChannel });
+    if (!msg) return false;
+    try {
+        port.send(msg);
+    } catch (err) {
+        console.warn('[midi] edit-buffer send failed:', err);
+        return false;
+    }
+    lastAuditionVoice = key;
+    return true;
+}
+
+/**
+ * Audition a patch on the device: load it into the edit buffer, then play a
+ * note on the device's basic channel.
+ * @returns {function|null} stop function
+ */
+export function auditionNote(voiceData, midi, velocity = 100, durMs = 0) {
+    if (!isAuditionEnabled()) return null;
+    if (!sendVoiceToEditBuffer(voiceData)) return null;
+    return sendNoteOnChannel(deviceChannel, midi, velocity, durMs, { schedule: durMs > 0 });
 }
 
 // --- Persistence ---
@@ -473,6 +637,7 @@ function saveState() {
             inputChannel,
             outputMode,
             slotChannels,
+            auditionEnabled,
             names,
         }));
     } catch (e) {
@@ -497,6 +662,7 @@ function initFromStorage() {
     if (Number.isInteger(saved.deviceChannel)) deviceChannel = saved.deviceChannel;
     if (Number.isInteger(saved.inputChannel)) inputChannel = saved.inputChannel;
     if (saved.outputMode === 'midi' || saved.outputMode === 'both') outputMode = saved.outputMode;
+    auditionEnabled = !!saved.auditionEnabled;
     slotChannels = defaultSlotChannels();
     if (Array.isArray(saved.slotChannels)) {
         saved.slotChannels.forEach((ch, i) => {
@@ -529,6 +695,9 @@ export function _reset() {
     deviceChannel = 0;
     inputChannel = -1;
     outputMode = 'internal';
+    auditionEnabled = false;
+    lastAuditionVoice = null;
+    sysexCollector = null;
     outNotes.clear();
     initFromStorage();
 }

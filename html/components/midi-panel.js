@@ -9,6 +9,7 @@
 // dialogs, progress and error paths here are real.
 
 import * as midi from '../synth/midi-manager.js';
+import { buildBulkDump, VOICE_COUNT } from './syx-builder.js';
 
 const CHANNEL_COUNT = 16;
 const VOICE_BANK_SLOTS = 8;
@@ -144,6 +145,39 @@ export function openMidiSettings(opts = {}) {
             'Defaults to slot N → channel N. A monotimbral synth will only sound the ' +
             'channel it is set to and ignores the rest, which is harmless.'));
         deviceArea.appendChild(mapWrap);
+
+        // --- Live audition ---
+        const audRow = el('label', 'midi-checkbox');
+        const audBox = document.createElement('input');
+        audBox.type = 'checkbox';
+        audBox.checked = midi.getAuditionEnabled();
+        audRow.appendChild(audBox);
+        audRow.appendChild(el('span', null, ' Audition patches on the device'));
+        deviceArea.appendChild(audRow);
+
+        const audHint = el('div', 'midi-hint',
+            'Previewing a patch loads it into the device’s edit buffer and plays it there. ' +
+            'Needs SysEx permission, and overwrites whatever is in the edit buffer — ' +
+            'stored patches are untouched.');
+        deviceArea.appendChild(audHint);
+
+        audBox.addEventListener('change', async () => {
+            if (!audBox.checked) {
+                midi.setAuditionEnabled(false);
+                return;
+            }
+            // The click is the gesture the SysEx permission prompt needs.
+            try {
+                await midi.requestMidi({ sysex: true });
+                midi.setAuditionEnabled(true);
+                appendLog('MIDI audition enabled');
+            } catch (err) {
+                audBox.checked = false;
+                midi.setAuditionEnabled(false);
+                appendLog('Audition needs SysEx permission: ' + err.message);
+            }
+            refresh();
+        });
 
         const panicBtn = el('button', 'midi-panic-btn', '⚠ Panic (All Notes Off)');
         panicBtn.title = 'Send All Sound Off + All Notes Off on all 16 channels';
@@ -283,7 +317,9 @@ export async function sendBankToDevice(patches, bankName, opts) {
     // option exists to prevent.
     if (confirmed.backup) {
         showProgress(0);
-        setProgressLabel('Backing up the current bank from ' + out.name + '…');
+        setProgressLabel('Waiting for ' + out.name + ' to send its bank… ' +
+            'If nothing happens, start the dump on the synth itself ' +
+            '(on a DX7: Function › 8 › MIDI › Transmit).');
         try {
             const bytes = await midi.receiveBank({ onProgress: showProgress });
             hideProgress();
@@ -301,13 +337,13 @@ export async function sendBankToDevice(patches, bankName, opts) {
 
     // --- Send leg.
     showProgress(0);
-    setProgressLabel('Sending ' + bankName + ' to ' + out.name + '…');
+    setProgressLabel('Sending ' + bankName + ' to ' + out.name + '… (about 1.3 s over a MIDI cable)');
     try {
-        // The packed 4104-byte dump is built by the Phase 4 encoder; until it
-        // exists there is no payload to hand the transport.
-        await midi.sendBank(null, { onProgress: showProgress });
+        const dump = buildBulkDump(patches, { channel: midi.getDeviceChannel() });
+        await midi.sendBank(dump, { onProgress: showProgress });
         hideProgress();
-        appendLog(`Sent ${bankName} to ${out.name}`);
+        appendLog(`Sent ${bankName} to ${out.name} (${patches.length} voices, ` +
+            `${VOICE_COUNT - patches.length} INIT)`);
     } catch (err) {
         hideProgress();
         showError('Sending the bank failed.\n\n' + err.message);
@@ -333,8 +369,12 @@ function confirmSend(patches, bankName) {
             const warn = el('div', 'midi-warning');
             warn.innerHTML =
                 '<strong>This overwrites all 32 voices on ' + escapeHtml(target) + '.</strong> ' +
-                'A bulk dump replaces the whole bank, not just the ' + count + ' patch(es) being sent, ' +
-                'and the synth has no undo.';
+                'A bulk dump replaces the whole bank, and the synth has no undo.' +
+                (count < VOICE_COUNT
+                    ? ' Only ' + count + ' patch(es) are being sent, so the remaining ' +
+                      (VOICE_COUNT - count) + ' slot(s) will be filled with <em>INIT VOICE</em> — ' +
+                      'whatever is in them now is erased.'
+                    : '');
             body.appendChild(warn);
 
             const protect = el('div', 'midi-warning midi-warning-info');

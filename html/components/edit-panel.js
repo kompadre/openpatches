@@ -3,6 +3,7 @@
 
 import { createPatch, patchStore, patchIdFromVoiceData } from './patch-model.js';
 import { createTagEditor } from './tag-editor.js';
+import * as midiManager from '../synth/midi-manager.js';
 import { decodeVoiceData, encodeVoiceData, readOp, writeOp, readGlobal, writeGlobal, freqDisplay, CURVE_NAMES, WAVEFORM_NAMES, renderAlgoSvg, renderEnvGraph } from './dx7-params.js';
 import { acquire, isReady, playNoteRealtime } from '../synth/audio-manager.js';
 
@@ -17,12 +18,19 @@ let hideProgressRef = null;
 let previewPlaying = false;
 
 async function playVoiceDataLocally(voiceData, note = 60) {
+    // Live audition: also load the patch into the external device's edit
+    // buffer and sound it there. Fired first so the ~50 ms SysEx transfer
+    // overlaps the local engine warming up.
+    const auditionStop = midiManager.isAuditionEnabled()
+        ? midiManager.auditionNote(voiceData, note, 100, 10000)
+        : null;
+
     await acquire();
-    if (!isReady()) return false;
+    if (!isReady()) return !!auditionStop;
     // Realtime note on the preview channel — no offline render round trip
     const stop = playNoteRealtime(voiceData, note);
     if (stop) setTimeout(stop, 10000);
-    return !!stop;
+    return !!stop || !!auditionStop;
 }
 
 export function createEditPanel(opts) {

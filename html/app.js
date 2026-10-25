@@ -238,10 +238,17 @@ async function playNote(midi, voiceData, durationMs, channel, noteOpts = {}) {
 
     // Preview path: offline render + sample injection (no channel needed)
     if (voiceData) {
+        // Live audition: load the patch into the device's edit buffer and
+        // sound it there too. Additive — the local synth still plays, so the
+        // preview never goes silent if the device is slow or misconfigured.
+        const auditionStop = midiManager.isAuditionEnabled()
+            ? midiManager.auditionNote(voiceData, midi, 100, durMs)
+            : null;
         try {
             await acquire();
             if (isReady()) {
-                return withTimeout(playNoteRealtime(voiceData, midi), durMs * 0.6);
+                return joinStops(auditionStop,
+                    withTimeout(playNoteRealtime(voiceData, midi), durMs * 0.6));
             }
         } catch (err) {
             console.warn('DX7 synth unavailable, falling back:', err);
@@ -289,6 +296,10 @@ async function playNote(midi, voiceData, durationMs, channel, noteOpts = {}) {
 async function playPatch(patch, midi) {
     const note = midi || patch.midi_note || activeKeyboardNote || 60;
     if (patch.voice_data) {
+        // Live audition on external hardware, alongside the local preview.
+        if (midiManager.isAuditionEnabled()) {
+            midiManager.auditionNote(patch.voice_data, note, 100, 10000);
+        }
         try {
             await acquire();
             if (isReady()) {
@@ -638,8 +649,12 @@ function getCanvasOpts() {
                 setProgressLabel,
                 showError,
                 onBackupReceived: (bytes, backupName) => {
-                    // Same bytes a .syx file would carry, so the import path is reused.
-                    importSyxBank(bytes.buffer || bytes, backupName, backupName);
+                    // Same bytes a .syx file would carry, so the import path is
+                    // reused. Copy rather than handing over .buffer: a view with
+                    // a non-zero byteOffset would make every patch offset wrong.
+                    const buf = bytes.buffer.slice(
+                        bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+                    importSyxBank(buf, backupName, backupName);
                 },
             });
         },

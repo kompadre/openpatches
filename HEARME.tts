@@ -1,6 +1,6 @@
 OpenPatches: A Codebase Audio Tour
 
-This file is intended to be a high-level introduction to the project's anatomy and optimized to be read by TTS. Last commit covered e three e a c two three plus the single-engine refactor from October twenty-fourth, two thousand twentysix.
+This file is intended to be a high-level introduction to the project's anatomy and optimized to be read by TTS. Last commit covered one c d two e a one plus the Web MIDI feature from October twenty-fifth, two thousand twentysix.
 
 Welcome to this architectural walkthrough of OpenPatches. This is a browser-based DX seven patch editor, sequencer, and sound design environment. It runs entirely on the client side — no server-side computation for the editor itself. The only server dependency is an inference engine for turning WAV files into DX seven patches, and even that is optional. Everything else — the synthesizer, the sequencer, the patch editing, the voice bank — happens in the browser using vanilla JavaScript, Web Audio, WebAssembly, and Web Workers.
 
@@ -147,7 +147,34 @@ The synthesizer state is ephemeral — it lives only in the AudioWorklet's memor
 The tick worker is also ephemeral — it's created fresh on each page load and destroyed when the page unloads. The SharedArrayBuffer enables zero-C P U sleeping but requires the C O O P and C O E P headers to be set by the server. Without them, the worker falls back to setTimeout, which works fine but uses slightly more C P U.
 
 
-Chapter Eleven: Build and Deploy
+Chapter Eleven: Web MIDI — Talking to Real Hardware
+
+OpenPatches can talk to external MIDI gear, and the whole subsystem lives in two files: midi-manager in the synth folder, and midi-panel in the components folder.
+
+The guiding rule is that MIDI access is never requested until a feature actually needs it. Loading the page prompts for nothing. The manager only parks the remembered device choices from local storage and waits. When the user clicks Enable MIDI, it asks for plain access. When the user asks to send patches to a device, it asks again, this time for SysEx permission, because browsers treat those as two separate permissions. That second request replaces the access object entirely, which means every port listener has to be re-attached, and a generation counter makes sure a slow earlier request cannot overwrite a newer grant.
+
+Support is narrower than the rest of the app. Safari has no Web MIDI at all, so every browser on iOS is out. The MIDI menu and the device buttons hide themselves rather than offering controls that can never work.
+
+There are three things you can do with a connected device.
+
+First, recording. Notes arriving from a MIDI keyboard go through exactly the same noteOn and noteOff functions as the on-screen keys in the toolbar. That means key highlighting, slot routing and recording all behave identically whichever you use. A note-on with velocity zero is treated as a note-off, because that is how most controllers release a key. Notes outside the C two to C six grid are folded into range by octaves rather than dropped, so a small controller does not silently lose its bottom octave.
+
+Second, playback. The piano roll can drive external gear. There is an output mode — internal synth only, MIDI device only, or both — and a map from voice bank slot to MIDI channel that defaults to slot N going to channel N. Note-offs for piano roll notes are sent with an explicit future timestamp, which the MIDI subsystem honours even if the main thread stalls. They land two milliseconds early so that a note repeating at the same pitch is not cut by the previous note's note-off. Held keyboard keys are the exception: their duration is only a thirty-second safety value, so they are released explicitly instead.
+
+Running through all of this is one safety rule. A note left hanging on external hardware cannot be silenced from the browser, so the panic function — All Sound Off plus All Notes Off on all sixteen channels — is called liberally: on emergency stop, when the output device changes, when the page unloads, and when the tab is hidden.
+
+Third, SysEx. The syx-builder module is the write side of the syx parser. It builds three messages: a thirty-two voice bulk dump of four thousand one hundred and four bytes, a single voice loaded into the device's edit buffer, and a bulk dump request. The bulk payload is exactly the packed one-hundred-twenty-eight-byte voice the app already stores, so a bank is a straight concatenation, padded out to thirty-two slots with INIT VOICE. The edit buffer message is different — it needs the unpacked one-hundred-fifty-five-byte form, where the bit-packed curve, detune and sensitivity fields each get a byte of their own.
+
+Sending a bank is destructive and irreversible on the synth, so the flow is deliberately obstructive. A confirmation dialog warns that all thirty-two voices will be overwritten, says how many slots will be filled with INIT VOICE, and reminds the user to turn memory protect off — because with protection on the synth ignores the dump silently and it looks like nothing happened. A checkbox offers to back up the device's current bank first, and it is checked by default. If that backup fails for any reason, the send is abandoned entirely and the device is left untouched. A successful backup is parsed and saved to a new container on the canvas, using the same import path as a SYX file, because the bytes are identical.
+
+Receiving is the subtle part. A dump request is sent optimistically, but the original DX seven ignores dump requests — on that machine the user has to start the transfer from the front panel — so the timeout is long and its message says so. The collector reassembles SysEx that arrives split across several events, ignores unrelated messages the device might send, shares the input port with the note recorder so you can keep playing while a backup runs, and validates the checksum before anything is saved.
+
+Live audition ties it together. With it enabled, previewing a patch loads that patch into the device's edit buffer and plays it there as well as locally. The transfer is skipped when the patch has not changed, because a hundred-and-sixty-three byte transfer costs about fifty milliseconds on the wire and that is audible latency in front of a preview note.
+
+The test suite leans on DEMO dot syx as a golden fixture. It is a real four thousand one hundred and four byte bank, so parsing it and rebuilding it must produce the identical file, and unpacking then repacking every one of its thirty-two voices must be lossless. Those two assertions cover the header, the packing and the checksum together, against a file nobody in the repository wrote by hand.
+
+
+Chapter Twelve: Build and Deploy
 
 The project has no build step for the frontend JavaScript — it's served as static files. The only build target is the WebAssembly module, compiled from C plus plus using Zig's C plus plus compiler targeting wasm thirty-two wasi.
 

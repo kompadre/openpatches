@@ -45,18 +45,22 @@ only when a feature needs it, and SysEx is a separate upgrade on top.
   `test/pianoroll-stop-release.test.js`.
 - [ ] **Phase 3b (later, as agreed)** — note-on scheduling, and letting the
   user declare (or autodetect) that a device is multitimbral.
-- [ ] **Phase 4 — SysEx bulk transport.** `html/components/syx-builder.js`:
-  bulk dump `F0 43 0n 09 20 00 <4096 packed> <cksum> F7`, checksum
-  `(128 - (sum & 0x7F)) & 0x7F`. `patch.voice_data` is already the packed
-  128-byte form, so it concatenates directly; pad to 32 with INIT. Then replace
-  the `receiveBank`/`sendBank` stubs. Optional 4b: single voice to edit buffer
-  (`F0 43 0n 00 01 1B <155 unpacked> <cksum> F7`) — needs a packed-128 →
-  unpacked-155 converter in JS (only exists in C++ `UnpackPatch` today).
-  **Test:** `html/DEMO.syx` is a golden fixture — 4104 bytes, header
-  `f0 43 00 09 20 00`, checksum `0x16`. Round-trip `parseSyxFile` → builder →
-  assert byte-identical.
-- [ ] Update `HEARME.tts` once the feature is complete (deferred until Phase 4
-  so the tour describes the finished subsystem, not a half-wired one).
+- [x] **Phase 4 — SysEx bulk transport + live audition.**
+  `html/components/syx-builder.js` is the write side of syx-parser: bulk dump,
+  single-voice edit-buffer dump, dump request, `sysexChecksum`,
+  `validateBulkDump`, `unpackVoice` (packed 128 → VCED 155, built on
+  dx7-params' `readOp`/`readGlobal` so bit layouts have one authority) and a
+  programmatically-built `makeInitVoice()` for padding. Real `receiveBank`
+  (dump request + SysEx collector that reassembles split messages, ignores
+  unrelated SysEx, validates the checksum) and `sendBank` (one message, no
+  chunking; progress estimated from the 31250-baud byte rate since MIDI gives
+  no completion signal). Audition sends a VCED to the device's edit buffer,
+  deduped by content, then plays on the device channel — wired into
+  `playNote`'s preview path, `playPatch`, and edit-panel's
+  `playVoiceDataLocally`. `test/syx-builder.test.js`,
+  `test/midi-sysex-transport.test.js`.
+- [x] `HEARME.tts` updated: new Chapter Eleven on Web MIDI (old Chapter Eleven
+  renumbered to Twelve), preamble hash/date refreshed to `1cd2ea1`.
 
 Bug survey 2026-10-23 (all confirmed by code trace, none fixed yet). Ordered by severity:
 
@@ -103,6 +107,7 @@ OpenPatches is a browser-based DX7 patch editor and sequencer. It communicates w
 - `html/components/patch.js`: Waveform helpers only — `decodeWavSamples`, `drawMiniWaveform`, `wavSampleCache`.
 - `html/components/voicebank.js`: Voice palette (8 slots). Persists to localStorage. Each entry has static channel assignment (0-7). Compact mode on mobile: vertical bars, tap to select, vertical drag for volume. Exposes `_render()` for re-rendering after class changes.
 - `html/components/pianoroll.js`: Sequencer with looping. Notes store per-note `voiceData` and `channel`. Touch support: `TOUCH_RESIZE_MARGIN = 20`, visual resize handles, double-tap to delete. Long-press (1s) to create note when stopped, drag to scroll. Looping: double-wide canvas, content drawn twice for seamless loop. `handlePlaybackTick(col)` driven by tick worker. `setRecordingTickHandler` for recording delegation.
+- `html/components/syx-builder.js`: DX7 SysEx **encoder** (syx-parser.js is the reader). Bulk dump `F0 43 0n 09 20 00 <4096 packed> <cksum> F7` = 4104 bytes; edit-buffer voice `F0 43 0n 00 01 1B <155 unpacked> <cksum> F7` = 163; dump request `F0 43 2n 09 F7`. Checksum = `(128 - (sum & 0x7F)) & 0x7F`. `patch.voice_data` is already the packed 128-byte form so a bank is a straight concatenation, padded to 32 with `makeInitVoice()`. `unpackVoice()` expands packed 128 → VCED 155 (17-byte ops become 21, 26 global bytes become 29) using dx7-params' `readOp`/`readGlobal`. **`html/DEMO.syx` is the golden test fixture** — parse → rebuild is asserted byte-identical, and unpack → repack is asserted lossless across all 32 voices.
 - `html/components/tag-editor.js`: Tag editor component with autocomplete.
 - `html/components/tutorial.js`: First-run tutorial modal with overlay highlights. Skips clip-path on mobile.
 - `html/synth/audio-manager.js`: Singleton AudioContext + AudioWorklet. `acquire()` creates once, `initAudio()` loads modules once. Multi-channel: `sendVoiceSnapshot()`, `playNoteOnChannel()`. `emergencyStop()` reinitializes MSFA engine. No malloc/free — uses static WASM buffers. `playNoteOnChannel` guards against stale note-off via self-reference check.
