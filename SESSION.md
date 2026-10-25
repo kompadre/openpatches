@@ -20,19 +20,31 @@ only when a feature needs it, and SysEx is a separate upgrade on top.
   modal + guarded bank-send flow), MIDI menu + footer status dot, container
   "Send to device" button. Bulk transport (`receiveBank`/`sendBank`) is a
   deliberate stub that drives the progress UI then rejects. `test/midi-manager.test.js`.
-- [ ] **Phase 2 — MIDI in → recording.** Refactor the per-key `handleStart`/
-  `handleEnd` closures in `toolbar.js` `rebuildKeyboard()` into module-level
-  `noteOn(midi, velocity, source)` / `noteOff(midi, source)`; feed MIDI input
-  through the same pair. Handle note-on velocity 0 as note-off. Switch the
-  recorder from `Date.now()` to `performance.now()` so `MIDIMessageEvent.timeStamp`
-  is directly comparable. Record to `activeRecordSlot`; add an omni/channel-N
-  input filter. Fold in the two open keyboard bugs below while in there.
-- [ ] **Phase 3 — playback → MIDI out.** Fan out in app.js `playNote()`/`stopNoteFn`.
-  Output mode Internal / MIDI / Both (default Internal). Per-slot → channel map,
-  defaulting to identity. Use timestamped note-offs
-  (`send([0x80|ch, …], performance.now() + durMs)`) so they survive main-thread
-  stalls. Panic on pianoroll Stop. Note-on scheduling deliberately deferred —
-  worker/main `performance.timeOrigin` are not guaranteed to match.
+- [x] **Phase 2 — MIDI in → recording.** Per-key closures in `toolbar.js`
+  replaced by shared `noteOn(midi, velocity, when)` / `noteOff(midi, when)` /
+  `releaseAllHeld()`, driven by both the on-screen keys and
+  `handleMidiMessage`. Velocity-0 note-on = note-off; CC 120/123 release
+  everything; system messages (status ≥ 0xF0) ignored. Recorder switched to
+  `performance.now()` so `MIDIMessageEvent.timeStamp` is used directly. Omni /
+  channel-N input filter persisted in midi-manager. Notes outside the C2–C6
+  grid are **octave-folded** into range (note-on and note-off fold identically,
+  so nothing sticks). MIDI activity lamp in the recording controls.
+  `test/midi-input-recording.test.js`.
+- [x] **Phase 3 — playback → MIDI out.** Fan-out in app.js `playNote()`
+  (`joinStops` merges the internal + MIDI stop functions) and `stopNoteFn`.
+  Output mode Internal / MIDI / Both, default Internal; "MIDI only" with no
+  reachable device falls back to the internal synth rather than going silent.
+  Per-slot → channel map, identity default, free-form — **no monotimbral
+  special-casing**: a monotimbral synth ignores channels it is not set to,
+  which is harmless. Patch previews stay internal regardless of mode (nothing
+  is loaded on the device to preview with until Phase 4). Note-offs for piano
+  roll notes are **timestamped** `performance.now() + durMs - NOTE_OFF_GAP_MS`
+  (2 ms gap so a repeat of the same pitch is not cut); held keys pass
+  `{sustained:true}` and are released explicitly instead, since their 30 s is a
+  safety value not a duration. `test/midi-output-routing.test.js`,
+  `test/pianoroll-stop-release.test.js`.
+- [ ] **Phase 3b (later, as agreed)** — note-on scheduling, and letting the
+  user declare (or autodetect) that a device is multitimbral.
 - [ ] **Phase 4 — SysEx bulk transport.** `html/components/syx-builder.js`:
   bulk dump `F0 43 0n 09 20 00 <4096 packed> <cksum> F7`, checksum
   `(128 - (sum & 0x7F)) & 0x7F`. `patch.voice_data` is already the packed
@@ -51,8 +63,8 @@ Bug survey 2026-10-23 (all confirmed by code trace, none fixed yet). Ordered by 
 - [ ] `job.js complete()` reads `ctr` once, calls `addPatchToContainer()` per patch (each re-reads + saves), then `putContainer(ctr)` with the stale copy → `patchIds` reset to `[]`. Assign/Export/Sort see no patches; `restore()` re-runs `complete()` every reload.
 - [x] `dx7-params.js` byte 13 KVS/AMS swap — fixed, `test/dx7-params-kvs-ams.test.js`.
 - [x] Tick-worker restart race — fixed with a generation counter (`startTickWorker`/`stopTickWorker` in app.js, `startWorker` opt in toolbar/pianoroll), `test/tick-worker-restart.test.js`. Record now stops playback first; pianoroll Play is a no-op while recording.
-- [ ] Keyboard `mouseleave` always fires `handleEnd` → `stopNoteFn` note-off even if key wasn't pressed; sweeping the mouse cuts sequencer notes on the active slot. `activeSounds` is never populated because `playNote` returns undefined. **Fix during Phase 2** — the MIDI-in refactor rewrites exactly these lines.
-- [ ] Key released before `acquire()` resolves → `stopNoteFn` skipped (`isReady()` false) → 30 s stuck note.
+- [x] Keyboard `mouseleave` note-off for unpressed keys — fixed in Phase 2: a `heldNotes` set gates `noteOff`, so a mouse sweep emits nothing. `activeSounds` now populates because `playNote` returns a stop function (`withTimeout` in app.js wraps it with the safety timer and cancels the timer on explicit release).
+- [x] Key released before `acquire()` resolves → 30 s stuck note — fixed in Phase 2: if the key is already up when the async stop function arrives, `noteOn` calls it immediately instead of storing it.
 - [x] `audio-manager initAudio()` never cleared `initPromise`/`ctx` on rejection — fixed: a `.catch` on the init promise tears down `ctx`/`dx7Node`/diff caches and sets state `closed`, so the next `acquire()` retries. Remaining: the ready-handshake still resolves unconditionally after 2 s (deliberate fallback, left alone).
 - [x] Menu "Emergency stop" never re-sent snapshot/volumes — fixed: shared `doEmergencyStop()` in app.js re-sends the snapshot on both paths, and worklet `reinit` now calls `reset_engine()` (channel volumes are static in WASM and survive). Remaining: persisted volumes still aren't pushed to the synth on initial page load.
 - [x] Persisted channel volumes never pushed on initial load — fixed: `sendVoiceSnapshot` now sends `channel-volume` per slot, diffed via `lastSentVolume` (also updated by `setChannelVolume`, so the drag path doesn't cause a redundant push). `test/channel-volume-snapshot.test.js`.
@@ -61,7 +73,7 @@ Bug survey 2026-10-23 (all confirmed by code trace, none fixed yet). Ordered by 
 - [ ] `canvas.js` floating-patch `handleEnd` ignores `didMove` → tap on header absorbs patch into any overlapping container. `addPatchToContainer` onto a grouped container makes the patch invisible.
 - [x] `removeContainer` left the job in `jobStore` — fixed: it now calls `jobManager.stop()` + `jobStore.remove()` alongside the IndexedDB delete. (canvas.js now imports job.js, which already imported canvas.js — a deliberate ESM cycle; both sides only read the binding inside functions.)
 - [ ] `edit-panel.js`: Params Save stores stale `algorithm`/`feedback` metadata; shared slider clamps value on mode switch; Save requires `/api/play`. (`createTagEditor(null)` throw and the `status.textContent` typo are fixed.)
-- [ ] `pianoroll.js` hit-testing ignores loop wrap (second copy unclickable, creates duplicates); Stop doesn't `releaseAllNotes()`; notes can extend past loop end; Play button label desyncs on empty roll.
+- [ ] `pianoroll.js` hit-testing ignores loop wrap (second copy unclickable, creates duplicates); notes can extend past loop end; Play button label desyncs on empty roll. (Stop not calling `releaseAllNotes()` is fixed — `onStopPlayback` opt, wired in app.js to release both the internal synth and MIDI out.)
 - [ ] Listener leaks: `makeStarDraggable` document mouseup, more-menu document click (not via `onDoc`), `initCanvas` re-registers drop/`touch-drop-patch` handlers per call.
 - [x] `dx7-processor` 300 ms note-on latency — fixed by shrinking the ring lookahead to 4 blocks (~12 ms); underrun fallback still renders inline. 16-voice block renders in ~43 µs, so the cushion is ample.
 - [x] `msfa_bridge.cpp init_engine()` SynthUnit leak (~13 MB per preview) — fixed: `SynthUnit` destructor, `RingBuffer::Reset()`, new `reset_engine()` export; `renderOffline` and `batchRenderWaveforms` call it per render. WASM rebuilt. `test/wasm-engine-reset.test.js`.
@@ -83,7 +95,7 @@ OpenPatches is a browser-based DX7 patch editor and sequencer. It communicates w
 **Frontend (Vanilla JS, no framework):**
 - `html/app.js`: main orchestrator. Wires file input, menu bar, canvas, toolbar. Creates tick worker, `stopTickWorker` helper. PlayNote/playPatch with multi-channel support. Emergency stop with voice reload.
 - `html/components/canvas.js`: Canvas — patches + PatchContainers on night-sky. Drag-to-reposition, snap-into-container, resize containers. State derived from linked Job. Uses `onDoc()` helper for document-level listeners with cleanup via `clearDocListeners()` on each `renderAll()` to prevent stale closures. All interactive elements in `#night-sky`.
-- `html/components/toolbar.js`: Unified Piano Roll + Keyboard panel with tabs: Canvas | Piano Roll | Edit | Log | Mute. Keyboard integrated into Piano Roll panel (recording controls + octave selector + piano keys below pianoroll grid). VoiceBank select dropdown. Undo button for recording. Mobile octave selector (0–7). Uses tick worker for precise playback/recording timing.
+- `html/components/toolbar.js`: Unified Piano Roll + Keyboard panel with tabs: Canvas | Piano Roll | Edit | Log | Mute. Keyboard integrated into Piano Roll panel (recording controls + octave selector + piano keys below pianoroll grid). VoiceBank select dropdown. Undo button for recording. Mobile octave selector (0–7). Uses tick worker for precise playback/recording timing. **Note dispatch:** every note source goes through `noteOn(midi, velocity, when)` / `noteOff(midi, when)` — on-screen keys, and `handleMidiMessage` for external MIDI. `heldNotes` (a Set) is the authority on what is down; `noteOff` is a no-op for anything not in it. Timing is `performance.now()` so `MIDIMessageEvent.timeStamp` can be passed straight in as `when`. The midi-manager import is namespaced `midiManager` because `midi` is the note-number parameter name throughout the file.
 - `html/components/edit-panel.js`: Morph / Params / Random editing.
 - `html/components/job.js`: Job class — steering object for WAV import lifecycle. Owns: probe → match → poll → complete/fail.
 - `html/components/patch-model.js`: Unified data model + stores (localStorage). `patchStore`, `canvasStore`, `jobStore`.
@@ -94,7 +106,7 @@ OpenPatches is a browser-based DX7 patch editor and sequencer. It communicates w
 - `html/components/tag-editor.js`: Tag editor component with autocomplete.
 - `html/components/tutorial.js`: First-run tutorial modal with overlay highlights. Skips clip-path on mobile.
 - `html/synth/audio-manager.js`: Singleton AudioContext + AudioWorklet. `acquire()` creates once, `initAudio()` loads modules once. Multi-channel: `sendVoiceSnapshot()`, `playNoteOnChannel()`. `emergencyStop()` reinitializes MSFA engine. No malloc/free — uses static WASM buffers. `playNoteOnChannel` guards against stale note-off via self-reference check.
-- `html/synth/midi-manager.js`: Web MIDI singleton, same shape as audio-manager. Access is requested only on demand and never at import time. Two permission tiers: `requestMidi({sysex:false})` for notes, `requestMidi({sysex:true})` for bulk dumps — the upgrade re-prompts and swaps the `MIDIAccess`, so `attachInputListener()` re-binds the input handler by object identity, and a generation counter stops an older in-flight request clobbering a newer grant. Port selection persists to localStorage by id **with a name fallback** (ids are not stable across sessions). `panic()` = CC 120 + CC 123 on all 16 channels; called on emergency stop, output change, `pagehide` and tab-hide. `receiveBank`/`sendBank` are Phase 4 stubs that drive progress then reject. Test seams: `_reset()`, `_getAccess()`.
+- `html/synth/midi-manager.js`: Web MIDI singleton, same shape as audio-manager. Access is requested only on demand and never at import time. Two permission tiers: `requestMidi({sysex:false})` for notes, `requestMidi({sysex:true})` for bulk dumps — the upgrade re-prompts and swaps the `MIDIAccess`, so `attachInputListener()` re-binds the input handler by object identity, and a generation counter stops an older in-flight request clobbering a newer grant. Port selection persists to localStorage by id **with a name fallback** (ids are not stable across sessions). `panic()` = CC 120 + CC 123 on all 16 channels; called on emergency stop, output change, `pagehide` and tab-hide. `receiveBank`/`sendBank` are Phase 4 stubs that drive progress then reject. Test seams: `_reset()`, `_getAccess()`. **Note output:** `outputMode` (internal/midi/both), `slotChannels[8]` (slot → MIDI channel, identity default), `playNoteOut()`/`stopNoteOut()`/`releaseAllOut()` with an `outNotes` map keyed `"channel:midi"`. `isInternalEnabled()` returns true when MIDI-only is selected but no device is reachable — the app must never go silent because a cable was unplugged.
 - `html/components/midi-panel.js`: MIDI settings modal (enable, input/output selects, device channel, panic) and `sendBankToDevice()` — the guarded confirm → optional backup → send flow. A failed backup aborts the send; it never falls through to "proceed anyway". Transport is stubbed, dialogs/progress/error paths are real.
 - `html/synth/tick-worker.js`: Web Worker heartbeat for pianoroll. Atomics.wait path (SharedArrayBuffer) for zero-CPU sleeping, setTimeout fallback. Absolute targeting (`t0 + col * msPer`), spin for sub-ms precision. Start/stop via a generation counter in shared memory (`Int32Array[0]`): app.js `startTickWorker`/`stopTickWorker` bump it + `Atomics.notify`; a loop exits when the counter moves, and a `start` whose `gen` is outdated is ignored. Always start through `opts.startWorker`, never raw `postMessage`. Worker stays alive for reuse.
 - `html/synth/dx7-synth.js`: Batch waveform rendering only (main thread WASM). No realtime synth code.

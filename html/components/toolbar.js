@@ -5,6 +5,9 @@
 import { createPianoroll } from './pianoroll.js';
 import { createVoiceBank } from './voicebank.js';
 import { createEditPanel } from './edit-panel.js';
+// Namespaced as midiManager, not midi: `midi` is the note-number parameter
+// name throughout this file and would shadow the import.
+import * as midiManager from '../synth/midi-manager.js';
 
 const logRecord = () => {};
 
@@ -237,6 +240,7 @@ export function createToolbar(opts) {
             return entries[slot] || null;
         },
         onClear: () => { if (voiceBank._clear) voiceBank._clear(); },
+        onStopPlayback: opts.onPlaybackStop || null,
     });
     pianorollRow.appendChild(pianorollRef.element);
 
@@ -285,26 +289,177 @@ export function createToolbar(opts) {
         }
     });
 
+    // MIDI input activity lamp — the only feedback that an external
+    // controller is actually reaching the app.
+    const midiIndicator = document.createElement('span');
+    midiIndicator.className = 'kb-midi-indicator';
+    midiIndicator.textContent = '◆';
+    midiIndicator.title = 'MIDI input activity';
+    if (!midiManager.isSupported()) midiIndicator.style.display = 'none';
+
+    let midiFlashTimer = null;
+    function flashMidiActivity() {
+        midiIndicator.classList.add('active');
+        clearTimeout(midiFlashTimer);
+        midiFlashTimer = setTimeout(() => midiIndicator.classList.remove('active'), 150);
+    }
+
     kbControls.appendChild(btnUndo);
     kbControls.appendChild(btnRecord);
     kbControls.appendChild(btnPlayStop);
     kbControls.appendChild(kbVoices);
+    kbControls.appendChild(midiIndicator);
     pianorollPanel.appendChild(kbControls);
 
-    function stopAll() {
-        // Finalize any active presses and stop sounds
-        for (const [midi, press] of activePresses) {
-            const bpm = pianorollRef && pianorollRef.getBpm ? pianorollRef.getBpm() : 120;
-            const msPerSixteenth = (60000 / bpm) / 4;
-            const elapsed = Date.now() - recordStartTime;
-            const endCol = Math.round(elapsed / msPerSixteenth);
+    // --- Note dispatch -----------------------------------------------------
+    // One entry point for every note source: the on-screen keyboard and (when
+    // enabled) an external MIDI controller. Routing both through the same pair
+    // is what makes recording, key highlighting and note-off bookkeeping
+    // identical for the two, instead of the MIDI path reimplementing them.
+
+    const keyElements = {};
+    const activePresses = new Map(); // midi → { startCol } — recording only
+    const activeSounds = new Map();  // midi → stopFn
+    const heldNotes = new Set();     // midi currently down, from any source
+
+    // performance.now() throughout, because MIDIMessageEvent.timeStamp is on
+    // the same clock: an incoming note can be placed at the moment the
+    // hardware sent it rather than the moment our handler happened to run.
+    const now = () => performance.now();
+
+    function colAt(when) {
+        const bpm = pianorollRef && pianorollRef.getBpm ? pianorollRef.getBpm() : 120;
+        const msPerSixteenth = (60000 / bpm) / 4;
+        return Math.round((when - recordStartTime) / msPerSixteenth);
+    }
+
+    const LOWEST_KEY = PIANO_NOTES[0].midi;
+    const HIGHEST_KEY = PIANO_NOTES[PIANO_NOTES.length - 1].midi;
+    let foldWarned = false;
+
+    // The grid only spans C2–C6, but controllers routinely play outside it.
+    // Fold by octaves rather than dropping the note: a 49-key controller
+    // starting at C1 would otherwise lose its whole bottom octave in silence.
+    function foldIntoRange(midi) {
+        let m = midi;
+        while (m < LOWEST_KEY) m += 12;
+        while (m > HIGHEST_KEY) m -= 12;
+        if (m !== midi && !foldWarned) {
+            foldWarned = true;
+            logRecord(`[midi] notes outside C2-C6 are folded into range (first: ${midi} → ${m})`);
+        }
+        return m;
+    }
+
+    function noteOn(midi, velocity = 100, when = now()) {
+        // A controller can re-send note-on for a key it never released.
+        if (heldNotes.has(midi)) noteOff(midi, when);
+        heldNotes.add(midi);
+
+        const key = keyElements[midi];
+        if (key) key.classList.add('pressed');
+
+        const entries = voiceBank ? voiceBank._getEntries() : [];
+        const activeEntry = entries[activeRecordSlot];
+        // sustained: the 30 s here is a safety net, not a real duration, so
+        // the MIDI path must not schedule a note-off that far ahead.
+        const result = (playNoteFn || (() => {}))(
+            midi, 30000, activeEntry ? activeEntry.voiceData : null, activeRecordSlot,
+            { sustained: true, velocity });
+
+        if (result && typeof result.then === 'function') {
+            result.then(stopFn => {
+                if (typeof stopFn !== 'function') return;
+                // The key can be back up before the synth finishes starting.
+                // Releasing immediately here is what stops a short tap during
+                // audio warm-up from ringing for the full 30 s safety timeout.
+                if (heldNotes.has(midi)) activeSounds.set(midi, stopFn);
+                else stopFn();
+            }).catch(() => {});
+        } else if (typeof result === 'function') {
+            activeSounds.set(midi, result);
+        }
+
+        if (recording) {
+            activePresses.set(midi, { startCol: colAt(when) });
+            logRecord(`[record] note-on midi=${midi} vel=${velocity} slot=${activeRecordSlot}`);
+        }
+
+        if (onNoteClick) onNoteClick(midi);
+    }
+
+    function noteOff(midi, when = now()) {
+        // Not held — nothing to do. This is the guard that stops a mouse
+        // sweeping across the keyboard (mouseleave fires on every key it
+        // crosses) from firing note-offs that cut sequencer notes on the
+        // active channel.
+        if (!heldNotes.has(midi)) return;
+        heldNotes.delete(midi);
+
+        const key = keyElements[midi];
+        if (key) key.classList.remove('pressed');
+
+        const stopFn = activeSounds.get(midi);
+        if (stopFn) {
+            activeSounds.delete(midi);
+            stopFn();
+        } else if (opts.stopNoteFn) {
+            // The synth never handed us a stop function; fall back to a direct
+            // note-off. Only reachable for a genuinely held note now.
+            opts.stopNoteFn(midi, activeRecordSlot);
+        }
+
+        if (recording && activePresses.has(midi)) {
+            const press = activePresses.get(midi);
+            activePresses.delete(midi);
+            const endCol = colAt(when);
+            logRecord(`[record] note-off midi=${midi} startCol=${press.startCol} endCol=${endCol}`);
             addRecordedNote(midi, press.startCol, endCol, activeRecordSlot);
         }
-        for (const [midi, stopFn] of activeSounds) {
-            if (stopFn) stopFn();
+    }
+
+    function releaseAllHeld(when = now()) {
+        for (const midi of [...heldNotes]) noteOff(midi, when);
+    }
+
+    // --- External MIDI input ---
+
+    function handleMidiMessage(e) {
+        const data = e.data;
+        if (!data || data.length < 2) return;
+        const status = data[0];
+        if (status >= 0xF0) return; // system messages carry no channel
+
+        const type = status & 0xF0;
+        const channel = status & 0x0F;
+        const filter = midiManager.getInputChannel();
+        if (filter >= 0 && channel !== filter) return;
+
+        // timeStamp is 0 in some implementations; fall back to "now".
+        const when = e.timeStamp > 0 ? e.timeStamp : now();
+
+        if (type === 0x90 && data[2] > 0) {
+            flashMidiActivity();
+            noteOn(foldIntoRange(data[1]), data[2], when);
+        } else if (type === 0x80 || (type === 0x90 && data[2] === 0)) {
+            // Note-on with velocity 0 is a note-off — most controllers use
+            // this form so they can stay in running status.
+            flashMidiActivity();
+            noteOff(foldIntoRange(data[1]), when);
+        } else if (type === 0xB0 && (data[1] === 120 || data[1] === 123)) {
+            releaseAllHeld(when);
         }
+    }
+
+    if (midiManager.isSupported()) midiManager.setOnMidiMessage(handleMidiMessage);
+
+    function stopAll() {
+        // Finalizes held presses into recorded notes and stops their sounds.
+        releaseAllHeld();
+        midiManager.releaseAllOut();
         activePresses.clear();
         activeSounds.clear();
+        heldNotes.clear();
         recording = false;
         undoStack.length = 0;
         btnRecord.classList.remove('active');
@@ -330,7 +485,7 @@ export function createToolbar(opts) {
                 pianorollRef.stopPlayback();
             }
             recording = true;
-            recordStartTime = Date.now();
+            recordStartTime = performance.now();
             btnRecord.classList.add('active');
             btnRecord.textContent = 'Stop ■';
             btnPlayStop.textContent = 'Stop ■';
@@ -388,10 +543,6 @@ export function createToolbar(opts) {
     const kb = document.createElement('div');
     kb.className = 'keyboard';
 
-    const keyElements = {};
-    const activePresses = new Map(); // midi → { startTime, startCol }
-    const activeSounds = new Map(); // midi → stopFn
-
     function addRecordedNote(midi, startCol, endCol, slot) {
         if (!pianorollRef || !pianorollRef.addNote) return;
         const tc = pianorollRef.totalCols ? pianorollRef.totalCols() : 16;
@@ -427,61 +578,18 @@ export function createToolbar(opts) {
             key.title = n.name;
             if (n.white) key.textContent = n.name;
 
-            const playFn = playNoteFn || (() => {});
-
             function handleStart(e) {
                 if (e.type === 'mousedown' && e.button !== 0) return;
                 e.preventDefault();
-                key.classList.add('pressed');
-
-                const entries = voiceBank ? voiceBank._getEntries() : [];
-                const activeEntry = entries[activeRecordSlot];
-                const result = playFn(n.midi, 30000, activeEntry ? activeEntry.voiceData : null, activeRecordSlot);
-                if (result && typeof result.then === 'function') {
-                    result.then(stopFn => {
-                        if (typeof stopFn === 'function') activeSounds.set(n.midi, stopFn);
-                    }).catch(() => {});
-                } else if (typeof result === 'function') {
-                    activeSounds.set(n.midi, result);
-                }
-
-                if (recording) {
-                    const bpm = pianorollRef.getBpm ? pianorollRef.getBpm() : 120;
-                    const msPerSixteenth = (60000 / bpm) / 4;
-                    const elapsed = Date.now() - recordStartTime;
-                    const rawCol = Math.round(elapsed / msPerSixteenth);
-                    activePresses.set(n.midi, { startTime: Date.now(), startCol: rawCol });
-                    logRecord(`[record] note-on midi=${n.midi} slot=${activeRecordSlot} col=${rawCol}`);
-                }
-
-                if (onNoteClick) onNoteClick(n.midi);
+                noteOn(n.midi);
             }
 
+            // noteOff ignores keys that are not held, so mouseleave is safe to
+            // wire unconditionally — sweeping across the keyboard no longer
+            // emits note-offs for keys that were never pressed.
             function handleEnd(e) {
                 e.preventDefault();
-                key.classList.remove('pressed');
-
-                // Stop the sustained sound
-                if (activeSounds.has(n.midi)) {
-                    const stopFn = activeSounds.get(n.midi);
-                    activeSounds.delete(n.midi);
-                    if (typeof stopFn === 'function') stopFn();
-                } else if (opts.stopNoteFn) {
-                    // Fallback: send note-off directly if async stopFn wasn't ready
-                    opts.stopNoteFn(n.midi, activeRecordSlot);
-                }
-
-                if (recording && activePresses.has(n.midi)) {
-                    const press = activePresses.get(n.midi);
-                    activePresses.delete(n.midi);
-                    const bpm = pianorollRef.getBpm ? pianorollRef.getBpm() : 120;
-                    const msPerSixteenth = (60000 / bpm) / 4;
-                    const elapsed = Date.now() - recordStartTime;
-                    const endCol = Math.round(elapsed / msPerSixteenth);
-                    const durCols = endCol - press.startCol;
-                    logRecord(`[record] note-off midi=${n.midi} startCol=${press.startCol} endCol=${endCol} dur=${durCols} slot=${activeRecordSlot}`);
-                    addRecordedNote(n.midi, press.startCol, endCol, activeRecordSlot);
-                }
+                noteOff(n.midi);
             }
 
             key.addEventListener('mousedown', handleStart);

@@ -11,6 +11,7 @@
 import * as midi from '../synth/midi-manager.js';
 
 const CHANNEL_COUNT = 16;
+const VOICE_BANK_SLOTS = 8;
 
 function el(tag, className, text) {
     const node = document.createElement(tag);
@@ -86,6 +87,7 @@ export function openMidiSettings(opts = {}) {
         body.appendChild(deviceArea);
 
         const inputSel = el('select', 'midi-select');
+        const inputChSel = el('select', 'midi-select');
         const outputSel = el('select', 'midi-select');
         const channelSel = el('select', 'midi-select');
 
@@ -98,8 +100,50 @@ export function openMidiSettings(opts = {}) {
         }
 
         deviceArea.appendChild(labelled('Input', inputSel, 'Used to record notes into the piano roll.'));
+        deviceArea.appendChild(labelled('Input channel', inputChSel,
+            'Notes are recorded to the voice slot selected in the piano roll, whichever channel they arrive on.'));
         deviceArea.appendChild(labelled('Output', outputSel, 'Used to play the piano roll on external gear.'));
         deviceArea.appendChild(labelled('Device channel', channelSel, 'Basic channel of the synth, for bulk SysEx dumps.'));
+
+        // --- Output routing ---
+        const modeSel = el('select', 'midi-select');
+        for (const [value, text] of [
+            ['internal', 'Internal synth only'],
+            ['midi', 'MIDI device only'],
+            ['both', 'Both'],
+        ]) {
+            const o = el('option', null, text);
+            o.value = value;
+            modeSel.appendChild(o);
+        }
+        modeSel.value = midi.getOutputMode();
+        modeSel.addEventListener('change', () => midi.setOutputMode(modeSel.value));
+        deviceArea.appendChild(labelled('Play notes through', modeSel,
+            'Applies to the piano roll and keyboard. Patch previews always use the ' +
+            'internal synth — the external device has no patch loaded to preview with.'));
+
+        const mapWrap = el('div', 'midi-field');
+        mapWrap.appendChild(el('label', 'midi-label', 'Voice slot → MIDI channel'));
+        const mapGrid = el('div', 'midi-slot-map');
+        for (let slot = 0; slot < VOICE_BANK_SLOTS; slot++) {
+            const cell = el('div', 'midi-slot-cell');
+            cell.appendChild(el('span', 'midi-slot-num', String(slot + 1)));
+            const sel = el('select', 'midi-select midi-select-compact');
+            for (let ch = 0; ch < CHANNEL_COUNT; ch++) {
+                const o = el('option', null, String(ch + 1));
+                o.value = String(ch);
+                sel.appendChild(o);
+            }
+            sel.value = String(midi.getSlotChannel(slot));
+            sel.addEventListener('change', () => midi.setSlotChannel(slot, parseInt(sel.value, 10)));
+            cell.appendChild(sel);
+            mapGrid.appendChild(cell);
+        }
+        mapWrap.appendChild(mapGrid);
+        mapWrap.appendChild(el('div', 'midi-hint',
+            'Defaults to slot N → channel N. A monotimbral synth will only sound the ' +
+            'channel it is set to and ignores the rest, which is harmless.'));
+        deviceArea.appendChild(mapWrap);
 
         const panicBtn = el('button', 'midi-panic-btn', '⚠ Panic (All Notes Off)');
         panicBtn.title = 'Send All Sound Off + All Notes Off on all 16 channels';
@@ -116,6 +160,17 @@ export function openMidiSettings(opts = {}) {
         }
         channelSel.value = String(midi.getDeviceChannel());
         channelSel.addEventListener('change', () => midi.setDeviceChannel(parseInt(channelSel.value, 10)));
+
+        const omni = el('option', null, 'Omni (all channels)');
+        omni.value = '-1';
+        inputChSel.appendChild(omni);
+        for (let ch = 0; ch < CHANNEL_COUNT; ch++) {
+            const o = el('option', null, String(ch + 1));
+            o.value = String(ch);
+            inputChSel.appendChild(o);
+        }
+        inputChSel.value = String(midi.getInputChannel());
+        inputChSel.addEventListener('change', () => midi.setInputChannel(parseInt(inputChSel.value, 10)));
 
         function fillPorts(sel, ports, selectedId, placeholder) {
             sel.innerHTML = '';

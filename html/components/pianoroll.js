@@ -1053,6 +1053,10 @@ export function createPianoroll(opts) {
         // Normalize scroll position within single copy
         scroll.scrollLeft = scroll.scrollLeft % gridWidth();
         draw();
+
+        // Release sounding notes. Stopping the tick worker only stops new
+        // note-ons; anything already ringing has to be cut explicitly.
+        if (opts.onStopPlayback) opts.onStopPlayback();
     }
 
     // --- Tick Worker Handler ---

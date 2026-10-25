@@ -178,18 +178,58 @@ function noteToFreq(note, octave) {
     return 440 * Math.pow(2, (note + (octave - 4) * 12 - 9) / 12);
 }
 
-async function playNote(midi, voiceData, durationMs, channel) {
+// Wrap a stop function in its own safety timeout, so held notes still die if
+// the caller never releases them, and so an explicit release cancels the
+// timer instead of leaving it to fire against a reused note.
+function withTimeout(stop, durMs) {
+    if (!stop) return null;
+    let done = false;
+    const timer = setTimeout(() => { done = true; stop(); }, durMs);
+    return () => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        stop();
+    };
+}
+
+// Combine the internal and MIDI stop functions into one, skipping nulls.
+function joinStops(...stops) {
+    const live = stops.filter(Boolean);
+    if (live.length === 0) return null;
+    if (live.length === 1) return live[0];
+    return () => { for (const s of live) s(); };
+}
+
+/**
+ * Play a note. Resolves to a stop function (or null) — the keyboard relies on
+ * this to release a held key; returning undefined used to leave every key
+ * falling back to a blind note-off on the active channel.
+ */
+async function playNote(midi, voiceData, durationMs, channel, noteOpts = {}) {
     const dur = Math.round(durationMs || 0);
     const durMs = dur > 0 ? dur : 600;
 
+    // --- External MIDI fan-out. Slot-addressed notes only: a patch preview
+    // has nothing loaded on the device to sound with (that arrives with the
+    // Phase 4 SysEx path), so previews stay internal whatever the mode.
+    let midiStop = null;
+    if (channel != null && midiManager.isMidiOutEnabled()) {
+        midiStop = midiManager.playNoteOut(channel, midi, noteOpts.velocity || 100, durMs, {
+            // Held keys carry a 30 s safety duration rather than a real one;
+            // scheduling a note-off that far out would leave a landmine for
+            // whatever reuses the pitch next.
+            schedule: !noteOpts.sustained,
+        });
+    }
+
     // Pianoroll path: channel provided → play on that channel in worklet
     if (channel != null) {
+        if (!midiManager.isInternalEnabled()) return midiStop;
         try {
             await acquire();
             if (isReady()) {
-                const stop = playNoteOnChannel(channel, midi);
-                if (stop) setTimeout(stop, durMs);
-                return;
+                return joinStops(midiStop, withTimeout(playNoteOnChannel(channel, midi), durMs));
             }
         } catch (err) {
             console.warn('DX7 synth unavailable:', err);
@@ -201,9 +241,7 @@ async function playNote(midi, voiceData, durationMs, channel) {
         try {
             await acquire();
             if (isReady()) {
-                const stop = playNoteRealtime(voiceData, midi);
-                if (stop) setTimeout(stop, durMs * 0.6);
-                return;
+                return withTimeout(playNoteRealtime(voiceData, midi), durMs * 0.6);
             }
         } catch (err) {
             console.warn('DX7 synth unavailable, falling back:', err);
@@ -220,8 +258,9 @@ async function playNote(midi, voiceData, durationMs, channel) {
             if (!resp.ok) throw new Error('Server returned ' + resp.status);
             const data = await resp.json();
             if (data.wav_url) {
-                new Audio(baseUrl + data.wav_url).play();
-                return;
+                const audio = new Audio(baseUrl + data.wav_url);
+                audio.play();
+                return () => { audio.pause(); };
             }
         } catch (err) {
             showError('Playback failed: ' + err.message);
@@ -242,7 +281,9 @@ async function playNote(midi, voiceData, durationMs, channel) {
         gain.connect(ctx.destination);
         osc.start();
         osc.stop(ctx.currentTime + 0.6);
+        return () => { try { osc.stop(); } catch {} };
     } catch {}
+    return null;
 }
 
 async function playPatch(patch, midi) {
@@ -613,9 +654,17 @@ function initToolbar() {
     pianoDock.innerHTML = '';
 
     const isMobile = window.matchMedia('(max-width: 600px)').matches;
-    const playFn = (midi, durationMs, voiceData, channel) => playNote(midi, voiceData || activeSyxVoiceData, durationMs, channel);
+    const playFn = (midi, durationMs, voiceData, channel, noteOpts) =>
+        playNote(midi, voiceData || activeSyxVoiceData, durationMs, channel, noteOpts);
     const stopNoteFn = (midi, channel) => {
+        if (midiManager.isMidiOutEnabled()) midiManager.stopNoteOut(channel, midi);
         if (isReady()) playNoteOnChannel(channel, midi, 0);
+    };
+    // Stop must silence both engines. The internal release was missing
+    // entirely — the piano roll's Stop button left its notes ringing.
+    const onPlaybackStop = () => {
+        releaseAllNotes();
+        midiManager.releaseAllOut();
     };
 
     const dock = createToolbar({
@@ -627,6 +676,7 @@ function initToolbar() {
         startWorker: startTickWorker,
         stopWorker: stopTickWorker,
         onNoteClick: (midi) => { activeKeyboardNote = midi; },
+        onPlaybackStop,
         onEmergencyStop: doEmergencyStop,
         onSnapshot: (entries) => {
             if (isReady()) {

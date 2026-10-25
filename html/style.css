@@ -2862,6 +2862,37 @@ footer {
 
 .midi-field { margin: 0.75rem 0; }
 
+.midi-slot-map {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.35rem;
+}
+
+.midi-slot-cell {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.midi-slot-num {
+    font-size: 0.72rem;
+    color: #777;
+    width: 0.9rem;
+    text-align: right;
+}
+
+.midi-select-compact { padding: 0.2rem 0.25rem; font-size: 0.75rem; }
+
+.kb-midi-indicator {
+    color: #333;
+    font-size: 0.7rem;
+    align-self: center;
+    margin-left: 0.25rem;
+    transition: color 0.1s;
+}
+
+.kb-midi-indicator.active { color: #4caf50; }
+
 .midi-label {
     display: block;
     font-size: 0.75rem;
