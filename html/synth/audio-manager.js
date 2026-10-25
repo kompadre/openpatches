@@ -10,6 +10,7 @@ const VOICE_BANK_SLOTS = 8;   // Voice bank uses channels 0-7
 const MIDI_CHANNELS = 16;     // DX7 has 16 MIDI channels (0-15)
 const PREVIEW_SLOT = 15;      // Dedicated WASM patch slot for preview
 const PREVIEW_CHANNEL = 15;   // Dedicated MIDI channel for preview
+const DEFAULT_VOLUME = 100;   // Must match voicebank.js DEFAULT_VOLUME
 
 let ctx = null;
 let dx7Node = null;
@@ -86,6 +87,20 @@ async function initAudio() {
         return ctx;
     })();
 
+    // A failed load must not poison the singleton — drop the half-built state
+    // so the next acquire() can retry instead of returning the rejected promise
+    // forever. The caller still sees the original rejection.
+    initPromise.catch(() => {
+        initPromise = null;
+        initialized = false;
+        if (ctx) { try { ctx.close(); } catch {} }
+        ctx = null;
+        dx7Node = null;
+        lastSentPatch.fill(null);
+        lastSentVolume.fill(null);
+        setState('closed');
+    });
+
     return initPromise;
 }
 
@@ -122,6 +137,11 @@ function normalizeVoiceData(voiceData) {
 // (the fresh engine has forgotten everything).
 const lastSentPatch = new Array(VOICE_BANK_SLOTS).fill(null);
 
+// Last channel volume sent per slot. Volumes live only in the engine, so a
+// fresh page load starts every channel at the WASM default — the persisted
+// VoiceBank volumes have to be pushed with the first snapshot.
+const lastSentVolume = new Array(VOICE_BANK_SLOTS).fill(null);
+
 function patchBytesEqual(a, b) {
     if (!a || !b || a.length !== b.length) return false;
     for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
@@ -131,7 +151,7 @@ function patchBytesEqual(a, b) {
 /**
  * Send the VoiceBank snapshot to the synth.
  * Each entry loads into its slot (array index) and maps channel = slot.
- * Idempotent — only slots whose patch bytes changed are actually sent.
+ * Idempotent — only slots whose patch bytes or volume changed are sent.
  */
 export function sendVoiceSnapshot(entries) {
     if (!isReady() || !dx7Node) return;
@@ -139,6 +159,13 @@ export function sendVoiceSnapshot(entries) {
     for (let i = 0; i < Math.min(entries.length, VOICE_BANK_SLOTS); i++) {
         const entry = entries[i];
         if (!entry || !entry.voiceData) continue;
+
+        const volume = entry.volume ?? DEFAULT_VOLUME;
+        if (lastSentVolume[i] !== volume) {
+            lastSentVolume[i] = volume;
+            setChannelVolume(i, volume);
+        }
+
         const patch = normalizeVoiceData(entry.voiceData);
         if (!patch) continue;
         if (patchBytesEqual(lastSentPatch[i], patch)) continue;
@@ -165,6 +192,7 @@ export function playSamplesInWorklet(samples) {
  */
 export function setChannelVolume(channel, volume) {
     if (!dx7Node) return;
+    if (channel >= 0 && channel < VOICE_BANK_SLOTS) lastSentVolume[channel] = volume;
     dx7Node.port.postMessage({ type: 'channel-volume', channel, volume });
 }
 

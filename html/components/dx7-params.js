@@ -101,8 +101,15 @@ export const CURVE_NAMES = ['-Lin', '-Exp', '+Lin', '+Exp'];
 export const WAVEFORM_NAMES = ['Tri', 'Saw↓', 'Saw↑', 'Sqr', 'Sin', 'S&H'];
 
 export function freqDisplay(oscMode, coarse, fine) {
-    if (oscMode === 1) return (coarse * 100 + fine) + ' Hz';
-    return (coarse + fine / 100).toFixed(2) + '×';
+    // Fixed mode: only the low 2 bits of coarse count; frequency is
+    // 10^(coarse%4 + fine/100) Hz — 1 Hz to ~9772 Hz.
+    if (oscMode === 1) {
+        const hz = Math.pow(10, (coarse % 4) + fine / 100);
+        return (hz < 10 ? hz.toFixed(2) : hz.toFixed(1)) + ' Hz';
+    }
+    // Ratio mode: coarse 0 means 0.5, and fine is a percentage of coarse.
+    const base = coarse === 0 ? 0.5 : coarse;
+    return (base * (1 + fine / 100)).toFixed(2) + '×';
 }
 
 // --- DX7 32 Algorithm grid layouts ---

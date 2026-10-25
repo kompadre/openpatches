@@ -147,7 +147,16 @@ export function createVoiceBank(opts) {
         }
     }
 
+    // Color is a function of the slot index (AGENTS.md), so it has to be
+    // recomputed after any splice — remove/reorder/insert all shift indices.
+    function reindexColors() {
+        for (let i = 0; i < entries.length; i++) {
+            if (entries[i]) entries[i].color = PATCH_COLORS[i % PATCH_COLORS.length];
+        }
+    }
+
     function render() {
+        reindexColors();
         list.innerHTML = '';
         for (let i = 0; i < MAX_SLOTS; i++) {
             const entry = entries[i];
@@ -163,7 +172,7 @@ export function createVoiceBank(opts) {
                 overlay.className = 'voicebank-volume-overlay voicebank-dot';
                 overlay.style.background = entry.color;
                 if (isCompact) {
-                    const vol = (entry.volume || DEFAULT_VOLUME) / 127 * 100;
+                    const vol = (entry.volume ?? DEFAULT_VOLUME) / 127 * 100;
                     overlay.style.position = 'absolute';
                     overlay.style.left = '0';
                     overlay.style.bottom = '0';
@@ -174,7 +183,7 @@ export function createVoiceBank(opts) {
                     overlay.style.pointerEvents = 'none';
                     overlay.style.zIndex = '0';
                 } else {
-                    overlay.style.width = ((entry.volume || DEFAULT_VOLUME) / 127 * 100) + '%';
+                    overlay.style.width = ((entry.volume ?? DEFAULT_VOLUME) / 127 * 100) + '%';
                 }
                 item.appendChild(overlay);
 
@@ -231,7 +240,7 @@ export function createVoiceBank(opts) {
                 // Volume label
                 const volEl = document.createElement('span');
                 volEl.className = 'voicebank-vol';
-                volEl.textContent = entry.volume || DEFAULT_VOLUME;
+                volEl.textContent = entry.volume ?? DEFAULT_VOLUME;
                 item.appendChild(volEl);
 
                 const removeBtn = document.createElement('button');
@@ -478,7 +487,7 @@ export function createVoiceBank(opts) {
             }
             // Backfill volume for entries saved before volume feature
             for (const entry of entries) {
-                if (entry.volume === undefined) entry.volume = DEFAULT_VOLUME;
+                if (entry.volume == null) entry.volume = DEFAULT_VOLUME;
             }
         } catch (e) {
             console.warn('VoiceBank load failed:', e);

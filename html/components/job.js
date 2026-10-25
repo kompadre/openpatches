@@ -508,7 +508,20 @@ export class Job {
             matchBtn.className = 'btn-match';
             matchBtn.textContent = disabled ? 'Matching...' : 'Start Matching';
             matchBtn.disabled = disabled;
-            matchBtn.addEventListener('click', () => this.startMatch(form, opts));
+            // Disable immediately — startMatch is async, and a second click
+            // before it returns uploads the same WAV twice.
+            matchBtn.addEventListener('click', async () => {
+                matchBtn.disabled = true;
+                matchBtn.textContent = 'Matching...';
+                try {
+                    await this.startMatch(form, opts);
+                } finally {
+                    if (this.status !== 'polling') {
+                        matchBtn.disabled = false;
+                        matchBtn.textContent = 'Start Matching';
+                    }
+                }
+            });
 
             actions.appendChild(resetBtn);
             actions.appendChild(matchBtn);

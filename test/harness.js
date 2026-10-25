@@ -210,3 +210,70 @@ export function installBrowserEnv() {
 }
 
 export { StubElement };
+
+// --- Web MIDI stub ---
+
+class StubMidiPort {
+    constructor(id, name, type) {
+        this.id = id;
+        this.name = name;
+        this.manufacturer = 'Stub';
+        this.type = type;
+        this.state = 'connected';
+        this.onmidimessage = null;
+        this.sent = [];       // [data, timestamp] of everything send()ed
+    }
+
+    send(data, timestamp) {
+        this.sent.push([Array.from(data), timestamp]);
+    }
+
+    // Test helper: deliver an inbound message to whoever is listening.
+    receive(data, timeStamp = 0) {
+        if (this.onmidimessage) this.onmidimessage({ data: Uint8Array.from(data), timeStamp });
+    }
+}
+
+class StubMidiAccess {
+    constructor(inputs, outputs, sysexEnabled) {
+        this.inputs = new Map(inputs.map(p => [p.id, p]));
+        this.outputs = new Map(outputs.map(p => [p.id, p]));
+        this.sysexEnabled = sysexEnabled;
+        this.onstatechange = null;
+    }
+}
+
+/**
+ * Install `navigator.requestMIDIAccess`. Returns handles for driving the fake
+ * devices. Pass `{ supported: false }` to simulate Safari.
+ */
+export function installMidiStub({ supported = true, grant = true, inputs = ['In A'], outputs = ['Out A'] } = {}) {
+    const handles = {
+        requests: [],        // the opts each requestMIDIAccess() was called with
+        inputs: inputs.map((n, i) => new StubMidiPort('in' + i, n, 'input')),
+        outputs: outputs.map((n, i) => new StubMidiPort('out' + i, n, 'output')),
+        access: null,
+        grant,
+    };
+
+    if (!globalThis.navigator) globalThis.navigator = {};
+    if (!supported) {
+        delete globalThis.navigator.requestMIDIAccess;
+        return handles;
+    }
+
+    globalThis.navigator.requestMIDIAccess = (opts = {}) => {
+        handles.requests.push(opts);
+        if (!handles.grant) return Promise.reject(new Error('Permission denied'));
+        // A real upgrade hands back fresh port objects, which is exactly the
+        // case that used to strand the input listener — model it faithfully.
+        handles.inputs = handles.inputs.map(p => Object.assign(new StubMidiPort(p.id, p.name, 'input'), { sent: p.sent }));
+        handles.outputs = handles.outputs.map(p => Object.assign(new StubMidiPort(p.id, p.name, 'output'), { sent: p.sent }));
+        handles.access = new StubMidiAccess(handles.inputs, handles.outputs, !!opts.sysex);
+        return Promise.resolve(handles.access);
+    };
+
+    return handles;
+}
+
+export { StubMidiPort };

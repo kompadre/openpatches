@@ -31,6 +31,14 @@
                     <button id="menu-emergency-stop">⚠ Emergency Stop</button>
                 </div>
             </div>
+            <div class="menu-item" data-menu="midi" id="menu-item-midi">
+                <span class="menu-label">MIDI</span>
+                <div class="menu-dropdown">
+                    <button id="menu-midi-devices">Devices…</button>
+                    <hr>
+                    <button id="menu-midi-panic">⚠ Panic (All Notes Off)</button>
+                </div>
+            </div>
             <div class="menu-item" data-menu="help">
                 <span class="menu-label">Help</span>
                 <div class="menu-dropdown">
@@ -237,6 +245,8 @@
         <span class="footer-copy">&copy; Alexey S. Kompaniets 2026</span>
         <span class="footer-storage-note">All data stored locally in your browser</span>
         <span id="audio-status" class="audio-status audio-closed" title="Audio: inactive">●</span>
+        <span id="midi-status" class="audio-status midi-status midi-closed" title="MIDI: not enabled"
+            style="display:none;">◆</span>
     </footer>
 
     <script type="module" src="html/app.js"></script>

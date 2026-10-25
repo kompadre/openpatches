@@ -5,6 +5,10 @@
 import { canvasStore, patchStore, jobStore, createPatch, patchIdFromVoiceData } from './patch-model.js';
 import { createTagEditor } from './tag-editor.js';
 import { createPatchRow, getDraggedPatch, clearDraggedPatch } from './patch-row.js';
+// Cyclic with job.js (it imports canvas.js) — only used inside functions, so the
+// binding is always initialized by the time it is read.
+import { jobManager } from './job.js';
+import { isSupported as midiSupported } from '../synth/midi-manager.js';
 import { decodeWavSamples, drawMiniWaveform } from './patch.js';
 import { batchRenderWaveforms } from '../synth/dx7-synth.js';
 
@@ -209,9 +213,12 @@ export function removeContainer(id) {
         if (!confirm(`Remove "${ctr.name}" and its ${ctr.patchIds.length} patch(es)?`)) return;
     }
 
-    // Clean up IndexedDB WAV data if this was a job container
-    if (ctr.jobId && window._dbDelete) {
-        window._dbDelete(ctr.jobId).catch(() => {});
+    // Clean up the linked job: stop polling, drop the stored job and its WAV.
+    // Without this the poll keeps running and jobStore resurrects it on reload.
+    if (ctr.jobId) {
+        jobManager.stop(ctr.jobId);
+        jobStore.remove(ctr.jobId);
+        if (window._dbDelete) window._dbDelete(ctr.jobId).catch(() => {});
     }
 
     // Only remove canvas entries that belong to this container
@@ -684,6 +691,24 @@ function renderContainer(ctr) {
     });
     headerRight.appendChild(exportBtn);
 
+    // Send to MIDI device. Hidden where Web MIDI does not exist (Safari, iOS).
+    const sendBtn = document.createElement('button');
+    sendBtn.className = 'sky-container-send';
+    sendBtn.textContent = '🎹';
+    sendBtn.title = 'Send as bank to MIDI device';
+    if (!midiSupported()) sendBtn.style.display = 'none';
+    sendBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        activateContainer(el);
+        if (optsRef && optsRef.onSendContainerToDevice) {
+            const patches = (ctr.patchIds || [])
+                .map(id => patchStore.get(id))
+                .filter(p => p && p.voice_data);
+            optsRef.onSendContainerToDevice(patches, ctr.name);
+        }
+    });
+    headerRight.appendChild(sendBtn);
+
     // Collapse toggle
     const collapseBtn = document.createElement('button');
     collapseBtn.className = 'sky-container-collapse';
@@ -728,6 +753,7 @@ function renderContainer(ctr) {
         { icon: '🎵', label: 'Assign', action: () => assignBtn.click() },
         { icon: '↕️', label: 'Sort', action: () => sortBtn.click() },
         { icon: '💾', label: 'Export .SYX', action: () => exportBtn.click() },
+        ...(midiSupported() ? [{ icon: '🎹', label: 'Send to device', action: () => sendBtn.click() }] : []),
         { icon: '▼', label: 'Collapse', action: () => collapseBtn.click() },
         { icon: '×', label: 'Remove', action: () => removeBtn.click() },
     ];

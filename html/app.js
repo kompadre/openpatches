@@ -10,6 +10,8 @@ import { createToolbar } from './components/toolbar.js';
 import { openEdit } from './components/edit-panel.js';
 import { Job, jobManager } from './components/job.js';
 import { initTutorial, startTutorial, restartTutorial, isTutorialActive } from './components/tutorial.js';
+import * as midi from './synth/midi-manager.js';
+import { openMidiSettings, sendBankToDevice } from './components/midi-panel.js';
 
 const fileInput = document.getElementById('wav-input');
 
@@ -117,6 +119,39 @@ setOnStatusChange((state) => {
     }
 });
 
+// --- MIDI status indicator ---
+
+// The menu and the footer dot only exist where Web MIDI does. Safari and every
+// iOS browser have none, so hide the UI rather than offering dead controls.
+function updateMidiStatus(state) {
+    const el = document.getElementById('midi-status');
+    if (!el) return;
+    if (state === 'unsupported') {
+        el.style.display = 'none';
+        return;
+    }
+    el.style.display = '';
+    el.className = 'audio-status midi-status midi-' + state;
+    el.title = 'MIDI: ' + state;
+}
+
+function initMidiUi() {
+    const menuItem = document.getElementById('menu-item-midi');
+    if (!midi.isSupported()) {
+        if (menuItem) menuItem.style.display = 'none';
+        updateMidiStatus('unsupported');
+        return;
+    }
+    midi.setOnStatusChange(updateMidiStatus);
+
+    // A page teardown or a backgrounded tab must not leave notes ringing on
+    // hardware — the user has no way to silence it from here afterwards.
+    window.addEventListener('pagehide', () => midi.panic());
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') midi.panic();
+    });
+}
+
 // --- Emergency stop ---
 
 // Silences everything and resets the engine to a fresh SynthUnit. Channel
@@ -124,6 +159,7 @@ setOnStatusChange((state) => {
 // VoiceBank snapshot is re-sent once the fresh engine is up.
 function doEmergencyStop() {
     emergencyStop();
+    midi.panic();
     if (pianoDockWrapper && pianoDockWrapper._pianoroll && pianoDockWrapper._pianoroll.stopPlayback) {
         pianoDockWrapper._pianoroll.stopPlayback();
     }
@@ -277,6 +313,11 @@ function hideProgress() {
     if (wrapper) wrapper.style.display = 'none';
 }
 
+function setProgressLabel(text) {
+    const label = document.getElementById('progress-label');
+    if (label) label.textContent = text;
+}
+
 // --- Error modal ---
 
 function showError(message) {
@@ -362,7 +403,10 @@ fileInput.addEventListener('change', async () => {
         return;
     }
 
-    // WAV import — Job drives the lifecycle
+    // WAV import — Job drives the lifecycle.
+    // Clear the input first: re-picking the same file otherwise fires no
+    // change event, so the second import silently does nothing.
+    fileInput.value = '';
     const job = Job.create({ fileName: file.name });
     await job.probe(file, jobOpts);
     refreshCanvas();
@@ -373,55 +417,64 @@ fileInput.addEventListener('change', async () => {
 async function handleSyxUpload(file) {
     try {
         const arrayBuffer = await file.arrayBuffer();
-        const patches = parseSyxFile(arrayBuffer);
-        if (!patches || patches.length === 0) {
-            appendLog(`Failed to parse .syx file: ${file.name}`);
-            return;
-        }
-
-        const name = file.name.replace(/\.[^.]+$/, '');
-        appendLog(`Parsed .syx: ${name} (${patches.length} voices)`);
-
-        const created = [];
-        for (let i = 0; i < patches.length; i++) {
-            const p = patches[i];
-            // Skip INIT VOICE (empty/blank patches)
-            if (p.name === 'INIT VOICE' || p.name.trim() === '') continue;
-            if (!p.voice_data && p.raw) {
-                p.voice_data = voiceRawToBase64(p.raw);
-            }
-            const patch = createPatch({
-                name: p.name,
-                algorithm: p.algorithm,
-                feedback: p.feedback,
-                voice_data: p.voice_data || null,
-                source: 'syx',
-            });
-            patchStore.put(patch);
-            created.push(patch);
-        }
-
-        const jobId = 'job_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
-        jobStore.put({
-            id: jobId,
-            type: 'syx_import',
-            status: 'completed',
-            fileName: file.name,
-            containerId: null,
-        });
-
-        const ctr = addContainer(name, { jobId, patchIds: created.map(p => p.id) });
-        const updatedCtr = canvasStore.getContainer(ctr.id);
-        if (updatedCtr) {
-            updatedCtr.patchIds = created.map(p => p.id);
-            canvasStore.putContainer(updatedCtr);
-        }
-
-        initCanvas(getCanvasOpts());
-
+        importSyxBank(arrayBuffer, file.name.replace(/\.[^.]+$/, ''), file.name);
     } catch (err) {
         appendLog(`Error reading .syx file: ${err.message}`);
     }
+}
+
+/**
+ * Turn a raw 4104-byte DX7 bank into patches + a canvas container.
+ * Shared by the .syx file import and the MIDI bank backup, which both end up
+ * holding exactly the same bytes.
+ * @returns {object} the created container
+ * @throws if the buffer is not a parseable DX7 bank
+ */
+function importSyxBank(arrayBuffer, name, sourceLabel) {
+    const patches = parseSyxFile(arrayBuffer);
+    if (!patches || patches.length === 0) {
+        throw new Error(`Not a readable DX7 bank: ${sourceLabel}`);
+    }
+
+    appendLog(`Parsed .syx: ${name} (${patches.length} voices)`);
+
+    const created = [];
+    for (let i = 0; i < patches.length; i++) {
+        const p = patches[i];
+        // Skip INIT VOICE (empty/blank patches)
+        if (p.name === 'INIT VOICE' || p.name.trim() === '') continue;
+        if (!p.voice_data && p.raw) {
+            p.voice_data = voiceRawToBase64(p.raw);
+        }
+        const patch = createPatch({
+            name: p.name,
+            algorithm: p.algorithm,
+            feedback: p.feedback,
+            voice_data: p.voice_data || null,
+            source: 'syx',
+        });
+        patchStore.put(patch);
+        created.push(patch);
+    }
+
+    const jobId = 'job_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+    jobStore.put({
+        id: jobId,
+        type: 'syx_import',
+        status: 'completed',
+        fileName: sourceLabel,
+        containerId: null,
+    });
+
+    const ctr = addContainer(name, { jobId, patchIds: created.map(p => p.id) });
+    const updatedCtr = canvasStore.getContainer(ctr.id);
+    if (updatedCtr) {
+        updatedCtr.patchIds = created.map(p => p.id);
+        canvasStore.putContainer(updatedCtr);
+    }
+
+    initCanvas(getCanvasOpts());
+    return ctr;
 }
 
 // --- Canvas opts ---
@@ -477,7 +530,11 @@ function getCanvasOpts() {
                     if (arrayBuffer) {
                         const blob = new Blob([arrayBuffer]);
                         const url = URL.createObjectURL(blob);
-                        new Audio(url).play();
+                        const audio = new Audio(url);
+                        const revoke = () => URL.revokeObjectURL(url);
+                        audio.addEventListener('ended', revoke, { once: true });
+                        audio.addEventListener('error', revoke, { once: true });
+                        audio.play().catch(revoke);
                     }
                 });
             }
@@ -527,6 +584,23 @@ function getCanvasOpts() {
             } catch (e) {
                 appendLog('Export failed: ' + e.message);
             }
+        },
+        onSendContainerToDevice: async (patches, name) => {
+            if (patches.length === 0) {
+                appendLog('No patches with voice data to send');
+                return;
+            }
+            await sendBankToDevice(patches, name || 'bank', {
+                appendLog,
+                showProgress,
+                hideProgress,
+                setProgressLabel,
+                showError,
+                onBackupReceived: (bytes, backupName) => {
+                    // Same bytes a .syx file would carry, so the import path is reused.
+                    importSyxBank(bytes.buffer || bytes, backupName, backupName);
+                },
+            });
         },
         baseUrl,
     };
@@ -753,6 +827,14 @@ document.getElementById('menu-clear-history').addEventListener('click', async ()
 });
 document.getElementById('menu-emergency-stop').addEventListener('click', doEmergencyStop);
 
+// MIDI menu
+document.getElementById('menu-midi-devices').addEventListener('click', () => {
+    openMidiSettings({ appendLog, onStatusChange: updateMidiStatus });
+});
+document.getElementById('menu-midi-panic').addEventListener('click', () => {
+    appendLog(midi.panic() ? 'MIDI panic sent' : 'MIDI panic: no output device selected');
+});
+
 // Help modals
 document.getElementById('menu-help').addEventListener('click', () => {
     document.getElementById('help-modal').style.display = '';
@@ -843,4 +925,5 @@ document.getElementById('menu-restart-tutorial').addEventListener('click', () =>
 // --- Init ---
 
 initToolbar();
+initMidiUi();
 restore();

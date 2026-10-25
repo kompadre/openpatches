@@ -194,9 +194,13 @@ function renderEditPanel() {
         return;
     }
 
-    // Always show tags for the primary edit slot
-    tagsArea.innerHTML = '<div class="edit-section-title">Patch Tags</div>';
-    tagsArea.appendChild(createTagEditor(editSlot, (updated) => patchStore.put(updated)));
+    // Tags belong to the primary edit slot — A can be cleared while B is still
+    // set, and createTagEditor(null) throws.
+    tagsArea.innerHTML = '';
+    if (editSlot) {
+        tagsArea.innerHTML = '<div class="edit-section-title">Patch Tags</div>';
+        tagsArea.appendChild(createTagEditor(editSlot, (updated) => patchStore.put(updated)));
+    }
 
     if (editMode === 'morph') {
         renderMorphMode(slotArea, sliderRow, paramsArea, goBtn, statusEl);
@@ -867,7 +871,7 @@ async function runRandomMutate() {
     try {
         const voiceData = await fetchVoiceData(editSlot);
         if (!voiceData) {
-            status.textContent = 'Error: no voice data';
+            statusEl.textContent = 'Error: no voice data';
             return;
         }
 
