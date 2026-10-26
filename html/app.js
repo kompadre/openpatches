@@ -10,7 +10,7 @@ import { createToolbar } from './components/toolbar.js';
 import { openEdit } from './components/edit-panel.js';
 import { Job, jobManager } from './components/job.js';
 import { initTutorial, startTutorial, restartTutorial, isTutorialActive } from './components/tutorial.js';
-import * as midi from './synth/midi-manager.js';
+import * as midiManager from './synth/midi-manager.js';
 import { openMidiSettings, sendBankToDevice } from './components/midi-panel.js';
 
 const fileInput = document.getElementById('wav-input');
@@ -137,18 +137,18 @@ function updateMidiStatus(state) {
 
 function initMidiUi() {
     const menuItem = document.getElementById('menu-item-midi');
-    if (!midi.isSupported()) {
+    if (!midiManager.isSupported()) {
         if (menuItem) menuItem.style.display = 'none';
         updateMidiStatus('unsupported');
         return;
     }
-    midi.setOnStatusChange(updateMidiStatus);
+    midiManager.setOnStatusChange(updateMidiStatus);
 
     // A page teardown or a backgrounded tab must not leave notes ringing on
     // hardware — the user has no way to silence it from here afterwards.
-    window.addEventListener('pagehide', () => midi.panic());
+    window.addEventListener('pagehide', () => midiManager.panic());
     document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'hidden') midi.panic();
+        if (document.visibilityState === 'hidden') midiManager.panic();
     });
 }
 
@@ -159,7 +159,7 @@ function initMidiUi() {
 // VoiceBank snapshot is re-sent once the fresh engine is up.
 function doEmergencyStop() {
     emergencyStop();
-    midi.panic();
+    midiManager.panic();
     if (pianoDockWrapper && pianoDockWrapper._pianoroll && pianoDockWrapper._pianoroll.stopPlayback) {
         pianoDockWrapper._pianoroll.stopPlayback();
     }
@@ -897,7 +897,7 @@ document.getElementById('menu-midi-devices').addEventListener('click', () => {
     openMidiSettings({ appendLog, onStatusChange: updateMidiStatus });
 });
 document.getElementById('menu-midi-panic').addEventListener('click', () => {
-    appendLog(midi.panic() ? 'MIDI panic sent' : 'MIDI panic: no output device selected');
+    appendLog(midiManager.panic() ? 'MIDI panic sent' : 'MIDI panic: no output device selected');
 });
 
 // Help modals

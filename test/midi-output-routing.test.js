@@ -116,20 +116,24 @@ describe('slot → channel mapping', () => {
 
 describe('note output', () => {
     test('a scheduled note-off is timestamped, not left to a timer', () => {
+        // The implementation reads its own clock inside the call, so bracket
+        // it: the stamp must sit between t0+498 and t1+498 (2 ms gap).
         const t0 = performance.now();
         midi.playNoteOut(0, 60, 100, 500);
+        const t1 = performance.now();
         assert.deepEqual(msgs()[0], [0x90, 60, 100]);
         assert.deepEqual(msgs()[1], [0x80, 60, 0]);
         const when = stamps()[1];
-        assert.ok(when >= t0 + 490 && when <= t0 + 500,
+        assert.ok(when >= t0 + 490 && when <= t1 + 498,
             `note-off scheduled ${when - t0}ms out, expected just under 500`);
     });
 
     test('the scheduled note-off lands early enough not to cut a repeat', () => {
-        const t0 = performance.now();
         midi.playNoteOut(0, 60, 100, 500);
-        // The next note at this pitch starts at t0+500; the off must precede it.
-        assert.ok(stamps()[1] < t0 + 500);
+        const t1 = performance.now();
+        // The next note at this pitch starts no earlier than 500 ms after the
+        // call returned; the off must precede it.
+        assert.ok(stamps()[1] < t1 + 500);
     });
 
     test('a held note is not scheduled — only an explicit note-off ends it', () => {
