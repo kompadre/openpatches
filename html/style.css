@@ -200,12 +200,18 @@ body {
     justify-content: center;
 }
 
+/* Column flex + a viewport cap so a dialog taller than the screen scrolls
+   its body instead of overflowing off the top and bottom edges, which left
+   the MIDI settings unreachable at the extremes. The header stays put. */
 .modal-dialog {
     background: #16213e;
     border: 1px solid #333;
     border-radius: 8px;
     max-width: 450px;
     width: 90%;
+    max-height: 88vh;
+    display: flex;
+    flex-direction: column;
     box-shadow: 0 8px 30px rgba(0,0,0,0.6);
 }
 
@@ -215,6 +221,7 @@ body {
     justify-content: space-between;
     padding: 0.75rem 1rem;
     border-bottom: 1px solid #2a2a3e;
+    flex-shrink: 0;
 }
 
 .modal-header h3 {
@@ -242,6 +249,11 @@ body {
     font-size: 0.85rem;
     color: #bbb;
     line-height: 1.6;
+    /* min-height:0 is what actually lets a flex item shrink below its
+       content height; without it overflow-y never kicks in. */
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
 }
 
 .modal-body a {
@@ -2976,6 +2988,78 @@ footer {
     justify-content: flex-end;
     gap: 0.5rem;
     margin-top: 1.1rem;
+}
+
+.midi-btn-small { padding: 0.25rem 0.5rem; font-size: 0.72rem; }
+
+.midi-latency-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.midi-latency-slider { flex: 1; min-width: 0; accent-color: #4caf50; }
+
+.midi-latency-num {
+    width: 4.2rem;
+    background: #1a1a2e;
+    border: 1px solid #333;
+    border-radius: 4px;
+    color: #ddd;
+    padding: 0.3rem 0.4rem;
+    font-size: 0.8rem;
+    text-align: right;
+}
+
+.midi-latency-unit { font-size: 0.75rem; color: #888; }
+
+.midi-latency-cal {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 0.6rem;
+}
+
+.midi-latency-start.active { border-color: #4caf50; color: #4caf50; }
+
+/* Lit for an instant when the MIDI note-on leaves. No transition on the
+   way in — the onset is the whole point; a short fade on the way out. */
+.midi-latency-flash {
+    flex: 1;
+    height: 2.2rem;
+    border: 1px solid #333;
+    border-radius: 4px;
+    background: #111;
+    color: #444;
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.25s ease-out, color 0.25s ease-out, box-shadow 0.25s ease-out;
+}
+
+.midi-sysex-warning {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    border-left: 3px solid #ff9800;
+    background: rgba(255, 152, 0, 0.08);
+    padding: 0.55rem 0.7rem;
+    margin: 0.5rem 0;
+    font-size: 0.76rem;
+    line-height: 1.5;
+    border-radius: 0 4px 4px 0;
+}
+
+.midi-sysex-warning button { flex-shrink: 0; }
+
+.midi-latency-flash.on {
+    background: #ffd54f;
+    color: #1a1a2e;
+    box-shadow: 0 0 18px #ffd54f;
+    transition: none;
 }
 
 #log-details {

@@ -33,6 +33,21 @@ const VOICE_BANK_SLOTS = 8;
 // note-off arriving at exactly the same instant.
 const NOTE_OFF_GAP_MS = 2;
 
+// Every note-path message is sent with a timestamp this far in the future.
+// The internal synth has latency of its own (AudioContext output buffering +
+// the worklet's ring lookahead), so an unstamped MIDI message reaches the
+// hardware well before the same note is heard locally and "both" mode
+// flams. The default was measured against a Korg Volca FM; the right value
+// depends on the machine and audio device, so the user tunes it in the MIDI
+// settings modal (see playLatencyProbe). It is applied in exactly one place,
+// sendAt(), so note-on, note-off, stop and release can never drift apart: a
+// note-off that beats its own note-on to the wire is a stuck note.
+// SysEx transfers are deliberately *not* delayed — they are not aligned with
+// audio, and the edit-buffer dump in front of an audition note gains a head
+// start on its ~50 ms wire time by going out immediately.
+export const DEFAULT_OUTPUT_LATENCY_MS = 317;
+export const MAX_OUTPUT_LATENCY_MS = 1000;
+
 let access = null;          // MIDIAccess, or null until requested
 let sysexEnabled = false;   // whether `access` was granted with sysex
 let requestPromise = null;  // in-flight requestMIDIAccess
@@ -45,6 +60,7 @@ let deviceChannel = 0;      // SysEx sub-status / basic channel (0-15)
 let inputChannel = -1;      // -1 = omni, else only accept this channel (0-15)
 let outputMode = 'internal';            // internal | midi | both
 let auditionEnabled = false;            // send previews to the device's edit buffer
+let outputLatencyMs = DEFAULT_OUTPUT_LATENCY_MS;
 let lastAuditionVoice = null;           // dedupe key for the loaded edit buffer
 let slotChannels = defaultSlotChannels();
 
@@ -262,16 +278,41 @@ function attachInputListener() {
 
 // --- Output ---
 
+export function getOutputLatency() { return outputLatencyMs; }
+
+/**
+ * Set the output latency in ms. Clamped to 0..MAX_OUTPUT_LATENCY_MS and
+ * rounded — the value comes from a slider, so out-of-range input is a
+ * nudge past the end, not a mistake to reject. Non-numbers are ignored.
+ */
+export function setOutputLatency(ms) {
+    const n = Number(ms);
+    if (!Number.isFinite(n)) return;
+    outputLatencyMs = Math.round(Math.min(MAX_OUTPUT_LATENCY_MS, Math.max(0, n)));
+    saveState();
+}
+
+// The one place the output latency is applied. `when` is on the
+// performance.now() clock and means "when the internal synth would sound
+// this"; the message is stamped outputLatencyMs later so the hardware
+// lines up with it. Throws like port.send() does — callers decide how to
+// recover.
+function sendAt(port, data, when = performance.now()) {
+    port.send(data, when + outputLatencyMs);
+}
+
 /**
  * Send raw bytes to the selected output. `timestamp` is on the
- * performance.now() clock; omit it to send immediately.
+ * performance.now() clock and defaults to now; like every other note-path
+ * message it is shifted by the output latency so it lines up with the
+ * internal synth.
  * @returns {boolean} whether anything was sent
  */
 export function send(data, timestamp) {
     const port = getOutputPort();
     if (!port) return false;
     try {
-        port.send(data, timestamp);
+        sendAt(port, data, timestamp);
         return true;
     } catch (err) {
         console.warn('[midi] send failed:', err);
@@ -342,8 +383,15 @@ export function playNoteOut(slot, midi, velocity = 100, durMs = 0, opts = {}) {
     return sendNoteOnChannel(getSlotChannel(slot), midi, velocity, durMs, opts);
 }
 
-/** Same contract as playNoteOut, but on an explicit MIDI channel. */
-function sendNoteOnChannel(ch, midi, velocity = 100, durMs = 0, { schedule = true } = {}) {
+/**
+ * Same contract as playNoteOut, but on an explicit MIDI channel.
+ *
+ * `time` is when the note sounds on the performance.now() clock (default:
+ * now). Everything — note-on, scheduled note-off, the bookkeeping timer —
+ * is relative to it, and every message goes through sendAt() so the output
+ * latency is applied uniformly.
+ */
+function sendNoteOnChannel(ch, midi, velocity = 100, durMs = 0, { schedule = true, time = performance.now() } = {}) {
     const port = getOutputPort();
     if (!port) return null;
 
@@ -353,7 +401,7 @@ function sendNoteOnChannel(ch, midi, velocity = 100, durMs = 0, { schedule = tru
     if (prev) prev();
 
     try {
-        port.send([0x90 | ch, midi, velocity]);
+        sendAt(port, [0x90 | ch, midi, velocity], time);
     } catch (err) {
         console.warn('[midi] note-on failed:', err);
         return null;
@@ -361,7 +409,9 @@ function sendNoteOnChannel(ch, midi, velocity = 100, durMs = 0, { schedule = tru
 
     if (schedule && durMs > 0) {
         try {
-            port.send([0x80 | ch, midi, 0], performance.now() + Math.max(1, durMs - NOTE_OFF_GAP_MS));
+            // Same clock as the note-on, so the note keeps its full length
+            // and the off can never land ahead of the on.
+            sendAt(port, [0x80 | ch, midi, 0], time + Math.max(1, durMs - NOTE_OFF_GAP_MS));
         } catch { /* the explicit stop below is the fallback */ }
     }
 
@@ -371,18 +421,41 @@ function sendNoteOnChannel(ch, midi, velocity = 100, durMs = 0, { schedule = tru
         done = true;
         if (outNotes.get(key) === stop) outNotes.delete(key);
         // Sent even when a note-off was already scheduled: a duplicate
-        // note-off is harmless, a missed one is not.
-        try { port.send([0x80 | ch, midi, 0]); } catch { /* port went away */ }
+        // note-off is harmless, a missed one is not. Goes through sendAt()
+        // too — an unstamped off would overtake the still-queued on.
+        try { sendAt(port, [0x80 | ch, midi, 0]); } catch { /* port went away */ }
     };
     outNotes.set(key, stop);
+
     if (schedule && durMs > 0) {
-        // Drop the bookkeeping entry roughly when the note ends.
+        // Drop the bookkeeping entry roughly when the note ends. The
+        // latency cancels out here: the note-on and the scheduled note-off
+        // are both shifted by it, so "ends" is simply time + durMs.
         setTimeout(() => {
             if (outNotes.get(key) === stop) outNotes.delete(key);
             done = true;
-        }, durMs);
+        }, Math.max(0, time - performance.now() + durMs));
     }
     return stop;
+}
+
+/**
+ * One tick of the output-latency calibration in the settings modal: a short
+ * note on the device's basic channel, sent exactly as a piano-roll note is,
+ * so what the user tunes against is what playback will do. `onWire` fires
+ * on the main thread when the note-on is due to leave — the modal flashes
+ * on it. With audition on, the device is handed the same INIT-style test
+ * tone the internal synth plays, so the two notes can be heard fusing.
+ * Works with no device selected: the flash alone is still useful.
+ * @returns {function|null} stop function
+ */
+export function playLatencyProbe(midi = 60, { velocity = 100, durMs = 150, voiceData = null, onWire = null } = {}) {
+    if (onWire) setTimeout(onWire, outputLatencyMs);
+    if (!getOutputPort()) return null;
+    if (voiceData && isAuditionEnabled()) {
+        return auditionNote(voiceData, midi, velocity, durMs);
+    }
+    return sendNoteOnChannel(deviceChannel, midi, velocity, durMs);
 }
 
 /** Blind note-off for a slot, used by the keyboard's fallback release path. */
@@ -392,7 +465,7 @@ export function stopNoteOut(slot, midi) {
     if (stop) { stop(); return true; }
     const port = getOutputPort();
     if (!port) return false;
-    try { port.send([0x80 | getSlotChannel(slot), midi, 0]); } catch { return false; }
+    try { sendAt(port, [0x80 | getSlotChannel(slot), midi, 0]); } catch { return false; }
     return true;
 }
 
@@ -406,18 +479,30 @@ export function releaseAllOut() {
  * Silence the output device: All Sound Off + All Notes Off on every channel.
  * Cheap, idempotent, and the only recovery path for a stuck note on external
  * hardware — call it liberally.
+ *
+ * Sent twice: once unstamped, so it goes out right now (and still makes it
+ * out on pagehide), and once the output latency later. Every note-on is
+ * queued that far ahead, so during playback there are always some still in
+ * flight; the immediate sweep alone would silence the device and then let
+ * those land and stick. Web MIDI's clear() would drop them, but Chrome has
+ * never implemented it.
  */
 export function panic() {
     outNotes.clear();
     const port = getOutputPort();
     if (!port) return false;
-    for (let ch = 0; ch < MIDI_CHANNELS; ch++) {
-        try {
+    const now = performance.now();
+    try {
+        for (let ch = 0; ch < MIDI_CHANNELS; ch++) {
             port.send([0xB0 | ch, ALL_SOUND_OFF, 0]);
             port.send([0xB0 | ch, ALL_NOTES_OFF, 0]);
-        } catch {
-            return false;
         }
+        for (let ch = 0; ch < MIDI_CHANNELS; ch++) {
+            sendAt(port, [0xB0 | ch, ALL_SOUND_OFF, 0], now);
+            sendAt(port, [0xB0 | ch, ALL_NOTES_OFF, 0], now);
+        }
+    } catch {
+        return false;
     }
     return true;
 }
@@ -576,6 +661,21 @@ export function isAuditionEnabled() {
 
 export function getAuditionEnabled() { return auditionEnabled; }
 
+/**
+ * Audition is switched on, but the grant we are holding is the plain tier
+ * and cannot carry SysEx — so auditioning silently does nothing.
+ *
+ * This is the normal state on a fresh page load: `auditionEnabled` is
+ * restored from localStorage, the permission tier is not, and MIDI is
+ * enabled with the weakest tier that the *default* settings need. Callers
+ * that can prompt (i.e. are inside a user gesture) should upgrade; the
+ * settings modal both pre-requests the right tier and offers a one-click
+ * fix when this is true.
+ */
+export function auditionNeedsSysex() {
+    return auditionEnabled && !!access && !sysexEnabled;
+}
+
 export function setAuditionEnabled(on) {
     auditionEnabled = !!on;
     lastAuditionVoice = null;
@@ -586,6 +686,9 @@ export function setAuditionEnabled(on) {
  * Load a voice into the device's edit buffer. Repeated calls with identical
  * bytes are skipped: a 163-byte VCED costs ~50 ms on the wire, which is
  * audible latency in front of a preview note.
+ *
+ * Sent unstamped on purpose: the audition note-on that follows is delayed
+ * by the output latency, so the dump gets that much of a head start.
  * @returns {boolean} whether the device was (or already was) loaded
  */
 export function sendVoiceToEditBuffer(voiceData) {
@@ -638,6 +741,7 @@ function saveState() {
             outputMode,
             slotChannels,
             auditionEnabled,
+            outputLatencyMs,
             names,
         }));
     } catch (e) {
@@ -663,6 +767,10 @@ function initFromStorage() {
     if (Number.isInteger(saved.inputChannel)) inputChannel = saved.inputChannel;
     if (saved.outputMode === 'midi' || saved.outputMode === 'both') outputMode = saved.outputMode;
     auditionEnabled = !!saved.auditionEnabled;
+    outputLatencyMs = DEFAULT_OUTPUT_LATENCY_MS;
+    if (Number.isFinite(saved.outputLatencyMs)) {
+        outputLatencyMs = Math.round(Math.min(MAX_OUTPUT_LATENCY_MS, Math.max(0, saved.outputLatencyMs)));
+    }
     slotChannels = defaultSlotChannels();
     if (Array.isArray(saved.slotChannels)) {
         saved.slotChannels.forEach((ch, i) => {
@@ -696,6 +804,7 @@ export function _reset() {
     inputChannel = -1;
     outputMode = 'internal';
     auditionEnabled = false;
+    outputLatencyMs = DEFAULT_OUTPUT_LATENCY_MS;
     lastAuditionVoice = null;
     sysexCollector = null;
     outNotes.clear();

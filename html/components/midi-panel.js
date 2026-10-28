@@ -14,6 +14,13 @@ import { buildBulkDump, VOICE_COUNT } from './syx-builder.js';
 const CHANNEL_COUNT = 16;
 const VOICE_BANK_SLOTS = 8;
 
+// Output-latency calibration: a test tone every PROBE_PERIOD_MS, PROBE_MS
+// long, and the indicator lit for FLASH_MS when the MIDI note-on leaves.
+const PROBE_NOTE = 60;
+const PROBE_MS = 150;
+const PROBE_PERIOD_MS = 1000;
+const FLASH_MS = 120;
+
 function el(tag, className, text) {
     const node = document.createElement(tag);
     if (className) node.className = className;
@@ -57,10 +64,19 @@ function openModal(title, buildBody, { onClose } = {}) {
 
 /**
  * Open the MIDI settings modal.
- * @param {{appendLog?: function}} opts
+ *
+ * `playTestNote(midi, durMs)` sounds the calibration tone on the internal
+ * synth and `prepareTestNote()` warms the synth up before the first tick,
+ * so that tick is not late. Both are optional: without them the latency
+ * control still works, there is just nothing local to compare against.
+ *
+ * @param {{appendLog?: function, onStatusChange?: function,
+ *          playTestNote?: function, prepareTestNote?: function,
+ *          testVoiceData?: Uint8Array}} opts
  */
 export function openMidiSettings(opts = {}) {
     const appendLog = opts.appendLog || (() => {});
+    let stopCalibration = () => {};
 
     openModal('MIDI Devices', (body, close) => {
         if (!midi.isSupported()) {
@@ -146,6 +162,122 @@ export function openMidiSettings(opts = {}) {
             'channel it is set to and ignores the rest, which is harmless.'));
         deviceArea.appendChild(mapWrap);
 
+        // --- Output latency ---
+        // Every MIDI note is sent this much later than the internal synth is
+        // told to play it, because the local engine has buffering of its own
+        // and the hardware would otherwise sound first. The right value is
+        // per machine, so it is tuned here by ear and eye: a test tone
+        // repeats locally, the box flashes the instant the matching note-on
+        // leaves for the device, and the user slides until they coincide.
+        const latWrap = el('div', 'midi-field');
+        latWrap.appendChild(el('label', 'midi-label', 'Output latency'));
+
+        const latRow = el('div', 'midi-latency-row');
+        const latSlider = document.createElement('input');
+        latSlider.type = 'range';
+        latSlider.className = 'midi-latency-slider';
+        latSlider.min = '0';
+        latSlider.max = String(midi.MAX_OUTPUT_LATENCY_MS);
+        latSlider.step = '1';
+        const latNum = document.createElement('input');
+        latNum.type = 'number';
+        latNum.className = 'midi-latency-num';
+        latNum.min = '0';
+        latNum.max = String(midi.MAX_OUTPUT_LATENCY_MS);
+        latNum.step = '1';
+        const latReset = el('button', 'midi-btn midi-btn-small midi-latency-reset', 'Default');
+        latReset.title = 'Back to ' + midi.DEFAULT_OUTPUT_LATENCY_MS + ' ms';
+        latRow.appendChild(latSlider);
+        latRow.appendChild(latNum);
+        latRow.appendChild(el('span', 'midi-latency-unit', 'ms'));
+        latRow.appendChild(latReset);
+        latWrap.appendChild(latRow);
+
+        function showLatency() {
+            const v = String(midi.getOutputLatency());
+            latSlider.value = v;
+            latNum.value = v;
+        }
+        function applyLatency(raw) {
+            const n = parseInt(raw, 10);
+            if (Number.isFinite(n)) midi.setOutputLatency(n);
+            showLatency();
+        }
+        latSlider.addEventListener('input', () => applyLatency(latSlider.value));
+        latNum.addEventListener('change', () => applyLatency(latNum.value));
+        latReset.addEventListener('click', () => applyLatency(midi.DEFAULT_OUTPUT_LATENCY_MS));
+        showLatency();
+
+        const calRow = el('div', 'midi-latency-cal');
+        const calBtn = el('button', 'midi-btn midi-latency-start', 'Start test tone');
+        const flash = el('div', 'midi-latency-flash');
+        flash.appendChild(el('span', null, 'MIDI out'));
+        calRow.appendChild(calBtn);
+        calRow.appendChild(flash);
+        latWrap.appendChild(calRow);
+
+        latWrap.appendChild(el('div', 'midi-hint',
+            'A short tone repeats once a second on the internal synth, and the same ' +
+            'note goes to the device on its basic channel with the delay above. ' +
+            'The box flashes at the moment the MIDI note-on leaves. Drag the slider ' +
+            'until the flash lands exactly on the tone you hear from your speakers — ' +
+            'the device and the internal synth are then in step. With audition on, ' +
+            'the device plays the same test tone, so you can also listen for the two ' +
+            'notes fusing into one.'));
+        deviceArea.appendChild(latWrap);
+
+        let calTimer = null;
+        let flashTimer = null;
+        let calStop = null;
+        let calGen = 0;     // bumped on stop so anything in flight stays dark
+
+        function calTick() {
+            const gen = calGen;
+            if (opts.playTestNote) opts.playTestNote(PROBE_NOTE, PROBE_MS);
+            calStop = midi.playLatencyProbe(PROBE_NOTE, {
+                durMs: PROBE_MS,
+                voiceData: opts.testVoiceData || null,
+                onWire: () => {
+                    if (gen !== calGen) return;
+                    flash.classList.add('on');
+                    clearTimeout(flashTimer);
+                    flashTimer = setTimeout(() => flash.classList.remove('on'), FLASH_MS);
+                },
+            });
+        }
+
+        stopCalibration = () => {
+            calGen++;
+            if (calTimer != null) clearInterval(calTimer);
+            calTimer = null;
+            clearTimeout(flashTimer);
+            flash.classList.remove('on');
+            if (calStop) { calStop(); calStop = null; }
+            calBtn.textContent = 'Start test tone';
+            calBtn.classList.remove('active');
+        };
+
+        calBtn.addEventListener('click', async () => {
+            if (calTimer != null) {
+                stopCalibration();
+                return;
+            }
+            const gen = calGen;
+            calBtn.disabled = true;
+            try {
+                if (opts.prepareTestNote) await opts.prepareTestNote();
+            } catch (err) {
+                appendLog('Internal synth unavailable for the latency test: ' + err.message);
+            }
+            calBtn.disabled = false;
+            // Closed (or stopped) while the synth was warming up.
+            if (gen !== calGen) return;
+            calBtn.textContent = 'Stop test tone';
+            calBtn.classList.add('active');
+            calTick();
+            calTimer = setInterval(calTick, PROBE_PERIOD_MS);
+        });
+
         // --- Live audition ---
         const audRow = el('label', 'midi-checkbox');
         const audBox = document.createElement('input');
@@ -160,6 +292,31 @@ export function openMidiSettings(opts = {}) {
             'Needs SysEx permission, and overwrites whatever is in the edit buffer — ' +
             'stored patches are untouched.');
         deviceArea.appendChild(audHint);
+
+        // Audition is remembered across reloads but the SysEx permission is
+        // not, so the box can come back ticked on top of a plain grant — in
+        // which case auditioning silently does nothing. Enabling MIDI now
+        // asks for the right tier up front; this row is the recovery path
+        // for the cases that cannot (the prompt was dismissed, or MIDI was
+        // enabled before audition was switched on). Without it the only way
+        // out was to untick the box and tick it again.
+        const sysexRow = el('div', 'midi-sysex-warning');
+        sysexRow.appendChild(el('span', null,
+            'Auditioning needs SysEx permission, which this session does not have yet.'));
+        const sysexBtn = el('button', 'midi-btn midi-btn-small', 'Grant SysEx');
+        sysexRow.appendChild(sysexBtn);
+        deviceArea.appendChild(sysexRow);
+
+        sysexBtn.addEventListener('click', async () => {
+            // The click is the user gesture the permission prompt needs.
+            try {
+                await midi.requestMidi({ sysex: true });
+                appendLog('MIDI SysEx access granted — auditioning is live');
+            } catch (err) {
+                appendLog('SysEx permission was not granted: ' + err.message);
+            }
+            refresh();
+        });
 
         audBox.addEventListener('change', async () => {
             if (!audBox.checked) {
@@ -236,6 +393,8 @@ export function openMidiSettings(opts = {}) {
                 unsupported: 'Not supported',
             }[state] || state;
             statusText.className = 'midi-status-text midi-status-' + state;
+            audBox.checked = midi.getAuditionEnabled();
+            sysexRow.style.display = midi.auditionNeedsSysex() ? '' : 'none';
             if (ready) {
                 fillPorts(inputSel, midi.listInputs(), midi.getSelectedInputId(), 'None');
                 fillPorts(outputSel, midi.listOutputs(), midi.getSelectedOutputId(), 'None');
@@ -243,9 +402,14 @@ export function openMidiSettings(opts = {}) {
         }
 
         enableBtn.addEventListener('click', async () => {
+            // Ask for the weakest tier the *remembered* settings actually
+            // need. Audition is off by default, so a first-time user still
+            // gets the plain prompt; someone who left it on gets a single
+            // SysEx prompt instead of a plain grant that cannot audition.
+            const sysex = midi.getAuditionEnabled();
             try {
-                await midi.requestMidi({ sysex: false });
-                appendLog('MIDI enabled');
+                await midi.requestMidi({ sysex });
+                appendLog(sysex ? 'MIDI enabled (with SysEx, for auditioning)' : 'MIDI enabled');
             } catch (err) {
                 appendLog('MIDI access denied: ' + err.message);
             }
@@ -259,6 +423,7 @@ export function openMidiSettings(opts = {}) {
         // The modal owns these callbacks while open; drop them on close so a
         // detached <select> is not written to.
         onClose: () => {
+            stopCalibration();
             midi.setOnPortsChange(null);
             midi.setOnStatusChange(opts.onStatusChange || null);
         },

@@ -187,6 +187,20 @@ describe('live audition', () => {
         assert.deepEqual(sent[2], [0x80 | 2, 60, 0], 'note-off is scheduled');
     });
 
+    test('the edit-buffer dump goes out immediately, ahead of the delayed note-on', () => {
+        // The note-on carries the output latency; the SysEx must not, or it
+        // would lose its ~50 ms head start and the first note would sound
+        // with the previous patch.
+        midi.setAuditionEnabled(true);
+        const t0 = performance.now();
+        midi.auditionNote(voice(), 60, 100, 500);
+        const [dump, on, off] = out().sent;
+        assert.equal(dump[0][0], 0xF0);
+        assert.equal(dump[1], undefined, 'SysEx is unstamped');
+        assert.ok(on[1] >= t0 + midi.getOutputLatency(), 'note-on carries the output latency');
+        assert.ok(off[1] > on[1], 'note-off follows the note-on');
+    });
+
     test('does not resend an unchanged edit buffer', () => {
         midi.setAuditionEnabled(true);
         midi.auditionNote(voice(), 60, 100, 500);

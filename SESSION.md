@@ -38,13 +38,65 @@ only when a feature needs it, and SysEx is a separate upgrade on top.
   special-casing**: a monotimbral synth ignores channels it is not set to,
   which is harmless. Patch previews stay internal regardless of mode (nothing
   is loaded on the device to preview with until Phase 4). Note-offs for piano
-  roll notes are **timestamped** `performance.now() + durMs - NOTE_OFF_GAP_MS`
+  roll notes are **timestamped** `time + OUTPUT_LATENCY_MS + durMs - NOTE_OFF_GAP_MS`
   (2 ms gap so a repeat of the same pitch is not cut); held keys pass
   `{sustained:true}` and are released explicitly instead, since their 30 s is a
   safety value not a duration. `test/midi-output-routing.test.js`,
   `test/pianoroll-stop-release.test.js`.
-- [ ] **Phase 3b (later, as agreed)** — note-on scheduling, and letting the
-  user declare (or autodetect) that a device is multitimbral.
+- [x] **Output latency (2026-10-28).** Bench-tested against a Korg Volca FM:
+  unstamped MIDI reached the hardware ~⅓ s before the internal synth sounded
+  the same note, so "both" mode flammed. The latency is a persisted setting
+  (`getOutputLatency`/`setOutputLatency`, clamped 0..`MAX_OUTPUT_LATENCY_MS`
+  = 1000, default `DEFAULT_OUTPUT_LATENCY_MS` = 317) applied in exactly one
+  place, `sendAt()`; every note-path message goes through it: note-on,
+  scheduled note-off, `stop()`, `stopNoteOut`, `releaseAllOut`, raw `send()`,
+  and panic's second sweep. The invariant the
+  tests guard is **no note-off may reach the wire ahead of its own note-on**
+  (shifting only the note-on, the first attempt, stuck every note shorter
+  than 317 ms). `panic()` sends its 32 CCs twice: unstamped (so it still goes
+  out on `pagehide`) and again at `+OUTPUT_LATENCY_MS` to catch note-ons
+  queued in the window — Chrome never implemented `MIDIOutput.clear()`.
+  SysEx (edit buffer, bank, dump request) stays unstamped on purpose: the
+  audition VCED gets a 317 ms head start on its ~50 ms wire time.
+  `sendNoteOnChannel` takes a `time` option (performance.now() clock,
+  default now) that the note-on, note-off and bookkeeping timer are all
+  relative to — the hook Phase 3b note-on scheduling will use. Tests: the
+  `output latency` block in `test/midi-output-routing.test.js` pins
+  `performance.now` for exact stamps.
+- [x] **Latency calibration UI (2026-10-28).** "Output latency" field in the
+  MIDI settings modal: range slider + number box + Default button writing
+  through live, and a **test tone** loop — once a second `playTestNote`
+  (app.js: INIT VOICE via `playNoteRealtime` on the preview channel) sounds
+  locally while `midi.playLatencyProbe()` sends the same note to the device's
+  basic channel, exactly as a piano-roll note is. The probe's `onWire`
+  callback fires at `+latency`, i.e. when the note-on leaves, and the modal
+  lights `.midi-latency-flash` on it (no transition in, short fade out). The
+  user is told to slide until the flash lands on the tone from the speakers;
+  with audition on the device gets the same INIT VOICE (`testVoiceData`) so
+  the two notes can be heard fusing. `prepareTestNote` (= `acquire`) warms
+  the synth before the first tick. The panel receives all of this via opts,
+  toolbar-style, so it stays importable under the harness; the loop is torn
+  down on Stop and on modal close. `test/midi-latency-calibration.test.js`.
+- [x] **Modals scroll (2026-10-28).** `.modal-dialog` is now `max-height: 88vh`
+  + column flex, `.modal-body` is `flex: 1 1 auto; min-height: 0; overflow-y:
+  auto` (the `min-height: 0` is the part that actually enables the scroll).
+  The MIDI settings grew past the viewport once the latency block landed and
+  the top and bottom were unreachable. Shared shell, so every modal benefits.
+- [x] **SysEx escalation on reload (2026-10-28).** `auditionEnabled` is
+  persisted but the permission tier is not, so a returning user got the box
+  ticked on top of a plain `{sysex:false}` grant: auditioning silently did
+  nothing and the only cure was untick → retick. Two-part fix: the panel's
+  **Enable MIDI** now requests `{sysex: getAuditionEnabled()}`, so the saved
+  settings decide the tier and a first-time user still sees the weak prompt;
+  and `midi.auditionNeedsSysex()` (audition on + a grant held + not sysex)
+  drives a `.midi-sysex-warning` row with a **Grant SysEx** button for the
+  cases the pre-request cannot cover (MIDI enabled before audition was
+  switched on, or the prompt dismissed). `refresh()` re-syncs the checkbox
+  from `getAuditionEnabled()` so the UI cannot drift from the real state.
+  `test/midi-panel-permissions.test.js`.
+- [ ] **Phase 3b (later, as agreed)** — note-on scheduling (the `time` option
+  on `playNoteOut` is already in place), and letting the user declare (or
+  autodetect) that a device is multitimbral.
 - [x] **Phase 4 — SysEx bulk transport + live audition.**
   `html/components/syx-builder.js` is the write side of syx-parser: bulk dump,
   single-voice edit-buffer dump, dump request, `sysexChecksum`,
@@ -111,8 +163,8 @@ OpenPatches is a browser-based DX7 patch editor and sequencer. It communicates w
 - `html/components/tag-editor.js`: Tag editor component with autocomplete.
 - `html/components/tutorial.js`: First-run tutorial modal with overlay highlights. Skips clip-path on mobile.
 - `html/synth/audio-manager.js`: Singleton AudioContext + AudioWorklet. `acquire()` creates once, `initAudio()` loads modules once. Multi-channel: `sendVoiceSnapshot()`, `playNoteOnChannel()`. `emergencyStop()` reinitializes MSFA engine. No malloc/free — uses static WASM buffers. `playNoteOnChannel` guards against stale note-off via self-reference check.
-- `html/synth/midi-manager.js`: Web MIDI singleton, same shape as audio-manager. Access is requested only on demand and never at import time. Two permission tiers: `requestMidi({sysex:false})` for notes, `requestMidi({sysex:true})` for bulk dumps — the upgrade re-prompts and swaps the `MIDIAccess`, so `attachInputListener()` re-binds the input handler by object identity, and a generation counter stops an older in-flight request clobbering a newer grant. Port selection persists to localStorage by id **with a name fallback** (ids are not stable across sessions). `panic()` = CC 120 + CC 123 on all 16 channels; called on emergency stop, output change, `pagehide` and tab-hide. `receiveBank`/`sendBank` are the real SysEx transport (see syx-builder). Test seams: `_reset()`, `_getAccess()`. **Note output:** `outputMode` (internal/midi/both), `slotChannels[8]` (slot → MIDI channel, identity default), `playNoteOut()`/`stopNoteOut()`/`releaseAllOut()` with an `outNotes` map keyed `"channel:midi"`. `isInternalEnabled()` returns true when MIDI-only is selected but no device is reachable — the app must never go silent because a cable was unplugged.
-- `html/components/midi-panel.js`: MIDI settings modal (enable, input/output selects, device channel, panic) and `sendBankToDevice()` — the guarded confirm → optional backup → send flow. A failed backup aborts the send; it never falls through to "proceed anyway". Transport is real since Phase 4; the backup step uses `receiveBank`.
+- `html/synth/midi-manager.js`: Web MIDI singleton, same shape as audio-manager. Access is requested only on demand and never at import time. Two permission tiers: `requestMidi({sysex:false})` for notes, `requestMidi({sysex:true})` for bulk dumps — the upgrade re-prompts and swaps the `MIDIAccess`, so `attachInputListener()` re-binds the input handler by object identity, and a generation counter stops an older in-flight request clobbering a newer grant. Port selection persists to localStorage by id **with a name fallback** (ids are not stable across sessions). `panic()` = CC 120 + CC 123 on all 16 channels; called on emergency stop, output change, `pagehide` and tab-hide. `receiveBank`/`sendBank` are the real SysEx transport (see syx-builder). Test seams: `_reset()`, `_getAccess()`. **Note output:** `outputMode` (internal/midi/both), `slotChannels[8]` (slot → MIDI channel, identity default), `playNoteOut()`/`stopNoteOut()`/`releaseAllOut()` with an `outNotes` map keyed `"channel:midi"`. `isInternalEnabled()` returns true when MIDI-only is selected but no device is reachable — the app must never go silent because a cable was unplugged. **Output latency:** a persisted setting (`getOutputLatency`/`setOutputLatency`, default 317 measured against a Volca FM, max 1000) added to every note-path timestamp by `sendAt()`, the single send helper; SysEx is unstamped. `panic()` sweeps twice, now and at `+latency`. `playLatencyProbe(midi, {durMs, voiceData, onWire})` is the calibration tick for the settings modal.
+- `html/components/midi-panel.js`: MIDI settings modal (enable, input/output selects, device channel, output mode, slot map, **output-latency slider + flashing test-tone calibrator** fed by `opts.playTestNote`/`prepareTestNote`/`testVoiceData` from app.js, audition, panic) and `sendBankToDevice()` — the guarded confirm → optional backup → send flow. A failed backup aborts the send; it never falls through to "proceed anyway". Transport is real since Phase 4; the backup step uses `receiveBank`.
 - `html/synth/tick-worker.js`: Web Worker heartbeat for pianoroll. Atomics.wait path (SharedArrayBuffer) for zero-CPU sleeping, setTimeout fallback. Absolute targeting (`t0 + col * msPer`), spin for sub-ms precision. Start/stop via a generation counter in shared memory (`Int32Array[0]`): app.js `startTickWorker`/`stopTickWorker` bump it + `Atomics.notify`; a loop exits when the counter moves, and a `start` whose `gen` is outdated is ignored. Always start through `opts.startWorker`, never raw `postMessage`. Worker stays alive for reuse.
 - `html/synth/dx7-synth.js`: Batch waveform rendering only (main thread WASM). No realtime synth code.
 - `html/synth/dx7-processor.js`: AudioWorkletProcessor wrapping MSFA DX7 engine. Ring buffer (~300ms lookahead) for audio stability. Handles `voice-snapshot`, `midi`, `patch`, `play-samples`, `channel-volume`, `reinit` messages. MIDI logging via `logMidi` no-op (override to enable).

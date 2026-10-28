@@ -12,6 +12,7 @@ import { Job, jobManager } from './components/job.js';
 import { initTutorial, startTutorial, restartTutorial, isTutorialActive } from './components/tutorial.js';
 import * as midiManager from './synth/midi-manager.js';
 import { openMidiSettings, sendBankToDevice } from './components/midi-panel.js';
+import { makeInitVoice } from './components/syx-builder.js';
 
 const fileInput = document.getElementById('wav-input');
 
@@ -893,8 +894,23 @@ document.getElementById('menu-clear-history').addEventListener('click', async ()
 document.getElementById('menu-emergency-stop').addEventListener('click', doEmergencyStop);
 
 // MIDI menu
+// The latency-calibration tone: INIT VOICE on the preview channel, so it is
+// a clean instant-attack sine whatever the voice bank holds. The same bytes
+// go to the device when audition is on, so both sides play one sound.
+const latencyTestVoice = makeInitVoice();
+function playLatencyTestNote(midi, durMs) {
+    if (!isReady()) return;
+    const stop = playNoteRealtime(latencyTestVoice, midi);
+    if (stop) setTimeout(stop, durMs);
+}
 document.getElementById('menu-midi-devices').addEventListener('click', () => {
-    openMidiSettings({ appendLog, onStatusChange: updateMidiStatus });
+    openMidiSettings({
+        appendLog,
+        onStatusChange: updateMidiStatus,
+        prepareTestNote: acquire,
+        playTestNote: playLatencyTestNote,
+        testVoiceData: latencyTestVoice,
+    });
 });
 document.getElementById('menu-midi-panic').addEventListener('click', () => {
     appendLog(midiManager.panic() ? 'MIDI panic sent' : 'MIDI panic: no output device selected');

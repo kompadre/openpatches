@@ -109,6 +109,27 @@ describe('sysex upgrade', () => {
         globalThis.navigator.requestMIDIAccess = realRequest;
     });
 
+    test('auditionNeedsSysex reports a plain grant that audition cannot use', async () => {
+        // The state a reload lands in: the setting is restored, the grant is not.
+        assert.equal(midi.auditionNeedsSysex(), false, 'nothing is enabled yet');
+        await midi.requestMidi({ sysex: false });
+        assert.equal(midi.auditionNeedsSysex(), false, 'audition is off');
+
+        midi.setAuditionEnabled(true);
+        assert.equal(midi.auditionNeedsSysex(), true, 'on, but the grant is the wrong tier');
+
+        await midi.requestMidi({ sysex: true });
+        assert.equal(midi.auditionNeedsSysex(), false, 'upgraded');
+    });
+
+    test('auditionNeedsSysex is false before MIDI is enabled at all', () => {
+        // There is no grant to upgrade yet, so there is nothing to warn
+        // about — enabling MIDI will ask for the right tier.
+        midi.setAuditionEnabled(true);
+        assert.equal(midi.getState(), 'closed');
+        assert.equal(midi.auditionNeedsSysex(), false);
+    });
+
     test('a handler registered before MIDI is enabled still gets attached', async () => {
         const received = [];
         midi.setOnMidiMessage((e) => received.push([...e.data]));
@@ -178,18 +199,27 @@ describe('port selection', () => {
 });
 
 describe('panic', () => {
-    test('sends All Sound Off + All Notes Off on all 16 channels', async () => {
+    test('sends All Sound Off + All Notes Off on all 16 channels, now and after the latency window', async () => {
         await midi.requestMidi();
         midi.setSelectedOutput('out0');
         stub.outputs[0].sent.length = 0;
 
+        const t0 = performance.now();
         assert.equal(midi.panic(), true);
 
-        const sent = stub.outputs[0].sent.map(s => s[0]);
-        assert.equal(sent.length, 32);
+        const sent = stub.outputs[0].sent;
+        assert.equal(sent.length, 64);
         for (let ch = 0; ch < 16; ch++) {
-            assert.deepEqual(sent[ch * 2], [0xB0 | ch, 120, 0], 'all sound off ch' + ch);
-            assert.deepEqual(sent[ch * 2 + 1], [0xB0 | ch, 123, 0], 'all notes off ch' + ch);
+            // First sweep: unstamped, so it goes out right now.
+            assert.deepEqual(sent[ch * 2], [[0xB0 | ch, 120, 0], undefined], 'all sound off ch' + ch);
+            assert.deepEqual(sent[ch * 2 + 1], [[0xB0 | ch, 123, 0], undefined], 'all notes off ch' + ch);
+            // Second sweep: behind every note-on that was already queued.
+            const [off, offAt] = sent[32 + ch * 2];
+            const [notes, notesAt] = sent[32 + ch * 2 + 1];
+            assert.deepEqual(off, [0xB0 | ch, 120, 0], 'delayed all sound off ch' + ch);
+            assert.deepEqual(notes, [0xB0 | ch, 123, 0], 'delayed all notes off ch' + ch);
+            assert.ok(offAt >= t0 + midi.getOutputLatency() && notesAt >= t0 + midi.getOutputLatency(),
+                'second sweep is stamped past the latency window');
         }
     });
 
@@ -202,7 +232,7 @@ describe('panic', () => {
         midi.setSelectedOutput('out0');
         stub.outputs[0].sent.length = 0;
         midi.setSelectedOutput(null);
-        assert.equal(stub.outputs[0].sent.length, 32);
+        assert.equal(stub.outputs[0].sent.length, 64);
     });
 });
 
