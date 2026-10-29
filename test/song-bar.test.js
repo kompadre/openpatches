@@ -10,11 +10,13 @@ let createSongBar;
 let songStore;
 let createToolbar;
 let createPianoroll;
+let songStoreNew;
 
 before(async () => {
     installBrowserEnv();
     installMidiStub();
     ({ songStore } = await import('../html/components/patch-model.js'));
+    ({ songStore: songStoreNew } = await import('../html/components/song-model.js'));
     ({ createSongBar } = await import('../html/components/song-bar.js'));
     ({ createToolbar } = await import('../html/components/toolbar.js'));
     ({ createPianoroll } = await import('../html/components/pianoroll.js'));
@@ -262,16 +264,21 @@ describe('piano roll getSong / loadSong', () => {
         const { roll } = build();
         roll.addNote({ midi: 60, start: 0, dur: 2, slot: 0 });
         const snap = roll.getSong();
+        // The flat, slot-tagged shape the song bar speaks is unchanged, even
+        // though the roll now stores a pattern per track underneath.
         assert.deepEqual(snap, { notes: [{ midi: 60, start: 0, dur: 2, slot: 0 }], bpm: 120, measures: 1 });
         snap.notes.push({ midi: 1, start: 1, dur: 1, slot: 0 });
         assert.equal(roll.getNotes().length, 1, 'getSong hands out a copy');
 
         roll.loadSong({ notes: [{ midi: 67, start: 20, dur: 4, slot: 3 }], bpm: 95, measures: 2 });
-        assert.deepEqual(roll.getNotes(), [{ midi: 67, start: 20, dur: 4, slot: 3 }]);
+        assert.deepEqual(roll.getSong().notes, [{ midi: 67, start: 20, dur: 4, slot: 3 }]);
         assert.equal(roll.getBpm(), 95);
         assert.equal(roll.totalCols(), 32);
-        assert.deepEqual(JSON.parse(localStorage.getItem('openpatches_pianoroll')).notes,
-            [{ midi: 67, start: 20, dur: 4, slot: 3 }], 'the roll persists the loaded state as its own');
+        // Notes themselves no longer carry a slot — the track does.
+        assert.deepEqual(roll.getTracks().map(t => t.slot), [3]);
+        const songId = localStorage.getItem('openpatches_current_song');
+        assert.ok(songId, 'the roll persists the loaded state as its own song');
+        assert.equal(songStoreNew.get(songId).tracks[0].slot, 3);
     });
 
     test('stops playback before replacing the pattern', () => {
@@ -288,7 +295,7 @@ describe('piano roll getSong / loadSong', () => {
         roll.loadSong({ measures: 0, bpm: 9999, notes: [{ midi: 'x' }, null, { midi: 60, start: 0, dur: 1 }] });
         assert.equal(roll.totalCols(), 16);
         assert.equal(roll.getBpm(), 255);
-        assert.deepEqual(roll.getNotes(), [{ midi: 60, start: 0, dur: 1, slot: 0 }]);
+        assert.deepEqual(roll.getNotes(), [{ midi: 60, start: 0, dur: 1 }], 'a slotless note on the default track');
         roll.loadSong(undefined);
         assert.deepEqual(roll.getNotes(), []);
         assert.equal(roll.getBpm(), 120);
@@ -353,7 +360,9 @@ describe('through the toolbar', () => {
         ui.input.dispatch('focus');
         pick(ui, 'Take 1');
 
-        assert.deepEqual(ui.roll.getNotes().map(n => n.midi), [60, 40]);
+        // getNotes() is the edited pattern only; the whole song is getSong().
+        assert.deepEqual(ui.roll.getSong().notes.map(n => n.midi), [60, 40]);
+        assert.deepEqual(ui.roll.getNotes().map(n => n.midi), [60], 'slot 0 is the one being edited');
         assert.equal(ui.roll.getBpm(), 128);
         assert.equal(ui.roll.totalCols(), 32);
         const entries = ui.bank._getEntries();

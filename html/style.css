@@ -2136,6 +2136,16 @@ h1 {
     gap: 0.25rem;
 }
 
+.pianoroll-legend-item.active {
+    /* The track the mouse answers to — the rest are ghosts behind it. */
+    font-weight: 600;
+    opacity: 1;
+}
+
+.pianoroll-legend-item:not(.active) {
+    opacity: 0.55;
+}
+
 .pianoroll-legend-dot {
     width: 10px;
     height: 10px;

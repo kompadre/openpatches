@@ -100,7 +100,9 @@ describe('follow-scroll switched on', () => {
         followBtns[0].dispatch('click');
         assert.equal(roll.isFollowing(), true);
         assert.ok(followBtns.every(b => b.classList.contains('active')), 'both copies light up');
-        assert.equal(JSON.parse(localStorage.getItem('openpatches_pianoroll')).followPlayhead, true);
+        // Follow-scroll is a view preference, not part of a song, so it
+        // lives in its own key now rather than the old roll blob.
+        assert.equal(JSON.parse(localStorage.getItem('openpatches_roll_prefs')).followPlayhead, true);
 
         const again = build({ saved: { followPlayhead: true } });
         assert.equal(again.roll.isFollowing(), true, 'restored on the next load');

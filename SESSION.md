@@ -198,8 +198,33 @@ deliberately later — `pattern.kind` is the hook.
   mode reads the pattern live (the editor mutates it while it loops).
   `test/sequencer.test.js` (37 tests, incl. a full walk asserting every note
   fires exactly once per pass). Not wired to anything yet — phase 5.
-- [ ] **Phase 3 — pattern editor refactor.** pianoroll.js edits a Pattern
-  through a small interface; per-note `slot` removed; existing tests updated.
+- [x] **Phase 3 — pattern editor refactor (2026-10-29).** pianoroll.js now
+  edits **one monotimbral Pattern** — the one on the active voice slot's
+  track. Per-note `slot` is gone; the track carries it. Internally `notes` is
+  a *binding* repointed by `setActiveTrack()` at the active pattern's array,
+  so the whole editing layer (create/move/resize/delete, loop-fold
+  hit-testing, clamping) went on working unchanged. **Other tracks render as
+  read-only ghosts** behind the edited one — same dimming the old
+  non-active-slot notes had, so nothing looks different, but they can no
+  longer be grabbed by accident; the legend marks the edited track.
+  A track and its pattern are created **on the first note**, not on slot
+  selection. `+ Msr` / `Clone` / `− Msr` / `Clear` span every track (the grid
+  is one length; all patterns share `measures`). **Playback goes through the
+  phase-2 sequencer** so every track still sounds on its own slot;
+  `refreshSequence()` runs on each edit, because the sequencer snapshots
+  patterns and an edit must be heard on the next pass. Recording keeps
+  reading notes live (the `_recordedInSession` flags are on the note
+  objects). Persistence is `patternStore`/`songStore` + a
+  `openpatches_current_song` pointer; **`loadState()` calls
+  `migrateIfNeeded()`**, so phase 1's migration is now wired and the legacy
+  blob is converted on first load. Follow-scroll moved to
+  `openpatches_roll_prefs` (a view preference, not part of a song), falling
+  back to the legacy blob so the user's toggle survives. `getSong()`/
+  `loadSong()` keep the flat slot-tagged shape the song bar still speaks —
+  phase 6 removes both. New: `getPattern()`, `getTracks()`.
+  `test/pattern-editor.test.js` (21 tests, six mutants verified caught);
+  four existing expectations updated for the new semantics (`getNotes()` is
+  the edited pattern only; notes have no `slot`; prefs key).
 - [ ] **Phase 4 — song editor.** `html/components/song-editor.js`: tracks ×
   measures grid, pattern palette, clip place/move/resize/delete, per-track
   slot picker + mute/solo.
@@ -242,7 +267,7 @@ OpenPatches is a browser-based DX7 patch editor and sequencer. It communicates w
 - `html/components/patch-row.js`: Unified patch row rendering with star drag handle, mini spectrogram, assign/edit/remove buttons. Touch drag between containers with floating clone; crossing back into the body cancels the drag-out (clone removed, no clone on drop), `touchcancel` aborts cleanly. `reorderContainerPatch()` applies a touch reorder to the group that holds both rows **and** the flat list (a grouped container renders only its groups; a move across groups is refused). One document `mouseup` disarms the star-armed row instead of one listener per row.
 - `html/components/patch.js`: Waveform helpers only — `decodeWavSamples` (general RIFF chunk walk: `fmt ` and `data` in any order with LIST/fact between, 16-bit PCM or 32-bit float, N channels mixed to mono), `drawMiniWaveform`, `wavSampleCache`, `releaseWavUrl` (revokes the `blob:` URL `playPatch` returns, once the waveform is drawn — the consumer owns it).
 - `html/components/voicebank.js`: Voice palette (8 slots). Persists to localStorage. `_setEntries(list)` replaces every slot at once (song load). Each entry has static channel assignment (0-7). Compact mode on mobile: vertical bars, tap to select, vertical drag for volume. Exposes `_render()` for re-rendering after class changes.
-- `html/components/pianoroll.js`: Sequencer with looping. Hit-testing folds the second (loop) grid copy onto the first (`foldX`), interactive right-edge resize is clamped to the loop end (`clampDur`), `touchcancel` restores whatever was mid-move. Notes store per-note `voiceData` and `channel`. Touch support: `TOUCH_RESIZE_MARGIN = 20`, visual resize handles, double-tap to delete. Long-press (1s) to create note when stopped, drag to scroll. **Follow-scroll is opt-in** (`followPlayhead`, default off, persisted): only then is the canvas double-wide (content drawn twice for a seamless loop) and the view scrolled per tick; otherwise the red 2 px playhead is the only motion. `canvas.width` is assigned only on change. `handlePlaybackTick(col)` driven by tick worker. `setRecordingTickHandler` for recording delegation. `insertControl(el)` lets the toolbar place its Record button after Stop. `getSong()`/`loadSong(data)` are the song store's view of the roll.
+- `html/components/pianoroll.js`: **Pattern editor** (still the piano roll on screen). Edits one monotimbral Pattern — the active voice slot's track; other tracks are read-only ghosts behind it. `notes` is a binding repointed to the active pattern's array, which is why the editing code is untouched by the Pattern move; `ensureActiveTrack()` creates a track+pattern on the first note. Measure buttons and Clear span every track. Playback builds a song sequence (synth/sequencer.js) refreshed on every edit. Persists via patternStore/songStore + `openpatches_current_song`; `loadState()` runs `migrateIfNeeded()`. View prefs in `openpatches_roll_prefs`. `getSong()`/`loadSong()` still speak the legacy flat slot-tagged shape for song-bar.js. Sequencer with looping. Hit-testing folds the second (loop) grid copy onto the first (`foldX`), interactive right-edge resize is clamped to the loop end (`clampDur`), `touchcancel` restores whatever was mid-move. Notes store per-note `voiceData` and `channel`. Touch support: `TOUCH_RESIZE_MARGIN = 20`, visual resize handles, double-tap to delete. Long-press (1s) to create note when stopped, drag to scroll. **Follow-scroll is opt-in** (`followPlayhead`, default off, persisted): only then is the canvas double-wide (content drawn twice for a seamless loop) and the view scrolled per tick; otherwise the red 2 px playhead is the only motion. `canvas.width` is assigned only on change. `handlePlaybackTick(col)` driven by tick worker. `setRecordingTickHandler` for recording delegation. `insertControl(el)` lets the toolbar place its Record button after Stop. `getSong()`/`loadSong(data)` are the song store's view of the roll.
 - `html/components/syx-parser.js`: `.syx` reader. Rejects anything whose format byte is not `0x09` (32-voice bank); verifies the checksum but only **warns** (`patches.checksumOk === false`, surfaced in the log by `importSyxBank`) because hex-edited banks with stale checksums are common.
 - `html/components/syx-builder.js`: DX7 SysEx **encoder** (syx-parser.js is the reader). Bulk dump `F0 43 0n 09 20 00 <4096 packed> <cksum> F7` = 4104 bytes; edit-buffer voice `F0 43 0n 00 01 1B <155 unpacked> <cksum> F7` = 163; dump request `F0 43 2n 09 F7`. Checksum = `(128 - (sum & 0x7F)) & 0x7F`. `patch.voice_data` is already the packed 128-byte form so a bank is a straight concatenation, padded to 32 with `makeInitVoice()`. `unpackVoice()` expands packed 128 → VCED 155 (17-byte ops become 21, 26 global bytes become 29) using dx7-params' `readOp`/`readGlobal`. **`html/DEMO.syx` is the golden test fixture** — parse → rebuild is asserted byte-identical, and unpack → repack is asserted lossless across all 32 voices.
 - `html/components/tag-editor.js`: Tag editor component with autocomplete.

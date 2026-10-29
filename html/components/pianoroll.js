@@ -1,6 +1,10 @@
 // Pianoroll: 3 octaves (C3–C6) × 1 measure of 4/4 (16 sixteenth notes)
 // Click+drag creates notes, double-click removes, sequencer plays all notes.
-// Notes reference VoiceBank slot index. Data looked up via getSlotData(slot).
+// The roll is a **pattern editor**: it edits one monotimbral Pattern at a
+// time — the one belonging to the active voice-bank slot's track. Notes
+// therefore carry no slot; the track does. Other tracks are drawn behind as
+// read-only ghosts so the arrangement stays visible while one voice is
+// edited, and playback runs every track through the phase-2 sequencer.
 
 const logRecord = () => {};
 
@@ -56,20 +60,38 @@ const NOTES = [
     { midi: 36, name: 'C2',  white: true },
 ];
 
-const COLS_PER_MEASURE = 16; // 16 sixteenth notes = 1 measure of 4/4
+import {
+    COLS_PER_MEASURE, createPattern, createTrack, createSong,
+    patternStore, songStore, migrateIfNeeded, splitNotesBySlot,
+    MIN_BPM, MAX_BPM,
+} from './song-model.js';
+import { createSongSequence, msPerColumn } from '../synth/sequencer.js';
+
 const ROW_H = 20;
 const COL_W = 30;
 const LABEL_W = 36;
 const HEADER_H = 14; // reserved for measure numbers above grid
 
-const STORAGE_KEY = 'openpatches_pianoroll';
+const LEGACY_KEY = 'openpatches_pianoroll';   // read once by the migration
+const CURRENT_SONG_KEY = 'openpatches_current_song';
+const PREFS_KEY = 'openpatches_roll_prefs';   // view-only state (follow-scroll)
 const DEFAULT_BPM = 120;
 const PLAYHEAD_COLOR = '#ff3b3b';
 const DEFAULT_COLORS = ['#e94560', '#4caf50', '#2196f3', '#ff9800', '#9c27b0', '#00bcd4', '#ff5722', '#607d8b'];
 
 export function createPianoroll(opts) {
     const { playNoteFn, onNotesChange, onClear } = opts;
-    const notes = [];
+    // One Pattern per track. `notes` is always the active track's note array,
+    // so the editing code below goes on working against a single list.
+    let tracks = [];
+    let activeTrackIdx = -1;
+    let notes = [];
+    let songId = null;
+    let songName = 'Untitled song';
+    // Carried, not used here: migrated songs hold the voice bank they were
+    // written for. Dropping it on the next save would lose user data.
+    let songVoiceBank = null;
+    let sequence = null;
     let measures = 1;
     const CANVAS_H = HEADER_H + NOTES.length * ROW_H;
     let looping = false;
@@ -104,6 +126,78 @@ export function createPianoroll(opts) {
     function slotName(slot) {
         const entry = getSlotData(slot);
         return entry ? entry.name : 'Slot ' + slot;
+    }
+
+    // --- Tracks ---
+
+    function currentSlot() {
+        return opts.activeSlot != null ? opts.activeSlot : 0;
+    }
+
+    /** Point `notes` at track `i`'s pattern (or at a scratch list if none). */
+    function setActiveTrack(i) {
+        activeTrackIdx = i;
+        notes = i >= 0 && tracks[i] ? tracks[i].pattern.notes : [];
+    }
+
+    function selectSlot(slot) {
+        setActiveTrack(tracks.findIndex(t => t.slot === slot));
+    }
+
+    /**
+     * The track being edited, created on demand: a voice gets a pattern the
+     * moment the user puts a note on it, not when the slot is selected.
+     */
+    function ensureActiveTrack() {
+        if (activeTrackIdx >= 0 && tracks[activeTrackIdx]) return tracks[activeTrackIdx];
+        const slot = currentSlot();
+        const track = createTrack({ name: slotName(slot), slot });
+        track.pattern = createPattern({ name: slotName(slot), measures });
+        track.clipId = null;
+        tracks.push(track);
+        tracks.sort((a, b) => a.slot - b.slot);
+        setActiveTrack(tracks.indexOf(track));
+        return track;
+    }
+
+    function allNotes() {
+        const out = [];
+        for (const t of tracks) for (const n of t.pattern.notes) out.push({ note: n, track: t });
+        return out;
+    }
+
+    function noteCount() {
+        let total = 0;
+        for (const t of tracks) total += t.pattern.notes.length;
+        return total;
+    }
+
+    function getBpm() {
+        const v = parseInt(bpmInput.value);
+        return Number.isFinite(v) ? Math.max(MIN_BPM, Math.min(MAX_BPM, v)) : DEFAULT_BPM;
+    }
+
+    /** The song as the model sees it — what gets persisted and sequenced. */
+    function currentSong() {
+        return createSong({
+            id: songId || undefined,
+            name: songName,
+            bpm: getBpm(),
+            voiceBank: songVoiceBank,
+            tracks: tracks.map(t => ({ id: t.id, name: t.name, slot: t.slot, mute: t.mute, solo: t.solo })),
+            clips: tracks.map(t => ({
+                id: t.clipId || undefined, trackId: t.id, patternId: t.pattern.id,
+                startMeasure: 0, repeats: 1,
+            })),
+        });
+    }
+
+    // Rebuilt on every edit rather than per tick: the sequencer snapshots
+    // patterns on purpose, and editing while the loop runs must still be
+    // heard on the next pass.
+    function refreshSequence() {
+        const byId = new Map(tracks.map(t => [t.pattern.id, t.pattern]));
+        sequence = createSongSequence(currentSong(), (id) => byId.get(id) || null);
     }
 
     const container = document.createElement('div');
@@ -246,8 +340,15 @@ export function createPianoroll(opts) {
     container.appendChild(moreMenu);
 
     // --- Measure management ---
+    // All patterns in the roll share its measure count — the grid is one
+    // length, and a track is a lane in it.
+    function setMeasures(n) {
+        measures = n;
+        for (const t of tracks) t.pattern.measures = n;
+    }
+
     addMeasureBtn.addEventListener('click', () => {
-        measures++;
+        setMeasures(measures + 1);
         updateMeasureButtons();
         draw();
         saveState();
@@ -255,11 +356,13 @@ export function createPianoroll(opts) {
 
     cloneMeasureBtn.addEventListener('click', () => {
         const offset = (measures - 1) * COLS_PER_MEASURE;
-        const cloned = notes
+        // Every track's last measure is copied, not just the edited one:
+        // the button duplicates the bar, which is all of them.
+        const perTrack = tracks.map(t => t.pattern.notes
             .filter(n => n.start >= offset && n.start < offset + COLS_PER_MEASURE)
-            .map(n => ({ midi: n.midi, start: n.start + COLS_PER_MEASURE, dur: n.dur, slot: n.slot }));
-        measures++;
-        notes.push(...cloned);
+            .map(n => ({ midi: n.midi, start: n.start + COLS_PER_MEASURE, dur: n.dur })));
+        setMeasures(measures + 1);
+        tracks.forEach((t, i) => t.pattern.notes.push(...perTrack[i]));
         updateMeasureButtons();
         draw();
         renderLegend();
@@ -270,10 +373,13 @@ export function createPianoroll(opts) {
     removeMeasureBtn.addEventListener('click', () => {
         if (measures <= 1) return;
         const cutoff = (measures - 1) * COLS_PER_MEASURE;
-        for (let i = notes.length - 1; i >= 0; i--) {
-            if (notes[i].start >= cutoff) notes.splice(i, 1);
+        for (const t of tracks) {
+            const list = t.pattern.notes;
+            for (let i = list.length - 1; i >= 0; i--) {
+                if (list[i].start >= cutoff) list.splice(i, 1);
+            }
         }
-        measures--;
+        setMeasures(measures - 1);
         updateMeasureButtons();
         draw();
         renderLegend();
@@ -331,39 +437,76 @@ export function createPianoroll(opts) {
     const MOVE_THRESHOLD = 5;
     const RESIZE_MARGIN = 8;
     const TOUCH_RESIZE_MARGIN = 20;
+    /**
+     * Persist through the pattern/song stores. Called on every edit, so it
+     * also refreshes the playback sequence — the sequencer snapshots its
+     * patterns, and an edit must be audible on the next pass.
+     */
     function saveState() {
         try {
-            const data = {
-                notes: notes.map(n => ({ midi: n.midi, start: n.start, dur: n.dur, slot: n.slot })),
-                bpm: parseInt(bpmInput.value) || DEFAULT_BPM,
-                measures,
-                followPlayhead,
-            };
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+            for (const t of tracks) patternStore.put(t.pattern);
+            const song = songStore.put(currentSong());
+            songId = song.id;
+            // Clip ids are minted by the model on first save; keep them so a
+            // later save updates the same clips instead of replacing them.
+            song.clips.forEach((c) => {
+                const t = tracks.find(tt => tt.pattern.id === c.patternId);
+                if (t) t.clipId = c.id;
+            });
+            localStorage.setItem(CURRENT_SONG_KEY, songId);
+            localStorage.setItem(PREFS_KEY, JSON.stringify({ followPlayhead }));
         } catch (e) { /* ignore */ }
+        refreshSequence();
+    }
+
+    /** Adopt a stored song: its tracks, their patterns, tempo and length. */
+    function adoptSong(song) {
+        songId = song.id;
+        songName = song.name;
+        songVoiceBank = song.voiceBank;
+        tracks = [];
+        let longest = 1;
+        for (const clip of song.clips) {
+            const pattern = patternStore.get(clip.patternId);
+            const track = song.tracks.find(t => t.id === clip.trackId);
+            if (!pattern || !track) continue;
+            tracks.push({ ...track, clipId: clip.id, pattern });
+            if (pattern.measures > longest) longest = pattern.measures;
+        }
+        tracks.sort((a, b) => a.slot - b.slot);
+        setMeasures(longest);
+        bpmInput.value = String(song.bpm);
+        selectSlot(currentSlot());
+        refreshSequence();
     }
 
     function loadState() {
         try {
-            const raw = localStorage.getItem(STORAGE_KEY);
-            if (!raw) return;
-            const data = JSON.parse(raw);
-            if (data.measures && typeof data.measures === 'number' && data.measures >= 1) {
-                measures = data.measures;
+            // Idempotent and guarded: converts the old piano-roll blob into
+            // patterns and a song the first time this release runs.
+            const migration = migrateIfNeeded();
+            if (migration.migrated && migration.currentSongId) {
+                localStorage.setItem(CURRENT_SONG_KEY, migration.currentSongId);
             }
-            if (data.notes && Array.isArray(data.notes)) {
-                for (const n of data.notes) {
-                    if (typeof n.midi === 'number' && typeof n.start === 'number' && typeof n.dur === 'number') {
-                        notes.push({ midi: n.midi, start: n.start, dur: n.dur, slot: n.slot != null ? n.slot : 0 });
-                    }
-                }
-            }
-            if (data.bpm) bpmInput.value = String(Math.max(32, Math.min(255, data.bpm)));
-            if (data.followPlayhead === true) {
+
+            // Follow-scroll is a view preference, not part of a song. Read
+            // the legacy blob as a fallback so the user's toggle survives.
+            let follow = false;
+            try {
+                const prefs = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');
+                const legacy = JSON.parse(localStorage.getItem(LEGACY_KEY) || '{}');
+                follow = prefs.followPlayhead === true
+                    || (prefs.followPlayhead === undefined && legacy.followPlayhead === true);
+            } catch { /* ignore */ }
+            if (follow) {
                 followPlayhead = true;
                 followBtn.classList.add('active');
                 followBtnMobile.classList.add('active');
             }
+
+            const id = localStorage.getItem(CURRENT_SONG_KEY);
+            const song = (id && songStore.get(id)) || songStore.list()[0] || null;
+            if (song) adoptSong(song);
             updateMeasureButtons();
         } catch (e) { /* ignore */ }
     }
@@ -473,29 +616,35 @@ export function createPianoroll(opts) {
         }
     }
 
+    function drawNote(ctx, ox, n, color, active) {
+        const r = NOTES.findIndex(nn => nn.midi === n.midi);
+        if (r < 0) return;
+        const x = ox + LABEL_W + n.start * COL_W;
+        const y = HEADER_H + r * ROW_H;
+        const w = n.dur * COL_W - 1;
+        ctx.fillStyle = color;
+        ctx.globalAlpha = active ? 0.85 : 0.25;
+        ctx.fillRect(x + 1, y + 1, w, ROW_H - 2);
+        ctx.globalAlpha = 1.0;
+        if (!active) return;
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 0.5;
+        ctx.strokeRect(x + 1, y + 1, w, ROW_H - 2);
+        const handleW = Math.min(4, w / 4);
+        ctx.fillStyle = 'rgba(255,255,255,0.5)';
+        ctx.fillRect(x + 1, y + 1, handleW, ROW_H - 2);
+        ctx.fillRect(x + w - handleW, y + 1, handleW, ROW_H - 2);
+    }
+
     function drawNotes(ctx, ox) {
-        const activeSlot = opts.activeSlot;
-        for (const n of notes) {
-            const r = NOTES.findIndex(nn => nn.midi === n.midi);
-            if (r < 0) continue;
-            const x = ox + LABEL_W + n.start * COL_W;
-            const y = HEADER_H + r * ROW_H;
-            const w = n.dur * COL_W - 1;
-            const isActive = activeSlot == null || n.slot === activeSlot;
-            ctx.fillStyle = slotColor(n.slot);
-            ctx.globalAlpha = isActive ? 0.85 : 0.25;
-            ctx.fillRect(x + 1, y + 1, w, ROW_H - 2);
-            ctx.globalAlpha = 1.0;
-            if (isActive) {
-                ctx.strokeStyle = '#fff';
-                ctx.lineWidth = 0.5;
-                ctx.strokeRect(x + 1, y + 1, w, ROW_H - 2);
-                const handleW = Math.min(4, w / 4);
-                ctx.fillStyle = 'rgba(255,255,255,0.5)';
-                ctx.fillRect(x + 1, y + 1, handleW, ROW_H - 2);
-                ctx.fillRect(x + w - handleW, y + 1, handleW, ROW_H - 2);
-            }
+        // Ghosts first, so the edited track always sits on top of them.
+        for (let i = 0; i < tracks.length; i++) {
+            if (i === activeTrackIdx) continue;
+            const t = tracks[i];
+            for (const n of t.pattern.notes) drawNote(ctx, ox, n, slotColor(t.slot), false);
         }
+        const activeColor = slotColor(activeTrackIdx >= 0 ? tracks[activeTrackIdx].slot : currentSlot());
+        for (const n of notes) drawNote(ctx, ox, n, activeColor, true);
 
         // Ghost note
         if (movingNote && moveCommitted && moveOriginal) {
@@ -504,7 +653,7 @@ export function createPianoroll(opts) {
                 const gx = ox + LABEL_W + moveOriginal.start * COL_W;
                 const gy = HEADER_H + origRow * ROW_H;
                 const gw = movingNote.dur * COL_W - 1;
-                ctx.fillStyle = slotColor(movingNote.slot);
+                ctx.fillStyle = slotColor(activeTrackIdx >= 0 ? tracks[activeTrackIdx].slot : currentSlot());
                 ctx.globalAlpha = 0.12;
                 ctx.fillRect(gx + 1, gy + 1, gw, ROW_H - 2);
                 ctx.globalAlpha = 1.0;
@@ -586,8 +735,7 @@ export function createPianoroll(opts) {
 
     function activeNoteAt(row, col) {
         const midi = NOTES[row].midi;
-        return notes.find(n => n.midi === midi && col >= n.start && col < n.start + n.dur
-            && (opts.activeSlot == null || n.slot === opts.activeSlot));
+        return notes.find(n => n.midi === midi && col >= n.start && col < n.start + n.dur);
     }
 
     // In follow mode the grid is drawn twice for a seamless loop; a click on
@@ -602,10 +750,9 @@ export function createPianoroll(opts) {
         const row = pixelToRow(y);
         if (row < 0 || row >= NOTES.length) return null;
         const midi = NOTES[row].midi;
-        const activeSlot = opts.activeSlot;
 
-        // Proximity check for notes in this row
-        const candidates = notes.filter(n => n.midi === midi && (activeSlot == null || n.slot === activeSlot));
+        // Proximity check for notes in this row (the edited track only)
+        const candidates = notes.filter(n => n.midi === midi);
         for (const n of candidates) {
             const startX = LABEL_W + n.start * COL_W;
             const endX = LABEL_W + (n.start + n.dur) * COL_W;
@@ -750,11 +897,11 @@ export function createPianoroll(opts) {
                 saveState();
             } else {
                 // Click preview
-                const entry = getSlotData(resizingNote.slot);
+                const entry = getSlotData(currentSlot());
                 const voiceData = entry ? entry.voiceData : null;
                 const bpm = Math.max(32, Math.min(255, parseInt(bpmInput.value) || 120));
                 const msPerSixteenth = 60000 / bpm / 4;
-                playNoteFn(resizingNote.midi, resizingNote.dur * msPerSixteenth, voiceData, resizingNote.slot);
+                playNoteFn(resizingNote.midi, resizingNote.dur * msPerSixteenth, voiceData, currentSlot());
             }
             resizingNote = null;
             resizeSide = null;
@@ -772,11 +919,11 @@ export function createPianoroll(opts) {
                 saveState();
             } else {
                 // Click preview — look up voice data from slot
-                const entry = getSlotData(movingNote.slot);
+                const entry = getSlotData(currentSlot());
                 const voiceData = entry ? entry.voiceData : null;
                 const bpm = Math.max(32, Math.min(255, parseInt(bpmInput.value) || 120));
                 const msPerSixteenth = 60000 / bpm / 4;
-                playNoteFn(movingNote.midi, movingNote.dur * msPerSixteenth, voiceData, movingNote.slot);
+                playNoteFn(movingNote.midi, movingNote.dur * msPerSixteenth, voiceData, currentSlot());
             }
             movingNote = null;
             moveStartPos = null;
@@ -802,13 +949,8 @@ export function createPianoroll(opts) {
             const dur = maxC - minC + 1;
             const midi = NOTES[dragStart.row].midi;
 
-            const slot = opts.activeSlot != null ? opts.activeSlot : 0;
-            notes.push({
-                midi,
-                start: minC,
-                dur,
-                slot,
-            });
+            ensureActiveTrack();
+            notes.push({ midi, start: minC, dur });
             draw();
             renderLegend();
             onNotesChange();
@@ -856,8 +998,7 @@ export function createPianoroll(opts) {
         const row = pixelToRow(y);
         if (row < 0 || row >= NOTES.length) return null;
         const midi = NOTES[row].midi;
-        const activeSlot = opts.activeSlot;
-        const candidates = notes.filter(n => n.midi === midi && (activeSlot == null || n.slot === activeSlot));
+        const candidates = notes.filter(n => n.midi === midi);
         for (const n of candidates) {
             const startX = LABEL_W + n.start * COL_W;
             const endX = LABEL_W + (n.start + n.dur) * COL_W;
@@ -929,8 +1070,8 @@ export function createPianoroll(opts) {
                 longPressTimer = null;
                 longPressPos = null;
                 const midi = NOTES[row].midi;
-                const slot = opts.activeSlot != null ? opts.activeSlot : 0;
-                notes.push({ midi, start: col, dur: 1, slot });
+                ensureActiveTrack();
+                notes.push({ midi, start: col, dur: 1 });
                 draw();
                 renderLegend();
                 onNotesChange();
@@ -1095,8 +1236,8 @@ export function createPianoroll(opts) {
             const maxC = Math.max(dragStart.col, endCol);
             const dur = maxC - minC + 1;
             const midi = NOTES[dragStart.row].midi;
-            const slot = opts.activeSlot != null ? opts.activeSlot : 0;
-            notes.push({ midi, start: minC, dur, slot });
+            ensureActiveTrack();
+            notes.push({ midi, start: minC, dur });
             draw();
             renderLegend();
             onNotesChange();
@@ -1118,7 +1259,8 @@ export function createPianoroll(opts) {
         // While recording, the worker is already ticking for the recorder;
         // starting playback on top would route its ticks to the wrong handler.
         if (recordingActive || recordingTickHandler) return;
-        if (notes.length === 0) return;
+        if (noteCount() === 0) return;
+        refreshSequence();
 
         playing = true;
         looping = true;
@@ -1166,24 +1308,23 @@ export function createPianoroll(opts) {
     let recordingTickHandler = null;
 
     function handlePlaybackTick(rawCol) {
-        const tc = totalCols();
-        const wrappedCol = ((rawCol % tc) + tc) % tc;
-        const bpm = Math.max(32, Math.min(255, parseInt(bpmInput.value) || 120));
-        const msPerSixteenth = 60000 / bpm / 4;
+        if (!sequence || !sequence.range) return;
+        const wrappedCol = sequence.columnForTick(rawCol);
+        const msPerSixteenth = msPerColumn(getBpm());
 
-        for (const n of notes) {
-            if (n.start === wrappedCol) {
-                try {
-                    const entry = getSlotData(n.slot);
-                    const voiceData = entry ? entry.voiceData : null;
-                    playNoteFn(n.midi, n.dur * msPerSixteenth, voiceData, n.slot);
-                    consecutiveErrors = 0;
-                } catch (e) {
-                    consecutiveErrors++;
-                    if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-                        stopPlayback();
-                        return;
-                    }
+        // Every track sounds, each on its own slot — the roll edits one
+        // pattern but plays the whole song.
+        for (const ev of sequence.eventsAt(wrappedCol)) {
+            try {
+                const entry = getSlotData(ev.slot);
+                const voiceData = entry ? entry.voiceData : null;
+                playNoteFn(ev.midi, ev.dur * msPerSixteenth, voiceData, ev.slot);
+                consecutiveErrors = 0;
+            } catch (e) {
+                consecutiveErrors++;
+                if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+                    stopPlayback();
+                    return;
                 }
             }
         }
@@ -1217,7 +1358,8 @@ export function createPianoroll(opts) {
     playBtn.addEventListener('click', startPlayback);
     stopBtn.addEventListener('click', stopPlayback);
     clearBtn.addEventListener('click', () => {
-        notes.length = 0;
+        tracks = [];
+        setActiveTrack(-1);
         draw();
         renderLegend();
         onNotesChange();
@@ -1225,7 +1367,8 @@ export function createPianoroll(opts) {
         if (onClear) onClear();
     });
     clearBtnDesktop.addEventListener('click', () => {
-        notes.length = 0;
+        tracks = [];
+        setActiveTrack(-1);
         draw();
         renderLegend();
         onNotesChange();
@@ -1237,21 +1380,23 @@ export function createPianoroll(opts) {
 
     function renderLegend() {
         legend.innerHTML = '';
-        const slots = [...new Set(notes.map(n => n.slot))];
-        if (slots.length === 0) {
+        if (tracks.length === 0) {
             legend.style.display = 'none';
             return;
         }
         legend.style.display = '';
-        for (const slot of slots) {
+        for (let i = 0; i < tracks.length; i++) {
+            const track = tracks[i];
             const item = document.createElement('span');
-            item.className = 'pianoroll-legend-item';
+            // The edited track is marked: with ghosts on screen the user
+            // needs to know which notes answer to the mouse.
+            item.className = 'pianoroll-legend-item' + (i === activeTrackIdx ? ' active' : '');
             const dot = document.createElement('span');
             dot.className = 'pianoroll-legend-dot';
-            dot.style.background = slotColor(slot);
+            dot.style.background = slotColor(track.slot);
             item.appendChild(dot);
             const name = document.createElement('span');
-            name.textContent = slotName(slot);
+            name.textContent = slotName(track.slot);
             item.appendChild(name);
             legend.appendChild(item);
         }
@@ -1278,13 +1423,30 @@ export function createPianoroll(opts) {
         insertControl(el) {
             controls.insertBefore(el, stopBtn.nextSibling);
         },
+        /** Select the voice slot being edited — its track becomes active. */
         setActiveSlot(slot) {
             opts.activeSlot = slot;
+            selectSlot(slot);
             draw();
+            renderLegend();
         },
+        /**
+         * Insert a note on `slot`'s track (the recorder names the slot it
+         * recorded on, which need not be the one being edited).
+         */
         addNote({ midi, start, dur, slot }) {
-            const note = { midi, start, dur, slot };
-            notes.push(note);
+            const target = slot != null ? slot : currentSlot();
+            let track = tracks.find(t => t.slot === target);
+            if (!track) {
+                const keep = currentSlot();
+                opts.activeSlot = target;
+                selectSlot(target);
+                track = ensureActiveTrack();
+                opts.activeSlot = keep;
+                selectSlot(keep);
+            }
+            const note = { midi, start, dur };
+            track.pattern.notes.push(note);
             draw();
             renderLegend();
             if (onNotesChange) onNotesChange();
@@ -1294,9 +1456,12 @@ export function createPianoroll(opts) {
             return note;
         },
         removeNote(note) {
-            const idx = notes.indexOf(note);
+            // Undo may reach a note on another track — search them all.
+            const owner = tracks.find(t => t.pattern.notes.indexOf(note) >= 0);
+            const list = owner ? owner.pattern.notes : notes;
+            const idx = list.indexOf(note);
             if (idx >= 0) {
-                notes.splice(idx, 1);
+                list.splice(idx, 1);
                 draw();
                 renderLegend();
                 if (onNotesChange) onNotesChange();
@@ -1348,7 +1513,7 @@ export function createPianoroll(opts) {
             playCol = -1;
             playBtn.disabled = false;
             recordingTickHandler = null;
-            for (const n of notes) delete n._recordedInSession;
+            for (const { note } of allNotes()) delete note._recordedInSession;
             scroll.scrollLeft = scroll.scrollLeft % gridWidth();
             draw();
         },
@@ -1356,36 +1521,47 @@ export function createPianoroll(opts) {
             recordingTickHandler = handler;
         },
         clearRecordingFlags() {
-            for (const n of notes) delete n._recordedInSession;
+            for (const { note } of allNotes()) delete note._recordedInSession;
         },
         tickRecording(col) {
             // Play notes at this column and advance playhead
             const tc = totalCols();
             const wrappedCol = ((col % tc) + tc) % tc;
-            const bpm = Math.max(32, Math.min(255, parseInt(bpmInput.value) || 120));
-            const msPerSixteenth = 60000 / bpm / 4;
-            for (const n of notes) {
+            const msPerSixteenth = msPerColumn(getBpm());
+            // Read live, not through the sequencer: the _recordedInSession
+            // flag is on the note objects the recorder is writing.
+            for (const { note: n, track } of allNotes()) {
                 if (n.start === wrappedCol && !n._recordedInSession) {
                     try {
-                        const entry = getSlotData(n.slot);
+                        const entry = getSlotData(track.slot);
                         const voiceData = entry ? entry.voiceData : null;
-                        playNoteFn(n.midi, n.dur * msPerSixteenth, voiceData, n.slot);
-                        logRecord(`[record:playback] midi=${n.midi} col=${wrappedCol} dur=${n.dur} slot=${n.slot}`);
+                        playNoteFn(n.midi, n.dur * msPerSixteenth, voiceData, track.slot);
+                        logRecord(`[record:playback] midi=${n.midi} col=${wrappedCol} dur=${n.dur} slot=${track.slot}`);
                     } catch (e) { /* ignore */ }
                 }
             }
             playCol = wrappedCol;
             draw();
         },
+        /** The edited pattern's notes (no slot — the track carries it). */
         getNotes() { return notes; },
+        /** The pattern under the cursor, for the song editor in phase 4. */
+        getPattern() { return activeTrackIdx >= 0 ? tracks[activeTrackIdx].pattern : null; },
+        getTracks() { return tracks.map(t => ({ id: t.id, slot: t.slot, patternId: t.pattern.id })); },
         getBpm() { return parseInt(bpmInput.value) || DEFAULT_BPM; },
-        /** Sequencer state as plain data, for the song store. */
+        /**
+         * Sequencer state in the flat shape the song bar still speaks:
+         * notes carrying the slot of the track they sit on. Phase 6 removes
+         * the song bar and this with it.
+         */
         getSong() {
-            return {
-                notes: notes.map(n => ({ midi: n.midi, start: n.start, dur: n.dur, slot: n.slot })),
-                bpm: parseInt(bpmInput.value) || DEFAULT_BPM,
-                measures,
-            };
+            const flat = [];
+            for (const t of tracks) {
+                for (const n of t.pattern.notes) {
+                    flat.push({ midi: n.midi, start: n.start, dur: n.dur, slot: t.slot });
+                }
+            }
+            return { notes: flat, bpm: getBpm(), measures };
         },
         /**
          * Replace the sequencer state wholesale. Validates like loadState()
@@ -1394,15 +1570,22 @@ export function createPianoroll(opts) {
         loadSong(song) {
             if (playing) stopPlayback();
             const data = song || {};
-            measures = Number.isInteger(data.measures) && data.measures >= 1 ? data.measures : 1;
-            notes.length = 0;
-            for (const n of Array.isArray(data.notes) ? data.notes : []) {
-                if (n && typeof n.midi === 'number' && typeof n.start === 'number' && typeof n.dur === 'number') {
-                    notes.push({ midi: n.midi, start: n.start, dur: n.dur, slot: n.slot != null ? n.slot : 0 });
-                }
+            const m = Number.isInteger(data.measures) && data.measures >= 1 ? data.measures : 1;
+            // A flat slot-tagged note list is exactly one pattern per slot.
+            tracks = [];
+            songId = null;
+            songName = data.name || songName;
+            for (const [slot, list] of splitNotesBySlot(data.notes)) {
+                const track = createTrack({ name: slotName(slot), slot });
+                track.pattern = createPattern({ name: slotName(slot), measures: m, notes: list });
+                track.clipId = null;
+                tracks.push(track);
             }
+            setMeasures(m);
+            setActiveTrack(-1);
+            selectSlot(currentSlot());
             const bpm = parseInt(data.bpm);
-            bpmInput.value = String(Number.isFinite(bpm) ? Math.max(32, Math.min(255, bpm)) : DEFAULT_BPM);
+            bpmInput.value = String(Number.isFinite(bpm) ? Math.max(MIN_BPM, Math.min(MAX_BPM, bpm)) : DEFAULT_BPM);
             updateMeasureButtons();
             scroll.scrollLeft = 0;
             draw();
