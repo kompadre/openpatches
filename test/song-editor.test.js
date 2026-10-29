@@ -81,7 +81,8 @@ describe('rendering', () => {
         assert.equal(clips[0].style.width, (4 * MEASURE_W - 2) + 'px');
         assert.equal(clips[0].querySelector('.song-clip-label').textContent, 'A ×2');
         assert.equal(clips[1].querySelector('.song-clip-label').textContent, 'A');
-        assert.equal(clips[1].style.background, '#bbb002', 'coloured by the track\'s voice');
+        assert.equal(clips[1].style.background, h.patterns[0].color, 'painted with its pattern\'s colour');
+        assert.equal(h.lanes()[1].style.backgroundColor, 'rgba(187,176,2,0.16)', 'the lane is tinted with the voice');
     });
 
     test('the palette lists every stored pattern with its length', () => {
@@ -734,13 +735,13 @@ describe('moving clips between tracks', () => {
         assert.equal(c.startMeasure, 3);
     });
 
-    test('while dragging, the clip previews in the target lane in that voice\'s colour', () => {
+    test('while dragging, the clip previews in the target lane, keeping its pattern colour', () => {
         const h = two();
         const clip = h.clips()[0];
         clip.dispatch('mousedown', ev({ clientX: 10, clientY: 5 }));
         h.doc('mousemove', ev({ clientX: 10, clientY: LANE_H + 5 }));
         assert.equal(clip.parentNode, h.lanes()[1]);
-        assert.equal(clip.style.background, BANK[1].color);
+        assert.equal(clip.style.background, h.patterns[0].color, 'the lane tint says which voice; the clip stays its own colour');
         h.doc('mousemove', ev({ clientX: 10, clientY: 5 }));
         assert.equal(clip.parentNode, h.lanes()[0], 'and back');
         h.doc('mouseup', ev({ clientX: 10, clientY: 5 }));
@@ -768,5 +769,49 @@ describe('moving clips between tracks', () => {
         h.doc('touchmove', ev({ touches: [{ clientX: 10, clientY: LANE_H + 5 }] }));
         h.doc('touchend', ev({ changedTouches: [{ clientX: 10, clientY: LANE_H + 5 }] }));
         assert.equal(h.song().clips[0].trackId, h.song().tracks[1].id);
+    });
+});
+
+// Colours: a lane is tinted with its track's voice, a clip is painted with
+// its pattern's own colour, chosen in the palette.
+describe('pattern colours', () => {
+    test('every pattern has one; the default is stable per id and survives a reload', () => {
+        const h = build({ patterns: [{ name: 'A' }, { name: 'B', color: '#ABCDEF' }] });
+        const [a, b] = h.patterns;
+        assert.match(a.color, /^#[0-9a-f]{6}$/);
+        assert.equal(a.color, M.defaultPatternColor(a.id));
+        assert.equal(b.color, '#abcdef', 'a given colour is kept, lower-cased');
+        assert.equal(M.patternStore.get(a.id).color, a.color, 'read back the same');
+        assert.equal(M.createPattern({ id: 'legacy_x' }).color, M.createPattern({ id: 'legacy_x' }).color,
+            'a stored record without a colour gets the same default every load');
+        assert.equal(M.createPattern({ color: 'red', id: 'q' }).color, M.defaultPatternColor('q'), 'junk is replaced');
+    });
+
+    test('the palette swatch recolours the pattern and its clips', () => {
+        const h = build({ patterns: [{ name: 'A' }], tracks: [{ slot: 0 }], clips: [{ track: 0, pattern: 0, at: 0 }] });
+        const swatch = h.items()[0].querySelector('.song-pattern-swatch');
+        assert.equal(swatch.type, 'color');
+        assert.equal(swatch.value, h.patterns[0].color);
+        swatch.value = '#123456';
+        swatch.dispatch('change');
+        assert.equal(M.patternStore.get(h.patterns[0].id).color, '#123456');
+        assert.equal(h.clips()[0].style.background, '#123456');
+        assert.equal(h.items()[0].style.borderLeftColor, '#123456');
+    });
+
+    test('clicking the swatch does not toggle the pattern selection', () => {
+        const h = build({ patterns: [{ name: 'A' }] });
+        let stopped = 0;
+        h.items()[0].querySelector('.song-pattern-swatch').dispatch('click', { stopPropagation() { stopped++; } });
+        assert.equal(stopped, 1);
+        assert.equal(h.editor.getSelectedPatternId(), null);
+    });
+
+    test('moving a clip to another track keeps its colour — the pattern did not change', () => {
+        const h = build({ patterns: [{ name: 'A', color: '#102030' }], tracks: [{ slot: 0 }, { slot: 1 }],
+            clips: [{ track: 0, pattern: 0, at: 0 }] });
+        h.session.update((s) => { s.clips[0].trackId = s.tracks[1].id; }, 'test');
+        assert.equal(h.clips()[0].style.background, '#102030');
+        assert.equal(h.lanes()[1].style.backgroundColor, 'rgba(187,176,2,0.16)');
     });
 });

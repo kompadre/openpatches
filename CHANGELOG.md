@@ -2,6 +2,10 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-10-29: Pattern colours in the Song tab
+
+- Patterns carry a `color` (`#rrggbb`), defaulted by the factory from a hash of the id over a new `PATTERN_COLORS` palette distinct from the voice-bank colours, so existing records pick up a stable colour with no migration. Lanes are tinted with their track's voice (translucent background colour under the bar grid); clips are painted with their pattern's colour; each palette row has a colour-picker swatch and a matching left border. A clip moved to another track keeps its colour — the pattern is what the colour belongs to. `pattern colours` block in `test/song-editor.test.js`.
+
 ## 2026-10-29: Moving clips between tracks
 
 - Drag a clip in the Song tab into another lane, diagonally if you like; it previews in the target lane in that voice's colour and lands through `updateClip` with the new `trackId`, so an occupied destination is refused and reported like any other edit. Nothing in the model changed: a clip was already only a pattern placed on a track, so the notes move and the instrument stays the track's. Pure vertical drags now count as moves (they were previously ignored as hold-cancellers). `moving clips between tracks` block in `test/song-editor.test.js`.

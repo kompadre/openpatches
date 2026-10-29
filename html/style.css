@@ -4187,7 +4187,20 @@ footer {
     border-left: 3px solid transparent;
 }
 .song-pattern-item:hover { background: #1a1a33; }
-.song-pattern-item.selected { background: #1f1f3f; border-left-color: #e94560; }
+.song-pattern-item.selected { background: #1f1f3f; box-shadow: inset 0 0 0 1px #e94560; }  /* the left border is the pattern's colour now */
+.song-pattern-swatch {
+    flex: 0 0 auto;
+    width: 1.1rem;
+    height: 1.1rem;
+    padding: 0;
+    border: 1px solid #333;
+    border-radius: 3px;
+    background: none;
+    cursor: pointer;
+}
+.song-pattern-swatch::-webkit-color-swatch-wrapper { padding: 0; }
+.song-pattern-swatch::-webkit-color-swatch { border: none; border-radius: 2px; }
+.song-pattern-swatch::-moz-color-swatch { border: none; border-radius: 2px; }
 .song-pattern-name { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .song-pattern-name[contenteditable="true"] { outline: 1px solid #e94560; background: #0f0f23; }
 .song-pattern-len { color: #777; font-size: 0.65rem; }
@@ -4243,14 +4256,14 @@ footer {
 .song-ruler-lane { height: 1.2rem; }
 .song-ruler-tick { position: absolute; top: 0; padding-left: 3px; color: #777; font-size: 0.6rem; line-height: 1.2rem; }
 .song-loop-band { position: absolute; bottom: 0; height: 3px; background: #e94560; opacity: 0.8; }
-.song-lane { border-bottom: 1px solid #1f1f33; cursor: copy; }
+.song-lane { border-bottom: 1px solid rgba(255,255,255,0.08); cursor: copy; }
 
 .song-clip {
     position: absolute;
     top: 3px;
     bottom: 3px;
     border-radius: 3px;
-    opacity: 0.85;
+    opacity: 0.92;
     color: #fff;
     cursor: grab;
     display: flex;

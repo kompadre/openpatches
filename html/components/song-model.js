@@ -49,6 +49,23 @@ function nonEmptyName(name, fallback) {
     return s || fallback;
 }
 
+// Pattern colours. Deliberately a different set from the voice-bank slot
+// colours (voicebank.js PATCH_COLORS): a track is tinted with its voice, a
+// clip is painted with its pattern, and the two must read as two things.
+export const PATTERN_COLORS = [
+    '#d84a6b', '#e0803a', '#c9a227', '#6fa83b', '#2fa58a', '#3b8fd1',
+    '#6a5fd6', '#b05bc0', '#d05a9a', '#8c8c3a', '#3aa0b8', '#a0623a',
+];
+
+const HEX_COLOR = /^#[0-9a-f]{6}$/i;
+
+/** A stable default: the same id always gets the same colour. */
+export function defaultPatternColor(id) {
+    let h = 0;
+    for (const ch of String(id)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    return PATTERN_COLORS[h % PATTERN_COLORS.length];
+}
+
 // --- Factories ---
 //
 // Every factory is total: it takes anything (storage, a file, a hand-edited
@@ -57,7 +74,7 @@ function nonEmptyName(name, fallback) {
 
 /**
  * @param {object} partial
- * @returns {{id, name, kind, measures, notes: Array<{midi,start,dur}>, created}}
+ * @returns {{id, name, kind, color, measures, notes: Array<{midi,start,dur}>, created}}
  */
 export function createPattern(partial = {}) {
     const measures = clampInt(partial.measures, 1, 256, 1);
@@ -68,10 +85,12 @@ export function createPattern(partial = {}) {
         if (note) notes.push(note);
     }
     notes.sort((a, b) => a.start - b.start || a.midi - b.midi);
+    const id = partial.id || uid('pat');
     return {
-        id: partial.id || uid('pat'),
+        id,
         name: nonEmptyName(partial.name, 'Pattern'),
         kind: PATTERN_KINDS.includes(partial.kind) ? partial.kind : 'mono',
+        color: HEX_COLOR.test(partial.color) ? partial.color.toLowerCase() : defaultPatternColor(id),
         measures,
         notes,
         created: partial.created || Date.now(),

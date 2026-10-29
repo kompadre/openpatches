@@ -7,12 +7,15 @@ Project backlog. Parent tasks with nested subtasks; `[ ]` pending, `[x]` done,
 
 ### Bugs and small improvements assorted
 
-- [ ] "Song" tab again: track color should be subdued background for the whole track. Patterns should have their own colors.
 
 ### Ideas
 
 - [ ] "Rec" button without play starts a step-driven record. 
-   - [ ] Pressing a note (being in keyboard on MIDI in device) starts 
+   - [ ] Pressing a note or multiple notes, be it on keyboard on MIDI in device)
+      - vertically aligns the grid with the first note
+      - places a clip at the playhead position and starts lengthning the note duration by the amount of time held (1sec = 1/16, 2sec = 1/8, 3sec = 1/4...). 
+      - releasing all the notes commits them to the grid and moves playhead forward the amount of the clip with max duration in this "record step".
+
 - [ ] Add the concept of **Project** for global settings (tempo, voice bank, MIDI settings, the pattern and song libraries).
 - [ ] Add the possibility of **exporting a project** (and importing it back).
 - [ ] Sub-measure placement and extension of patterns in Song editor.

@@ -83,6 +83,13 @@ export function createSongEditor(opts = {}) {
         return (slot + 1) + '. ' + (entry ? entry.name : '—');
     }
 
+    /** `#rrggbb` → `rgba(r,g,b,a)`; anything else is passed through. */
+    function tint(hex, alpha) {
+        const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex || '');
+        if (!m) return hex;
+        return `rgba(${parseInt(m[1], 16)},${parseInt(m[2], 16)},${parseInt(m[3], 16)},${alpha})`;
+    }
+
     function slotColor(slot) {
         const entry = getSlotData(slot);
         return entry && entry.color ? entry.color : '#888';
@@ -244,6 +251,23 @@ export function createSongEditor(opts = {}) {
             item.className = 'song-pattern-item' + (p.id === selectedPatternId ? ' selected' : '');
             item.dataset.patternId = p.id;
             item.title = 'Click to select, then click a lane to place';
+
+            // The pattern's colour — what its clips are painted with. The
+            // swatch is the picker; a click on it must not toggle selection.
+            const swatch = document.createElement('input');
+            swatch.type = 'color';
+            swatch.className = 'song-pattern-swatch';
+            swatch.value = p.color;
+            swatch.title = 'Pattern colour';
+            swatch.addEventListener('click', (e) => e.stopPropagation());
+            swatch.addEventListener('input', () => { item.style.borderLeftColor = swatch.value; });
+            swatch.addEventListener('change', () => {
+                patternStore.put({ ...patternStore.get(p.id), color: swatch.value });
+                session.notifyPattern(p.id, 'song-editor');
+                render();
+            });
+            item.appendChild(swatch);
+            item.style.borderLeftColor = p.color;
 
             const nameEl = document.createElement('span');
             nameEl.className = 'song-pattern-name';
@@ -433,6 +457,10 @@ export function createSongEditor(opts = {}) {
         const lane = document.createElement('div');
         lane.className = 'song-lane';
         lane.style.width = (cols * MEASURE_W) + 'px';
+        // The whole lane carries the voice, quietly; clips carry their
+        // pattern's colour on top. (backgroundColor, not background: the
+        // bar grid is a background-image on the same element.)
+        lane.style.backgroundColor = tint(slotColor(track.slot), 0.16);
         lane.dataset.trackId = track.id;
         lane.addEventListener('click', (e) => {
             if (e.target !== lane) return;           // a clip handles its own clicks
@@ -466,7 +494,7 @@ export function createSongEditor(opts = {}) {
         el.dataset.clipId = clip.id;
         el.style.left = (span.start * MEASURE_W) + 'px';
         el.style.width = ((span.end - span.start) * MEASURE_W - 2) + 'px';
-        el.style.background = slotColor(track.slot);
+        el.style.background = pattern.color;
         el.title = `${pattern.name} × ${clip.repeats} — drag to move (to another track too), drag the edge to repeat, hold to open, double-click to remove`;
 
         const label = document.createElement('span');
@@ -540,14 +568,12 @@ export function createSongEditor(opts = {}) {
                 const dm = Math.round(dx / MEASURE_W);
                 if (mode === 'move') {
                     el.style.left = (Math.max(0, span.start + dm) * MEASURE_W) + 'px';
-                    // Preview across lanes: re-parent the element and show
-                    // it in the colour of the voice it would play on.
+                    // Preview across lanes: re-parent the element. It keeps
+                    // its pattern colour — the lane's tint says which voice.
                     const over = laneAt(pt.y) || targetLane;
                     if (over !== targetLane) {
                         targetLane = over;
                         targetLane.appendChild(el);
-                        const t = session.get().tracks.find(x => x.id === targetLane.dataset.trackId);
-                        if (t) el.style.background = slotColor(t.slot);
                     }
                 } else {
                     const reps = Math.max(1, Math.round((span.end - span.start + dm) / pattern.measures));
