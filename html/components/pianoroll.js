@@ -319,25 +319,27 @@ export function createPianoroll(opts) {
     followBtn.title = FOLLOW_TITLE;
     controls.appendChild(followBtn);
 
-    // Song / Pattern. Song is the default and is what the roll has always
-    // done; Pattern loops the one pattern on screen, for writing a part.
-    const modeBtn = document.createElement('button');
-    modeBtn.className = 'pianoroll-btn pianoroll-mode';
-    controls.appendChild(modeBtn);
+    // Everything the roll starts — Play and Record — loops this pattern's
+    // placement and is never longer than the pattern. This button does not
+    // touch that: it decides whether the rest of the song is heard inside
+    // the window, or only the pattern being written.
+    const accompanyBtn = document.createElement('button');
+    accompanyBtn.className = 'pianoroll-btn pianoroll-accompany';
+    controls.appendChild(accompanyBtn);
 
-    function updateModeButton() {
-        const song = transport.getMode() === 'song';
-        modeBtn.textContent = song ? '\u266B Song' : '\u25AD Pattern';
-        modeBtn.title = song
-            ? 'Playing the whole arrangement — click to loop just this pattern'
-            : 'Looping this pattern alone — click to play the whole song';
-        modeBtn.classList.toggle('active', !song);
+    function updateAccompanyButton() {
+        const on = transport.getAccompany();
+        accompanyBtn.textContent = on ? '\u266B With song' : '\u25AD Pattern only';
+        accompanyBtn.title = on
+            ? 'The other tracks play along inside this pattern — click to hear this pattern alone'
+            : 'Only this pattern sounds — click to hear the rest of the song along with it';
+        accompanyBtn.classList.toggle('active', !on);
     }
-    modeBtn.addEventListener('click', () => {
-        transport.setMode(transport.getMode() === 'song' ? 'pattern' : 'song');
-        updateModeButton();
+    accompanyBtn.addEventListener('click', () => {
+        transport.setAccompany(!transport.getAccompany());
+        updateAccompanyButton();
     });
-    updateModeButton();
+    updateAccompanyButton();
 
     // Desktop clear button (also in moreMenu for mobile)
     const clearBtnDesktop = document.createElement('button');
@@ -1317,10 +1319,14 @@ export function createPianoroll(opts) {
     // --- Transport (the clock is the transport's; this is the view) ---
 
     function startPlayback() {
-        // Play rewinds the view only when it is following; otherwise the
-        // user owns the scroll position and yanking it would undo whatever
+        // Play from the roll loops the pattern being edited — the song,
+        // confined to this pattern's nearest placement, so the other
+        // tracks play along. Record does the same; the Song tab's Play
+        // is the whole-song one.
+        // Rewind the view only when it is following; otherwise the user
+        // owns the scroll position and yanking it would undo whatever
         // they were looking at.
-        if (transport.play() && followPlayhead) scroll.scrollLeft = LABEL_W;
+        if (transport.play({ mode: 'pattern' }) && followPlayhead) scroll.scrollLeft = LABEL_W;
     }
 
     function stopPlayback() {
@@ -1340,7 +1346,6 @@ export function createPianoroll(opts) {
         playBtn.disabled = looping;
         stopBtn.disabled = !looping;
         playCol = pos.edit ? pos.edit.patternCol : -1;
-        updateModeButton();
 
         if (!looping) {
             scroll.scrollLeft = scroll.scrollLeft % gridWidth();
@@ -1553,7 +1558,8 @@ export function createPianoroll(opts) {
             scroll.scrollLeft = target;
         },
         startRecording() {
-            transport.startRecording();
+            // A take from the roll loops the pattern window, like Play.
+            transport.startRecording({ mode: 'pattern' });
         },
         stopRecording() {
             transport.stop();
@@ -1590,7 +1596,9 @@ export function createPianoroll(opts) {
         getSession() { return session; },
         getTransport() { return transport; },
         getMode() { return transport.getMode(); },
-        setMode(m) { transport.setMode(m); updateModeButton(); },
+        setMode(m) { transport.setMode(m); },
+        getAccompany() { return transport.getAccompany(); },
+        setAccompany(on) { transport.setAccompany(on); updateAccompanyButton(); },
         getBpm() { return parseInt(bpmInput.value) || DEFAULT_BPM; },
         /**
          * Sequencer state in the flat shape the song bar still speaks:

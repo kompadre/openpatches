@@ -404,45 +404,77 @@ describe('transport integration (phase 5)', () => {
         assert.deepEqual(h.played.map(p => [p.midi, p.slot]).sort(), [[48, 1], [60, 0]]);
     });
 
-    test('the mode button loops this pattern alone, and back', () => {
-        const h = build();
-        drawNote(h, 60, 0);
-        h.roll.setActiveSlot(1);
-        drawNote(h, 48, 0);
-        const mode = h.roll.element.querySelector('.pianoroll-mode');
-        assert.match(mode.textContent, /Song/);
-
-        mode.dispatch('click');
-        assert.equal(h.roll.getMode(), 'pattern');
-        assert.match(mode.textContent, /Pattern/);
-        h.roll.startPlayback();
-        h.played.length = 0;
-        h.tickWorker.tick(0);
-        assert.deepEqual(h.played.map(p => p.midi), [48], 'only the edited voice');
-
-        mode.dispatch('click');
-        assert.equal(h.roll.getMode(), 'song');
-        h.roll.startPlayback();
-        h.played.length = 0;
-        h.tickWorker.tick(0);
-        assert.deepEqual(h.played.map(p => p.midi).sort(), [48, 60]);
-    });
-
-    test('the playhead hides where the edited pattern is not placed', () => {
+    test('Play from the roll loops the pattern where it sits, with the other tracks along', () => {
         const h = build();
         drawNote(h, 60, 0);                       // slot 0, bar 1
-        const song = h.roll.getSession().get();
-        // Give slot 0's clip a second bar to sit in, then move it to bar 2.
-        h.roll.getSession().update((s) => { s.clips[0].startMeasure = 1; }, 'test');
+        h.roll.setActiveSlot(1);
+        drawNote(h, 48, 0);                       // slot 1, bar 1 — the edited one
+        assert.equal(h.roll.element.querySelector('.pianoroll-mode'), null, 'no scope toggle: the roll is pattern scope');
+
         h.roll.startPlayback();
+        assert.equal(h.roll.getMode(), 'pattern', 'Play here is always the pattern loop');
+        assert.deepEqual(h.roll.getTransport().getSequence().range, { startCol: 0, endCol: 16 });
+        h.played.length = 0;
         h.tickWorker.tick(0);
-        assert.ok(h.ctx._calls.filter(c => c.fn === 'fillRect' && c.fillStyle === '#ff3b3b').length === 0,
-            'no playhead at bar 1');
+        assert.deepEqual(h.played.map(p => p.midi).sort(), [48, 60], 'slot 0 sits in the window: it accompanies');
+        h.roll.stopPlayback();
+
+        // Move slot 0's clip out of the window: now only the edited voice.
+        h.roll.getSession().update((s) => { s.clips[0].startMeasure = 3; }, 'test');
+        h.roll.startPlayback();
+        h.played.length = 0;
+        h.tickWorker.tick(0);
+        assert.deepEqual(h.played.map(p => p.midi), [48]);
+        h.roll.stopPlayback();
+
+        // Left in song mode by the Song tab's Play, the roll's Play and
+        // Record both bring it back to the pattern window.
+        h.roll.setMode('song');
+        h.roll.startPlayback();
+        assert.equal(h.roll.getMode(), 'pattern');
+        h.roll.stopPlayback();
+        h.roll.setMode('song');
+        h.roll.startRecording();
+        assert.equal(h.roll.getMode(), 'pattern', 'a take from the roll is the pattern loop too');
+        assert.deepEqual(h.roll.getTransport().getSequence().range, { startCol: 0, endCol: 16 });
+        h.roll.stopRecording();
+    });
+
+    test('the accompaniment button mutes the other tracks without shortening the loop', () => {
+        const h = build();
+        drawNote(h, 60, 0);                       // slot 0, bar 1
+        h.roll.setActiveSlot(1);
+        drawNote(h, 48, 0);                       // slot 1 — the edited one
+        const btn = h.roll.element.querySelector('.pianoroll-accompany');
+        assert.match(btn.textContent, /With song/);
+
+        btn.dispatch('click');
+        assert.match(btn.textContent, /Pattern only/);
+        assert.ok(btn.classList.contains('active'));
+        h.roll.startRecording();
+        assert.deepEqual(h.roll.getTransport().getSequence().range, { startCol: 0, endCol: 16 },
+            'a take is one pattern long either way');
+        h.played.length = 0;
+        h.tickWorker.tick(0);
+        assert.deepEqual(h.played.map(p => p.midi), [48], 'slot 0 is silent now');
+
+        btn.dispatch('click');
+        h.played.length = 0;
+        h.tickWorker.tick(0);
+        assert.deepEqual(h.played.map(p => p.midi).sort(), [48, 60], 'and back, mid-take');
+        h.roll.stopRecording();
+    });
+
+    test('the loop is the clip\'s own window, so the playhead is there from the first tick', () => {
+        const h = build();
+        drawNote(h, 60, 0);                       // slot 0, bar 1
+        h.roll.getSession().update((s) => { s.clips[0].startMeasure = 1; }, 'test');   // now bar 2
+        h.roll.startPlayback();
+        assert.deepEqual(h.roll.getTransport().getSequence().range, { startCol: 16, endCol: 32 });
         h.ctx._calls.length = 0;
-        h.tickWorker.tick(16);
+        h.tickWorker.tick(0);
         assert.ok(h.ctx._calls.some(c => c.fn === 'fillRect' && c.fillStyle === '#ff3b3b'),
-            'playhead appears once the clip is under it');
-        assert.ok(song);
+            'raw tick 0 is the window start: the playhead is on the pattern at once');
     });
 
     test('Stop releases sounding notes exactly once', () => {

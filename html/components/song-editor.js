@@ -34,6 +34,8 @@ export function createSongEditor(opts = {}) {
 
     let selectedPatternId = null;
     let selectedClipId = null;
+    let playBtn = null;        // transport buttons, re-created by renderToolbar, synced per tick
+    let stopBtn = null;
     let lastPress = { clipId: null, at: 0 };   // last body press, for double-tap removal
     let unsubscribe = null;
     let unsubscribeTransport = null;
@@ -103,6 +105,19 @@ export function createSongEditor(opts = {}) {
 
     function renderToolbar(song) {
         toolbar.innerHTML = '';
+
+        // Play here is the whole song; the roll's Play loops its pattern.
+        if (transport) {
+            playBtn = button('\u25B6 Play', 'Play the song from the start of its loop', () => {
+                transport.play({ mode: 'song' });
+            }, 'song-btn song-play');
+            stopBtn = button('\u25A0 Stop', 'Stop', () => transport.stop(), 'song-btn song-stop');
+            toolbar.appendChild(playBtn);
+            toolbar.appendChild(stopBtn);
+            syncTransportButtons({
+                playing: transport.isPlaying(), recording: transport.isRecording(), mode: transport.getMode(),
+            });
+        }
 
         const select = document.createElement('select');
         select.className = 'song-select';
@@ -342,7 +357,7 @@ export function createSongEditor(opts = {}) {
         playheadEl.className = 'song-playhead';
         playheadEl.style.display = 'none';
         grid.appendChild(playheadEl);
-        if (transport) movePlayhead(transport.getColumn(), transport.getMode());
+        if (transport) movePlayhead(transport.isRunning() ? transport.getColumn() : -1);
 
         if (song.tracks.length === 0) {
             const empty = document.createElement('div');
@@ -563,12 +578,13 @@ export function createSongEditor(opts = {}) {
     }
 
     /**
-     * Park the playhead at a song column. Pattern mode has no song position
-     * to show, so it hides — the roll is where that loop is visible.
+     * Park the playhead at a song column. Both modes have one — pattern
+     * mode loops a window of the song — except a pattern placed nowhere,
+     * which reports no song column and so hides it.
      */
-    function movePlayhead(col, mode) {
+    function movePlayhead(col) {
         if (!playheadEl) return;
-        if (col < 0 || mode === 'pattern') {
+        if (!(col >= 0)) {
             playheadEl.style.display = 'none';
             return;
         }
@@ -581,12 +597,23 @@ export function createSongEditor(opts = {}) {
         if (selectedClipId === clipId) selectedClipId = null;
     }
 
+    function syncTransportButtons(pos) {
+        if (!playBtn) return;
+        const running = pos.playing || pos.recording;
+        playBtn.disabled = running;
+        stopBtn.disabled = !running;
+        playBtn.classList.toggle('active', !!pos.playing && pos.mode === 'song');
+    }
+
     function openClip(clipId) {
         const song = session.get();
         const clip = song.clips.find(c => c.id === clipId);
         if (!clip) return;
         selectedClipId = clipId;
         selectedPatternId = clip.patternId;
+        // Park the song position on this clip so it, and not another
+        // placement of the same pattern, is what the roll's Play loops.
+        if (transport && transport.setSongPosition) transport.setSongPosition(clip.startMeasure * COLS_PER_MEASURE);
         if (opts.onOpenPattern) opts.onOpenPattern(clipId, clip.trackId, clip.patternId);
         render();
     }
@@ -614,7 +641,10 @@ export function createSongEditor(opts = {}) {
     session.init();
     unsubscribe = session.subscribe(() => render());
     if (transport) {
-        unsubscribeTransport = transport.subscribe((pos) => movePlayhead(pos.col, pos.mode));
+        unsubscribeTransport = transport.subscribe((pos) => {
+            movePlayhead(pos.songCol != null ? pos.songCol : pos.col);
+            syncTransportButtons(pos);
+        });
     }
     render();
 

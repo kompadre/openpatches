@@ -602,12 +602,51 @@ describe('playhead (phase 5)', () => {
         assert.equal(head().style.display, 'none');
     });
 
-    test('hidden in pattern mode — that loop is the roll\'s business', async () => {
+    test('shown in pattern mode too — that loop is a window of the song', async () => {
         const h = await withTransport();
+        const head = () => h.root.querySelector('.song-playhead');
         h.transport.setMode('pattern');
         h.transport.play();
-        h.tickWorker.tick(4);
-        assert.equal(h.root.querySelector('.song-playhead').style.display, 'none');
+        h.tickWorker.tick(0);
+        assert.equal(head().style.display, '');
+        const left0 = parseFloat(head().style.left);
+        h.tickWorker.tick(16);
+        assert.equal(parseFloat(head().style.left) - left0, MEASURE_W);
+    });
+
+    test('Play and Stop in the toolbar drive the transport, in song mode', async () => {
+        const h = await withTransport();
+        h.transport.setMode('pattern');
+        const play = () => h.root.querySelector('.song-play');
+        const stop = () => h.root.querySelector('.song-stop');
+        assert.equal(play().disabled, false);
+        assert.equal(stop().disabled, true);
+
+        play().dispatch('click', ev());
+        assert.equal(h.transport.isPlaying(), true);
+        assert.equal(h.transport.getMode(), 'song', 'Play here is the whole song');
+        assert.equal(play().disabled, true);
+        assert.ok(play().classList.contains('active'));
+        assert.equal(stop().disabled, false);
+
+        stop().dispatch('click', ev());
+        assert.equal(h.transport.isPlaying(), false);
+        assert.equal(play().disabled, false);
+        assert.equal(stop().disabled, true);
+    });
+
+    test('opening a clip parks the song position on it, so that placement is what loops', async () => {
+        const h = await withTransport();
+        // A second clip of the same pattern at bar 5.
+        h.session.update((song) => {
+            M.addClip(song, { trackId: song.tracks[0].id, patternId: song.clips[0].patternId, startMeasure: 4 }, getPattern);
+        }, 'test');
+        const second = h.root.querySelectorAll('.song-clip')[1];
+        second.dispatch('click', ev());
+        h.root.querySelector('.song-clip-open').dispatch('click', ev());
+        assert.equal(h.transport.getSongPosition(), 4 * 16);
+        h.transport.play({ mode: 'pattern' });
+        assert.deepEqual(h.transport.getSequence().range, { startCol: 64, endCol: 96 });
     });
 
     test('it survives a re-render and does not rebuild the clips per tick', async () => {

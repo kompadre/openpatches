@@ -363,6 +363,65 @@ describe('createPatternSequence', () => {
     });
 });
 
+describe('placements', () => {
+    test('one per repeat, one pattern long, sorted by start, across clips and tracks', () => {
+        const sg = song({ clips: [
+            { id: 'c2', trackId: 't2', patternId: 'p1', startMeasure: 6, repeats: 1 },
+            { id: 'c1', trackId: 't1', patternId: 'p1', startMeasure: 1, repeats: 2 },
+            { id: 'c3', trackId: 't1', patternId: 'p2', startMeasure: 3, repeats: 1 },
+        ] });
+        assert.deepEqual(S.patternPlacements(sg, 'p1', lib(P1(), P2())), [
+            { clipId: 'c1', trackId: 't1', startCol: 16, endCol: 32 },
+            { clipId: 'c1', trackId: 't1', startCol: 32, endCol: 48 },
+            { clipId: 'c2', trackId: 't2', startCol: 96, endCol: 112 },
+        ]);
+        assert.deepEqual(S.patternPlacements(sg, 'p2', lib(P1(), P2())), [
+            { clipId: 'c3', trackId: 't1', startCol: 48, endCol: 80 },
+        ]);
+        assert.deepEqual(S.patternPlacements(sg, 'nope', lib(P1())), []);
+    });
+
+    test('nearest: inside wins, else the closer edge, ties to the earlier, no position → first', () => {
+        const ps = [{ startCol: 0, endCol: 16 }, { startCol: 64, endCol: 80 }];
+        assert.equal(S.nearestPlacement(ps, 5), ps[0]);
+        assert.equal(S.nearestPlacement(ps, 70), ps[1]);
+        assert.equal(S.nearestPlacement(ps, 50), ps[1]);
+        assert.equal(S.nearestPlacement(ps, 39), ps[0], '24 past the first\'s last column vs 25 before the second');
+        assert.equal(S.nearestPlacement(ps, 40), ps[1], '25 vs 24');
+        const tie = [{ startCol: 0, endCol: 16 }, { startCol: 31, endCol: 47 }];
+        assert.equal(S.nearestPlacement(tie, 23), tie[0], 'a tie (8 each) goes to the earlier');
+        assert.equal(S.nearestPlacement(ps, -1), ps[0]);
+        assert.equal(S.nearestPlacement([], 5), null);
+    });
+
+    test('onlyTrackId confines what sounds, not the window — the roll recording alone', () => {
+        const sg = song({ clips: [
+            { id: 'c1', trackId: 't1', patternId: 'p1', startMeasure: 0, repeats: 4 },
+            { id: 'c2', trackId: 't2', patternId: 'p2', startMeasure: 0, repeats: 1 },
+        ] });
+        const opts = { range: { startCol: 0, endCol: 16 }, onlyTrackId: 't1' };
+        const seq = S.createSongSequence(sg, lib(P1(), P2()), opts);
+        assert.deepEqual(seq.range, { startCol: 0, endCol: 16 }, 'the window is the same either way');
+        assert.deepEqual(firing(seq, 0), [[60, 0]], 't2 is silent');
+        assert.deepEqual(seq.locate(0).tracks.t2, { clipId: 'c2', patternId: 'p2', patternCol: 0 },
+            'still located: the Song tab draws a playhead over it');
+    });
+
+    test('a song sequence takes a range override — the song, looped on a window', () => {
+        const sg = song({ clips: [
+            { id: 'c1', trackId: 't1', patternId: 'p1', startMeasure: 0, repeats: 4 },
+            { id: 'c2', trackId: 't2', patternId: 'p2', startMeasure: 1, repeats: 1 },
+        ] });
+        const seq = S.createSongSequence(sg, lib(P1(), P2()), { range: { startCol: 16, endCol: 32 } });
+        assert.deepEqual(seq.range, { startCol: 16, endCol: 32 });
+        assert.equal(seq.length, 64, 'length is still the song\'s');
+        assert.equal(seq.columnForTick(0), 16);
+        assert.equal(seq.columnForTick(16), 16);
+        assert.equal(seq.columnForTick(5), 21);
+        assert.deepEqual(firing(seq, 16), [[48, 3], [60, 0]], 'both tracks sound inside the window');
+    });
+});
+
 describe('msPerColumn', () => {
     test('a sixteenth at 120 bpm is 125 ms', () => {
         assert.equal(S.msPerColumn(120), 125);

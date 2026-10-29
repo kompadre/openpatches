@@ -61,14 +61,63 @@ function emptySequence(kind) {
 }
 
 /**
+ * Every place a pattern sounds in a song, one entry per repeat: a clip of
+ * two bars repeated three times is three placements of two bars. Sorted by
+ * start. This is what pattern mode loops over — one placement, with the
+ * rest of the song playing along inside it.
+ *
+ * @returns {Array<{clipId, trackId, startCol, endCol}>}
+ */
+export function patternPlacements(song, patternId, getPattern) {
+    const out = [];
+    const pattern = getPattern(patternId);
+    if (!pattern) return out;
+    const patternCols = pattern.measures * COLS_PER_MEASURE;
+    for (const clip of song.clips) {
+        if (clip.patternId !== patternId) continue;
+        const span = clipSpan(clip, pattern);
+        if (!span) continue;
+        for (let r = 0; r < clip.repeats; r++) {
+            const startCol = span.start * COLS_PER_MEASURE + r * patternCols;
+            out.push({ clipId: clip.id, trackId: clip.trackId, startCol, endCol: startCol + patternCols });
+        }
+    }
+    out.sort((a, b) => a.startCol - b.startCol);
+    return out;
+}
+
+/**
+ * The placement nearest a song column: the one containing it if any,
+ * otherwise the closest edge. Ties go to the earliest. A negative column
+ * (no position yet) picks the first.
+ */
+export function nearestPlacement(placements, col) {
+    if (placements.length === 0) return null;
+    if (!(col >= 0)) return placements[0];
+    let best = null;
+    let bestDist = Infinity;
+    for (const p of placements) {
+        const dist = col < p.startCol ? p.startCol - col : col >= p.endCol ? col - p.endCol + 1 : 0;
+        if (dist < bestDist) { best = p; bestDist = dist; }
+    }
+    return best;
+}
+
+/**
  * Compile a song. Every clip is resolved once: its pattern (a snapshot),
  * its absolute column span, and its track. Clips whose pattern or track is
  * missing are skipped — a dangling reference is silence, not a crash.
  *
  * @param {object} song
  * @param {(id: string) => object|null} getPattern
+ * @param {{
+ *   range?: {startCol:number, endCol:number},  loop these columns instead of
+ *           the song's own loop/length (pattern mode)
+ *   onlyTrackId?: string,                      sound this track alone — the
+ *           roll recording a pattern without the rest of the song
+ * }} [opts]
  */
-export function createSongSequence(song, getPattern) {
+export function createSongSequence(song, getPattern, opts = {}) {
     const trackById = new Map(song.tracks.map(t => [t.id, t]));
     const placed = [];
     let lengthCols = 0;
@@ -95,7 +144,7 @@ export function createSongSequence(song, getPattern) {
     }
 
     const lengthMeasures = lengthCols / COLS_PER_MEASURE;
-    const range = playbackRange(song, lengthMeasures);
+    const range = opts.range || playbackRange(song, lengthMeasures);
     if (!range) return emptySequence('song');
 
     // Which placements cover a column — resolved per column on demand; a
@@ -124,6 +173,7 @@ export function createSongSequence(song, getPattern) {
             const audible = audibleTrackIds(song.tracks);
             const events = [];
             for (const p of placementsAt(col)) {
+                if (opts.onlyTrackId && p.track.id !== opts.onlyTrackId) continue;
                 if (!audible.has(p.track.id)) continue;
                 const local = (col - p.startCol) % p.patternCols;
                 const notes = p.notesByCol.get(local);
@@ -170,9 +220,10 @@ export function createSongSequence(song, getPattern) {
 }
 
 /**
- * Pattern mode: loop one pattern on one slot — the piano roll as it is
- * today. Same interface as a song sequence, so the transport has one code
- * path. The pattern object is read live (the editor is mutating it), only
+ * A lone pattern: loop one pattern on one slot. Pattern mode uses this only
+ * for a pattern placed nowhere in the song (otherwise it loops the song
+ * over one placement, see the transport). Same interface as a song
+ * sequence, so the transport has one code path. The pattern object is read live (the editor is mutating it), only
  * the note index is rebuilt per column, which is cheap for one pattern.
  */
 export function createPatternSequence(pattern, slot) {

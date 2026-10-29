@@ -2,6 +2,14 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-10-29: Song-level play controls; the roll's Play loops the pattern where it sits
+
+- **Song tab Play / Stop** — first in its toolbar; Play there is song mode, state mirrored from the transport's broadcasts.
+- **Pattern mode redefined** — the roll's Play (`transport.play({mode:'pattern'})`) loops *the song confined to one placement of the edited pattern*, from its start to its end, so the other tracks accompany inside that window instead of falling silent. A pattern placed several times (clips or repeats) loops the placement **nearest the song position**: the last song column played, or the clip just opened from the Song tab (`openClip` parks it via `setSongPosition`). Inside wins, else the closer edge, ties to the earlier. A pattern placed nowhere still loops alone. An empty pattern plays if its backing has notes.
+- Sequencer: `createSongSequence` takes a `range` override; new `patternPlacements` / `nearestPlacement`. Transport: `play({mode})`, `setSongPosition`/`getSongPosition`/`getPlacement`, `pos.songCol`; pattern-mode recording goes through the song path of `mapRecordColumn` (one seam/backing code path). Song-tab playhead now moves in pattern mode too. **Record from the roll is pattern scope as well** (`startRecording({mode})`; the first browser check found a take running on to the end of the song).
+- **Accompaniment is its own setting**, split out of the mode toggle after the second check: the roll's loop is always one pattern long, and `♫ With song` / `▭ Pattern only` decides only whether the rest of the song is heard inside it (`transport.getAccompany`/`setAccompany`, persisted, default on; `createSongSequence`'s new `onlyTrackId`). It applies mid-take, since it changes what sounds and not the loop.
+- Tests: new `pattern mode placements` block in `transport.test.js`, `placements` in `sequencer.test.js`, buttons/parking in `song-editor.test.js`; the roll's transport tests rewritten to the new contract.
+
 ## 2026-10-29: Small wins batch (MIDI on reload, record autoscroll, pattern rename, clip gestures)
 
 - **MIDI access on reload** — the "SysEx permission gets lost" report. Nothing was lost: nothing was ever asked for again. `requestMidi()` was only reachable from the settings modal and the send-bank flow, so every page load started with no grant and the audition box ticked on top of nothing. midi-manager now persists an `enabled` flag (set by any successful grant) and `resumeIfEnabled()`, called from `initMidiUi()`, re-requests at startup at the tier audition needs; Chrome remembers the permission so there is no prompt. A refused silent request leaves the state `closed` with Enable still on offer. `test/midi-auto-resume.test.js`.

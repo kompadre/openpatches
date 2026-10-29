@@ -7,19 +7,39 @@
 // here, exactly once, and everything else listens to this.
 //
 // Two modes:
-//   song    — play the arrangement (the default; what the roll has always
-//             done, since a migrated song is all clips at bar 0).
-//   pattern — loop just the pattern being edited, on its voice.
+//   song    — play the arrangement (what the Song tab's Play does).
+//   pattern — loop the pattern being edited (the roll's Play and Record):
+//             one placement of that pattern, from its start to its end, and
+//             never longer — a take is always one pattern long. A pattern
+//             placed several times loops the placement nearest the song
+//             position (`songPos`: the last song column played, or where
+//             the Song tab parked it by opening a clip). A pattern placed
+//             nowhere loops alone.
+//
+// Orthogonal to the mode: **accompaniment** (persisted). It decides whether
+// the rest of the song is heard inside the pattern window, or only the
+// pattern being written. It never changes the window — that is the mode's
+// job, and the reason the two are separate settings.
 //
 // Recording runs in either. The clock is the same; what differs is where a
 // recorded column lands, which is `mapRecordColumn()`.
 
-import { createSongSequence, createPatternSequence, msPerColumn } from './sequencer.js';
-import { COLS_PER_MEASURE } from '../components/song-model.js';
+import {
+    createSongSequence, createPatternSequence, msPerColumn,
+    patternPlacements, nearestPlacement,
+} from './sequencer.js';
+import { COLS_PER_MEASURE, clipSpan } from '../components/song-model.js';
 
 const MODE_KEY = 'openpatches_transport_mode';
+const ACCOMPANY_KEY = 'openpatches_transport_accompany';
 export const MODES = ['song', 'pattern'];
 const MAX_CONSECUTIVE_ERRORS = 3;
+
+function loadAccompany() {
+    try {
+        return localStorage.getItem(ACCOMPANY_KEY) !== 'off';   // default: play along
+    } catch { return true; }
+}
 
 function loadMode() {
     try {
@@ -45,10 +65,13 @@ export function createTransport(opts) {
     const log = opts.log || (() => {});
 
     let mode = loadMode();
+    let accompany = loadAccompany();   // hear the rest of the song inside the pattern window
     let playing = false;
     let recording = false;
     let sequence = null;
     let lastCol = -1;
+    let songPos = 0;          // song column the pattern loop anchors to (see header)
+    let placement = null;     // the placement pattern mode is looping, null when alone
     let consecutiveErrors = 0;
     let warnedOutsideClip = false;
     const subscribers = new Set();
@@ -58,9 +81,18 @@ export function createTransport(opts) {
     }
 
     function buildSequence() {
+        placement = null;
         if (mode === 'pattern') {
             const t = editTarget();
-            return createPatternSequence(t ? t.pattern : null, t ? t.slot : 0);
+            if (!t || !t.pattern) return createPatternSequence(null, 0);
+            const song = session.get();
+            const places = patternPlacements(song, t.pattern.id, getPattern);
+            if (places.length === 0) return createPatternSequence(t.pattern, t.slot);
+            placement = nearestPlacement(places, songPos);
+            return createSongSequence(song, getPattern, {
+                onlyTrackId: accompany ? null : t.trackId,
+                range: { startCol: placement.startCol, endCol: placement.endCol },
+            });
         }
         return createSongSequence(session.get(), getPattern);
     }
@@ -80,7 +112,9 @@ export function createTransport(opts) {
         const col = extra.col != null ? extra.col : lastCol;
         let edit = null;
         if (col >= 0 && sequence) {
-            if (mode === 'pattern') {
+            if (mode === 'pattern' && placement) {
+                edit = { clipId: placement.clipId, patternCol: col - placement.startCol };
+            } else if (mode === 'pattern') {
                 edit = t ? { clipId: t.clipId, patternCol: col } : null;
             } else if (t) {
                 const here = sequence.locate(col).tracks[t.trackId];
@@ -91,7 +125,11 @@ export function createTransport(opts) {
                 }
             }
         }
-        const pos = { playing, recording, mode, col, edit, seam: false, rawCol: -1, ...extra };
+        // `songCol` is the position on the song's timeline, for the Song
+        // tab's playhead: the same as `col` whenever the sequence is the
+        // song (both modes, except a lone pattern), -1 otherwise.
+        const songCol = col >= 0 && sequence && sequence.kind === 'song' ? col : -1;
+        const pos = { playing, recording, mode, col, songCol, edit, seam: false, rawCol: -1, ...extra };
         for (const fn of [...subscribers]) {
             try { fn(pos); } catch (e) { console.warn('[transport] subscriber failed:', e); }
         }
@@ -139,6 +177,7 @@ export function createTransport(opts) {
         // recorder finalises notes held across it.
         const seam = rawCol > 0 && col === sequence.range.startCol;
         lastCol = col;
+        if (sequence.kind === 'song') songPos = col;
         if (!fire(col)) return;
         notify({ col, rawCol, seam });
     }
@@ -152,9 +191,24 @@ export function createTransport(opts) {
 
     function hasAnythingToPlay() {
         if (!sequence || !sequence.range) return false;
-        if (mode === 'pattern') {
+        if (mode === 'pattern' && sequence.kind === 'pattern') {
             const t = editTarget();
             return !!(t && t.pattern && t.pattern.notes.length > 0);
+        }
+        if (mode === 'pattern' && !accompany) {
+            const t = editTarget();
+            return !!(t && t.pattern && t.pattern.notes.length > 0);
+        }
+        if (mode === 'pattern') {
+            // Anything with notes inside the window counts — the backing
+            // alone is worth hearing while the pattern is still empty.
+            const { startCol, endCol } = sequence.range;
+            return session.get().clips.some(c => {
+                const p = getPattern(c.patternId);
+                const span = p && clipSpan(c, p);
+                return !!span && p.notes.length > 0
+                    && span.start * COLS_PER_MEASURE < endCol && span.end * COLS_PER_MEASURE > startCol;
+            });
         }
         return session.get().clips.some(c => {
             const p = getPattern(c.patternId);
@@ -162,8 +216,14 @@ export function createTransport(opts) {
         });
     }
 
-    function play() {
+    /**
+     * Start. `mode` names the scope the button means — the Song tab's Play
+     * is song, the roll's is pattern — and is switched to (and remembered)
+     * first; without it the current mode plays.
+     */
+    function play({ mode: wanted } = {}) {
         if (recording) return false;      // the take owns the clock
+        if (wanted) api.setMode(wanted);
         if (playing) stop();
         refresh();
         if (!hasAnythingToPlay()) return false;
@@ -189,7 +249,9 @@ export function createTransport(opts) {
         return wasRunning;
     }
 
-    function startRecording() {
+    /** Start a take. `mode` names the scope, as for play(). */
+    function startRecording({ mode: wanted } = {}) {
+        if (wanted) api.setMode(wanted);
         if (playing) stop();
         refresh();
         if (!sequence.range) {
@@ -211,8 +273,33 @@ export function createTransport(opts) {
         return stop();
     }
 
-    return {
+    const api = {
         getMode() { return mode; },
+        /**
+         * Park the song position while at rest — what pattern mode anchors
+         * its choice of placement to. The Song tab calls it when a clip is
+         * opened, so that clip is the one that loops.
+         */
+        setSongPosition(col) {
+            if (playing || recording) return false;
+            songPos = Math.max(0, Math.floor(col) || 0);
+            if (mode === 'pattern') refresh();
+            return true;
+        },
+        getSongPosition() { return songPos; },
+        /**
+         * Is the rest of the song heard inside the pattern window? Takes
+         * effect immediately, mid-take included: it changes what sounds,
+         * never the loop, so there is no position to lose.
+         */
+        getAccompany() { return accompany; },
+        setAccompany(on) {
+            accompany = !!on;
+            try { localStorage.setItem(ACCOMPANY_KEY, accompany ? 'on' : 'off'); } catch { /* ignore */ }
+            refresh();
+            return accompany;
+        },
+        getPlacement() { return placement; },
         /**
          * Switch mode. Stops first: the two modes have different ranges, so
          * carrying a column across would land the playhead anywhere.
@@ -255,7 +342,7 @@ export function createTransport(opts) {
          *                             to write it
          */
         mapRecordColumn(absCol, slot) {
-            if (mode === 'pattern') {
+            if (mode === 'pattern' && sequence && sequence.kind === 'pattern') {
                 const t = editTarget();
                 if (!t || !t.pattern) return { fresh: true };
                 const len = t.pattern.measures * COLS_PER_MEASURE;
@@ -282,4 +369,5 @@ export function createTransport(opts) {
             return { patternCol: here.patternCol, clipId: here.clipId, patternId: here.patternId };
         },
     };
+    return api;
 }

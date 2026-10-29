@@ -1969,6 +1969,12 @@ h1 {
     animation: rec-pulse 1s infinite;
 }
 
+.pianoroll-accompany.active {
+    /* Pattern only: the rest of the song is muted inside the loop. */
+    border-color: #e9a045;
+    color: #e9a045;
+}
+
 .pianoroll-follow.active {
     color: #4caf50;
     border-color: #4caf50;
@@ -4266,12 +4272,6 @@ footer {
     background: #ff3b3b;
     pointer-events: none;
     z-index: 3;
-}
-
-.pianoroll-mode.active {
-    /* Pattern mode: the loop on screen is all that sounds. */
-    border-color: #e9a045;
-    color: #e9a045;
 }
 
 .song-add-track-row, .song-clip-actions { display: flex; gap: 0.4rem; padding: 0.3rem; position: sticky; left: 0; }

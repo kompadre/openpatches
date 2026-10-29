@@ -7,7 +7,6 @@ Project backlog. Parent tasks with nested subtasks; `[ ]` pending, `[x]` done,
 
 ### Bugs and small improvements assorted
 
-- [ ] Play controls on Song level. Play while editing a pattern should be loop that pattern.
 - [ ] Consider moving patterns between tracks if not much of hassle. 
    - [ ] When moved track should only bring in the notes - the instrument is defined by track. 
 - [ ] "Song" tab again: track color should be subdued background for the whole track. Patterns should have their own colors.
