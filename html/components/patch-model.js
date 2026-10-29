@@ -25,7 +25,9 @@ export function patchIdFromRaw(raw) {
 export function createPatch(partial) {
     const voice_data = partial.voice_data || null;
     let id = partial.id;
-    if (!id && voice_data) id = patchIdFromVoiceData(voice_data);
+    // Same bytes under a different name (one voice returned in several match
+    // groups, a renamed copy) must not collapse into one record.
+    if (!id && voice_data) id = patchIdFromVoiceData(partial.name ? voice_data + '|' + partial.name : voice_data);
     if (!id && partial.raw) id = patchIdFromRaw(partial.raw);
     if (!id) id = hashString(`${partial.algorithm}_${partial.feedback}_${partial.name || ''}`);
     return {

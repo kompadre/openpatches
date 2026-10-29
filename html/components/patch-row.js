@@ -1,8 +1,8 @@
 // Unified patch row rendering — used on canvas, in containers, and in edit panel.
 
-import { decodeWavSamples, drawMiniWaveform, wavSampleCache } from './patch.js';
+import { decodeWavSamples, drawMiniWaveform, wavSampleCache, releaseWavUrl } from './patch.js';
 import { createTagEditor } from './tag-editor.js';
-import { patchStore } from './patch-model.js';
+import { patchStore, canvasStore } from './patch-model.js';
 import { batchRenderWaveforms } from '../synth/dx7-synth.js';
 
 // Global drag state (shared with canvas.js for drop detection)
@@ -12,14 +12,25 @@ export function clearDraggedPatch() { _draggedPatch = null; }
 
 // --- Star drag handle (for dragging patches out of lists onto canvas) ---
 
+// Only one row can be armed at a time, so a single document listener
+// disarms it. The previous per-row listener was never removed, and rows are
+// re-created on every canvas render.
+let _armedRow = null;
+let _armedListenerInstalled = false;
+
 export function makeStarDraggable(star, row, patch) {
     star.addEventListener('mousedown', (e) => {
         e.stopPropagation();
         row.draggable = true;
+        _armedRow = row;
     });
-    document.addEventListener('mouseup', () => {
-        row.draggable = false;
-    });
+    if (!_armedListenerInstalled) {
+        _armedListenerInstalled = true;
+        document.addEventListener('mouseup', () => {
+            if (_armedRow) _armedRow.draggable = false;
+            _armedRow = null;
+        });
+    }
 
     row.addEventListener('dragstart', (e) => {
         _draggedPatch = patch;
@@ -36,6 +47,43 @@ export function makeStarDraggable(star, row, patch) {
         window._draggedPatch = null;
         document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
     });
+}
+
+// Move `patchId` next to `targetId` in a list, in place. Returns false if
+// either id is missing from the list.
+function moveWithin(list, patchId, targetId, before) {
+    const fromIdx = list.indexOf(patchId);
+    let toIdx = list.indexOf(targetId);
+    if (fromIdx < 0 || toIdx < 0) return false;
+    if (!before) toIdx++;
+    list.splice(fromIdx, 1);
+    if (toIdx > fromIdx) toIdx--;
+    list.splice(toIdx, 0, patchId);
+    return true;
+}
+
+/**
+ * Touch reorder of a patch inside a container. A grouped container (WAV
+ * match results) renders `group.patchIds`, a flat one renders
+ * `ctr.patchIds`, so the move is applied to whichever group holds both rows
+ * and to the flat list, and only persisted when something actually moved.
+ */
+export function reorderContainerPatch(containerId, patchId, targetId, before) {
+    const ctr = canvasStore.getContainer(containerId);
+    if (!ctr || patchId === targetId) return false;
+    let moved = false;
+    if (ctr.groups && ctr.groups.length > 0) {
+        // Grouped: the rows on screen are a group's list, so a move only
+        // counts if some group holds both ids. Across groups it is refused.
+        for (const g of ctr.groups) {
+            if (moveWithin(g.patchIds || [], patchId, targetId, before)) { moved = true; break; }
+        }
+        if (moved) moveWithin(ctr.patchIds || [], patchId, targetId, before);
+    } else {
+        moved = moveWithin(ctr.patchIds || [], patchId, targetId, before);
+    }
+    if (moved) canvasStore.putContainer(ctr);
+    return moved;
 }
 
 // --- Patch row ---
@@ -86,9 +134,10 @@ export function createPatchRow(patch, opts = {}) {
             playBtn.addEventListener('click', async (e) => {
                 e.stopPropagation();
                 const result = onPlay(patch);
-                if (!waveformDrawn && result && typeof result.then === 'function') {
+                if (result && typeof result.then === 'function') {
+                    let wavUrl = null;
                     try {
-                        const wavUrl = await result;
+                        wavUrl = await result;
                         if (wavUrl && !waveformDrawn) {
                             waveformDrawn = true;
                             const wavResp = await fetch(wavUrl);
@@ -99,6 +148,8 @@ export function createPatchRow(patch, opts = {}) {
                         }
                     } catch (err) {
                         if (window._showError) window._showError('Failed to load waveform');
+                    } finally {
+                        releaseWavUrl(wavUrl);
                     }
                 }
             });
@@ -236,6 +287,7 @@ export function createPatchRow(patch, opts = {}) {
                     // Transition: reorder → drag out
                     isOutside = true;
                     if (insertIndicator) { insertIndicator.remove(); insertIndicator = null; }
+                    targetRow = null;
                     if (!clone) {
                         clone = row.cloneNode(true);
                         clone.className = 'patch-row patch-row-minified patch-drag-clone';
@@ -248,6 +300,14 @@ export function createPatchRow(patch, opts = {}) {
                     }
                     _draggedPatch = patch;
                     window._draggedPatch = patch;
+                } else if (!outside && isOutside) {
+                    // Transition back: drag out → reorder. Without this the
+                    // finger coming home still ended as a "drop on canvas"
+                    // and cloned the patch.
+                    isOutside = false;
+                    if (clone) { clone.remove(); clone = null; }
+                    _draggedPatch = null;
+                    window._draggedPatch = null;
                 }
 
                 if (isOutside && clone) {
@@ -260,11 +320,25 @@ export function createPatchRow(patch, opts = {}) {
                 }
             }
 
-            function onEnd(ev) {
+            function cleanup() {
                 document.removeEventListener('touchmove', onMove);
                 document.removeEventListener('touchend', onEnd);
+                document.removeEventListener('touchcancel', onCancel);
                 row.classList.remove('dragging');
                 if (insertIndicator) { insertIndicator.remove(); insertIndicator = null; }
+                if (clone) { clone.remove(); clone = null; }
+            }
+
+            // The browser took the touch away (call, gesture, scroll
+            // takeover): drop nothing, change nothing.
+            function onCancel() {
+                cleanup();
+                _draggedPatch = null;
+                window._draggedPatch = null;
+            }
+
+            function onEnd(ev) {
+                cleanup();
 
                 if (isOutside) {
                     const t = ev.changedTouches[0];
@@ -284,31 +358,20 @@ export function createPatchRow(patch, opts = {}) {
                         window._touchDropY = t.clientY;
                         window.dispatchEvent(new CustomEvent('touch-drop-patch'));
                     }
-                    if (clone) clone.remove();
                     _draggedPatch = null;
                     window._draggedPatch = null;
                 } else if (didMove && targetRow && containerEl) {
                     // Reorder — update container's patchIds
-                    import('./patch-model.js').then(m => {
-                        const ctr = m.canvasStore.getContainer(containerEl.dataset.containerId);
-                        if (!ctr || !ctr.patchIds) return;
-                        const fromIdx = ctr.patchIds.indexOf(patch.id);
-                        if (fromIdx < 0) return;
-                        const targetPatchId = targetRow.row.dataset.patchId;
-                        let toIdx = ctr.patchIds.indexOf(targetPatchId);
-                        if (toIdx < 0) return;
-                        if (!targetRow.before) toIdx++;
-                        ctr.patchIds.splice(fromIdx, 1);
-                        if (toIdx > fromIdx) toIdx--;
-                        ctr.patchIds.splice(toIdx, 0, patch.id);
-                        m.canvasStore.putContainer(ctr);
+                    const targetPatchId = targetRow.row.dataset.patchId;
+                    if (reorderContainerPatch(containerEl.dataset.containerId, patch.id, targetPatchId, targetRow.before)) {
                         window.dispatchEvent(new CustomEvent('touch-drop-patch'));
-                    });
+                    }
                 }
             }
 
             document.addEventListener('touchmove', onMove, { passive: false });
             document.addEventListener('touchend', onEnd);
+            document.addEventListener('touchcancel', onCancel);
         }, { passive: true });
     } else {
         // Full row: spec + name + algo + fb + dist + actions
@@ -333,9 +396,10 @@ export function createPatchRow(patch, opts = {}) {
             playBtn.addEventListener('click', async (e) => {
                 e.stopPropagation();
                 const result = onPlay(patch);
-                if (!waveformDrawn && result && typeof result.then === 'function') {
+                if (result && typeof result.then === 'function') {
+                    let wavUrl = null;
                     try {
-                        const wavUrl = await result;
+                        wavUrl = await result;
                         if (wavUrl && !waveformDrawn) {
                             waveformDrawn = true;
                             const wavResp = await fetch(wavUrl);
@@ -346,6 +410,8 @@ export function createPatchRow(patch, opts = {}) {
                         }
                     } catch (err) {
                         if (window._showError) window._showError('Failed to load waveform');
+                    } finally {
+                        releaseWavUrl(wavUrl);
                     }
                 }
             });

@@ -145,6 +145,7 @@ export function createEditPanel(opts) {
 
     // Slider input handler
     slider.addEventListener('input', () => {
+        if (slider.dataset.sliderMode) slider.dataset[slider.dataset.sliderMode + 'Val'] = slider.value;
         const valEl = document.getElementById('edit-slider-val');
         if (valEl) valEl.textContent = editMode === 'random' ? slider.value : parseFloat(slider.value).toFixed(2);
         if (editMode === 'morph' && editSlot && editSlotB) {
@@ -268,8 +269,7 @@ function renderMorphMode(slotArea, sliderRow, paramsArea, goBtn, statusEl) {
 
     const slider = document.getElementById('edit-slider');
     const sliderLabel = document.getElementById('edit-slider-label');
-    slider.min = '-1'; slider.max = '1'; slider.step = '0.01';
-    if (!slider.dataset.morphInit) { slider.value = '0.5'; slider.dataset.morphInit = '1'; }
+    setSliderMode(slider, 'morph');
     sliderLabel.textContent = 'Distance: ';
     const valSpan = document.createElement('span');
     valSpan.id = 'edit-slider-val';
@@ -628,8 +628,7 @@ function renderRandomMode(slotArea, sliderRow, paramsArea, goBtn, statusEl) {
 
     const slider = document.getElementById('edit-slider');
     const sliderLabel = document.getElementById('edit-slider-label');
-    slider.min = '0'; slider.max = '100'; slider.step = '1';
-    if (!slider.dataset.randomInit) { slider.value = '30'; slider.dataset.randomInit = '1'; }
+    setSliderMode(slider, 'random');
     sliderLabel.textContent = 'Mutation: ';
     const valSpan = document.createElement('span');
     valSpan.id = 'edit-slider-val';
@@ -661,6 +660,21 @@ function renderRandomMode(slotArea, sliderRow, paramsArea, goBtn, statusEl) {
 }
 
 // --- Helpers ---
+
+// One <input type=range> serves Morph (-1..1) and Random (0..100). Swapping
+// min/max clamps the current value into the new range, so each mode keeps
+// its own last value in a data attribute and restores it after the swap.
+const SLIDER_RANGES = {
+    morph:  { min: '-1', max: '1',   step: '0.01', initial: '0.5' },
+    random: { min: '0',  max: '100', step: '1',    initial: '30' },
+};
+
+function setSliderMode(slider, mode) {
+    const r = SLIDER_RANGES[mode];
+    slider.min = r.min; slider.max = r.max; slider.step = r.step;
+    slider.value = slider.dataset[mode + 'Val'] || r.initial;
+    slider.dataset.sliderMode = mode;
+}
 
 function ratioLabel(r) {
     if (r < 0) return `← ${Math.abs(r).toFixed(2)}`;
@@ -841,24 +855,35 @@ async function saveParamsEdit() {
         const voiceData = await buildModifiedVoiceData();
         if (!voiceData) { statusEl.textContent = 'Error: no voice data'; return; }
 
-        statusEl.textContent = 'Rendering...';
-        const resp = await fetch(baseUrlRef + '/api/play', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ voice_data: voiceData, note: 60 })
-        });
-        if (!resp.ok) throw new Error('Render failed: ' + resp.status);
-        const playData = await resp.json();
-
+        // Algorithm/feedback live in the edited globals; editSlot still
+        // carries the values the patch was opened with.
+        const g = currentMutation.globals;
         const newPatch = createPatch({
             name: editSlot.name + ' tweaked',
             voice_data: voiceData,
-            algorithm: editSlot.algorithm,
-            feedback: currentMutation.feedback || editSlot.feedback,
+            algorithm: g ? g.algorithm : editSlot.algorithm,
+            feedback: g ? g.feedback : editSlot.feedback,
             source: 'params',
         });
 
-        if (playData.wav_url) new Audio(baseUrlRef + playData.wav_url).play();
+        // Audition is a courtesy, not a precondition: the local synth first,
+        // the server only as a fallback, and a failure of either still saves.
+        const note = editSlot.midi_note || 60;
+        let played = false;
+        try { played = await playVoiceDataLocally(voiceData, note); } catch (_) {}
+        if (!played) {
+            try {
+                const resp = await fetch(baseUrlRef + '/api/play', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ voice_data: voiceData, note })
+                });
+                if (resp.ok) {
+                    const playData = await resp.json();
+                    if (playData.wav_url) new Audio(baseUrlRef + playData.wav_url).play();
+                }
+            } catch (_) {}
+        }
 
         patchStore.put(newPatch);
         if (onPatchCreated) onPatchCreated(newPatch);

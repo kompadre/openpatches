@@ -2,7 +2,7 @@
 // Owns: probe → match → poll → complete/fail, container, rendering.
 
 import { jobStore, canvasStore, patchStore, createPatch, patchIdFromVoiceData } from './patch-model.js';
-import { addContainer, addPatchToContainer, refreshCanvas, activateContainer } from './canvas.js';
+import { addContainer, refreshCanvas, activateContainer } from './canvas.js';
 import { decodeWavSamples, drawMiniWaveform } from './patch.js';
 
 const PROBE_FIELDS = ['attack_ms', 'decay_ms', 'sustain_level', 'release_ms', 'gate_ms', 'brightness', 'harmonicity'];
@@ -286,6 +286,7 @@ export class Job {
 
         const ctr = canvasStore.getContainer(ctrId);
         if (!ctr) return;
+        if (!ctr.patchIds) ctr.patchIds = [];
 
         const containerGroups = [];
 
@@ -306,9 +307,14 @@ export class Job {
             });
             patchStore.bulkPut(patches);
 
+            // Write the canvas entries directly rather than through
+            // addPatchToContainer(): that helper re-reads and re-saves the
+            // container per patch, and the `ctr` copy held here would then be
+            // written back last with an empty patchIds, discarding them all.
             const patchIds = [];
             for (const p of patches) {
-                addPatchToContainer(p.id, ctrId);
+                canvasStore.putCanvasPatch(p.id, { containerId: ctrId, left: 0, top: 0, minified: true });
+                if (!ctr.patchIds.includes(p.id)) ctr.patchIds.push(p.id);
                 patchIds.push(p.id);
             }
 

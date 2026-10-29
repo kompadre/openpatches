@@ -159,11 +159,22 @@ class StubElement {
 
     _matches(sel) {
         if (sel.startsWith('.')) return this.classList.contains(sel.slice(1));
+        // [data-foo="bar"] / [name="x"] — the attribute selectors the
+        // components use to find a rendered element by id.
+        const attr = sel.match(/^\[([\w-]+)="([^"]*)"\]$/);
+        if (attr) {
+            const [, name, value] = attr;
+            if (name.startsWith('data-')) {
+                const key = name.slice(5).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+                return this.dataset[key] === value;
+            }
+            return this.getAttribute(name) === value;
+        }
         return this.tagName === sel.toUpperCase();
     }
 
     querySelectorAll(sel) {
-        // Only single class/tag selectors and comma lists are supported.
+        // Single class/tag/[attr="value"] selectors and comma lists are supported.
         const sels = sel.split(',').map(s => s.trim()).filter(Boolean);
         return this._walk().filter(el => sels.some(s => el._matches(s)));
     }
@@ -212,6 +223,7 @@ export function installBrowserEnv() {
     const document = {
         body: documentEl,
         createElement: (tag) => new StubElement(tag),
+        createTextNode: (text) => { const n = new StubElement('#text'); n.textContent = String(text); return n; },
         createRange: () => ({ selectNodeContents() {} }),
         getElementById: () => null,
         querySelector: (s) => documentEl.querySelector(s),
@@ -235,6 +247,7 @@ export function installBrowserEnv() {
     globalThis.confirm = () => true;
     globalThis.CustomEvent = class { constructor(type, init) { this.type = type; Object.assign(this, init); } };
     if (!globalThis.addEventListener) globalThis.addEventListener = () => {};
+    if (!globalThis.removeEventListener) globalThis.removeEventListener = () => {};
     if (!globalThis.dispatchEvent) globalThis.dispatchEvent = () => {};
 
     return { document, StubElement };

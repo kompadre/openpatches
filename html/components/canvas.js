@@ -9,12 +9,15 @@ import { createPatchRow, getDraggedPatch, clearDraggedPatch } from './patch-row.
 // binding is always initialized by the time it is read.
 import { jobManager } from './job.js';
 import { isSupported as midiSupported } from '../synth/midi-manager.js';
-import { decodeWavSamples, drawMiniWaveform } from './patch.js';
+import { decodeWavSamples, drawMiniWaveform, releaseWavUrl } from './patch.js';
 import { batchRenderWaveforms } from '../synth/dx7-synth.js';
 
 let skyEl = null;
 let optsRef = null;
 let docListeners = [];
+
+// Group label for patches added by hand to a WAV-match (grouped) container.
+export const ADDED_GROUP_LABEL = 'ADDED';
 
 // --- Container activation ---
 
@@ -39,6 +42,13 @@ function clonePatchForDragOut(patch) {
 
 // --- Init ---
 
+// initCanvas() runs again after every import/reset (app.js), but the sky
+// element and window persist. Handlers bound to them are kept here so a
+// re-init replaces them instead of stacking a second copy — which doubled
+// every drop.
+let skyHandlers = null;
+let touchDropHandler = null;
+
 export function initCanvas(opts) {
     optsRef = opts;
     skyEl = document.getElementById('night-sky');
@@ -58,33 +68,39 @@ export function initCanvas(opts) {
     skyEl.appendChild(ctrBtn);
 
     // Drop target for patches dragged from external lists
-    skyEl.addEventListener('dragover', (e) => {
-        if (!getDraggedPatch() && !window._draggedPatch) return;
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-        skyEl.classList.add('drag-over-sky');
-    });
-    skyEl.addEventListener('dragleave', (e) => {
-        if (!skyEl.contains(e.relatedTarget)) {
+    if (skyHandlers) {
+        for (const [type, fn] of Object.entries(skyHandlers)) skyEl.removeEventListener(type, fn);
+    }
+    skyHandlers = {
+        dragover: (e) => {
+            if (!getDraggedPatch() && !window._draggedPatch) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            skyEl.classList.add('drag-over-sky');
+        },
+        dragleave: (e) => {
+            if (!skyEl.contains(e.relatedTarget)) {
+                skyEl.classList.remove('drag-over-sky');
+            }
+        },
+        drop: (e) => {
+            e.preventDefault();
             skyEl.classList.remove('drag-over-sky');
-        }
-    });
-    skyEl.addEventListener('drop', (e) => {
-        e.preventDefault();
-        skyEl.classList.remove('drag-over-sky');
-        const patch = getDraggedPatch() || window._draggedPatch;
-        if (!patch) return;
+            const patch = getDraggedPatch() || window._draggedPatch;
+            if (!patch) return;
 
-        const rect = skyEl.getBoundingClientRect();
-        const left = e.clientX - rect.left + (skyEl.scrollLeft || 0);
-        const top = e.clientY - rect.top + (skyEl.scrollTop || 0);
+            const rect = skyEl.getBoundingClientRect();
+            const left = e.clientX - rect.left + (skyEl.scrollLeft || 0);
+            const top = e.clientY - rect.top + (skyEl.scrollTop || 0);
 
-        // Deep clone with new unique ID — original stays in container
-        const clone = clonePatchForDragOut(patch);
-        addPatchToCanvas(clone.id, left, top, null);
-        clearDraggedPatch();
-        window._draggedPatch = null;
-    });
+            // Deep clone with new unique ID — original stays in container
+            const clone = clonePatchForDragOut(patch);
+            addPatchToCanvas(clone.id, left, top, null);
+            clearDraggedPatch();
+            window._draggedPatch = null;
+        },
+    };
+    for (const [type, fn] of Object.entries(skyHandlers)) skyEl.addEventListener(type, fn);
 
     // Clamp negative top on load (containers stuck behind header)
     for (const ctr of Object.values(canvasStore.getContainers())) {
@@ -97,7 +113,8 @@ export function initCanvas(opts) {
     renderAll();
 
     // Handle touch-drop from patch rows (mobile: reorder, cross-container, or free-float)
-    window.addEventListener('touch-drop-patch', () => {
+    if (touchDropHandler) window.removeEventListener('touch-drop-patch', touchDropHandler);
+    touchDropHandler = () => {
         const patch = window._touchDropPatch;
         const containerId = window._touchDropContainerId;
         if (patch) {
@@ -118,7 +135,8 @@ export function initCanvas(opts) {
         window._touchDropContainerId = null;
         window._touchDropX = null;
         window._touchDropY = null;
-    });
+    };
+    window.addEventListener('touch-drop-patch', touchDropHandler);
 }
 
 // --- Patch on canvas ---
@@ -144,10 +162,13 @@ export function addPatchToCanvas(patchId, left, top, containerId) {
 export function removePatchFromCanvas(patchId) {
     const entry = canvasStore.getCanvasPatch(patchId);
     if (entry && entry.containerId) {
-        // Remove from container's patchIds
+        // Remove from container's patchIds (and from its groups, if any)
         const ctr = canvasStore.getContainer(entry.containerId);
         if (ctr) {
             ctr.patchIds = (ctr.patchIds || []).filter(id => id !== patchId);
+            if (ctr.groups) {
+                for (const g of ctr.groups) g.patchIds = (g.patchIds || []).filter(id => id !== patchId);
+            }
             canvasStore.putContainer(ctr);
         }
     }
@@ -199,6 +220,17 @@ export function addPatchToContainer(patchId, containerId) {
     if (ctr) {
         if (!ctr.patchIds) ctr.patchIds = [];
         if (!ctr.patchIds.includes(patchId)) ctr.patchIds.push(patchId);
+        // A grouped container (WAV match results) renders only its groups,
+        // so a patch that is in patchIds alone would be invisible. File it
+        // under an "ADDED" group, created on first use.
+        if (ctr.groups && ctr.groups.length > 0 && !ctr.groups.some(g => (g.patchIds || []).includes(patchId))) {
+            let added = ctr.groups.find(g => g.label === ADDED_GROUP_LABEL);
+            if (!added) {
+                added = { label: ADDED_GROUP_LABEL, patchIds: [] };
+                ctr.groups.push(added);
+            }
+            added.patchIds.push(patchId);
+        }
         canvasStore.putContainer(ctr);
     }
     renderAll();
@@ -374,7 +406,7 @@ function renderFloatingPatch(patchId, entry) {
         moreMenu.appendChild(btn);
     });
 
-    document.addEventListener('click', () => {
+    onDoc('click', () => {
         moreMenu.style.display = 'none';
         const parent = moreBtn.closest('.patch-float, .sky-container');
         if (parent) parent.style.zIndex = '';
@@ -464,6 +496,10 @@ function renderFloatingPatch(patchId, entry) {
         el.style.zIndex = '';
         el.style.transition = '';
 
+        // A plain tap (no movement) is handled by handleHeaderTap; only a
+        // real drag may drop the patch into a container it overlaps.
+        if (!didMove) return;
+
         const clientX = e.changedTouches ? e.changedTouches[0].clientX : e.clientX;
         const clientY = e.changedTouches ? e.changedTouches[0].clientY : e.clientY;
 
@@ -476,6 +512,20 @@ function renderFloatingPatch(patchId, entry) {
         }
     }
 
+    // touchcancel (incoming call, browser gesture) carries no usable point:
+    // snap back to where the drag started instead of dropping blind.
+    function handleCancel() {
+        if (!dragging) return;
+        dragging = false;
+        el.style.cursor = '';
+        el.style.zIndex = '';
+        el.style.transition = '';
+        entry.left = origLeft;
+        entry.top = origTop;
+        el.style.left = entry.left + 'px';
+        el.style.top = entry.top + 'px';
+    }
+
     header.addEventListener('mousedown', handleStart);
     onDoc('mousemove', handleMove);
     onDoc('mouseup', handleEnd);
@@ -483,6 +533,7 @@ function renderFloatingPatch(patchId, entry) {
     header.addEventListener('touchstart', handleStart, { passive: false });
     onDoc('touchmove', handleMove, { passive: false });
     onDoc('touchend', handleEnd);
+    onDoc('touchcancel', handleCancel);
 
     skyEl.appendChild(el);
 }
@@ -545,8 +596,9 @@ function appendFullFields(el, patch, target) {
         playBtn.addEventListener('click', async (e) => {
             e.stopPropagation();
             e.preventDefault();
+            let wavUrl = null;
             try {
-                const wavUrl = await optsRef.onPlay(patch);
+                wavUrl = await optsRef.onPlay(patch);
                 if (wavUrl) {
                     const resp = await fetch(wavUrl);
                     if (!resp.ok) throw new Error('Failed to load waveform');
@@ -557,6 +609,8 @@ function appendFullFields(el, patch, target) {
             } catch (err) {
                 if (window._showError) window._showError('Waveform load failed: ' + err.message);
                 else console.warn('[canvas] play failed:', err);
+            } finally {
+                releaseWavUrl(wavUrl);
             }
         });
     }
@@ -770,8 +824,8 @@ function renderContainer(ctr) {
         moreMenu.appendChild(btn);
     });
 
-    // Close menu on outside click
-    document.addEventListener('click', () => {
+    // Close menu on outside click (via onDoc so renderAll() drops it with the element)
+    onDoc('click', () => {
         moreMenu.style.display = 'none';
         const parent = moreBtn.closest('.patch-float, .sky-container');
         if (parent) parent.style.zIndex = '';
@@ -949,6 +1003,7 @@ function renderContainer(ctr) {
     resizeHandle.addEventListener('touchstart', handleResizeStart, { passive: false });
     onDoc('touchmove', handleResizeMove, { passive: false });
     onDoc('touchend', handleResizeEnd);
+    onDoc('touchcancel', handleResizeEnd);
 
     // Collapse toggle
     let collapsed = false;
@@ -1032,6 +1087,7 @@ function renderContainer(ctr) {
     header.addEventListener('touchstart', handleDragStart, { passive: false });
     onDoc('touchmove', handleDragMove, { passive: false });
     onDoc('touchend', handleDragEnd);
+    onDoc('touchcancel', handleDragEnd);
 
     // Drop patches into container (from external lists)
     el.addEventListener('dragover', (e) => {

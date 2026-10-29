@@ -490,6 +490,9 @@ function importSyxBank(arrayBuffer, name, sourceLabel) {
     }
 
     appendLog(`Parsed .syx: ${name} (${patches.length} voices)`);
+    if (patches.checksumOk === false) {
+        appendLog(`Warning: ${name} has a bad checksum — imported anyway, voices may be corrupt`);
+    }
 
     const created = [];
     for (let i = 0; i < patches.length; i++) {

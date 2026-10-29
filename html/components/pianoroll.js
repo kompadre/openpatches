@@ -573,6 +573,12 @@ export function createPianoroll(opts) {
         return Math.max(0, Math.min(NOTES.length - 1, Math.floor((py - HEADER_H) / ROW_H)));
     }
 
+    // A note ends at the loop end at the latest; anything longer would play
+    // into the next pass and overlap its own repeat.
+    function clampDur(start, dur) {
+        return Math.max(1, Math.min(totalCols() - start, dur));
+    }
+
     function noteAt(row, col) {
         const midi = NOTES[row].midi;
         return notes.find(n => n.midi === midi && col >= n.start && col < n.start + n.dur);
@@ -584,7 +590,15 @@ export function createPianoroll(opts) {
             && (opts.activeSlot == null || n.slot === opts.activeSlot));
     }
 
+    // In follow mode the grid is drawn twice for a seamless loop; a click on
+    // the second copy must find the same notes as the first, or the user ends
+    // up creating a duplicate on top of a note they can see but cannot grab.
+    function foldX(x) {
+        return doubleWide() && x >= baseWidth() ? x - gridWidth() : x;
+    }
+
     function findInteractionTarget(x, y) {
+        x = foldX(x);
         const row = pixelToRow(y);
         if (row < 0 || row >= NOTES.length) return null;
         const midi = NOTES[row].midi;
@@ -672,7 +686,7 @@ export function createPianoroll(opts) {
 
             const colDelta = Math.round(dx / COL_W);
             if (resizeSide === 'right') {
-                resizingNote.dur = Math.max(1, moveOriginal.dur + colDelta);
+                resizingNote.dur = clampDur(moveOriginal.start, moveOriginal.dur + colDelta);
             } else {
                 const maxStart = moveOriginal.start + moveOriginal.dur - 1;
                 const newStart = Math.max(0, Math.min(maxStart, moveOriginal.start + colDelta));
@@ -838,6 +852,7 @@ export function createPianoroll(opts) {
 
     // --- Touch events for mobile ---
     function findInteractionTargetTouch(x, y) {
+        x = foldX(x);
         const row = pixelToRow(y);
         if (row < 0 || row >= NOTES.length) return null;
         const midi = NOTES[row].midi;
@@ -967,7 +982,7 @@ export function createPianoroll(opts) {
             moveCommitted = true;
             const colDelta = Math.round(dx / COL_W);
             if (resizeSide === 'right') {
-                resizingNote.dur = Math.max(1, moveOriginal.dur + colDelta);
+                resizingNote.dur = clampDur(moveOriginal.start, moveOriginal.dur + colDelta);
             } else {
                 const maxStart = moveOriginal.start + moveOriginal.dur - 1;
                 const newStart = Math.max(0, Math.min(maxStart, moveOriginal.start + colDelta));
@@ -998,6 +1013,34 @@ export function createPianoroll(opts) {
             draw();
         }
     }, { passive: false });
+
+    // The browser took the touch (call, system gesture, scroll handoff).
+    // Nothing is committed: pending moves/resizes snap back, as on mouseleave.
+    canvas.addEventListener('touchcancel', () => {
+        if (longPressTimer) clearTimeout(longPressTimer);
+        longPressTimer = null;
+        longPressPos = null;
+        isTouchScrolling = false;
+        touchScrollStart = null;
+        if (resizingNote && moveOriginal) {
+            resizingNote.dur = moveOriginal.dur;
+            resizingNote.start = moveOriginal.start;
+        }
+        if (movingNote && moveOriginal) {
+            movingNote.start = moveOriginal.start;
+            movingNote.midi = moveOriginal.midi;
+        }
+        resizingNote = null;
+        resizeSide = null;
+        movingNote = null;
+        moveStartPos = null;
+        moveOriginal = null;
+        moveCommitted = false;
+        dragging = false;
+        dragStart = null;
+        lastMousePos = null;
+        draw();
+    });
 
     canvas.addEventListener('touchend', (e) => {
         e.preventDefault();

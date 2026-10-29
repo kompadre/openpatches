@@ -94,56 +94,6 @@ only when a feature needs it, and SysEx is a separate upgrade on top.
   switched on, or the prompt dismissed). `refresh()` re-syncs the checkbox
   from `getAuditionEnabled()` so the UI cannot drift from the real state.
   `test/midi-panel-permissions.test.js`.
-- [x] **Desktop Record + playback view (2026-10-28).** The `kb-controls` row
-  (Undo / Record / Play / voice) is mobile-only — `display:none` outside the
-  600 px media query — which is how Record vanished from desktop. A second
-  button, `.pianoroll-record`, now lives in the piano roll's own transport
-  row (Play · Stop · Rec) via the new `pianorollRef.insertControl(el)`; both
-  buttons call one `toggleRecording()` and `syncRecordButtons()` keeps their
-  labels/`active` state in step. `startRecording()` disables the roll's Play
-  (and `startPlayback()` now guards on the roll's own `recordingActive`, not
-  only the toolbar-installed tick handler). **Follow-scroll is opt-in and off
-  by default** (`followPlayhead`, persisted in the pianoroll storage blob,
-  `.pianoroll-follow` button in the transport row + a copy in the mobile
-  more-menu, `setFollowPlayhead()`/`isFollowing()`): with it off the canvas is
-  single-width (`doubleWide()` = `looping && followPlayhead`), Play does not
-  rewind the view, ticks never write `scrollLeft`, and the recorder's
-  `scrollToCol()` is a no-op. `resizeCanvas()` only assigns `canvas.width`
-  when it changes (the assignment resets the context and reallocates the
-  backing store every tick). The playhead is a 2 px `#ff3b3b` line with a
-  header triangle, drawn once per grid copy. **Keyboard is collapsible:** a
-  `.kb-toggle` header bar folds `.keyboard-wrapper` (keys + mobile octave
-  row), persisted under `openpatches_kb_collapsed`; the wrapper is hidden
-  rather than `.keyboard` because the mobile stylesheet forces the latter to
-  `display:flex !important`. Harness gained `_calls` on the 2D context,
-  `setAttribute`/`getAttribute`, `nextSibling` and `scrollTo`.
-  `test/pianoroll-playhead.test.js`, `test/toolbar-record-keyboard.test.js`;
-  `test/pianoroll-loop-scroll.test.js` fixtures now restore `followPlayhead:
-  true`.
-- [x] **Songs (2026-10-28).** `songStore` in patch-model.js
-  (`openpatches_songs`, keyed by trimmed name; `list/has/get/create/remove`;
-  `create()` **never overwrites** — a collision throws `'Song exists'`, which
-  the UI shows verbatim; a JSON replacer flattens typed arrays). A song =
-  `pianorollRef.getSong()` (notes, bpm, measures) + the voice bank's slots
-  (name, patchId, volume, voiceData) — notes reference slots by index, so
-  the sounds travel with them. UI is `html/components/song-bar.js`, mounted
-  by the toolbar at the top of the piano roll panel: `Song:` + text input +
-  one button whose meaning follows the state. **Typing:** button = Save
-  (disabled while empty; Enter saves); a taken name → status "Song exists".
-  **Loaded** (after Save, or after picking a name from the dropdown): input
-  disabled showing the name, button = Delete (title "Delete song", confirm,
-  then the name is handed back editable), plus a small ✕ that detaches
-  (keeps the notes, drops the name) so the user can save under a new name —
-  there is no save-back-over by design. The dropdown is a custom
-  `.song-suggest` list, not a `<datalist>`: picking a name loads, typing the
-  identical name does not, and a datalist cannot tell those apart.
-  Suggestion items `preventDefault()` on mousedown so the input's blur does
-  not hide the list before the click lands. Loading goes through the
-  toolbar's `stopAll()` first, then `voiceBank._setEntries(slots)` (fresh
-  ids, index colors, first slot active, snapshot pushed to the synth), then
-  `pianorollRef.loadSong()` (validates like `loadState`, stops playback,
-  rewinds the scroll, persists). Toolbar takes `opts.appendLog` now; app.js
-  passes it. `test/song-store.test.js`, `test/song-bar.test.js`.
 - [x] **MIDI device profiles (2026-10-28) — first cut.** `html/synth/midi-devices.js`
   is a data table of what differs between DX7-dialect synths: `generic`,
   `dx7` (Mk I, also TX7), `dx7ii` (II-D/II-FD/DX7s/TX802), `dexed`, `volcafm`.
@@ -199,28 +149,11 @@ only when a feature needs it, and SysEx is a separate upgrade on top.
 - [x] `HEARME.tts` updated: new Chapter Eleven on Web MIDI (old Chapter Eleven
   renumbered to Twelve), preamble hash/date refreshed to `1cd2ea1`.
 
-Bug survey 2026-10-23 (all confirmed by code trace, none fixed yet). Ordered by severity:
+Bug survey 2026-10-23 — swept 2026-10-29; everything fixed is in CHANGELOG.md. Still open:
 
-- [ ] `job.js complete()` reads `ctr` once, calls `addPatchToContainer()` per patch (each re-reads + saves), then `putContainer(ctr)` with the stale copy → `patchIds` reset to `[]`. Assign/Export/Sort see no patches; `restore()` re-runs `complete()` every reload.
-- [x] `dx7-params.js` byte 13 KVS/AMS swap — fixed, `test/dx7-params-kvs-ams.test.js`.
-- [x] Tick-worker restart race — fixed with a generation counter (`startTickWorker`/`stopTickWorker` in app.js, `startWorker` opt in toolbar/pianoroll), `test/tick-worker-restart.test.js`. Record now stops playback first; pianoroll Play is a no-op while recording.
-- [x] Keyboard `mouseleave` note-off for unpressed keys — fixed in Phase 2: a `heldNotes` set gates `noteOff`, so a mouse sweep emits nothing. `activeSounds` now populates because `playNote` returns a stop function (`withTimeout` in app.js wraps it with the safety timer and cancels the timer on explicit release).
-- [x] Key released before `acquire()` resolves → 30 s stuck note — fixed in Phase 2: if the key is already up when the async stop function arrives, `noteOn` calls it immediately instead of storing it.
-- [x] `audio-manager initAudio()` never cleared `initPromise`/`ctx` on rejection — fixed: a `.catch` on the init promise tears down `ctx`/`dx7Node`/diff caches and sets state `closed`, so the next `acquire()` retries. Remaining: the ready-handshake still resolves unconditionally after 2 s (deliberate fallback, left alone).
-- [x] Menu "Emergency stop" never re-sent snapshot/volumes — fixed: shared `doEmergencyStop()` in app.js re-sends the snapshot on both paths, and worklet `reinit` now calls `reset_engine()` (channel volumes are static in WASM and survive). Remaining: persisted volumes still aren't pushed to the synth on initial page load.
-- [x] Persisted channel volumes never pushed on initial load — fixed: `sendVoiceSnapshot` now sends `channel-volume` per slot, diffed via `lastSentVolume` (also updated by `setChannelVolume`, so the drag path doesn't cause a redundant push). `test/channel-volume-snapshot.test.js`.
-- [x] `voicebank.js` volume 0 treated as unset (`||` → `??`, incl. the `loadState` backfill) and colors not reassigned after splice — fixed with `reindexColors()` at the top of `render()`. `test/voicebank-slot-state.test.js`. Remaining in this area: drop color computed before index clamp; removing a slot shifts channels but pianoroll notes keep their old `slot`.
-- [ ] `patch-row.js` touch drag: `isOutside` latches → drag out and back in creates a clone; no `touchcancel` handlers (also canvas.js, pianoroll.js) leave stale drag state. Touch reorder writes `ctr.patchIds` but grouped containers render `group.patchIds`.
-- [ ] `canvas.js` floating-patch `handleEnd` ignores `didMove` → tap on header absorbs patch into any overlapping container. `addPatchToContainer` onto a grouped container makes the patch invisible.
-- [x] `removeContainer` left the job in `jobStore` — fixed: it now calls `jobManager.stop()` + `jobStore.remove()` alongside the IndexedDB delete. (canvas.js now imports job.js, which already imported canvas.js — a deliberate ESM cycle; both sides only read the binding inside functions.)
-- [ ] `edit-panel.js`: Params Save stores stale `algorithm`/`feedback` metadata; shared slider clamps value on mode switch; Save requires `/api/play`. (`createTagEditor(null)` throw and the `status.textContent` typo are fixed.)
-- [ ] `pianoroll.js` hit-testing ignores loop wrap (second copy unclickable, creates duplicates); notes can extend past loop end; Play button label desyncs on empty roll. (Stop not calling `releaseAllNotes()` is fixed — `onStopPlayback` opt, wired in app.js to release both the internal synth and MIDI out.)
-- [ ] Listener leaks: `makeStarDraggable` document mouseup, more-menu document click (not via `onDoc`), `initCanvas` re-registers drop/`touch-drop-patch` handlers per call.
-- [x] `dx7-processor` 300 ms note-on latency — fixed by shrinking the ring lookahead to 4 blocks (~12 ms); underrun fallback still renders inline. 16-voice block renders in ~43 µs, so the cushion is ample.
-- [x] `msfa_bridge.cpp init_engine()` SynthUnit leak (~13 MB per preview) — fixed: `SynthUnit` destructor, `RingBuffer::Reset()`, new `reset_engine()` export; `renderOffline` and `batchRenderWaveforms` call it per render. WASM rebuilt. `test/wasm-engine-reset.test.js`.
-- [x] Canvas thumbnails identical on load, correct after preview — same root cause: `batchRenderWaveforms` rendered patches back-to-back with no note-off and no engine reset, so each thumbnail contained every earlier patch still ringing (up to 16 voices). Preview re-initialised the engine, hence the "fix on preview". Fixed by the per-patch `reset_engine()` above.
-- [ ] Minor, still open: WAV decoder requires `data` right after `fmt`; syx parser skips format/checksum; patch IDs hash voice_data so duplicate voices collide; the `playPatch` waveform object URL (app.js ~223) is still never revoked — the canvas owns it, so it needs an owner-side fix.
-- [x] Minor, fixed: WAV import resets `fileInput.value`; "Start Matching" disables itself on click and restores if the job never reaches `polling`; the play-original object URL is revoked on `ended`/`error`; `freqDisplay` now uses the real DX7 formulas — fixed `10^(coarse%4 + fine/100)` Hz, ratio `coarse * (1 + fine/100)` with coarse 0 meaning 0.5. `test/dx7-freq-display.test.js`.
+- [ ] Voice bank: removing a slot shifts the channels of the slots after it, but piano-roll notes keep their old `slot` index and so change sound. Deferred on purpose — the slot↔note binding is being redesigned under the Pattern/Song work in TODO.md.
+- [ ] `audio-manager` ready-handshake resolves unconditionally after 2 s (deliberate fallback, left alone).
+- [ ] Recorded notes are not clamped to the loop end on insert (the recorder seam-splits held notes, so this does not occur in practice); only interactive resize is clamped.
 
 ## Open Questions / Gotchas In Flight
 
@@ -235,16 +168,17 @@ OpenPatches is a browser-based DX7 patch editor and sequencer. It communicates w
 
 **Frontend (Vanilla JS, no framework):**
 - `html/app.js`: main orchestrator. Wires file input, menu bar, canvas, toolbar. Creates tick worker, `stopTickWorker` helper. PlayNote/playPatch with multi-channel support. Emergency stop with voice reload.
-- `html/components/canvas.js`: Canvas — patches + PatchContainers on night-sky. Drag-to-reposition, snap-into-container, resize containers. State derived from linked Job. Uses `onDoc()` helper for document-level listeners with cleanup via `clearDocListeners()` on each `renderAll()` to prevent stale closures. All interactive elements in `#night-sky`.
+- `html/components/canvas.js`: Canvas — patches + PatchContainers on night-sky. Drag-to-reposition, snap-into-container (only after a real move — a tap on a floating patch's header never absorbs it), resize containers. State derived from linked Job. Uses `onDoc()` helper for **every** document-level listener (drag/resize/touchcancel, more-menu close) with cleanup via `clearDocListeners()` on each `renderAll()` to prevent stale closures. `initCanvas()` is re-entrant: the sky drop handlers and the window `touch-drop-patch` handler are kept in module vars and replaced, not stacked. `addPatchToContainer()` on a grouped container files the patch under an `ADDED` group (`ADDED_GROUP_LABEL`) so it renders; `removePatchFromCanvas()` also drops it from its group. All interactive elements in `#night-sky`.
 - `html/components/song-bar.js`: the Song: name / Save / Delete bar with its autocomplete dropdown; state machine typing ↔ loaded, backed by `songStore`. Mounted by the toolbar, which supplies `getSong`/`loadSong` spanning the piano roll and the voice bank.
 - `html/components/toolbar.js`: Unified Piano Roll + Keyboard panel with tabs: Canvas | Piano Roll | Edit | Log | Mute. Song bar on top of the piano roll panel. Keyboard integrated into Piano Roll panel (recording controls + octave selector + piano keys below pianoroll grid), wrapped in a collapsible `.keyboard-wrapper` under a `.kb-toggle` bar (state in `openpatches_kb_collapsed`). VoiceBank select dropdown. Undo button for recording. Mobile octave selector (0–7). **Record** exists twice: `.kb-btn-record` in the mobile-only `kb-controls` row and `.pianoroll-record` inserted into the piano roll transport row for desktop; both call `toggleRecording()`. Uses tick worker for precise playback/recording timing. **Note dispatch:** every note source goes through `noteOn(midi, velocity, when)` / `noteOff(midi, when)` — on-screen keys, and `handleMidiMessage` for external MIDI. `heldNotes` (a Set) is the authority on what is down; `noteOff` is a no-op for anything not in it. Timing is `performance.now()` so `MIDIMessageEvent.timeStamp` can be passed straight in as `when`. The midi-manager import is namespaced `midiManager` because `midi` is the note-number parameter name throughout the file.
-- `html/components/edit-panel.js`: Morph / Params / Random editing.
-- `html/components/job.js`: Job class — steering object for WAV import lifecycle. Owns: probe → match → poll → complete/fail.
-- `html/components/patch-model.js`: Unified data model + stores (localStorage). `patchStore`, `canvasStore`, `jobStore`, `tagStore`, `songStore` (named sequencer snapshots; `create()` refuses collisions with `'Song exists'`).
-- `html/components/patch-row.js`: Unified patch row rendering with star drag handle, mini spectrogram, assign/edit/remove buttons. Touch drag between containers with floating clone.
-- `html/components/patch.js`: Waveform helpers only — `decodeWavSamples`, `drawMiniWaveform`, `wavSampleCache`.
+- `html/components/edit-panel.js`: Morph / Params / Random editing. One shared range slider: `setSliderMode()` swaps min/max/step and restores the mode's own last value from `dataset.<mode>Val` (the browser clamps on a range change, which used to destroy the other mode's setting). Params **Save** takes algorithm/feedback from the edited `currentMutation.globals` and saves offline — audition is local-synth first, `/api/play` as fallback, and neither is required.
+- `html/components/job.js`: Job class — steering object for WAV import lifecycle. Owns: probe → match → poll → complete/fail. `complete()` writes the canvas entries and `ctr.patchIds` itself and saves the container once — it must not go through `addPatchToContainer()`, whose per-patch re-read/re-save would be overwritten by the stale copy.
+- `html/components/patch-model.js`: Unified data model + stores (localStorage). `patchStore`, `canvasStore`, `jobStore`, `tagStore`, `songStore` (named sequencer snapshots; `create()` refuses collisions with `'Song exists'`). `createPatch()` ids hash `voice_data|name` when a name is given, so one voice under two names (a match in several result groups) is two records; re-importing the same bank still yields the same ids.
+- `html/components/patch-row.js`: Unified patch row rendering with star drag handle, mini spectrogram, assign/edit/remove buttons. Touch drag between containers with floating clone; crossing back into the body cancels the drag-out (clone removed, no clone on drop), `touchcancel` aborts cleanly. `reorderContainerPatch()` applies a touch reorder to the group that holds both rows **and** the flat list (a grouped container renders only its groups; a move across groups is refused). One document `mouseup` disarms the star-armed row instead of one listener per row.
+- `html/components/patch.js`: Waveform helpers only — `decodeWavSamples` (general RIFF chunk walk: `fmt ` and `data` in any order with LIST/fact between, 16-bit PCM or 32-bit float, N channels mixed to mono), `drawMiniWaveform`, `wavSampleCache`, `releaseWavUrl` (revokes the `blob:` URL `playPatch` returns, once the waveform is drawn — the consumer owns it).
 - `html/components/voicebank.js`: Voice palette (8 slots). Persists to localStorage. `_setEntries(list)` replaces every slot at once (song load). Each entry has static channel assignment (0-7). Compact mode on mobile: vertical bars, tap to select, vertical drag for volume. Exposes `_render()` for re-rendering after class changes.
-- `html/components/pianoroll.js`: Sequencer with looping. Notes store per-note `voiceData` and `channel`. Touch support: `TOUCH_RESIZE_MARGIN = 20`, visual resize handles, double-tap to delete. Long-press (1s) to create note when stopped, drag to scroll. **Follow-scroll is opt-in** (`followPlayhead`, default off, persisted): only then is the canvas double-wide (content drawn twice for a seamless loop) and the view scrolled per tick; otherwise the red 2 px playhead is the only motion. `canvas.width` is assigned only on change. `handlePlaybackTick(col)` driven by tick worker. `setRecordingTickHandler` for recording delegation. `insertControl(el)` lets the toolbar place its Record button after Stop. `getSong()`/`loadSong(data)` are the song store's view of the roll.
+- `html/components/pianoroll.js`: Sequencer with looping. Hit-testing folds the second (loop) grid copy onto the first (`foldX`), interactive right-edge resize is clamped to the loop end (`clampDur`), `touchcancel` restores whatever was mid-move. Notes store per-note `voiceData` and `channel`. Touch support: `TOUCH_RESIZE_MARGIN = 20`, visual resize handles, double-tap to delete. Long-press (1s) to create note when stopped, drag to scroll. **Follow-scroll is opt-in** (`followPlayhead`, default off, persisted): only then is the canvas double-wide (content drawn twice for a seamless loop) and the view scrolled per tick; otherwise the red 2 px playhead is the only motion. `canvas.width` is assigned only on change. `handlePlaybackTick(col)` driven by tick worker. `setRecordingTickHandler` for recording delegation. `insertControl(el)` lets the toolbar place its Record button after Stop. `getSong()`/`loadSong(data)` are the song store's view of the roll.
+- `html/components/syx-parser.js`: `.syx` reader. Rejects anything whose format byte is not `0x09` (32-voice bank); verifies the checksum but only **warns** (`patches.checksumOk === false`, surfaced in the log by `importSyxBank`) because hex-edited banks with stale checksums are common.
 - `html/components/syx-builder.js`: DX7 SysEx **encoder** (syx-parser.js is the reader). Bulk dump `F0 43 0n 09 20 00 <4096 packed> <cksum> F7` = 4104 bytes; edit-buffer voice `F0 43 0n 00 01 1B <155 unpacked> <cksum> F7` = 163; dump request `F0 43 2n 09 F7`. Checksum = `(128 - (sum & 0x7F)) & 0x7F`. `patch.voice_data` is already the packed 128-byte form so a bank is a straight concatenation, padded to 32 with `makeInitVoice()`. `unpackVoice()` expands packed 128 → VCED 155 (17-byte ops become 21, 26 global bytes become 29) using dx7-params' `readOp`/`readGlobal`. **`html/DEMO.syx` is the golden test fixture** — parse → rebuild is asserted byte-identical, and unpack → repack is asserted lossless across all 32 voices.
 - `html/components/tag-editor.js`: Tag editor component with autocomplete.
 - `html/components/tutorial.js`: First-run tutorial modal with overlay highlights. Skips clip-path on mobile.

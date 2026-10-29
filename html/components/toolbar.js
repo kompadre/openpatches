@@ -579,7 +579,11 @@ export function createToolbar(opts) {
         } else {
             if (pianorollRef && pianorollRef.startPlayback) {
                 pianorollRef.startPlayback();
-                btnPlayStop.textContent = 'Stop ■';
+                // startPlayback is a no-op on an empty roll (and while
+                // recording) — only show Stop if it actually started.
+                if (pianorollRef.isPlaying && pianorollRef.isPlaying()) {
+                    btnPlayStop.textContent = 'Stop ■';
+                }
             }
         }
     });
