@@ -5,9 +5,28 @@
 - Everything you learn, decide, or want to record goes in `SESSION.md`, not here. AGENTS.md is the stable contract; SESSION.md is the living state.
 
 ## Project State → SESSION.md
-- `SESSION.md` holds the project state: current tasks, goals, open questions, and the architecture map. **Read it at the start of a session** before touching code.
-- **Keep it current.** When you finish a task, change the architecture, or discover a gotcha the next agent needs, update `SESSION.md` in the same change — tasks and goals under "Current Tasks & Goals", structural facts under "Architecture".
-- Prune as you go: SESSION.md is a working set, not a changelog. Git history is the changelog.
+- Holds active project state: current working tasks, goals, open questions, and the architecture map.
+- **Read it at the start of every session** before touching code.
+- **Keep it current:** Update tasks, goals, and architectural gotchas in the same commit/change.
+- **Prune constantly:** `SESSION.md` is active RAM, not history. Finished items move to `CHANGELOG.md`.
+
+## Project Backlog → TODO.md
+- Structure: Parent tasks with nested subtasks.
+- Task/Subtask statuses: pending `[ ]`, completed `[x]`, superseded/canceled `[-]`.
+- When the user mentions a potential future task or feature, append it to `TODO.md`.
+- Do not append agent-originated ideas directly to `TODO.md`: propose them to the user in chat first.
+
+## Project Log → CHANGELOG.md
+- Append-only record of completed work and structural changes.
+- Format by date/session for scannability (`## YYYY-MM-DD: Task Name`).
+
+## Task & Subtask Lifecycle
+1. **Backlog:** Ideas and future tasks originate in `TODO.md`.
+2. **Activation:** When starting a parent task, **move** (cut) it out of `TODO.md` into `SESSION.md`.
+3. **Self-Resolving Subtasks/Tasks:**
+   - If work in `SESSION.md` checks off a subtask belonging to a task still in `TODO.md`, mark that subtask `[x]` (or `[-]`) directly in `TODO.md`.
+   - If all subtasks under a parent task in `TODO.md` become `[x]` or `[-]`, the parent task is complete and moves directly from `TODO.md` to `CHANGELOG.md`.
+4. **Completion:** Once a task in `SESSION.md` and all its subtasks are complete, remove it from `SESSION.md` and record the completed feature/fix in `CHANGELOG.md`.
 
 ## Rules
 - Read enough context before editing. Don't creep offsets line-by-line.
@@ -27,10 +46,14 @@
 
 ## Git & Version Control Rules
 
-- **NEVER alter Git history.** Under no circumstances should you run `git rebase`, `git commit --amend`, `git reset`, `git cherry-pick`, or perform any commit squashing/history modifications.
+### History Integrity
+- **NEVER alter Git history:** Do not run `git rebase`, `git commit --amend`, `git reset`, `git cherry-pick`, or perform any commit squashing/history modifications.
 - **Append-only commits:** All changes must strictly be committed as NEW, additive commits on top of the current branch.
-- **No speculative or broken commits:** Only commit when the code is verified, working, and builds/runs without errors.
-- **Clear commit messages:** Write short, descriptive commit messages summarizing the actual functional changes made.
+
+### Commit Execution & Boundaries
+- **Commit on Task Completion:** Create a git commit only when a task or sub-goal is fully complete and verified (code builds/runs without errors).
+- **Turn Boundaries:** If a turn ends without having completed a task, **do not commit**. Leave the working tree dirty until the task definition in `SESSION.md` is met, compartmentalizing development cycles cleanly by completed tasks.
+- **Commit Messages:** Write short, descriptive commit messages summarizing the actual functional changes made and referencing the completed task name.
 
 ## Commands
 
