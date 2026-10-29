@@ -202,7 +202,10 @@ describe('playback sounds every track', () => {
     });
 });
 
-describe('measure buttons span every track', () => {
+describe('measure buttons act on the edited pattern', () => {
+    // Patterns have their own lengths — the same pattern may sit in several
+    // songs — so + Msr / Clone / − Msr change the one being edited and the
+    // grid follows whichever pattern is under the cursor.
     function twoTracks() {
         const h = build();
         drawNote(h, 60, 0);
@@ -211,33 +214,42 @@ describe('measure buttons span every track', () => {
         return h;
     }
 
-    test('+ Msr grows every pattern, so the grid stays one length', () => {
-        const h = twoTracks();
+    test('+ Msr grows the edited pattern only; switching voice shows the other length', () => {
+        const h = twoTracks();                       // editing slot 1
         h.btn('+ Msr').dispatch('click');
         assert.equal(h.roll.totalCols(), 2 * COLS_PER_MEASURE);
-        for (const t of h.roll.getTracks()) assert.equal(patternStore.get(t.patternId).measures, 2);
+        const [t0, t1] = h.roll.getTracks();
+        assert.equal(patternStore.get(t1.patternId).measures, 2);
+        assert.equal(patternStore.get(t0.patternId).measures, 1, 'the other pattern keeps its length');
+        h.roll.setActiveSlot(0);
+        assert.equal(h.roll.totalCols(), COLS_PER_MEASURE, 'the grid follows the edited pattern');
     });
 
-    test('clone copies the last bar of every track, not just the edited one', () => {
+    test('clone copies the edited pattern\'s last bar', () => {
         const h = twoTracks();
         h.btn('\u29C9 Clone').dispatch('click');
         assert.equal(h.roll.totalCols(), 32);
-        assert.deepEqual(h.roll.getSong().notes.map(n => [n.slot, n.start]).sort(),
-            [[0, 0], [0, 16], [1, 0], [1, 16]]);
+        assert.deepEqual(h.roll.getNotes().map(n => n.start), [0, 16]);
+        assert.deepEqual(h.roll.getSong().notes.filter(n => n.slot === 0).map(n => n.start), [0], 'slot 0 untouched');
     });
 
-    test('− Msr drops the notes past the new end on every track', () => {
+    test('− Msr drops the notes past the new end of the edited pattern', () => {
         const h = twoTracks();
         h.btn('+ Msr').dispatch('click');
-        h.roll.setActiveSlot(0);
-        drawNote(h, 62, 20);
-        h.roll.setActiveSlot(1);
         drawNote(h, 50, 24);
-        assert.equal(h.roll.getSong().notes.length, 4);
-
+        assert.equal(h.roll.getNotes().length, 2);
         h.btn('\u2715 Msr').dispatch('click');
         assert.equal(h.roll.totalCols(), 16);
-        assert.deepEqual(h.roll.getSong().notes.map(n => n.midi).sort(), [48, 60]);
+        assert.deepEqual(h.roll.getNotes().map(n => n.midi), [48]);
+    });
+
+    test('with no pattern under the cursor, + Msr only sizes the grid', () => {
+        const h = build();
+        h.btn('+ Msr').dispatch('click');
+        assert.equal(h.roll.totalCols(), 32);
+        assert.deepEqual(h.roll.getTracks(), [], 'no track was invented');
+        drawNote(h, 60, 20);
+        assert.equal(patternStore.get(h.roll.getTracks()[0].patternId).measures, 2, 'the new pattern takes the grid length');
     });
 });
 
@@ -249,9 +261,11 @@ describe('persistence and migration', () => {
         drawNote(h, 72, 8);
         h.btn('+ Msr').dispatch('click');
 
-        const again = build({ activeSlot: 0 });
-        assert.equal(again.roll.totalCols(), 32);
+        const again = build({ activeSlot: 2 });
+        assert.equal(again.roll.totalCols(), 32, 'slot 2\'s pattern was lengthened');
         assert.deepEqual(again.roll.getTracks().map(t => t.slot), [0, 2]);
+        again.roll.setActiveSlot(0);
+        assert.equal(again.roll.totalCols(), 16, 'slot 0\'s pattern was not');
         assert.deepEqual(again.roll.getSong().notes.sort((a, b) => a.midi - b.midi),
             [{ midi: 60, start: 0, dur: 2, slot: 0 }, { midi: 72, start: 8, dur: 1, slot: 2 }]);
     });
@@ -316,5 +330,62 @@ describe('the recorder writes into the right track', () => {
         const note = h.roll.addNote({ midi: 40, start: 2, dur: 1, slot: 1 });
         h.roll.removeNote(note);
         assert.deepEqual(h.roll.getSong().notes, []);
+    });
+});
+
+
+describe('the roll follows the shared session', () => {
+    test('a clip placed by the song editor shows up as a ghost, and opens on request', async () => {
+        const { createSongSession } = await import('../html/components/song-session.js');
+        const { addClip, createTrack } = await import('../html/components/song-model.js');
+        const session = createSongSession();
+        session.init();
+        const played = [];
+        const roll = createPianoroll({
+            session,
+            playNoteFn: (midi, d, v, slot) => played.push([midi, slot]),
+            onNotesChange: () => {}, activeSlot: 0,
+            tickWorker: makeTickWorker(), startWorker: () => {}, stopWorker: () => {},
+            getSlotData: (slot) => BANK[slot] || null,
+        });
+        // Another editor adds a track on slot 1 with a pattern at measure 0.
+        const p = patternStore.create({ name: 'Riff', notes: [{ midi: 40, start: 2, dur: 1 }] });
+        session.update((song) => {
+            const t = createTrack({ name: 'T', slot: 1 });
+            song.tracks.push(t);
+            addClip(song, { trackId: t.id, patternId: p.id, startMeasure: 0 }, (id) => patternStore.get(id));
+        }, 'song-editor');
+
+        assert.deepEqual(roll.getTracks().map(t => t.slot), [1], 'the roll picked it up');
+        assert.deepEqual(roll.getNotes(), [], 'but slot 0 is still the one being edited');
+
+        const clipId = roll.getTracks()[0].clipId;
+        assert.equal(roll.openClip(clipId), true);
+        assert.deepEqual(roll.getNotes(), [{ midi: 40, start: 2, dur: 1 }]);
+        assert.equal(roll.openClip('clip_nope'), false);
+    });
+
+    test('a pattern renamed elsewhere is not overwritten by the roll\'s next save', async () => {
+        const { createSongSession } = await import('../html/components/song-session.js');
+        const session = createSongSession();
+        session.init();
+        const h = { roll: null };
+        h.roll = createPianoroll({
+            session, playNoteFn: () => {}, onNotesChange: () => {}, activeSlot: 0,
+            tickWorker: makeTickWorker(), startWorker: () => {}, stopWorker: () => {},
+            getSlotData: (slot) => BANK[slot] || null,
+        });
+        const canvas = h.roll.element.querySelector('.pianoroll-canvas');
+        const mouse = (type, x, y) => canvas.dispatch(type, { clientX: x, clientY: y, preventDefault() {} });
+        mouse('mousedown', colX(0) + 5, rowY(60)); mouse('mouseup', colX(0) + 5, rowY(60));
+        const id = h.roll.getTracks()[0].patternId;
+
+        patternStore.put({ ...patternStore.get(id), name: 'Renamed' });
+        session.notifyPattern(id, 'song-editor');
+        mouse('mousedown', colX(4) + 5, rowY(62)); mouse('mouseup', colX(4) + 5, rowY(62));
+
+        const stored = patternStore.get(id);
+        assert.equal(stored.name, 'Renamed');
+        assert.equal(stored.notes.length, 2, 'and the new note was saved');
     });
 });

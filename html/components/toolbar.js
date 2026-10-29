@@ -1,9 +1,11 @@
-// Toolbar — bottom panel with tabs: Canvas | Piano Roll | Edit | Log
+// Toolbar — bottom panel with tabs: Canvas | Piano Roll | Song | Edit | Log
 // Keyboard is integrated into the Piano Roll panel.
 // Replaces piano-dock.js. Pianoroll/Log logic moved here; Edit tab delegates to edit-panel.js.
 
 import { createPianoroll } from './pianoroll.js';
 import { createSongBar } from './song-bar.js';
+import { createSongSession } from './song-session.js';
+import { createSongEditor } from './song-editor.js';
 import { createVoiceBank } from './voicebank.js';
 import { createEditPanel } from './edit-panel.js';
 // Namespaced as midiManager, not midi: `midi` is the note-number parameter
@@ -85,6 +87,11 @@ export function createToolbar(opts) {
     tabPianoroll.className = 'dock-tab' + (effectiveInitialTab === 'pianoroll' ? ' active' : '');
     tabPianoroll.innerHTML = '<span>🎹</span><span>Piano Roll</span>';
 
+    const tabSong = document.createElement('button');
+    tabSong.className = 'dock-tab dock-tab-song' + (effectiveInitialTab === 'song' ? ' active' : '');
+    tabSong.innerHTML = '<span>🎼</span><span>Song</span>';
+    tabSong.title = 'Song';
+
     const tabEdit = document.createElement('button');
     tabEdit.className = 'dock-tab' + (effectiveInitialTab === 'edit' ? ' active' : '');
     tabEdit.innerHTML = '<span>✏️</span><span>Edit</span>';
@@ -106,6 +113,7 @@ export function createToolbar(opts) {
 
     tabBar.appendChild(tabCanvas);
     tabBar.appendChild(tabPianoroll);
+    tabBar.appendChild(tabSong);
     tabBar.appendChild(tabEdit);
     tabBar.appendChild(tabLog);
     tabBar.appendChild(tabStop);
@@ -121,6 +129,9 @@ export function createToolbar(opts) {
     const pianorollPanel = document.createElement('div');
     pianorollPanel.className = 'dock-panel dock-panel-pianoroll' + (effectiveInitialTab === 'pianoroll' ? ' active' : '');
 
+    const songPanel = document.createElement('div');
+    songPanel.className = 'dock-panel dock-panel-song' + (effectiveInitialTab === 'song' ? ' active' : '');
+
     const editPanel = document.createElement('div');
     editPanel.className = 'dock-panel' + (effectiveInitialTab === 'edit' ? ' active' : '');
 
@@ -129,12 +140,13 @@ export function createToolbar(opts) {
 
     wrapper.appendChild(canvasPanel);
     wrapper.appendChild(pianorollPanel);
+    wrapper.appendChild(songPanel);
     wrapper.appendChild(editPanel);
     wrapper.appendChild(logPanel);
 
     function activateTab(tab, panel) {
-        [tabCanvas, tabPianoroll, tabEdit, tabLog].forEach(t => t.classList.remove('active'));
-        [canvasPanel, pianorollPanel, editPanel, logPanel].forEach(p => p.classList.remove('active'));
+        [tabCanvas, tabPianoroll, tabSong, tabEdit, tabLog].forEach(t => t.classList.remove('active'));
+        [canvasPanel, pianorollPanel, songPanel, editPanel, logPanel].forEach(p => p.classList.remove('active'));
         tab.classList.add('active');
         panel.classList.add('active');
     }
@@ -167,6 +179,7 @@ export function createToolbar(opts) {
         handleTabClick(tabPianoroll, pianorollPanel);
         requestAnimationFrame(positionBlackKeys);
     });
+    tabSong.addEventListener('click', () => handleTabClick(tabSong, songPanel));
     tabEdit.addEventListener('click', () => handleTabClick(tabEdit, editPanel));
     tabLog.addEventListener('click', () => handleTabClick(tabLog, logPanel));
     tabCollapse.addEventListener('click', () => {
@@ -222,6 +235,7 @@ export function createToolbar(opts) {
         onSnapshot: (entries) => {
             if (opts.onSnapshot) opts.onSnapshot(entries);
             if (pianorollRef && pianorollRef.renderLegend) pianorollRef.renderLegend();
+            if (wrapper._songEditor) wrapper._songEditor.render();
             refreshVoiceSelect();
         },
     });
@@ -229,7 +243,13 @@ export function createToolbar(opts) {
     if (voiceBank._notifySnapshot) voiceBank._notifySnapshot();
     pianorollRow.appendChild(voiceBank);
 
+    // One current song, shared by the piano roll (which edits a pattern in
+    // it) and the song editor (which arranges it). Runs the migration.
+    const session = createSongSession();
+    session.init();
+
     pianorollRef = createPianoroll({
+        session,
         playNoteFn: pianorollPlayFn,
         onNotesChange: updateHighlights,
         activeSlot: null,
@@ -252,6 +272,30 @@ export function createToolbar(opts) {
         const initSlot = entries.indexOf(initActive);
         if (initSlot >= 0) pianorollRef.setActiveSlot(initSlot);
     }
+    // --- Song editor (Song tab) ---
+    const songEditor = createSongEditor({
+        session,
+        log: opts.appendLog || (() => {}),
+        getSlotData: (slot) => {
+            const entries = voiceBank._getEntries ? voiceBank._getEntries() : [];
+            return entries[slot] || null;
+        },
+        // Opening a clip: make its voice the active one (that is what the
+        // roll edits), hand the clip to the roll, show the roll.
+        onOpenPattern: (clipId, trackId) => {
+            const track = session.get().tracks.find(t => t.id === trackId);
+            if (track && voiceBank._setActiveSlot) voiceBank._setActiveSlot(track.slot);
+            pianorollRef.openClip(clipId);
+            handleTabClick(tabPianoroll, pianorollPanel);
+            requestAnimationFrame(positionBlackKeys);
+        },
+    });
+    songPanel.appendChild(songEditor.element);
+    // The voice bank's names and colours are read at render time; re-render
+    // when they change so track heads and clips keep up.
+    wrapper._session = session;
+    wrapper._songEditor = songEditor;
+
     // --- Song bar (top) ---
     // A song is the piano roll plus the voice bank's slots: the notes only
     // mean something with the sounds they were written for.
