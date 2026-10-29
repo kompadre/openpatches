@@ -261,15 +261,139 @@ describe('selecting, opening and removing clips', () => {
         assert.equal(h.song().clips.length, 0);
     });
 
-    test('double-click (or the Open button) hands the clip to the piano roll', () => {
+    test('the Open button hands the clip to the piano roll', () => {
         const h = one();
-        const clip = h.clips()[0];
-        clip.dispatch('dblclick', ev());
-        const c = h.song().clips[0];
-        assert.deepEqual(h.opened, [{ clipId: c.id, trackId: h.song().tracks[0].id, patternId: h.patterns[0].id }]);
         h.click(h.clips()[0]);
         h.btn('song-clip-open').dispatch('click', ev());
-        assert.equal(h.opened.length, 2);
+        const c = h.song().clips[0];
+        assert.deepEqual(h.opened, [{ clipId: c.id, trackId: h.song().tracks[0].id, patternId: h.patterns[0].id }]);
+    });
+});
+
+// The two note gestures from the piano roll, on clips: double-tap removes,
+// a still long press opens. Detected from press/release so touch has them
+// too; `dblclick` is no longer listened for.
+describe('clip gestures', () => {
+    function one() {
+        return build({ patterns: [{ name: 'A' }], tracks: [{ slot: 0 }], clips: [{ track: 0, pattern: 0, at: 0 }] });
+    }
+    // A press that is released without moving. Each tap lands on a freshly
+    // rendered element, as it does in the browser (the click re-renders).
+    function tap(h, type = 'mouse') {
+        const clip = h.clips()[0];
+        if (type === 'touch') {
+            clip.dispatch('touchstart', ev({ touches: [{ clientX: 5, clientY: 5 }] }));
+            h.doc('touchend', ev({ changedTouches: [{ clientX: 5, clientY: 5 }] }));
+        } else {
+            clip.dispatch('mousedown', ev({ clientX: 5, clientY: 5 }));
+            h.doc('mouseup', ev({ clientX: 5, clientY: 5 }));
+            h.click(clip);
+        }
+    }
+
+    test('two quick taps remove the clip', (t) => {
+        t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+        const h = one();
+        tap(h);
+        assert.equal(h.song().clips.length, 1, 'one tap selects, nothing more');
+        t.mock.timers.tick(150);
+        tap(h);
+        assert.equal(h.song().clips.length, 0);
+        assert.equal(h.editor.getSelectedClipId(), null);
+        assert.deepEqual(h.opened, [], 'and the hold timer was cancelled, not left to open a dead clip');
+        t.mock.timers.tick(1000);
+        assert.deepEqual(h.opened, []);
+    });
+
+    test('two quick touch taps remove it as well', (t) => {
+        t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+        const h = one();
+        tap(h, 'touch');
+        t.mock.timers.tick(150);
+        tap(h, 'touch');
+        assert.equal(h.song().clips.length, 0);
+    });
+
+    test('two slow taps do not', (t) => {
+        t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+        const h = one();
+        tap(h);
+        t.mock.timers.tick(450);
+        tap(h);
+        assert.equal(h.song().clips.length, 1);
+    });
+
+    test('re-grabbing a clip right after dragging it is not a double tap', (t) => {
+        t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+        const h = build({ patterns: [{ name: 'A' }], tracks: [{ slot: 0 }], clips: [{ track: 0, pattern: 0, at: 0 }] });
+        h.clips()[0].dispatch('mousedown', ev({ clientX: 0 }));
+        h.doc('mousemove', ev({ clientX: MEASURE_W }));
+        h.doc('mouseup', ev({ clientX: MEASURE_W }));
+        assert.equal(h.song().clips[0].startMeasure, 1);
+        t.mock.timers.tick(50);
+        h.clips()[0].dispatch('mousedown', ev({ clientX: MEASURE_W }));
+        h.doc('mouseup', ev({ clientX: MEASURE_W }));
+        assert.equal(h.song().clips.length, 1);
+    });
+
+    test('a still press of 600 ms opens the clip in the roll', (t) => {
+        t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+        const h = one();
+        h.clips()[0].dispatch('mousedown', ev({ clientX: 5, clientY: 5 }));
+        t.mock.timers.tick(599);
+        assert.deepEqual(h.opened, []);
+        t.mock.timers.tick(1);
+        const c = h.song().clips[0];
+        assert.deepEqual(h.opened, [{ clipId: c.id, trackId: h.song().tracks[0].id, patternId: h.patterns[0].id }]);
+        // The release that follows a hold is not a tap: another press soon
+        // after must not read as a double tap and remove what was just opened.
+        h.doc('mouseup', ev({ clientX: 5, clientY: 5 }));
+        h.clips()[0].dispatch('mousedown', ev({ clientX: 5, clientY: 5 }));
+        h.doc('mouseup', ev({ clientX: 5, clientY: 5 }));
+        assert.equal(h.song().clips.length, 1);
+    });
+
+    test('a touch hold opens too', (t) => {
+        t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+        const h = one();
+        h.clips()[0].dispatch('touchstart', ev({ touches: [{ clientX: 5, clientY: 5 }] }));
+        t.mock.timers.tick(600);
+        assert.equal(h.opened.length, 1);
+    });
+
+    test('moving during the press cancels the hold — it is a drag', (t) => {
+        t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+        const h = one();
+        h.clips()[0].dispatch('mousedown', ev({ clientX: 0 }));
+        t.mock.timers.tick(300);
+        h.doc('mousemove', ev({ clientX: MEASURE_W }));
+        t.mock.timers.tick(600);
+        assert.deepEqual(h.opened, []);
+        h.doc('mouseup', ev({ clientX: MEASURE_W }));
+        assert.equal(h.song().clips[0].startMeasure, 1);
+    });
+
+    test('releasing before 600 ms cancels the hold', (t) => {
+        t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+        const h = one();
+        h.clips()[0].dispatch('mousedown', ev({ clientX: 5, clientY: 5 }));
+        t.mock.timers.tick(300);
+        h.doc('mouseup', ev({ clientX: 5, clientY: 5 }));
+        t.mock.timers.tick(600);
+        assert.deepEqual(h.opened, []);
+    });
+
+    test('the repeat handle has neither gesture', (t) => {
+        t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+        const h = one();
+        const handle = () => h.root.querySelector('.song-clip-handle');
+        handle().dispatch('mousedown', ev({ clientX: 40 }));
+        t.mock.timers.tick(700);
+        assert.deepEqual(h.opened, []);
+        h.doc('mouseup', ev({ clientX: 40 }));
+        handle().dispatch('mousedown', ev({ clientX: 40 }));
+        h.doc('mouseup', ev({ clientX: 40 }));
+        assert.equal(h.song().clips.length, 1);
     });
 });
 
@@ -495,5 +619,28 @@ describe('playhead (phase 5)', () => {
         assert.equal(h.root.querySelectorAll('.song-clip')[0], clipEl, 'a tick moves the line, nothing else');
         h.editor.render();
         assert.ok(h.root.querySelector('.song-playhead'), 'still there after a render');
+    });
+});
+
+describe('pattern rename without a double-click', () => {
+    test('the ✎ button opens the same in-place editor (touch has no dblclick)', () => {
+        const h = build({ patterns: [{ name: 'A' }] });
+        const item = h.items()[0];
+        const nameEl = item.querySelector('.song-pattern-name');
+        item.querySelector('.song-pattern-rename').dispatch('click', ev());
+        assert.equal(nameEl.contentEditable, 'true');
+        nameEl.textContent = 'Lead line';
+        nameEl.dispatch('blur');
+        assert.equal(M.patternStore.get(h.patterns[0].id).name, 'Lead line');
+        assert.equal(h.items()[0].querySelector('.song-pattern-name').textContent, 'Lead line');
+    });
+
+    test('an empty name is discarded, not saved', () => {
+        const h = build({ patterns: [{ name: 'A' }] });
+        const nameEl = h.items()[0].querySelector('.song-pattern-name');
+        h.items()[0].querySelector('.song-pattern-rename').dispatch('click', ev());
+        nameEl.textContent = '   ';
+        nameEl.dispatch('blur');
+        assert.equal(M.patternStore.get(h.patterns[0].id).name, 'A');
     });
 });

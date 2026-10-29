@@ -2,6 +2,13 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-10-29: Small wins batch (MIDI on reload, record autoscroll, pattern rename, clip gestures)
+
+- **MIDI access on reload** — the "SysEx permission gets lost" report. Nothing was lost: nothing was ever asked for again. `requestMidi()` was only reachable from the settings modal and the send-bank flow, so every page load started with no grant and the audition box ticked on top of nothing. midi-manager now persists an `enabled` flag (set by any successful grant) and `resumeIfEnabled()`, called from `initMidiUi()`, re-requests at startup at the tier audition needs; Chrome remembers the permission so there is no prompt. A refused silent request leaves the state `closed` with Enable still on offer. `test/midi-auto-resume.test.js`.
+- **Recording scrolls to the note** — a recorded note whose row is off screen centres the roll vertically; one already in view leaves the grid alone, and the horizontal position is never touched (that belongs to follow-scroll, or the user). `pianoroll.revealRow()`, `test/pianoroll-record-reveal.test.js`.
+- **Pattern rename** — a ✎ button on each palette row (touch has no double-click), and the roll's legend now shows the edited pattern's name after the voice, click to rename in place. Both write through `patternStore` and notify the session, so the two editors agree. Tests in `song-editor.test.js`, `pattern-editor.test.js`.
+- **Clip gestures match the roll** — double-click / double-tap on a Song-tab clip removes it; a press held still for 600 ms opens it in the piano roll (previously double-click opened). Detected from press/release so touch has both; only a tap release arms the double-tap, so re-grabbing a clip right after dragging it is safe; the click that follows a removing tap no longer re-selects the ghost. The ✎ Open / Remove buttons in the selected-clip bar remain. `clip gestures` block in `test/song-editor.test.js`.
+
 ## 2026-10-29: Patterns, Tracks and the Song editor
 
 The sequencer is rebuilt around reusable **patterns**. Six phases, one commit each.

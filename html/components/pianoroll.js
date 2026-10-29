@@ -1404,8 +1404,42 @@ export function createPianoroll(opts) {
             const name = document.createElement('span');
             name.textContent = slotName(track.slot);
             item.appendChild(name);
+            // The edited pattern's name, renamable in place: the roll is
+            // where a pattern is made, so it should not take a trip to the
+            // Song tab to call it something.
+            if (i === activeTrackIdx && track.pattern) item.appendChild(patternNameField(track));
             legend.appendChild(item);
         }
+    }
+
+    function patternNameField(track) {
+        const pattern = track.pattern;
+        const field = document.createElement('span');
+        field.className = 'pianoroll-legend-pattern';
+        field.textContent = pattern.name;
+        field.title = 'Pattern name — click to rename';
+        field.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (field.contentEditable === 'true') return;
+            field.contentEditable = 'true';
+            field.focus();
+        });
+        field.addEventListener('blur', () => {
+            if (field.contentEditable !== 'true') return;
+            field.contentEditable = 'false';
+            const v = String(field.textContent).trim();
+            if (v && v !== pattern.name) {
+                pattern.name = v;
+                saveState([pattern]);
+            }
+            renderLegend();
+        });
+        field.addEventListener('keydown', (e) => {
+            e.stopPropagation();   // document-level shortcuts (Delete on the Song tab) must not see typing
+            if (e.key === 'Enter') { e.preventDefault(); if (field.blur) field.blur(); }
+            if (e.key === 'Escape') { field.textContent = pattern.name; field.contentEditable = 'false'; }
+        });
+        return field;
     }
 
     // Load persisted state
@@ -1453,9 +1487,27 @@ export function createPianoroll(opts) {
             renderLegend();
             if (onNotesChange) onNotesChange();
             saveState([track.pattern]);
-            // Auto-scroll to new note only when not recording (recording interval handles scroll)
+            // Stopped: bring the new note to the centre. Recording: the
+            // horizontal position is the follow-scroll's (or the user's), so
+            // only nudge vertically, and only if the note is off screen.
             if (!looping) this.scrollTo(start, midi);
+            else this.revealRow(midi);
             return note;
+        },
+        /**
+         * Scroll vertically so `midi`'s row is centred — but only when the
+         * row is outside the viewport. A note already in view must not
+         * move the grid under a user who is playing it.
+         */
+        revealRow(midi) {
+            const row = NOTES.findIndex(n => n.midi === midi);
+            if (row < 0) return false;
+            const y = HEADER_H + row * ROW_H;
+            const top = scroll.scrollTop;
+            const bottom = top + scroll.clientHeight;
+            if (y >= top && y + ROW_H <= bottom) return false;
+            scroll.scrollTop = Math.max(0, y + ROW_H / 2 - scroll.clientHeight / 2);
+            return true;
         },
         removeNote(note) {
             // Undo may reach a note on another track — search them all.

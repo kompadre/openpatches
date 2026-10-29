@@ -8,12 +8,9 @@ Project backlog. Parent tasks with nested subtasks; `[ ]` pending, `[x]` done,
 ### Bugs and small improvements assorted
 
 - [ ] Play controls on Song level. Play while editing a pattern should be loop that pattern.
-- [ ] "Song" tab pattern edition should be consistent with Note editing in Piano roll: delete on double click/touch. 
 - [ ] Consider moving patterns between tracks if not much of hassle. 
    - [ ] When moved track should only bring in the notes - the instrument is defined by track. 
-- [ ] Pattern rename
 - [ ] "Song" tab again: track color should be subdued background for the whole track. Patterns should have their own colors.
-
 
 ### Ideas
 
@@ -34,4 +31,4 @@ Project backlog. Parent tasks with nested subtasks; `[ ]` pending, `[x]` done,
 
    - [ ] When assigning a multi-voice pattern to a track that doesn't define enough voices ask user to do it.
    - [ ] "Song" tab pattern visualization: paint small colored dots (different colors for different voices) where notes are inside that pattern. Generate an image blob. Cache that blob,  invalidate cache when pattern changes.
-
+- [ ] Basic internal clock sending / syncing with external.

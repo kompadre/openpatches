@@ -462,3 +462,45 @@ describe('transport integration (phase 5)', () => {
         assert.deepEqual(released, [1], 'a second Stop releases nothing');
     });
 });
+
+describe('renaming the edited pattern from the roll', () => {
+    const field = (h) => h.legend().find(i => i.classList.contains('active'))
+        .querySelector('.pianoroll-legend-pattern');
+
+    test('the active legend entry carries the pattern name; ghosts do not', () => {
+        const h = build();
+        drawNote(h, 60, 0);
+        h.roll.setActiveSlot(1);
+        drawNote(h, 48, 0);
+        const items = h.legend();
+        assert.equal(items[0].querySelector('.pianoroll-legend-pattern'), null, 'ghost track: no field');
+        assert.equal(field(h).textContent, patternStore.list().find(p => p.name === 'Bass').name);
+    });
+
+    test('click, type, blur → the store and the legend both have the new name', () => {
+        const h = build();
+        drawNote(h, 60, 0);
+        const f = field(h);
+        f.dispatch('click', { stopPropagation() {} });
+        assert.equal(f.contentEditable, 'true');
+        f.textContent = 'Intro riff';
+        f.dispatch('blur');
+        const stored = patternStore.list();
+        assert.equal(stored.length, 1);
+        assert.equal(stored[0].name, 'Intro riff');
+        assert.equal(field(h).textContent, 'Intro riff', 'legend re-rendered from the renamed pattern');
+    });
+
+    test('Escape restores the old name and nothing is written', () => {
+        const h = build();
+        drawNote(h, 60, 0);
+        const f = field(h);
+        f.dispatch('click', { stopPropagation() {} });
+        f.textContent = 'oops';
+        f.dispatch('keydown', { key: 'Escape', stopPropagation() {}, preventDefault() {} });
+        assert.equal(f.textContent, 'Piano');
+        assert.equal(f.contentEditable, 'false');
+        f.dispatch('blur');
+        assert.equal(patternStore.list()[0].name, 'Piano');
+    });
+});

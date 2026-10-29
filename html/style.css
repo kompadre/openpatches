@@ -2071,6 +2071,16 @@ h1 {
     opacity: 0.55;
 }
 
+.pianoroll-legend-pattern {
+    /* The edited pattern's name, after the voice it plays on. */
+    color: #ddd;
+    cursor: text;
+    padding: 0 0.25rem;
+    border-radius: 2px;
+}
+.pianoroll-legend-pattern::before { content: '·'; color: #777; margin-right: 0.25rem; }
+.pianoroll-legend-pattern[contenteditable="true"] { outline: 1px solid #e94560; background: #0f0f23; }
+
 .pianoroll-legend-dot {
     width: 10px;
     height: 10px;

@@ -22,6 +22,8 @@ export const MEASURE_W = 48;      // px per measure in the grid
 export const TRACK_HEAD_W = 192;  // .song-track-head width (12rem), for the playhead
 const MIN_GRID_MEASURES = 16;     // never show an empty, zero-width song
 const DRAG_THRESHOLD = 4;         // px before a press becomes a drag
+const LONG_PRESS_MS = 600;        // a still press this long opens the clip in the roll
+const DOUBLE_TAP_MS = 400;        // two presses on one clip within this remove it (as in the roll)
 
 export function createSongEditor(opts = {}) {
     const session = opts.session || createSongSession();
@@ -32,6 +34,7 @@ export function createSongEditor(opts = {}) {
 
     let selectedPatternId = null;
     let selectedClipId = null;
+    let lastPress = { clipId: null, at: 0 };   // last body press, for double-tap removal
     let unsubscribe = null;
     let unsubscribeTransport = null;
     let playheadEl = null;
@@ -237,6 +240,13 @@ export function createSongEditor(opts = {}) {
             len.textContent = p.measures + (p.measures === 1 ? ' bar' : ' bars');
             item.appendChild(len);
 
+            // Rename in place, the way patch rows and containers do. The
+            // button exists for touch, where a double-click is not a thing.
+            const beginRename = () => {
+                nameEl.contentEditable = 'true';
+                nameEl.focus();
+            };
+            item.appendChild(button('✎', 'Rename pattern', beginRename, 'song-btn song-pattern-rename'));
             item.appendChild(button('⧉', 'Duplicate', () => {
                 const copy = patternStore.create({ ...p, id: undefined, name: p.name + ' copy', created: undefined });
                 selectedPatternId = copy.id;
@@ -260,11 +270,9 @@ export function createSongEditor(opts = {}) {
                 selectedPatternId = selectedPatternId === p.id ? null : p.id;
                 render();
             });
-            // Rename in place, the way patch rows and containers do.
             nameEl.addEventListener('dblclick', (e) => {
                 e.stopPropagation();
-                nameEl.contentEditable = 'true';
-                nameEl.focus();
+                beginRename();
             });
             nameEl.addEventListener('blur', () => {
                 if (nameEl.contentEditable !== 'true') return;
@@ -444,7 +452,7 @@ export function createSongEditor(opts = {}) {
         el.style.left = (span.start * MEASURE_W) + 'px';
         el.style.width = ((span.end - span.start) * MEASURE_W - 2) + 'px';
         el.style.background = slotColor(track.slot);
-        el.title = `${pattern.name} × ${clip.repeats} — drag to move, drag the edge to repeat, double-click to open`;
+        el.title = `${pattern.name} × ${clip.repeats} — drag to move, drag the edge to repeat, hold to open, double-click to remove`;
 
         const label = document.createElement('span');
         label.className = 'song-clip-label';
@@ -457,26 +465,48 @@ export function createSongEditor(opts = {}) {
 
         el.addEventListener('click', (e) => {
             e.stopPropagation();
+            // The click after a double-tap's second press arrives for a clip
+            // that press just removed; it must not re-select a ghost.
+            if (!session.get().clips.some(c => c.id === clip.id)) return;
             selectedClipId = clip.id;
             selectedPatternId = clip.patternId;
             render();
         });
-        el.addEventListener('dblclick', (e) => {
-            e.stopPropagation();
-            openClip(clip.id);
-        });
-
         // Move (body) or repeat (handle). Pointer deltas are snapped to
         // measures; the model decides whether the result is legal. Below
         // DRAG_THRESHOLD a press is a click: no preview, no re-render.
+        //
+        // The body also carries the two gestures the piano roll's notes
+        // have: a second press within DOUBLE_TAP_MS removes the clip, and a
+        // press held still for LONG_PRESS_MS opens it in the roll. Both are
+        // detected from press/release rather than via `dblclick`, so touch
+        // gets them too. The tap memory lives on the editor, not the
+        // element, because the click in between re-renders the clip.
         const startDrag = (e, mode) => {
             e.stopPropagation();
             if (e.cancelable && e.preventDefault) e.preventDefault();
+            if (mode === 'move' && lastPress.clipId === clip.id && Date.now() - lastPress.at < DOUBLE_TAP_MS) {
+                lastPress = { clipId: null, at: 0 };
+                deleteClip(clip.id);
+                return;
+            }
             const origin = pointer(e);
             let moved = false;
+            let hold = null;
+            const detach = () => {
+                if (hold) { clearTimeout(hold); hold = null; }
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', finish);
+                document.removeEventListener('touchmove', onMove);
+                document.removeEventListener('touchend', finish);
+                document.removeEventListener('touchcancel', cancel);
+            };
             const onMove = (ev) => {
                 const pt = pointer(ev);
                 const dx = pt.x - origin.x;
+                const dy = pt.y - origin.y;
+                if (!moved && Math.abs(dx) < DRAG_THRESHOLD && Math.abs(dy) < DRAG_THRESHOLD) return;
+                if (hold) { clearTimeout(hold); hold = null; }   // it moved: a drag, not a hold
                 if (!moved && Math.abs(dx) < DRAG_THRESHOLD) return;
                 moved = true;
                 const dm = Math.round(dx / MEASURE_W);
@@ -488,12 +518,13 @@ export function createSongEditor(opts = {}) {
                 }
             };
             const finish = (ev) => {
-                document.removeEventListener('mousemove', onMove);
-                document.removeEventListener('mouseup', finish);
-                document.removeEventListener('touchmove', onMove);
-                document.removeEventListener('touchend', finish);
-                document.removeEventListener('touchcancel', cancel);
-                if (!moved) return;
+                detach();
+                if (!moved) {
+                    // A tap. Only a tap arms the double-tap: re-grabbing a
+                    // clip right after dragging it must not remove it.
+                    if (mode === 'move') lastPress = { clipId: clip.id, at: Date.now() };
+                    return;
+                }
                 const dm = Math.round((pointer(ev).x - origin.x) / MEASURE_W);
                 selectedClipId = clip.id;
                 if (mode === 'move') {
@@ -507,13 +538,17 @@ export function createSongEditor(opts = {}) {
                 }
             };
             const cancel = () => {
-                document.removeEventListener('mousemove', onMove);
-                document.removeEventListener('mouseup', finish);
-                document.removeEventListener('touchmove', onMove);
-                document.removeEventListener('touchend', finish);
-                document.removeEventListener('touchcancel', cancel);
+                detach();
                 render();
             };
+            if (mode === 'move') {
+                hold = setTimeout(() => {
+                    hold = null;
+                    detach();
+                    lastPress = { clipId: null, at: 0 };   // the release must not count as a second tap
+                    openClip(clip.id);
+                }, LONG_PRESS_MS);
+            }
             document.addEventListener('mousemove', onMove);
             document.addEventListener('mouseup', finish);
             document.addEventListener('touchmove', onMove, { passive: false });

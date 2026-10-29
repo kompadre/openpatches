@@ -145,6 +145,15 @@ function initMidiUi() {
     }
     midiManager.setOnStatusChange(updateMidiStatus);
 
+    // Someone who enabled MIDI before gets it back without opening the
+    // settings again — including the SysEx tier when auditioning is on.
+    midiManager.resumeIfEnabled().then((ok) => {
+        if (!ok) return;
+        const out = midiManager.getOutputPort();
+        appendLog('MIDI restored' + (midiManager.hasSysex() ? ' (with SysEx)' : '')
+            + (out ? ' — ' + out.name : ''));
+    });
+
     // A page teardown or a backgrounded tab must not leave notes ringing on
     // hardware — the user has no way to silence it from here afterwards.
     window.addEventListener('pagehide', () => midiManager.panic());

@@ -1,6 +1,8 @@
 // MIDI Manager — singleton Web MIDI access.
 // Mirrors audio-manager.js: one lazily-created access object, live for the
-// page lifetime, never requested until a feature actually needs it.
+// page lifetime, never requested until a feature actually needs it — except
+// that once the user has enabled MIDI, later page loads re-request it at
+// startup (resumeIfEnabled) so the device is live without a trip to settings.
 //
 // Permission tiers. Chrome treats {sysex:false} and {sysex:true} as two
 // separate permissions and prompts for each, so we request the weakest tier a
@@ -54,6 +56,7 @@ let sysexEnabled = false;   // whether `access` was granted with sysex
 let requestPromise = null;  // in-flight requestMIDIAccess
 let requestGeneration = 0;  // guards against an older request resolving last
 let state = 'closed';       // closed | requesting | ready | denied | unsupported
+let everEnabled = false;    // persisted: a grant was held once, so re-request on load
 
 let selectedInputId = null;
 let selectedOutputId = null;
@@ -144,6 +147,10 @@ export async function requestMidi({ sysex = false } = {}) {
         access = granted;
         sysexEnabled = sysex;
         requestPromise = null;
+        if (!everEnabled) {
+            everEnabled = true;
+            saveState();
+        }
         granted.onstatechange = handleStateChange;
         // The new access exposes *different* port objects, so any existing
         // onmidimessage handler is sitting on a now-orphaned port. The
@@ -162,6 +169,30 @@ export async function requestMidi({ sysex = false } = {}) {
     p._sysex = sysex;
     requestPromise = p;
     return p;
+}
+
+/**
+ * Re-request access on page load if the user enabled MIDI in a previous
+ * session. The browser remembers the permission per origin, so this resolves
+ * without a prompt — and without a user gesture. Asked at the tier the saved
+ * settings need (SysEx when auditioning is on), which is what used to be
+ * "lost" on every reload: the permission was never asked for again.
+ *
+ * Failure is silent and leaves the state `closed`, not `denied`: a prompt
+ * the browser refused to show outside a gesture is not a refusal by the
+ * user, and the Enable button must still be offered.
+ *
+ * @returns {Promise<boolean>} whether access is held afterwards
+ */
+export async function resumeIfEnabled() {
+    if (!everEnabled || !isSupported() || access) return !!access;
+    try {
+        await requestMidi({ sysex: auditionEnabled });
+        return true;
+    } catch {
+        if (!access && state === 'denied') setState('closed');
+        return false;
+    }
 }
 
 function handleStateChange() {
@@ -787,6 +818,7 @@ function saveState() {
             auditionEnabled,
             outputLatencyMs,
             deviceType,
+            enabled: everEnabled,
             names,
         }));
     } catch (e) {
@@ -812,6 +844,7 @@ function initFromStorage() {
     if (Number.isInteger(saved.inputChannel)) inputChannel = saved.inputChannel;
     if (saved.outputMode === 'midi' || saved.outputMode === 'both') outputMode = saved.outputMode;
     auditionEnabled = !!saved.auditionEnabled;
+    everEnabled = !!saved.enabled;
     deviceType = isDeviceType(saved.deviceType) ? saved.deviceType : DEVICE_TYPE_AUTO;
     outputLatencyMs = DEFAULT_OUTPUT_LATENCY_MS;
     if (Number.isFinite(saved.outputLatencyMs)) {
@@ -850,6 +883,7 @@ export function _reset() {
     inputChannel = -1;
     outputMode = 'internal';
     auditionEnabled = false;
+    everEnabled = false;
     outputLatencyMs = DEFAULT_OUTPUT_LATENCY_MS;
     deviceType = DEVICE_TYPE_AUTO;
     lastAuditionVoice = null;
