@@ -64,6 +64,7 @@ const HEADER_H = 14; // reserved for measure numbers above grid
 
 const STORAGE_KEY = 'openpatches_pianoroll';
 const DEFAULT_BPM = 120;
+const PLAYHEAD_COLOR = '#ff3b3b';
 const DEFAULT_COLORS = ['#e94560', '#4caf50', '#2196f3', '#ff9800', '#9c27b0', '#00bcd4', '#ff5722', '#607d8b'];
 
 export function createPianoroll(opts) {
@@ -72,11 +73,21 @@ export function createPianoroll(opts) {
     let measures = 1;
     const CANVAS_H = HEADER_H + NOTES.length * ROW_H;
     let looping = false;
+    // Scroll the view to keep the playhead in sight while playing/recording.
+    // Off by default: every tick then costs a full redraw of a double-wide
+    // canvas plus a scrollLeft write (forced layout), which lags badly on
+    // slower machines. With it off the canvas stays single-width, the user
+    // owns the scroll position and the red playhead shows where we are.
+    let followPlayhead = false;
+    let recordingActive = false;   // between startRecording() and stopRecording()
 
     function totalCols() { return measures * COLS_PER_MEASURE; }
     function gridWidth() { return totalCols() * COL_W; }
     function baseWidth() { return LABEL_W + gridWidth(); }
-    function canvasWidth() { return looping ? LABEL_W + gridWidth() * 2 : baseWidth(); }
+    // The second copy of the grid exists only so the follow-scroll can run
+    // seamlessly past the loop seam; without follow it is pure overhead.
+    function doubleWide() { return looping && followPlayhead; }
+    function canvasWidth() { return doubleWide() ? LABEL_W + gridWidth() * 2 : baseWidth(); }
 
     // --- Helpers to look up voice bank data by slot ---
     function getSlotData(slot) {
@@ -127,6 +138,15 @@ export function createPianoroll(opts) {
     bpmInput.step = '1';
     controls.appendChild(bpmInput);
 
+    const FOLLOW_LABEL = '\u21E5 Follow';
+    const FOLLOW_TITLE = 'Scroll the roll to keep the playhead in view while playing. ' +
+        'Off by default: it costs a lot of redrawing on slower machines.';
+    const followBtn = document.createElement('button');
+    followBtn.className = 'pianoroll-btn pianoroll-follow';
+    followBtn.textContent = FOLLOW_LABEL;
+    followBtn.title = FOLLOW_TITLE;
+    controls.appendChild(followBtn);
+
     // Desktop clear button (also in moreMenu for mobile)
     const clearBtnDesktop = document.createElement('button');
     clearBtnDesktop.className = 'pianoroll-btn pianoroll-clear-desktop';
@@ -148,6 +168,12 @@ export function createPianoroll(opts) {
     clearBtn.className = 'pianoroll-btn';
     clearBtn.textContent = '\u{1F9F9} Clear';
     moreMenu.appendChild(clearBtn);
+
+    const followBtnMobile = document.createElement('button');
+    followBtnMobile.className = 'pianoroll-btn pianoroll-follow';
+    followBtnMobile.textContent = FOLLOW_LABEL;
+    followBtnMobile.title = FOLLOW_TITLE;
+    moreMenu.appendChild(followBtnMobile);
 
     const addMeasureBtnMobile = document.createElement('button');
     addMeasureBtnMobile.className = 'pianoroll-btn';
@@ -255,6 +281,19 @@ export function createPianoroll(opts) {
         saveState();
     });
 
+    function setFollowPlayhead(on) {
+        followPlayhead = !!on;
+        followBtn.classList.toggle('active', followPlayhead);
+        followBtnMobile.classList.toggle('active', followPlayhead);
+        // Switching off mid-loop can leave the view parked in the second
+        // copy of the grid, which is about to disappear.
+        if (!followPlayhead) scroll.scrollLeft = scroll.scrollLeft % gridWidth();
+        draw();
+        saveState();
+    }
+    followBtn.addEventListener('click', () => setFollowPlayhead(!followPlayhead));
+    followBtnMobile.addEventListener('click', () => setFollowPlayhead(!followPlayhead));
+
     addMeasureBtnMobile.addEventListener('click', () => addMeasureBtn.click());
     cloneMeasureBtnMobile.addEventListener('click', () => cloneMeasureBtn.click());
     removeMeasureBtnMobile.addEventListener('click', () => removeMeasureBtn.click());
@@ -298,6 +337,7 @@ export function createPianoroll(opts) {
                 notes: notes.map(n => ({ midi: n.midi, start: n.start, dur: n.dur, slot: n.slot })),
                 bpm: parseInt(bpmInput.value) || DEFAULT_BPM,
                 measures,
+                followPlayhead,
             };
             localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
         } catch (e) { /* ignore */ }
@@ -319,13 +359,22 @@ export function createPianoroll(opts) {
                 }
             }
             if (data.bpm) bpmInput.value = String(Math.max(32, Math.min(255, data.bpm)));
+            if (data.followPlayhead === true) {
+                followPlayhead = true;
+                followBtn.classList.add('active');
+                followBtnMobile.classList.add('active');
+            }
             updateMeasureButtons();
         } catch (e) { /* ignore */ }
     }
 
     // --- Drawing ---
     function resizeCanvas() {
-        canvas.width = canvasWidth();
+        // Assigning canvas.width — even to the same value — resets the
+        // context and reallocates the backing store; at tick rate that is a
+        // measurable part of the per-frame cost, so only do it on change.
+        const w = canvasWidth();
+        if (canvas.width !== w) canvas.width = w;
     }
 
     // --- Drawing helpers (parameterized by context and offset) ---
@@ -467,11 +516,20 @@ export function createPianoroll(opts) {
             }
         }
 
-        // Playback cursor
+        // Playhead: a red line at the leading edge of the current column,
+        // with a marker in the header so it reads even over dense notes.
+        // Deliberately high-contrast — with follow-scroll off this is the
+        // only thing telling the user where playback is.
         if (playCol >= 0) {
             const x = ox + LABEL_W + playCol * COL_W;
-            ctx.fillStyle = 'rgba(255,255,255,0.15)';
-            ctx.fillRect(x, HEADER_H, COL_W, CANVAS_H - HEADER_H);
+            ctx.fillStyle = PLAYHEAD_COLOR;
+            ctx.fillRect(x - 1, 0, 2, CANVAS_H);
+            ctx.beginPath();
+            ctx.moveTo(x - 5, 0);
+            ctx.lineTo(x + 5, 0);
+            ctx.lineTo(x, HEADER_H - 4);
+            ctx.closePath();
+            ctx.fill();
         }
 
         // Drag preview
@@ -500,7 +558,7 @@ export function createPianoroll(opts) {
         drawGrid(ctx, 0);
         drawNotes(ctx, 0);
 
-        if (looping) {
+        if (doubleWide()) {
             drawGrid(ctx, gridWidth());
             drawNotes(ctx, gridWidth());
         }
@@ -1016,7 +1074,7 @@ export function createPianoroll(opts) {
         if (playing) stopPlayback();
         // While recording, the worker is already ticking for the recorder;
         // starting playback on top would route its ticks to the wrong handler.
-        if (recordingTickHandler) return;
+        if (recordingActive || recordingTickHandler) return;
         if (notes.length === 0) return;
 
         playing = true;
@@ -1028,7 +1086,9 @@ export function createPianoroll(opts) {
 
         const bpm = Math.max(32, Math.min(255, parseInt(bpmInput.value) || 120));
         draw();
-        scroll.scrollLeft = LABEL_W;
+        // Without follow the user owns the scroll position; yanking it to
+        // the start on Play would undo whatever they were looking at.
+        if (followPlayhead) scroll.scrollLeft = LABEL_W;
 
         if (opts.startWorker) {
             opts.startWorker(opts.tickWorker, bpm, 0);
@@ -1088,6 +1148,7 @@ export function createPianoroll(opts) {
         playCol = wrappedCol;
         draw();
 
+        if (!followPlayhead) return;
         // Recompute each tick — measures can change after construction (loadState, +/- Msr)
         const gw = gridWidth();
         const scrollX = LABEL_W + playCol * COL_W;
@@ -1164,6 +1225,16 @@ export function createPianoroll(opts) {
         startPlayback,
         stopPlayback,
         isPlaying() { return playing; },
+        isFollowing() { return followPlayhead; },
+        setFollowPlayhead,
+        /**
+         * Place a caller-owned button in the transport row, right after
+         * Stop. The toolbar uses this for Record: its logic lives there,
+         * but on desktop the piano roll's row is the only visible transport.
+         */
+        insertControl(el) {
+            controls.insertBefore(el, stopBtn.nextSibling);
+        },
         setActiveSlot(slot) {
             opts.activeSlot = slot;
             draw();
@@ -1204,6 +1275,9 @@ export function createPianoroll(opts) {
             }
         },
         scrollToCol(col) {
+            // The recorder calls this every tick; it is the recording-side
+            // twin of the follow-scroll in handlePlaybackTick.
+            if (!followPlayhead) return;
             if (!looping) {
                 const x = LABEL_W + col * COL_W;
                 scroll.scrollTo({
@@ -1217,13 +1291,19 @@ export function createPianoroll(opts) {
             scroll.scrollLeft = target;
         },
         startRecording() {
+            recordingActive = true;
             looping = true;
             playCol = 0;
+            // Play is a silent no-op while the recorder owns the worker;
+            // say so instead of leaving a live-looking button.
+            playBtn.disabled = true;
             draw();
         },
         stopRecording() {
+            recordingActive = false;
             looping = false;
             playCol = -1;
+            playBtn.disabled = false;
             recordingTickHandler = null;
             for (const n of notes) delete n._recordedInSession;
             scroll.scrollLeft = scroll.scrollLeft % gridWidth();
@@ -1256,6 +1336,37 @@ export function createPianoroll(opts) {
         },
         getNotes() { return notes; },
         getBpm() { return parseInt(bpmInput.value) || DEFAULT_BPM; },
+        /** Sequencer state as plain data, for the song store. */
+        getSong() {
+            return {
+                notes: notes.map(n => ({ midi: n.midi, start: n.start, dur: n.dur, slot: n.slot })),
+                bpm: parseInt(bpmInput.value) || DEFAULT_BPM,
+                measures,
+            };
+        },
+        /**
+         * Replace the sequencer state wholesale. Validates like loadState()
+         * — the data comes from storage and may be stale or hand-edited.
+         */
+        loadSong(song) {
+            if (playing) stopPlayback();
+            const data = song || {};
+            measures = Number.isInteger(data.measures) && data.measures >= 1 ? data.measures : 1;
+            notes.length = 0;
+            for (const n of Array.isArray(data.notes) ? data.notes : []) {
+                if (n && typeof n.midi === 'number' && typeof n.start === 'number' && typeof n.dur === 'number') {
+                    notes.push({ midi: n.midi, start: n.start, dur: n.dur, slot: n.slot != null ? n.slot : 0 });
+                }
+            }
+            const bpm = parseInt(data.bpm);
+            bpmInput.value = String(Number.isFinite(bpm) ? Math.max(32, Math.min(255, bpm)) : DEFAULT_BPM);
+            updateMeasureButtons();
+            scroll.scrollLeft = 0;
+            draw();
+            renderLegend();
+            if (onNotesChange) onNotesChange();
+            saveState();
+        },
         totalCols() { return totalCols(); },
         renderLegend,
         saveState,

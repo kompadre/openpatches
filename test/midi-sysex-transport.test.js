@@ -87,9 +87,10 @@ describe('receiveBank', () => {
     });
 
     test('times out with guidance for synths that ignore dump requests', async () => {
+        // Default fixture port is "Out A" → generic profile.
         await assert.rejects(
             () => midi.receiveBank({ timeoutMs: 60 }),
-            /Timed out waiting for the device/,
+            /Timed out waiting for Generic DX7-compatible to send its bank\. If nothing arrives/,
         );
     });
 
@@ -118,6 +119,108 @@ describe('receiveBank', () => {
         await p;
         inp().receive([0xF0, 0x7E, 0x00, 0xF7]);
         assert.equal(seen.length, 1, 'later SysEx is passed through, not collected');
+    });
+});
+
+describe('device profiles shape the transport', () => {
+    // Re-enter the fixture with an output port of the given name, so the
+    // auto-detection has something to work with.
+    async function withDevice(name) {
+        midi._reset();
+        stub = installMidiStub({ outputs: [name] });
+        await midi.requestMidi({ sysex: true });
+        midi.setSelectedInput('in0');
+        midi.setSelectedOutput('out0');
+        out().sent.length = 0;
+    }
+    const sysexSent = () => out().sent.filter(s => s[0][0] === 0xF0);
+
+    test('auto-detects from the output port name; an explicit choice overrides it', async () => {
+        await withDevice('Dexed');
+        assert.equal(midi.getDeviceType(), 'auto');
+        assert.equal(midi.getResolvedDeviceType(), 'dexed');
+        assert.equal(midi.getDeviceProfile().name, 'Dexed');
+
+        midi.setDeviceType('dx7');
+        assert.equal(midi.getResolvedDeviceType(), 'dx7');
+        midi.setDeviceType('nonsense');
+        assert.equal(midi.getDeviceType(), 'dx7', 'unknown ids are ignored');
+        midi.setDeviceType('auto');
+        assert.equal(midi.getResolvedDeviceType(), 'dexed');
+    });
+
+    test('an unrecognised port name resolves to the generic profile', async () => {
+        await withDevice('UM-ONE');
+        assert.equal(midi.getResolvedDeviceType(), 'generic');
+    });
+
+    test('the choice is persisted, and a corrupt value falls back to auto', async () => {
+        midi.setDeviceType('volcafm');
+        assert.equal(JSON.parse(localStorage.getItem('openpatches_midi')).deviceType, 'volcafm');
+        midi._reset();
+        assert.equal(midi.getDeviceType(), 'volcafm');
+        localStorage.setItem('openpatches_midi', JSON.stringify({ deviceType: 'bogus' }));
+        midi._reset();
+        assert.equal(midi.getDeviceType(), 'auto');
+    });
+
+    test('the remembered port name resolves the profile before MIDI is enabled this session', async () => {
+        await withDevice('Korg volca fm');
+        midi._reset();                       // fresh page: settings restored, no access yet
+        assert.equal(midi.getOutputPort(), null);
+        assert.equal(midi.getResolvedDeviceType(), 'volcafm',
+            'the send-bank confirm dialog runs before the permission prompt and must already be right');
+    });
+
+    test('DX7 Mk I: no dump request is sent, but the bank is still received', async () => {
+        await withDevice('Yamaha DX7');
+        const p = midi.receiveBank({ timeoutMs: 2000 });
+        assert.deepEqual(sysexSent(), [], 'the Mk I ignores the request; asking is noise');
+        inp().receive(demo);
+        assert.deepEqual([...(await p)], [...demo]);
+    });
+
+    test('DX7 II: the dump request goes out', async () => {
+        await withDevice('DX7II');
+        const p = midi.receiveBank({ timeoutMs: 2000 });
+        assert.deepEqual(sysexSent()[0][0], [0xF0, 0x43, 0x20, 0x09, 0xF7]);
+        inp().receive(demo);
+        await p;
+    });
+
+    test('the DX7 timeout says which device and what to press', async () => {
+        await withDevice('DX7');
+        await assert.rejects(
+            () => midi.receiveBank({ timeoutMs: 60 }),
+            /Timed out waiting for Yamaha DX7 \(Mk I\) to send its bank\. On a DX7 Mk I, start the transfer from the front panel/,
+        );
+    });
+
+    for (const [port, id] of [['Korg volca fm', 'volcafm'], ['Dexed', 'dexed']]) {
+        test(`${id}: receiveBank refuses up front with the profile's reason, sending nothing`, async () => {
+            await withDevice(port);
+            await assert.rejects(() => midi.receiveBank({ timeoutMs: 2000 }),
+                new RegExp(midi.getDeviceProfile().bankReceive.reason.slice(0, 30).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+            assert.deepEqual(out().sent, [], 'no request, no half-started receive');
+            // and the input is not left hijacked by a collector
+            const seen = [];
+            midi.setOnMidiMessage(e => seen.push([...e.data]));
+            inp().receive([0xF0, 0x7E, 0x00, 0xF7]);
+            assert.equal(seen.length, 1);
+        });
+    }
+
+    test('the refusal does not depend on an input being selected', async () => {
+        await withDevice('Dexed');
+        midi.setSelectedInput(null);
+        await assert.rejects(() => midi.receiveBank({ timeoutMs: 2000 }), /Cart manager/,
+            'the device-level reason, not the missing-input one');
+    });
+
+    test('a receive-only device still accepts a bank', async () => {
+        await withDevice('Korg volca fm');
+        await midi.sendBank(demo);
+        assert.equal(sysexSent().length, 1);
     });
 });
 

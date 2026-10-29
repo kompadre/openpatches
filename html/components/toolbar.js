@@ -3,6 +3,7 @@
 // Replaces piano-dock.js. Pianoroll/Log logic moved here; Edit tab delegates to edit-panel.js.
 
 import { createPianoroll } from './pianoroll.js';
+import { createSongBar } from './song-bar.js';
 import { createVoiceBank } from './voicebank.js';
 import { createEditPanel } from './edit-panel.js';
 // Namespaced as midiManager, not midi: `midi` is the note-number parameter
@@ -251,6 +252,32 @@ export function createToolbar(opts) {
         const initSlot = entries.indexOf(initActive);
         if (initSlot >= 0) pianorollRef.setActiveSlot(initSlot);
     }
+    // --- Song bar (top) ---
+    // A song is the piano roll plus the voice bank's slots: the notes only
+    // mean something with the sounds they were written for.
+    const songBar = createSongBar({
+        getSong: () => ({
+            ...pianorollRef.getSong(),
+            slots: (voiceBank._getEntries ? voiceBank._getEntries() : [])
+                .filter(Boolean)
+                .map(e => ({
+                    name: e.name,
+                    patchId: e.patchId,
+                    volume: e.volume,
+                    // Typed arrays do not survive JSON; plain arrays do.
+                    voiceData: e.voiceData instanceof Uint8Array ? Array.from(e.voiceData) : e.voiceData,
+                })),
+        }),
+        loadSong: (song) => {
+            // Loading over a running take or playback would leave notes
+            // sounding and the worker ticking for the old pattern.
+            stopAll();
+            if (voiceBank._setEntries) voiceBank._setEntries(song.slots || []);
+            pianorollRef.loadSong(song);
+        },
+        log: opts.appendLog || (() => {}),
+    });
+    pianorollPanel.appendChild(songBar);
     pianorollPanel.appendChild(pianorollRow);
 
     // --- Recording controls (middle section) ---
@@ -260,6 +287,23 @@ export function createToolbar(opts) {
     const btnRecord = document.createElement('button');
     btnRecord.className = 'kb-btn kb-btn-record';
     btnRecord.textContent = 'Record ●';
+
+    // The kb-controls row above is mobile-only (hidden on desktop by CSS),
+    // which is how Record disappeared from desktop. The piano roll's own
+    // transport row is what desktop users see, so a second button lives
+    // there; both drive the same toggleRecording() below.
+    const btnRecordDesktop = document.createElement('button');
+    btnRecordDesktop.className = 'pianoroll-btn pianoroll-record';
+    btnRecordDesktop.textContent = '\u25CF Rec';
+    btnRecordDesktop.title = 'Record from the on-screen keyboard or a MIDI controller into the piano roll';
+    if (pianorollRef && pianorollRef.insertControl) pianorollRef.insertControl(btnRecordDesktop);
+
+    function syncRecordButtons() {
+        btnRecord.classList.toggle('active', recording);
+        btnRecord.textContent = recording ? 'Stop ■' : 'Record ●';
+        btnRecordDesktop.classList.toggle('active', recording);
+        btnRecordDesktop.textContent = recording ? '\u25A0 Stop Rec' : '\u25CF Rec';
+    }
 
     const btnPlayStop = document.createElement('button');
     btnPlayStop.className = 'kb-btn kb-btn-play';
@@ -462,8 +506,7 @@ export function createToolbar(opts) {
         heldNotes.clear();
         recording = false;
         undoStack.length = 0;
-        btnRecord.classList.remove('active');
-        btnRecord.textContent = 'Record ●';
+        syncRecordButtons();
         btnPlayStop.textContent = 'Play ▶';
         btnPlayStop.classList.remove('active');
         if (opts.stopWorker) {
@@ -475,7 +518,7 @@ export function createToolbar(opts) {
         if (pianorollRef && pianorollRef.stopPlayback) pianorollRef.stopPlayback();
     }
 
-    btnRecord.addEventListener('click', () => {
+    function toggleRecording() {
         if (recording) {
             stopAll();
         } else {
@@ -486,8 +529,7 @@ export function createToolbar(opts) {
             }
             recording = true;
             recordStartTime = performance.now();
-            btnRecord.classList.add('active');
-            btnRecord.textContent = 'Stop ■';
+            syncRecordButtons();
             btnPlayStop.textContent = 'Stop ■';
             undoStack.length = 0;
             if (pianorollRef && pianorollRef.startRecording) pianorollRef.startRecording();
@@ -526,7 +568,10 @@ export function createToolbar(opts) {
                 opts.tickWorker.postMessage({ type: 'start', bpm: bpm, startCol: 0 });
             }
         }
-    });
+    }
+
+    btnRecord.addEventListener('click', toggleRecording);
+    btnRecordDesktop.addEventListener('click', toggleRecording);
 
     btnPlayStop.addEventListener('click', () => {
         if (recording || (pianorollRef && pianorollRef.isPlaying && pianorollRef.isPlaying())) {
@@ -608,7 +653,37 @@ export function createToolbar(opts) {
 
     rebuildKeyboard();
 
-    pianorollPanel.appendChild(kb);
+    // Collapsible: the keys and the octave row sit in a wrapper that a thin
+    // header bar toggles. The wrapper is what gets hidden — the mobile
+    // stylesheet forces `.keyboard` to display:flex !important, so hiding
+    // the keyboard element itself would not take.
+    const KB_COLLAPSED_KEY = 'openpatches_kb_collapsed';
+    const kbWrapper = document.createElement('div');
+    kbWrapper.className = 'keyboard-wrapper';
+
+    const kbToggle = document.createElement('button');
+    kbToggle.className = 'kb-toggle';
+    kbToggle.title = 'Show or hide the on-screen keyboard';
+
+    function setKeyboardCollapsed(collapsed, { persist = true } = {}) {
+        kbWrapper.classList.toggle('collapsed', collapsed);
+        kbToggle.classList.toggle('collapsed', collapsed);
+        kbToggle.textContent = (collapsed ? '\u25B8' : '\u25BE') + ' Keyboard';
+        kbToggle.setAttribute('aria-expanded', String(!collapsed));
+        if (persist) {
+            try { localStorage.setItem(KB_COLLAPSED_KEY, collapsed ? '1' : '0'); } catch { /* private mode */ }
+        }
+        // Black keys are positioned from measured widths, which are zero
+        // while hidden — re-measure once the keys are visible again.
+        if (!collapsed) requestAnimationFrame(positionBlackKeys);
+    }
+    kbToggle.addEventListener('click', () => {
+        setKeyboardCollapsed(!kbWrapper.classList.contains('collapsed'));
+    });
+
+    pianorollPanel.appendChild(kbToggle);
+    kbWrapper.appendChild(kb);
+    pianorollPanel.appendChild(kbWrapper);
 
     // Octave selector (mobile)
     let octaveBtns = [];
@@ -627,8 +702,12 @@ export function createToolbar(opts) {
             octaveBtns.push(btn);
             octaveRow.appendChild(btn);
         }
-        pianorollPanel.appendChild(octaveRow);
+        kbWrapper.appendChild(octaveRow);
     }
+
+    let kbStartCollapsed = false;
+    try { kbStartCollapsed = localStorage.getItem(KB_COLLAPSED_KEY) === '1'; } catch { /* private mode */ }
+    setKeyboardCollapsed(kbStartCollapsed, { persist: false });
 
     // Position black keys absolutely over white keys (mobile layout)
     function positionBlackKeys() {
@@ -691,5 +770,8 @@ export function createToolbar(opts) {
     wrapper._showEdit = () => { expandDock(); activateTab(tabEdit, editPanel); };
     wrapper._showLog = () => { expandDock(); activateTab(tabLog, logPanel); };
     wrapper._logPanel = logPanel;
+    wrapper._songBar = songBar;
+    wrapper._setKeyboardCollapsed = setKeyboardCollapsed;
+    wrapper._isKeyboardCollapsed = () => kbWrapper.classList.contains('collapsed');
     return wrapper;
 }

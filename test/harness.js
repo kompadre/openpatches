@@ -2,13 +2,26 @@
 // Deliberately dependency-free (matching the rest of the project) — this implements
 // only the surface the components actually touch, not a general-purpose DOM.
 
-// --- Canvas 2D context: accept every call, record nothing ---
+// --- Canvas 2D context: accept every call, log it in `_calls` ---
+//
+// Each method call is recorded as { fn, args, fillStyle, strokeStyle } with
+// the style in force at the time, so a test can ask "was a red rect drawn at
+// x?" without a real canvas. Tests that care should clear `_calls` before
+// the draw they want to inspect.
 
 function makeCtx2d() {
-    return new Proxy({}, {
+    const target = { _calls: [] };
+    return new Proxy(target, {
         get(target, prop) {
             if (prop in target) return target[prop];
-            return () => {};
+            return (...args) => {
+                target._calls.push({
+                    fn: prop,
+                    args,
+                    fillStyle: target.fillStyle,
+                    strokeStyle: target.strokeStyle,
+                });
+            };
         },
         set(target, prop, value) {
             target[prop] = value;
@@ -118,6 +131,19 @@ class StubElement {
         for (const fn of this.listeners[type] || []) fn({ type, target: this, ...event });
     }
 
+    get nextSibling() {
+        const p = this.parentNode;
+        if (!p) return null;
+        const i = p.children.indexOf(this);
+        return i >= 0 ? (p.children[i + 1] || null) : null;
+    }
+
+    scrollTo(xOrOpts, y) {
+        const o = typeof xOrOpts === 'object' && xOrOpts ? xOrOpts : { left: xOrOpts, top: y };
+        if (o.left != null) this.scrollLeft = o.left;
+        if (o.top != null) this.scrollTop = o.top;
+    }
+
     getBoundingClientRect() {
         return {
             left: 0, top: 0,
@@ -156,6 +182,11 @@ class StubElement {
 
     contains(node) { return node === this || this._walk().includes(node); }
     focus() {}
+
+    setAttribute(name, value) { (this._attrs = this._attrs || {})[name] = String(value); }
+    getAttribute(name) { return this._attrs && name in this._attrs ? this._attrs[name] : null; }
+    removeAttribute(name) { if (this._attrs) delete this._attrs[name]; }
+    hasAttribute(name) { return !!this._attrs && name in this._attrs; }
 }
 
 // --- localStorage ---

@@ -3,6 +3,9 @@
 // handlePlaybackTick used to wrap against a `gridWidth()` captured once at
 // construction — before loadState() restored a multi-measure pattern, and never
 // updated by the +/− Msr buttons. The playhead then wrapped a measure early.
+//
+// Follow-scroll is opt-in (off by default, see pianoroll-playhead.test.js),
+// so these fixtures restore it switched on.
 
 import { test, before, beforeEach, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -31,7 +34,7 @@ function makeTickWorker() {
 }
 
 function build({ measures = 1, notes = [] } = {}) {
-    localStorage.setItem('openpatches_pianoroll', JSON.stringify({ measures, notes, bpm: 120 }));
+    localStorage.setItem('openpatches_pianoroll', JSON.stringify({ measures, notes, bpm: 120, followPlayhead: true }));
     const tickWorker = makeTickWorker();
     const roll = createPianoroll({
         playNoteFn: () => {},

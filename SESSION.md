@@ -94,6 +94,91 @@ only when a feature needs it, and SysEx is a separate upgrade on top.
   switched on, or the prompt dismissed). `refresh()` re-syncs the checkbox
   from `getAuditionEnabled()` so the UI cannot drift from the real state.
   `test/midi-panel-permissions.test.js`.
+- [x] **Desktop Record + playback view (2026-10-28).** The `kb-controls` row
+  (Undo / Record / Play / voice) is mobile-only — `display:none` outside the
+  600 px media query — which is how Record vanished from desktop. A second
+  button, `.pianoroll-record`, now lives in the piano roll's own transport
+  row (Play · Stop · Rec) via the new `pianorollRef.insertControl(el)`; both
+  buttons call one `toggleRecording()` and `syncRecordButtons()` keeps their
+  labels/`active` state in step. `startRecording()` disables the roll's Play
+  (and `startPlayback()` now guards on the roll's own `recordingActive`, not
+  only the toolbar-installed tick handler). **Follow-scroll is opt-in and off
+  by default** (`followPlayhead`, persisted in the pianoroll storage blob,
+  `.pianoroll-follow` button in the transport row + a copy in the mobile
+  more-menu, `setFollowPlayhead()`/`isFollowing()`): with it off the canvas is
+  single-width (`doubleWide()` = `looping && followPlayhead`), Play does not
+  rewind the view, ticks never write `scrollLeft`, and the recorder's
+  `scrollToCol()` is a no-op. `resizeCanvas()` only assigns `canvas.width`
+  when it changes (the assignment resets the context and reallocates the
+  backing store every tick). The playhead is a 2 px `#ff3b3b` line with a
+  header triangle, drawn once per grid copy. **Keyboard is collapsible:** a
+  `.kb-toggle` header bar folds `.keyboard-wrapper` (keys + mobile octave
+  row), persisted under `openpatches_kb_collapsed`; the wrapper is hidden
+  rather than `.keyboard` because the mobile stylesheet forces the latter to
+  `display:flex !important`. Harness gained `_calls` on the 2D context,
+  `setAttribute`/`getAttribute`, `nextSibling` and `scrollTo`.
+  `test/pianoroll-playhead.test.js`, `test/toolbar-record-keyboard.test.js`;
+  `test/pianoroll-loop-scroll.test.js` fixtures now restore `followPlayhead:
+  true`.
+- [x] **Songs (2026-10-28).** `songStore` in patch-model.js
+  (`openpatches_songs`, keyed by trimmed name; `list/has/get/create/remove`;
+  `create()` **never overwrites** — a collision throws `'Song exists'`, which
+  the UI shows verbatim; a JSON replacer flattens typed arrays). A song =
+  `pianorollRef.getSong()` (notes, bpm, measures) + the voice bank's slots
+  (name, patchId, volume, voiceData) — notes reference slots by index, so
+  the sounds travel with them. UI is `html/components/song-bar.js`, mounted
+  by the toolbar at the top of the piano roll panel: `Song:` + text input +
+  one button whose meaning follows the state. **Typing:** button = Save
+  (disabled while empty; Enter saves); a taken name → status "Song exists".
+  **Loaded** (after Save, or after picking a name from the dropdown): input
+  disabled showing the name, button = Delete (title "Delete song", confirm,
+  then the name is handed back editable), plus a small ✕ that detaches
+  (keeps the notes, drops the name) so the user can save under a new name —
+  there is no save-back-over by design. The dropdown is a custom
+  `.song-suggest` list, not a `<datalist>`: picking a name loads, typing the
+  identical name does not, and a datalist cannot tell those apart.
+  Suggestion items `preventDefault()` on mousedown so the input's blur does
+  not hide the list before the click lands. Loading goes through the
+  toolbar's `stopAll()` first, then `voiceBank._setEntries(slots)` (fresh
+  ids, index colors, first slot active, snapshot pushed to the synth), then
+  `pianorollRef.loadSong()` (validates like `loadState`, stops playback,
+  rewinds the scroll, persists). Toolbar takes `opts.appendLog` now; app.js
+  passes it. `test/song-store.test.js`, `test/song-bar.test.js`.
+- [x] **MIDI device profiles (2026-10-28) — first cut.** `html/synth/midi-devices.js`
+  is a data table of what differs between DX7-dialect synths: `generic`,
+  `dx7` (Mk I, also TX7), `dx7ii` (II-D/II-FD/DX7s/TX802), `dexed`, `volcafm`.
+  Per profile: `bankSend {supported, target, memoryProtect|null}`,
+  `bankReceive {supported, dumpRequest, manualHint, reason}`, `programCount`,
+  `polyphony`, `velocity`, `multitimbral`, `editBufferNote`,
+  `sysexChannelNote`, `notes[]`. Facts encoded: the **Mk I ignores dump
+  requests** (front panel: Function › 8 › MIDI › Transmit) and has memory
+  protect; the **II-series answers dump requests**; **Dexed and the volca fm
+  are receive-only** (no dump request, cannot transmit) and have no memory
+  protect; volca is 6-voice and the original ignores velocity. The
+  `generic` fallback is optimistic (sends the request) and verbose. Selection:
+  `midi.getDeviceType()`/`setDeviceType(id)` persisted, default `'auto'` →
+  `detectDeviceType(portName)` on the output's name (rules ordered
+  most-specific first: dx7ii before dx7; II/2 matched without a trailing
+  word boundary so "DX7 IIFD" works). `getResolvedDeviceType()` /
+  `getDeviceProfile()` resolve auto, falling back to the **remembered port
+  name** when MIDI is not yet enabled — the send-bank confirm dialog runs
+  before the permission prompt. **Transport:** `receiveBank()` refuses up
+  front with `bankReceive.reason` on receive-only devices (before the
+  input-port check, nothing sent, no collector left armed), skips the dump
+  request when `dumpRequest` is false, and its timeout message names the
+  device and carries `manualHint`. `sendBank()` checks `bankSend.supported`
+  (all current profiles accept banks). **Panel:** "Device type" select
+  (`.midi-device-type`, Auto-detect shows the detected name) with the
+  profile's notes under it; the send-bank confirm uses `bankSend.target` in
+  the overwrite warning, shows the memory-protect box only when the profile
+  has one, and disables + unticks the backup checkbox with the reason when
+  the device cannot be dumped. Not yet wired (data only): `polyphony`,
+  `velocity`, `multitimbral` — the latter is the Phase 3b hook. Unverified
+  details flagged for a hardware pass: TX802 bank placement (64 internal
+  voices, which half a 32-voice dump fills), volca fm2 program count, whether
+  Dexed really ignores `F0 43 2n 09 F7` (believed so). Tests:
+  `test/midi-devices.test.js`, device block in
+  `test/midi-sysex-transport.test.js`, `test/midi-panel-devices.test.js`.
 - [ ] **Phase 3b (later, as agreed)** — note-on scheduling (the `time` option
   on `playNoteOut` is already in place), and letting the user declare (or
   autodetect) that a device is multitimbral.
@@ -151,20 +236,22 @@ OpenPatches is a browser-based DX7 patch editor and sequencer. It communicates w
 **Frontend (Vanilla JS, no framework):**
 - `html/app.js`: main orchestrator. Wires file input, menu bar, canvas, toolbar. Creates tick worker, `stopTickWorker` helper. PlayNote/playPatch with multi-channel support. Emergency stop with voice reload.
 - `html/components/canvas.js`: Canvas — patches + PatchContainers on night-sky. Drag-to-reposition, snap-into-container, resize containers. State derived from linked Job. Uses `onDoc()` helper for document-level listeners with cleanup via `clearDocListeners()` on each `renderAll()` to prevent stale closures. All interactive elements in `#night-sky`.
-- `html/components/toolbar.js`: Unified Piano Roll + Keyboard panel with tabs: Canvas | Piano Roll | Edit | Log | Mute. Keyboard integrated into Piano Roll panel (recording controls + octave selector + piano keys below pianoroll grid). VoiceBank select dropdown. Undo button for recording. Mobile octave selector (0–7). Uses tick worker for precise playback/recording timing. **Note dispatch:** every note source goes through `noteOn(midi, velocity, when)` / `noteOff(midi, when)` — on-screen keys, and `handleMidiMessage` for external MIDI. `heldNotes` (a Set) is the authority on what is down; `noteOff` is a no-op for anything not in it. Timing is `performance.now()` so `MIDIMessageEvent.timeStamp` can be passed straight in as `when`. The midi-manager import is namespaced `midiManager` because `midi` is the note-number parameter name throughout the file.
+- `html/components/song-bar.js`: the Song: name / Save / Delete bar with its autocomplete dropdown; state machine typing ↔ loaded, backed by `songStore`. Mounted by the toolbar, which supplies `getSong`/`loadSong` spanning the piano roll and the voice bank.
+- `html/components/toolbar.js`: Unified Piano Roll + Keyboard panel with tabs: Canvas | Piano Roll | Edit | Log | Mute. Song bar on top of the piano roll panel. Keyboard integrated into Piano Roll panel (recording controls + octave selector + piano keys below pianoroll grid), wrapped in a collapsible `.keyboard-wrapper` under a `.kb-toggle` bar (state in `openpatches_kb_collapsed`). VoiceBank select dropdown. Undo button for recording. Mobile octave selector (0–7). **Record** exists twice: `.kb-btn-record` in the mobile-only `kb-controls` row and `.pianoroll-record` inserted into the piano roll transport row for desktop; both call `toggleRecording()`. Uses tick worker for precise playback/recording timing. **Note dispatch:** every note source goes through `noteOn(midi, velocity, when)` / `noteOff(midi, when)` — on-screen keys, and `handleMidiMessage` for external MIDI. `heldNotes` (a Set) is the authority on what is down; `noteOff` is a no-op for anything not in it. Timing is `performance.now()` so `MIDIMessageEvent.timeStamp` can be passed straight in as `when`. The midi-manager import is namespaced `midiManager` because `midi` is the note-number parameter name throughout the file.
 - `html/components/edit-panel.js`: Morph / Params / Random editing.
 - `html/components/job.js`: Job class — steering object for WAV import lifecycle. Owns: probe → match → poll → complete/fail.
-- `html/components/patch-model.js`: Unified data model + stores (localStorage). `patchStore`, `canvasStore`, `jobStore`.
+- `html/components/patch-model.js`: Unified data model + stores (localStorage). `patchStore`, `canvasStore`, `jobStore`, `tagStore`, `songStore` (named sequencer snapshots; `create()` refuses collisions with `'Song exists'`).
 - `html/components/patch-row.js`: Unified patch row rendering with star drag handle, mini spectrogram, assign/edit/remove buttons. Touch drag between containers with floating clone.
 - `html/components/patch.js`: Waveform helpers only — `decodeWavSamples`, `drawMiniWaveform`, `wavSampleCache`.
-- `html/components/voicebank.js`: Voice palette (8 slots). Persists to localStorage. Each entry has static channel assignment (0-7). Compact mode on mobile: vertical bars, tap to select, vertical drag for volume. Exposes `_render()` for re-rendering after class changes.
-- `html/components/pianoroll.js`: Sequencer with looping. Notes store per-note `voiceData` and `channel`. Touch support: `TOUCH_RESIZE_MARGIN = 20`, visual resize handles, double-tap to delete. Long-press (1s) to create note when stopped, drag to scroll. Looping: double-wide canvas, content drawn twice for seamless loop. `handlePlaybackTick(col)` driven by tick worker. `setRecordingTickHandler` for recording delegation.
+- `html/components/voicebank.js`: Voice palette (8 slots). Persists to localStorage. `_setEntries(list)` replaces every slot at once (song load). Each entry has static channel assignment (0-7). Compact mode on mobile: vertical bars, tap to select, vertical drag for volume. Exposes `_render()` for re-rendering after class changes.
+- `html/components/pianoroll.js`: Sequencer with looping. Notes store per-note `voiceData` and `channel`. Touch support: `TOUCH_RESIZE_MARGIN = 20`, visual resize handles, double-tap to delete. Long-press (1s) to create note when stopped, drag to scroll. **Follow-scroll is opt-in** (`followPlayhead`, default off, persisted): only then is the canvas double-wide (content drawn twice for a seamless loop) and the view scrolled per tick; otherwise the red 2 px playhead is the only motion. `canvas.width` is assigned only on change. `handlePlaybackTick(col)` driven by tick worker. `setRecordingTickHandler` for recording delegation. `insertControl(el)` lets the toolbar place its Record button after Stop. `getSong()`/`loadSong(data)` are the song store's view of the roll.
 - `html/components/syx-builder.js`: DX7 SysEx **encoder** (syx-parser.js is the reader). Bulk dump `F0 43 0n 09 20 00 <4096 packed> <cksum> F7` = 4104 bytes; edit-buffer voice `F0 43 0n 00 01 1B <155 unpacked> <cksum> F7` = 163; dump request `F0 43 2n 09 F7`. Checksum = `(128 - (sum & 0x7F)) & 0x7F`. `patch.voice_data` is already the packed 128-byte form so a bank is a straight concatenation, padded to 32 with `makeInitVoice()`. `unpackVoice()` expands packed 128 → VCED 155 (17-byte ops become 21, 26 global bytes become 29) using dx7-params' `readOp`/`readGlobal`. **`html/DEMO.syx` is the golden test fixture** — parse → rebuild is asserted byte-identical, and unpack → repack is asserted lossless across all 32 voices.
 - `html/components/tag-editor.js`: Tag editor component with autocomplete.
 - `html/components/tutorial.js`: First-run tutorial modal with overlay highlights. Skips clip-path on mobile.
 - `html/synth/audio-manager.js`: Singleton AudioContext + AudioWorklet. `acquire()` creates once, `initAudio()` loads modules once. Multi-channel: `sendVoiceSnapshot()`, `playNoteOnChannel()`. `emergencyStop()` reinitializes MSFA engine. No malloc/free — uses static WASM buffers. `playNoteOnChannel` guards against stale note-off via self-reference check.
-- `html/synth/midi-manager.js`: Web MIDI singleton, same shape as audio-manager. Access is requested only on demand and never at import time. Two permission tiers: `requestMidi({sysex:false})` for notes, `requestMidi({sysex:true})` for bulk dumps — the upgrade re-prompts and swaps the `MIDIAccess`, so `attachInputListener()` re-binds the input handler by object identity, and a generation counter stops an older in-flight request clobbering a newer grant. Port selection persists to localStorage by id **with a name fallback** (ids are not stable across sessions). `panic()` = CC 120 + CC 123 on all 16 channels; called on emergency stop, output change, `pagehide` and tab-hide. `receiveBank`/`sendBank` are the real SysEx transport (see syx-builder). Test seams: `_reset()`, `_getAccess()`. **Note output:** `outputMode` (internal/midi/both), `slotChannels[8]` (slot → MIDI channel, identity default), `playNoteOut()`/`stopNoteOut()`/`releaseAllOut()` with an `outNotes` map keyed `"channel:midi"`. `isInternalEnabled()` returns true when MIDI-only is selected but no device is reachable — the app must never go silent because a cable was unplugged. **Output latency:** a persisted setting (`getOutputLatency`/`setOutputLatency`, default 317 measured against a Volca FM, max 1000) added to every note-path timestamp by `sendAt()`, the single send helper; SysEx is unstamped. `panic()` sweeps twice, now and at `+latency`. `playLatencyProbe(midi, {durMs, voiceData, onWire})` is the calibration tick for the settings modal.
-- `html/components/midi-panel.js`: MIDI settings modal (enable, input/output selects, device channel, output mode, slot map, **output-latency slider + flashing test-tone calibrator** fed by `opts.playTestNote`/`prepareTestNote`/`testVoiceData` from app.js, audition, panic) and `sendBankToDevice()` — the guarded confirm → optional backup → send flow. A failed backup aborts the send; it never falls through to "proceed anyway". Transport is real since Phase 4; the backup step uses `receiveBank`.
+- `html/synth/midi-devices.js`: device profile table + `detectDeviceType(portName)`; see the profiles entry above. Pure data/regex, no DOM, no MIDI.
+- `html/synth/midi-manager.js`: Web MIDI singleton, same shape as audio-manager. Holds the persisted `deviceType` ('auto' or a profile id) and resolves it via `getDeviceProfile()`; `receiveBank`/`sendBank` consult the profile. Access is requested only on demand and never at import time. Two permission tiers: `requestMidi({sysex:false})` for notes, `requestMidi({sysex:true})` for bulk dumps — the upgrade re-prompts and swaps the `MIDIAccess`, so `attachInputListener()` re-binds the input handler by object identity, and a generation counter stops an older in-flight request clobbering a newer grant. Port selection persists to localStorage by id **with a name fallback** (ids are not stable across sessions). `panic()` = CC 120 + CC 123 on all 16 channels; called on emergency stop, output change, `pagehide` and tab-hide. `receiveBank`/`sendBank` are the real SysEx transport (see syx-builder). Test seams: `_reset()`, `_getAccess()`. **Note output:** `outputMode` (internal/midi/both), `slotChannels[8]` (slot → MIDI channel, identity default), `playNoteOut()`/`stopNoteOut()`/`releaseAllOut()` with an `outNotes` map keyed `"channel:midi"`. `isInternalEnabled()` returns true when MIDI-only is selected but no device is reachable — the app must never go silent because a cable was unplugged. **Output latency:** a persisted setting (`getOutputLatency`/`setOutputLatency`, default 317 measured against a Volca FM, max 1000) added to every note-path timestamp by `sendAt()`, the single send helper; SysEx is unstamped. `panic()` sweeps twice, now and at `+latency`. `playLatencyProbe(midi, {durMs, voiceData, onWire})` is the calibration tick for the settings modal.
+- `html/components/midi-panel.js`: MIDI settings modal (enable, input/output selects, device channel, **device type** with profile notes, output mode, slot map, **output-latency slider + flashing test-tone calibrator** fed by `opts.playTestNote`/`prepareTestNote`/`testVoiceData` from app.js, audition, panic) and `sendBankToDevice()` — the guarded confirm → optional backup → send flow. A failed backup aborts the send; it never falls through to "proceed anyway". Transport is real since Phase 4; the backup step uses `receiveBank`.
 - `html/synth/tick-worker.js`: Web Worker heartbeat for pianoroll. Atomics.wait path (SharedArrayBuffer) for zero-CPU sleeping, setTimeout fallback. Absolute targeting (`t0 + col * msPer`), spin for sub-ms precision. Start/stop via a generation counter in shared memory (`Int32Array[0]`): app.js `startTickWorker`/`stopTickWorker` bump it + `Atomics.notify`; a loop exits when the counter moves, and a `start` whose `gen` is outdated is ignored. Always start through `opts.startWorker`, never raw `postMessage`. Worker stays alive for reuse.
 - `html/synth/dx7-synth.js`: Batch waveform rendering only (main thread WASM). No realtime synth code.
 - `html/synth/dx7-processor.js`: AudioWorkletProcessor wrapping MSFA DX7 engine. Ring buffer (~300ms lookahead) for audio stability. Handles `voice-snapshot`, `midi`, `patch`, `play-samples`, `channel-volume`, `reinit` messages. MIDI logging via `logMidi` no-op (override to enable).

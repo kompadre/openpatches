@@ -10,6 +10,7 @@
 
 import * as midi from '../synth/midi-manager.js';
 import { buildBulkDump, VOICE_COUNT } from './syx-builder.js';
+import { DEVICE_PROFILES, DEVICE_TYPE_AUTO, listDeviceTypes } from '../synth/midi-devices.js';
 
 const CHANNEL_COUNT = 16;
 const VOICE_BANK_SLOTS = 8;
@@ -122,6 +123,39 @@ export function openMidiSettings(opts = {}) {
         deviceArea.appendChild(labelled('Output', outputSel, 'Used to play the piano roll on external gear.'));
         deviceArea.appendChild(labelled('Device channel', channelSel, 'Basic channel of the synth, for bulk SysEx dumps.'));
 
+        // --- Device type ---
+        // Picks the profile that shapes bank transfers (dump request or
+        // front panel, backup possible or not, memory protect) and the
+        // hints shown around them. Auto follows the output port's name.
+        const typeSel = el('select', 'midi-select midi-device-type');
+        for (const id of listDeviceTypes()) {
+            const o = el('option', null, id === DEVICE_TYPE_AUTO ? 'Auto-detect' : DEVICE_PROFILES[id].name);
+            o.value = id;
+            typeSel.appendChild(o);
+        }
+        const typeNotes = el('ul', 'midi-device-notes');
+        const typeWrap = labelled('Device type', typeSel);
+        typeWrap.appendChild(typeNotes);
+        deviceArea.appendChild(typeWrap);
+
+        function refreshDeviceType() {
+            typeSel.value = midi.getDeviceType();
+            const profile = midi.getDeviceProfile();
+            const autoOpt = typeSel.querySelector('option');
+            if (autoOpt) {
+                autoOpt.textContent = midi.getDeviceType() === DEVICE_TYPE_AUTO
+                    ? 'Auto-detect (' + profile.name + ')'
+                    : 'Auto-detect';
+            }
+            typeNotes.innerHTML = '';
+            for (const note of profile.notes) typeNotes.appendChild(el('li', null, note));
+            typeNotes.appendChild(el('li', null, profile.sysexChannelNote));
+        }
+        typeSel.addEventListener('change', () => {
+            midi.setDeviceType(typeSel.value);
+            refreshDeviceType();
+        });
+
         // --- Output routing ---
         const modeSel = el('select', 'midi-select');
         for (const [value, text] of [
@@ -229,12 +263,17 @@ export function openMidiSettings(opts = {}) {
         let calTimer = null;
         let flashTimer = null;
         let calStop = null;
-        let calGen = 0;     // bumped on stop so anything in flight stays dark
+        let calGen = 0;     // bumped on stop so anything in flight stays dar
+        let calNote = 0;
+        const calNotes = [60, 62, 63, 65];
 
         function calTick() {
             const gen = calGen;
-            if (opts.playTestNote) opts.playTestNote(PROBE_NOTE, PROBE_MS);
-            calStop = midi.playLatencyProbe(PROBE_NOTE, {
+            let probeNote = calNotes[calNote % 4];
+            calNote++;
+            console.log(probeNote, "PROBE_NOTE");
+            if (opts.playTestNote) opts.playTestNote(probeNote, PROBE_MS);
+            calStop = midi.playLatencyProbe(probeNote, {
                 durMs: PROBE_MS,
                 voiceData: opts.testVoiceData || null,
                 onWire: () => {
@@ -395,6 +434,7 @@ export function openMidiSettings(opts = {}) {
             statusText.className = 'midi-status-text midi-status-' + state;
             audBox.checked = midi.getAuditionEnabled();
             sysexRow.style.display = midi.auditionNeedsSysex() ? '' : 'none';
+            refreshDeviceType();
             if (ready) {
                 fillPorts(inputSel, midi.listInputs(), midi.getSelectedInputId(), 'None');
                 fillPorts(outputSel, midi.listOutputs(), midi.getSelectedOutputId(), 'None');
@@ -480,11 +520,11 @@ export async function sendBankToDevice(patches, bankName, opts) {
     // --- Backup leg. A failure here aborts the whole operation: overwriting
     // a bank we could not save a copy of is exactly the outcome the backup
     // option exists to prevent.
+    const profile = midi.getDeviceProfile();
     if (confirmed.backup) {
         showProgress(0);
-        setProgressLabel('Waiting for ' + out.name + ' to send its bank… ' +
-            'If nothing happens, start the dump on the synth itself ' +
-            '(on a DX7: Function › 8 › MIDI › Transmit).');
+        setProgressLabel('Waiting for ' + out.name + ' to send its bank…' +
+            (profile.bankReceive.manualHint ? ' ' + profile.bankReceive.manualHint : ''));
         try {
             const bytes = await midi.receiveBank({ onProgress: showProgress });
             hideProgress();
@@ -529,11 +569,14 @@ function confirmSend(patches, bankName) {
         const out = midi.getOutputPort();
         const target = out ? out.name : 'the selected MIDI device';
         const count = patches ? patches.length : 0;
+        const profile = midi.getDeviceProfile();
+        const canBackup = profile.bankReceive.supported;
 
         openModal('Send bank to device', (body, close) => {
             const warn = el('div', 'midi-warning');
             warn.innerHTML =
-                '<strong>This overwrites all 32 voices on ' + escapeHtml(target) + '.</strong> ' +
+                '<strong>This overwrites ' + escapeHtml(profile.bankSend.target) + ' on ' +
+                escapeHtml(target) + '.</strong> ' +
                 'A bulk dump replaces the whole bank, and the synth has no undo.' +
                 (count < VOICE_COUNT
                     ? ' Only ' + count + ' patch(es) are being sent, so the remaining ' +
@@ -542,29 +585,34 @@ function confirmSend(patches, bankName) {
                     : '');
             body.appendChild(warn);
 
-            const protect = el('div', 'midi-warning midi-warning-info');
-            protect.innerHTML =
-                '<strong>Turn memory protect off first.</strong> ' +
-                'On a DX7 that is <em>Function › Memory Protect › Internal: OFF</em>. ' +
-                'With protection on the synth ignores the dump silently — it will look like nothing happened.';
-            body.appendChild(protect);
+            // Only synths that actually have a protect switch get told to
+            // flip it; on Dexed or a volca the advice would just be noise.
+            if (profile.bankSend.memoryProtect) {
+                const protect = el('div', 'midi-warning midi-warning-info');
+                protect.innerHTML = '<strong>Memory protect.</strong> ' + escapeHtml(profile.bankSend.memoryProtect);
+                body.appendChild(protect);
+            }
 
             const chRow = el('p', 'midi-hint',
-                'Sending on device channel ' + (midi.getDeviceChannel() + 1) + '.');
+                'Sending on device channel ' + (midi.getDeviceChannel() + 1) + ' as ' + escapeHtml(profile.name) + '.');
             body.appendChild(chRow);
 
             const backupRow = el('label', 'midi-checkbox');
             const backupBox = document.createElement('input');
             backupBox.type = 'checkbox';
-            backupBox.checked = true;
+            backupBox.className = 'midi-backup-box';
+            backupBox.checked = canBackup;
+            backupBox.disabled = !canBackup;
             backupRow.appendChild(backupBox);
-            backupRow.appendChild(el('span', null,
-                ' Back up the device’s current bank first (recommended)'));
+            backupRow.appendChild(el('span', null, canBackup
+                ? ' Back up the device’s current bank first (recommended)'
+                : ' Back up first — not possible on this device'));
             body.appendChild(backupRow);
 
-            body.appendChild(el('div', 'midi-hint',
-                'The backup is requested from the synth and saved to a new container on the canvas. ' +
-                'If it fails, nothing is sent.'));
+            body.appendChild(el('div', 'midi-hint midi-backup-hint', canBackup
+                ? 'The backup is requested from the synth and saved to a new container on the canvas. ' +
+                  'If it fails, nothing is sent.'
+                : profile.bankReceive.reason));
 
             const actions = el('div', 'midi-actions');
             const cancelBtn = el('button', 'midi-btn', 'Cancel');

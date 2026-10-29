@@ -514,6 +514,28 @@ export function createVoiceBank(opts) {
     };
     container._render = render;
     container._notifySnapshot = notifySnapshot;
+    // Replace every slot at once (song load). Entries get fresh ids and
+    // index-derived colors; the first slot becomes active so the piano roll
+    // and keyboard follow, exactly as after a reload.
+    container._setEntries = (list) => {
+        entries = (Array.isArray(list) ? list : [])
+            .filter(e => e && e.voiceData)
+            .slice(0, MAX_SLOTS)
+            .map((e, i) => ({
+                id: 'vb_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+                name: e.name || 'Untitled',
+                voiceData: e.voiceData instanceof Uint8Array ? new Uint8Array(e.voiceData)
+                    : Array.isArray(e.voiceData) ? e.voiceData.slice() : e.voiceData,
+                patchId: e.patchId || e.name,
+                color: PATCH_COLORS[i % PATCH_COLORS.length],
+                volume: e.volume == null ? DEFAULT_VOLUME : e.volume,
+            }));
+        activeId = entries.length > 0 ? entries[0].id : null;
+        render();
+        fireSelect();
+        saveState();
+        notifySnapshot();
+    };
 
     return container;
 }

@@ -685,6 +685,7 @@ function initToolbar() {
 
     const dock = createToolbar({
         matchedMidi: activeKeyboardNote,
+        appendLog,
         playNoteFn: playFn,
         stopNoteFn: stopNoteFn,
         initialTab: isMobile ? 'canvas' : 'pianoroll',

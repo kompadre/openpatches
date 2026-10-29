@@ -20,6 +20,7 @@ import {
     toPacked128,
     validateBulkDump,
 } from '../components/syx-builder.js';
+import { DEVICE_TYPE_AUTO, detectDeviceType, getProfile, isDeviceType } from './midi-devices.js';
 
 const STORAGE_KEY = 'openpatches_midi';
 
@@ -61,6 +62,7 @@ let inputChannel = -1;      // -1 = omni, else only accept this channel (0-15)
 let outputMode = 'internal';            // internal | midi | both
 let auditionEnabled = false;            // send previews to the device's edit buffer
 let outputLatencyMs = DEFAULT_OUTPUT_LATENCY_MS;
+let deviceType = DEVICE_TYPE_AUTO;       // profile id, or 'auto' = detect from the output port name
 let lastAuditionVoice = null;           // dedupe key for the loaded edit buffer
 let slotChannels = defaultSlotChannels();
 
@@ -238,6 +240,38 @@ export function setDeviceChannel(ch) {
     if (!Number.isInteger(n) || n < 0 || n >= MIDI_CHANNELS) return;
     deviceChannel = n;
     saveState();
+}
+
+// --- Device profile ---
+
+export function getDeviceType() { return deviceType; }
+
+/** 'auto' or a profile id from midi-devices.js; anything else is ignored. */
+export function setDeviceType(id) {
+    if (!isDeviceType(id)) return;
+    deviceType = id;
+    saveState();
+}
+
+// The output's name, live if MIDI is up, otherwise what we remembered for
+// the selected id — so the profile is right even before the user has
+// enabled MIDI this session (the send-bank confirm dialog runs first).
+function outputName() {
+    const port = getOutputPort();
+    if (port) return port.name;
+    if (!selectedOutputId) return null;
+    const names = loadState().names || {};
+    return names[selectedOutputId] || null;
+}
+
+/** The profile id actually in force: the explicit choice, or the detection result. */
+export function getResolvedDeviceType() {
+    return deviceType === DEVICE_TYPE_AUTO ? detectDeviceType(outputName()) : deviceType;
+}
+
+/** @returns {import('./midi-devices.js').DeviceProfile} */
+export function getDeviceProfile() {
+    return getProfile(getResolvedDeviceType());
 }
 
 export function getInputChannel() { return inputChannel; }
@@ -549,7 +583,7 @@ function consumeSysex(data) {
     return true;
 }
 
-function awaitSysex({ match, expect, timeoutMs, signal, onProgress }) {
+function awaitSysex({ match, expect, timeoutMs, signal, onProgress, timeoutMessage }) {
     return new Promise((resolve, reject) => {
         let finished = false;
         const finish = (fn, arg) => {
@@ -560,7 +594,7 @@ function awaitSysex({ match, expect, timeoutMs, signal, onProgress }) {
             fn(arg);
         };
         const timer = setTimeout(
-            () => finish(reject, new Error('Timed out waiting for the device to send its bank')),
+            () => finish(reject, new Error(timeoutMessage || 'Timed out waiting for the device to send its bank')),
             timeoutMs);
         if (signal) {
             signal.addEventListener('abort', () => finish(reject, new Error('Cancelled')), { once: true });
@@ -578,14 +612,20 @@ function awaitSysex({ match, expect, timeoutMs, signal, onProgress }) {
 /**
  * Request a 32-voice bulk dump and resolve with the raw 4104-byte message.
  *
- * A dump request is sent optimistically, but the original DX7 Mk I does not
- * implement it — on that machine the user must start the transfer from the
- * front panel, which is why the timeout is long and its message says so.
+ * The device profile decides the shape of the exchange: whether the device
+ * can be dumped at all (Dexed and the volca fm cannot), whether a dump
+ * request is worth sending (the DX7 Mk I ignores it — the user starts the
+ * transfer from the front panel, which is why the timeout is long and the
+ * message says what to press), and what to say when nothing arrives.
  *
  * @returns {Promise<Uint8Array>}
  */
 export async function receiveBank({ onProgress, signal, timeoutMs = RECEIVE_TIMEOUT_MS } = {}) {
     if (!hasSysex()) throw new Error('SysEx permission has not been granted');
+    const profile = getDeviceProfile();
+    if (!profile.bankReceive.supported) {
+        throw new Error(profile.bankReceive.reason || (profile.name + ' cannot transmit a bank'));
+    }
     const inPort = getInputPort();
     if (!inPort) {
         throw new Error('No MIDI input device is selected. Receiving a bank needs one — ' +
@@ -598,10 +638,12 @@ export async function receiveBank({ onProgress, signal, timeoutMs = RECEIVE_TIME
         timeoutMs,
         signal,
         onProgress,
+        timeoutMessage: 'Timed out waiting for ' + profile.name + ' to send its bank.' +
+            (profile.bankReceive.manualHint ? ' ' + profile.bankReceive.manualHint : ''),
     });
 
     const out = getOutputPort();
-    if (out) {
+    if (out && profile.bankReceive.dumpRequest) {
         try { out.send(buildBulkDumpRequest({ channel: deviceChannel })); } catch { /* front panel it is */ }
     }
 
@@ -622,6 +664,8 @@ export async function receiveBank({ onProgress, signal, timeoutMs = RECEIVE_TIME
  */
 export async function sendBank(bytes, { onProgress, signal } = {}) {
     if (!hasSysex()) throw new Error('SysEx permission has not been granted');
+    const profile = getDeviceProfile();
+    if (!profile.bankSend.supported) throw new Error(profile.name + ' does not accept bank dumps');
     const port = getOutputPort();
     if (!port) throw new Error('No MIDI output device is selected');
 
@@ -742,6 +786,7 @@ function saveState() {
             slotChannels,
             auditionEnabled,
             outputLatencyMs,
+            deviceType,
             names,
         }));
     } catch (e) {
@@ -767,6 +812,7 @@ function initFromStorage() {
     if (Number.isInteger(saved.inputChannel)) inputChannel = saved.inputChannel;
     if (saved.outputMode === 'midi' || saved.outputMode === 'both') outputMode = saved.outputMode;
     auditionEnabled = !!saved.auditionEnabled;
+    deviceType = isDeviceType(saved.deviceType) ? saved.deviceType : DEVICE_TYPE_AUTO;
     outputLatencyMs = DEFAULT_OUTPUT_LATENCY_MS;
     if (Number.isFinite(saved.outputLatencyMs)) {
         outputLatencyMs = Math.round(Math.min(MAX_OUTPUT_LATENCY_MS, Math.max(0, saved.outputLatencyMs)));
@@ -805,6 +851,7 @@ export function _reset() {
     outputMode = 'internal';
     auditionEnabled = false;
     outputLatencyMs = DEFAULT_OUTPUT_LATENCY_MS;
+    deviceType = DEVICE_TYPE_AUTO;
     lastAuditionVoice = null;
     sysexCollector = null;
     outNotes.clear();
