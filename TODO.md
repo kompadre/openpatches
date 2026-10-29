@@ -3,8 +3,7 @@
 Project backlog. Parent tasks with nested subtasks; `[ ]` pending, `[x]` done,
 `[-]` superseded. Starting a parent task moves it into SESSION.md.
 
-## Patterns and Songs
+## Project
 
-- [ ] Change the concept of the piano roll to **Pattern**.
-- [ ] Add the concept of **Song** (a combination of patterns) and its editor. Song persistence should be done there.
-- [ ] A pattern will be **monotimbral**. Special multitimbral patterns (like drums) come later.
+- [ ] Add the concept of **Project** for global settings (tempo, voice bank, MIDI settings, the pattern and song libraries).
+- [ ] Add the possibility of **exporting a project** (and importing it back).

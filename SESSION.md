@@ -149,6 +149,53 @@ only when a feature needs it, and SysEx is a separate upgrade on top.
 - [x] `HEARME.tts` updated: new Chapter Eleven on Web MIDI (old Chapter Eleven
   renumbered to Twelve), preamble hash/date refreshed to `1cd2ea1`.
 
+### Feature: Patterns, Tracks and the Song editor (6 phases)
+
+Plan agreed 2026-10-29. Moved here from TODO.md. The piano roll becomes a
+reusable **Pattern** (monotimbral, no per-note slot); a **Song** arranges
+patterns as **clips** on **tracks**, each track bound to a voice-bank slot
+(= synth channel = MIDI channel, unchanged). Multitimbral/drum patterns are
+deliberately later — `pattern.kind` is the hook.
+
+- [x] **Phase 1 — model and migration (2026-10-29).** `html/components/song-model.js`,
+  pure data + localStorage, no DOM. Factories (`createPattern`/`Track`/`Clip`/`Song`)
+  are **total**: fed storage or a hand-edited blob they return a well-formed
+  record, dropping what is invalid — a note starting past the end of its
+  pattern is dropped (unreachable), one merely running past is cut at the end
+  (the resize-handle rule), a clip whose track or pattern is gone is dropped.
+  Geometry: `patternCols`, `clipSpan` (pattern length × repeats),
+  `songLength`, `findClipOverlap`; `addClip`/`updateClip` refuse an overlap
+  with `'Clip overlaps'` (store errors are shown verbatim, as
+  `'Song exists'` was), `removeTrack` takes its clips with it. **Stores are
+  id-keyed**, not name-keyed like the legacy one — the editors rename freely
+  and two patterns may share a name, so `create()` always mints a fresh id and
+  `put()` is the update path. **Migration** (`splitNotesBySlot` →
+  `songFromLegacyRoll` → `buildMigration` → `migrateIfNeeded`) turns the flat
+  roll blob into one pattern + track per used slot, all clips at measure 0;
+  each legacy snapshot song converts the same way, keeping its voice bank.
+  Guarded by `openpatches_seq_migrated`, whose marker is written **last** so a
+  failed write retries instead of leaving a half-migrated library. The legacy
+  keys are read-only and left in place until phase 6.
+  **Nothing calls `migrateIfNeeded()` yet** — phase 3 wires it at startup.
+  `test/song-model.test.js`, `test/song-migration.test.js` (66 tests).
+- [ ] **Phase 2 — sequencer core.** `html/synth/sequencer.js`: given a song +
+  patterns, answer "what starts at absolute column N, on which slot",
+  honoring mute/solo and the loop range. Pure, no DOM, no worker.
+- [ ] **Phase 3 — pattern editor refactor.** pianoroll.js edits a Pattern
+  through a small interface; per-note `slot` removed; existing tests updated.
+- [ ] **Phase 4 — song editor.** `html/components/song-editor.js`: tracks ×
+  measures grid, pattern palette, clip place/move/resize/delete, per-track
+  slot picker + mute/solo.
+- [ ] **Phase 5 — transport integration.** Pattern mode vs Song mode, tick
+  handling moved from pianoroll.js to a transport in toolbar.js, recording
+  into the pattern, playhead in both editors.
+- [ ] **Phase 6 — cleanup.** Remove song-bar.js and the legacy snapshot
+  store, update HEARME.tts and the tutorial.
+
+Open decision (assumed, flag if wrong): a Song keeps the voice-bank snapshot
+the legacy songs carried, so sounds still travel with notes; it is dropped
+when **Project** (TODO.md) takes ownership of the voice bank.
+
 Bug survey 2026-10-23 — swept 2026-10-29; everything fixed is in CHANGELOG.md. Still open:
 
 - [ ] Voice bank: removing a slot shifts the channels of the slots after it, but piano-roll notes keep their old `slot` index and so change sound. Deferred on purpose — the slot↔note binding is being redesigned under the Pattern/Song work in TODO.md.
@@ -173,6 +220,7 @@ OpenPatches is a browser-based DX7 patch editor and sequencer. It communicates w
 - `html/components/toolbar.js`: Unified Piano Roll + Keyboard panel with tabs: Canvas | Piano Roll | Edit | Log | Mute. Song bar on top of the piano roll panel. Keyboard integrated into Piano Roll panel (recording controls + octave selector + piano keys below pianoroll grid), wrapped in a collapsible `.keyboard-wrapper` under a `.kb-toggle` bar (state in `openpatches_kb_collapsed`). VoiceBank select dropdown. Undo button for recording. Mobile octave selector (0–7). **Record** exists twice: `.kb-btn-record` in the mobile-only `kb-controls` row and `.pianoroll-record` inserted into the piano roll transport row for desktop; both call `toggleRecording()`. Uses tick worker for precise playback/recording timing. **Note dispatch:** every note source goes through `noteOn(midi, velocity, when)` / `noteOff(midi, when)` — on-screen keys, and `handleMidiMessage` for external MIDI. `heldNotes` (a Set) is the authority on what is down; `noteOff` is a no-op for anything not in it. Timing is `performance.now()` so `MIDIMessageEvent.timeStamp` can be passed straight in as `when`. The midi-manager import is namespaced `midiManager` because `midi` is the note-number parameter name throughout the file.
 - `html/components/edit-panel.js`: Morph / Params / Random editing. One shared range slider: `setSliderMode()` swaps min/max/step and restores the mode's own last value from `dataset.<mode>Val` (the browser clamps on a range change, which used to destroy the other mode's setting). Params **Save** takes algorithm/feedback from the edited `currentMutation.globals` and saves offline — audition is local-synth first, `/api/play` as fallback, and neither is required.
 - `html/components/job.js`: Job class — steering object for WAV import lifecycle. Owns: probe → match → poll → complete/fail. `complete()` writes the canvas entries and `ctr.patchIds` itself and saves the container once — it must not go through `addPatchToContainer()`, whose per-patch re-read/re-save would be overwritten by the stale copy.
+- `html/components/song-model.js`: Sequencer data model — **Pattern** (reusable, monotimbral, notes carry no voice; `kind` is the hook for drum patterns later), **Track** (bound to a voice-bank slot = synth channel = MIDI channel, unchanged), **Clip** (a pattern placed on a track at a measure, with a repeat count) and **Song** (tracks + clips + bpm + loop range). `patternStore`/`songStore` are id-keyed; `COLS_PER_MEASURE` lives here and pianoroll.js adopts it in phase 3. One clip per track per measure — a track is a monophonic timeline, so two clips in one place would mean two patterns on one voice. Also owns the one-shot migration off the piano-roll blob. Imports patch-model.js only for the legacy song store.
 - `html/components/patch-model.js`: Unified data model + stores (localStorage). `patchStore`, `canvasStore`, `jobStore`, `tagStore`, `songStore` (named sequencer snapshots; `create()` refuses collisions with `'Song exists'`). `createPatch()` ids hash `voice_data|name` when a name is given, so one voice under two names (a match in several result groups) is two records; re-importing the same bank still yields the same ids.
 - `html/components/patch-row.js`: Unified patch row rendering with star drag handle, mini spectrogram, assign/edit/remove buttons. Touch drag between containers with floating clone; crossing back into the body cancels the drag-out (clone removed, no clone on drop), `touchcancel` aborts cleanly. `reorderContainerPatch()` applies a touch reorder to the group that holds both rows **and** the flat list (a grouped container renders only its groups; a move across groups is refused). One document `mouseup` disarms the star-armed row instead of one listener per row.
 - `html/components/patch.js`: Waveform helpers only — `decodeWavSamples` (general RIFF chunk walk: `fmt ` and `data` in any order with LIST/fact between, 16-bit PCM or 32-bit float, N channels mixed to mono), `drawMiniWaveform`, `wavSampleCache`, `releaseWavUrl` (revokes the `blob:` URL `playPatch` returns, once the waveform is drawn — the consumer owns it).
