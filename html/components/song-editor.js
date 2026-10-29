@@ -14,16 +14,18 @@
 import {
     addClip, updateClip, removeClip, removeTrack, clipSpan, songLength,
     createPattern, createTrack, patternStore, patternUsage,
-    MAX_SLOTS, MIN_BPM, MAX_BPM,
+    COLS_PER_MEASURE, MAX_SLOTS, MIN_BPM, MAX_BPM,
 } from './song-model.js';
 import { createSongSession } from './song-session.js';
 
 export const MEASURE_W = 48;      // px per measure in the grid
+export const TRACK_HEAD_W = 192;  // .song-track-head width (12rem), for the playhead
 const MIN_GRID_MEASURES = 16;     // never show an empty, zero-width song
 const DRAG_THRESHOLD = 4;         // px before a press becomes a drag
 
 export function createSongEditor(opts = {}) {
     const session = opts.session || createSongSession();
+    const transport = opts.transport || null;
     const log = opts.log || (() => {});
     const getSlotData = opts.getSlotData || (() => null);
     const getPattern = (id) => session.getPattern(id);
@@ -31,6 +33,8 @@ export function createSongEditor(opts = {}) {
     let selectedPatternId = null;
     let selectedClipId = null;
     let unsubscribe = null;
+    let unsubscribeTransport = null;
+    let playheadEl = null;
 
     const root = document.createElement('div');
     root.className = 'song-editor';
@@ -324,6 +328,14 @@ export function createSongEditor(opts = {}) {
         ruler.appendChild(rulerLane);
         grid.appendChild(ruler);
 
+        // Re-created by each render, then only moved on a tick: rebuilding
+        // every clip element sixteen times a bar is not an option.
+        playheadEl = document.createElement('div');
+        playheadEl.className = 'song-playhead';
+        playheadEl.style.display = 'none';
+        grid.appendChild(playheadEl);
+        if (transport) movePlayhead(transport.getColumn(), transport.getMode());
+
         if (song.tracks.length === 0) {
             const empty = document.createElement('div');
             empty.className = 'song-empty';
@@ -515,6 +527,20 @@ export function createSongEditor(opts = {}) {
         return el;
     }
 
+    /**
+     * Park the playhead at a song column. Pattern mode has no song position
+     * to show, so it hides — the roll is where that loop is visible.
+     */
+    function movePlayhead(col, mode) {
+        if (!playheadEl) return;
+        if (col < 0 || mode === 'pattern') {
+            playheadEl.style.display = 'none';
+            return;
+        }
+        playheadEl.style.display = '';
+        playheadEl.style.left = (TRACK_HEAD_W + (col / COLS_PER_MEASURE) * MEASURE_W) + 'px';
+    }
+
     function deleteClip(clipId) {
         change((s) => { removeClip(s, clipId); });
         if (selectedClipId === clipId) selectedClipId = null;
@@ -552,6 +578,9 @@ export function createSongEditor(opts = {}) {
 
     session.init();
     unsubscribe = session.subscribe(() => render());
+    if (transport) {
+        unsubscribeTransport = transport.subscribe((pos) => movePlayhead(pos.col, pos.mode));
+    }
     render();
 
     return {
@@ -563,6 +592,7 @@ export function createSongEditor(opts = {}) {
         destroy() {
             document.removeEventListener('keydown', onKey);
             if (unsubscribe) unsubscribe();
+            if (unsubscribeTransport) unsubscribeTransport();
         },
     };
 }

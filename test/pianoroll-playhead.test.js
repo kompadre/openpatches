@@ -161,10 +161,10 @@ describe('the playhead', () => {
     });
 
     test('the recorder shows it as well', () => {
-        const { roll, ctx } = build();
+        const { roll, ctx, tickWorker } = build();
         roll.startRecording();
         ctx._calls.length = 0;
-        roll.tickRecording(5);
+        tickWorker.tick(5);
         assert.equal(playheadRects(ctx)[0].args[0], LABEL_W + 5 * COL_W - 1);
     });
 });

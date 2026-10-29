@@ -389,3 +389,76 @@ describe('the roll follows the shared session', () => {
         assert.equal(stored.notes.length, 2, 'and the new note was saved');
     });
 });
+
+describe('transport integration (phase 5)', () => {
+    test('a tick sounds each note once — one clock, not two', () => {
+        const h = build();
+        drawNote(h, 60, 0);
+        h.roll.setActiveSlot(1);
+        drawNote(h, 48, 0);
+        h.roll.startPlayback();
+        h.played.length = 0;
+        h.tickWorker.tick(0);
+        // The roll used to own the worker subscription as well; if both it
+        // and the transport fired, every note would double.
+        assert.deepEqual(h.played.map(p => [p.midi, p.slot]).sort(), [[48, 1], [60, 0]]);
+    });
+
+    test('the mode button loops this pattern alone, and back', () => {
+        const h = build();
+        drawNote(h, 60, 0);
+        h.roll.setActiveSlot(1);
+        drawNote(h, 48, 0);
+        const mode = h.roll.element.querySelector('.pianoroll-mode');
+        assert.match(mode.textContent, /Song/);
+
+        mode.dispatch('click');
+        assert.equal(h.roll.getMode(), 'pattern');
+        assert.match(mode.textContent, /Pattern/);
+        h.roll.startPlayback();
+        h.played.length = 0;
+        h.tickWorker.tick(0);
+        assert.deepEqual(h.played.map(p => p.midi), [48], 'only the edited voice');
+
+        mode.dispatch('click');
+        assert.equal(h.roll.getMode(), 'song');
+        h.roll.startPlayback();
+        h.played.length = 0;
+        h.tickWorker.tick(0);
+        assert.deepEqual(h.played.map(p => p.midi).sort(), [48, 60]);
+    });
+
+    test('the playhead hides where the edited pattern is not placed', () => {
+        const h = build();
+        drawNote(h, 60, 0);                       // slot 0, bar 1
+        const song = h.roll.getSession().get();
+        // Give slot 0's clip a second bar to sit in, then move it to bar 2.
+        h.roll.getSession().update((s) => { s.clips[0].startMeasure = 1; }, 'test');
+        h.roll.startPlayback();
+        h.tickWorker.tick(0);
+        assert.ok(h.ctx._calls.filter(c => c.fn === 'fillRect' && c.fillStyle === '#ff3b3b').length === 0,
+            'no playhead at bar 1');
+        h.ctx._calls.length = 0;
+        h.tickWorker.tick(16);
+        assert.ok(h.ctx._calls.some(c => c.fn === 'fillRect' && c.fillStyle === '#ff3b3b'),
+            'playhead appears once the clip is under it');
+        assert.ok(song);
+    });
+
+    test('Stop releases sounding notes exactly once', () => {
+        const released = [];
+        localStorage.clear();
+        const roll = createPianoroll({
+            playNoteFn: () => {}, onNotesChange: () => {}, activeSlot: 0,
+            tickWorker: makeTickWorker(), startWorker: () => {}, stopWorker: () => {},
+            getSlotData: (slot) => BANK[slot] || null,
+            onStopPlayback: () => released.push(1),
+        });
+        roll.addNote({ midi: 60, start: 0, dur: 1, slot: 0 });
+        roll.startPlayback();
+        roll.stopPlayback();
+        assert.deepEqual(released, [1]);
+        roll.stopPlayback();
+        assert.deepEqual(released, [1], 'a second Stop releases nothing');
+    });
+});

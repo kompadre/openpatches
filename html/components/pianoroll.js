@@ -65,7 +65,8 @@ import {
     MIN_BPM, MAX_BPM,
 } from './song-model.js';
 import { createSongSession } from './song-session.js';
-import { createSongSequence, msPerColumn } from '../synth/sequencer.js';
+import { msPerColumn } from '../synth/sequencer.js';
+import { createTransport } from '../synth/transport.js';
 
 const ROW_H = 20;
 const COL_W = 30;
@@ -91,8 +92,27 @@ export function createPianoroll(opts) {
     let notes = [];
     let openClipId = null;        // openClip(): edit this clip's pattern, not the track's first
     const liveCache = new Map();  // patternId → the copy the roll is editing
-    let sequence = null;
     let measures = 1;
+
+    // The clock lives in the transport — it owns the tick worker and decides
+    // what sounds. The roll supplies the live patterns and says which one is
+    // being edited; in return it gets a position on every tick.
+    const transport = opts.transport || createTransport({
+        session,
+        tickWorker: opts.tickWorker,
+        startWorker: opts.startWorker,
+        stopWorker: opts.stopWorker,
+        playNote: (midi, durMs, voiceData, slot) => playNoteFn(midi, durMs, voiceData, slot),
+        getSlotData: (slot) => getSlotData(slot),
+        getPattern: (id) => livePattern(id),
+        getEditTarget: () => {
+            const e = activeEntry();
+            if (!e || !e.pattern) return null;
+            return { trackId: e.id, clipId: e.clipId, pattern: e.pattern, slot: e.slot };
+        },
+        onStop: opts.onStopPlayback || null,
+        log: opts.log || null,
+    });
     const CANVAS_H = HEADER_H + NOTES.length * ROW_H;
     let looping = false;
     // Scroll the view to keep the playhead in sight while playing/recording.
@@ -234,14 +254,6 @@ export function createPianoroll(opts) {
         return out;
     }
 
-    /** Anything to play? Every clip's pattern counts, not only the edited ones. */
-    function songHasNotes() {
-        return session.get().clips.some(c => {
-            const p = livePattern(c.patternId);
-            return !!p && p.notes.length > 0;
-        });
-    }
-
     function getBpm() {
         const v = parseInt(bpmInput.value);
         return Number.isFinite(v) ? Math.max(MIN_BPM, Math.min(MAX_BPM, v)) : DEFAULT_BPM;
@@ -251,7 +263,7 @@ export function createPianoroll(opts) {
     // patterns on purpose, and editing while the loop runs must still be
     // heard on the next pass. Mute/solo it reads live off the session song.
     function refreshSequence() {
-        sequence = createSongSequence(session.get(), (id) => livePattern(id));
+        transport.refresh();
     }
 
     // Changes made by other editors: drop the cached patterns (a rename or
@@ -306,6 +318,26 @@ export function createPianoroll(opts) {
     followBtn.textContent = FOLLOW_LABEL;
     followBtn.title = FOLLOW_TITLE;
     controls.appendChild(followBtn);
+
+    // Song / Pattern. Song is the default and is what the roll has always
+    // done; Pattern loops the one pattern on screen, for writing a part.
+    const modeBtn = document.createElement('button');
+    modeBtn.className = 'pianoroll-btn pianoroll-mode';
+    controls.appendChild(modeBtn);
+
+    function updateModeButton() {
+        const song = transport.getMode() === 'song';
+        modeBtn.textContent = song ? '\u266B Song' : '\u25AD Pattern';
+        modeBtn.title = song
+            ? 'Playing the whole arrangement — click to loop just this pattern'
+            : 'Looping this pattern alone — click to play the whole song';
+        modeBtn.classList.toggle('active', !song);
+    }
+    modeBtn.addEventListener('click', () => {
+        transport.setMode(transport.getMode() === 'song' ? 'pattern' : 'song');
+        updateModeButton();
+    });
+    updateModeButton();
 
     // Desktop clear button (also in moreMenu for mobile)
     const clearBtnDesktop = document.createElement('button');
@@ -1282,114 +1314,49 @@ export function createPianoroll(opts) {
         draw();
     }, { passive: false });
 
-    // --- Sequencer ---
-    let consecutiveErrors = 0;
-    const MAX_CONSECUTIVE_ERRORS = 3;
+    // --- Transport (the clock is the transport's; this is the view) ---
 
     function startPlayback() {
-        if (playing) stopPlayback();
-        // While recording, the worker is already ticking for the recorder;
-        // starting playback on top would route its ticks to the wrong handler.
-        if (recordingActive || recordingTickHandler) return;
-        refreshSequence();
-        if (!sequence.range || !songHasNotes()) return;
-
-        playing = true;
-        looping = true;
-        playCol = 0;
-        consecutiveErrors = 0;
-        playBtn.disabled = true;
-        stopBtn.disabled = false;
-
-        const bpm = Math.max(32, Math.min(255, parseInt(bpmInput.value) || 120));
-        draw();
-        // Without follow the user owns the scroll position; yanking it to
-        // the start on Play would undo whatever they were looking at.
-        if (followPlayhead) scroll.scrollLeft = LABEL_W;
-
-        if (opts.startWorker) {
-            opts.startWorker(opts.tickWorker, bpm, 0);
-        } else if (opts.tickWorker) {
-            opts.tickWorker.postMessage({ type: 'start', bpm: bpm, startCol: 0 });
-        }
+        // Play rewinds the view only when it is following; otherwise the
+        // user owns the scroll position and yanking it would undo whatever
+        // they were looking at.
+        if (transport.play() && followPlayhead) scroll.scrollLeft = LABEL_W;
     }
 
     function stopPlayback() {
-        playing = false;
-        looping = false;
-        playCol = -1;
-        playBtn.disabled = false;
-        stopBtn.disabled = true;
-
-        if (opts.stopWorker) {
-            opts.stopWorker(opts.tickWorker);
-        } else if (opts.tickWorker) {
-            opts.tickWorker.postMessage({ type: 'stop' });
-        }
-
-        // Normalize scroll position within single copy
-        scroll.scrollLeft = scroll.scrollLeft % gridWidth();
-        draw();
-
-        // Release sounding notes. Stopping the tick worker only stops new
-        // note-ons; anything already ringing has to be cut explicitly.
-        if (opts.onStopPlayback) opts.onStopPlayback();
+        transport.stop();
     }
+
+    /**
+     * Every tick, and every start/stop: the transport says where it is and
+     * the roll is purely a view of that. `edit` is the position inside the
+     * pattern on screen — absent when the song's playhead is somewhere this
+     * pattern is not placed, and then there is no playhead to draw.
+     */
+    transport.subscribe((pos) => {
+        playing = pos.playing;
+        recordingActive = pos.recording;
+        looping = pos.playing || pos.recording;
+        playBtn.disabled = looping;
+        stopBtn.disabled = !looping;
+        playCol = pos.edit ? pos.edit.patternCol : -1;
+        updateModeButton();
+
+        if (!looping) {
+            scroll.scrollLeft = scroll.scrollLeft % gridWidth();
+            draw();
+            return;
+        }
+        draw();
+        if (!followPlayhead || playCol < 0) return;
+        // Recomputed each tick: measures change under us (loadState, +/- Msr)
+        const gw = gridWidth();
+        scroll.scrollLeft = LABEL_W + playCol * COL_W;
+        if (scroll.scrollLeft >= LABEL_W + gw) scroll.scrollLeft -= gw;
+    });
 
     // --- Tick Worker Handler ---
-    let recordingTickHandler = null;
-
-    function handlePlaybackTick(rawCol) {
-        if (!sequence || !sequence.range) return;
-        const wrappedCol = sequence.columnForTick(rawCol);
-        const msPerSixteenth = msPerColumn(getBpm());
-
-        // Every track sounds, each on its own slot — the roll edits one
-        // pattern but plays the whole song.
-        for (const ev of sequence.eventsAt(wrappedCol)) {
-            try {
-                const entry = getSlotData(ev.slot);
-                const voiceData = entry ? entry.voiceData : null;
-                playNoteFn(ev.midi, ev.dur * msPerSixteenth, voiceData, ev.slot);
-                consecutiveErrors = 0;
-            } catch (e) {
-                consecutiveErrors++;
-                if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-                    stopPlayback();
-                    return;
-                }
-            }
-        }
-
-        // The roll's playhead is pattern-local: where the edited pattern
-        // sits under the song's playhead, if it is under it at all.
-        const entry = activeEntry();
-        const here = entry ? sequence.locate(wrappedCol).tracks[entry.id] : null;
-        playCol = here && here.clipId === entry.clipId ? here.patternCol : -1;
-        draw();
-
-        if (!followPlayhead || playCol < 0) return;
-        // Recompute each tick — measures can change after construction (loadState, +/- Msr)
-        const gw = gridWidth();
-        const scrollX = LABEL_W + playCol * COL_W;
-        scroll.scrollLeft = scrollX;
-        if (scroll.scrollLeft >= LABEL_W + gw) {
-            scroll.scrollLeft -= gw;
-        }
-    }
-
-    // Register worker message listener
-    if (opts.tickWorker) {
-        opts.tickWorker.addEventListener('message', (e) => {
-            if (e.data.type !== 'tick') return;
-            const rawCol = e.data.col;
-            if (recordingTickHandler) {
-                recordingTickHandler(rawCol);
-            } else if (playing) {
-                handlePlaybackTick(rawCol);
-            }
-        });
-    }
+    // (gone: the transport owns the worker subscription now)
 
     playBtn.addEventListener('click', startPlayback);
     stopBtn.addEventListener('click', stopPlayback);
@@ -1473,9 +1440,12 @@ export function createPianoroll(opts) {
          * Insert a note on `slot`'s track (the recorder names the slot it
          * recorded on, which need not be the one being edited).
          */
-        addNote({ midi, start, dur, slot }) {
+        addNote({ midi, start, dur, slot, clipId }) {
             const target = slot != null ? slot : currentSlot();
-            const track = ensureTrackForSlot(target);
+            // The recorder names the clip when the song's playhead is over
+            // one; otherwise the voice's own track takes the note.
+            let track = clipId ? tracks.find(t => t.clipId === clipId) : null;
+            if (!track || !track.pattern) track = ensureTrackForSlot(target);
             selectSlot(currentSlot());
             const note = { midi, start, dur };
             track.pattern.notes.push(note);
@@ -1531,49 +1501,14 @@ export function createPianoroll(opts) {
             scroll.scrollLeft = target;
         },
         startRecording() {
-            recordingActive = true;
-            looping = true;
-            playCol = 0;
-            // Play is a silent no-op while the recorder owns the worker;
-            // say so instead of leaving a live-looking button.
-            playBtn.disabled = true;
-            draw();
+            transport.startRecording();
         },
         stopRecording() {
-            recordingActive = false;
-            looping = false;
-            playCol = -1;
-            playBtn.disabled = false;
-            recordingTickHandler = null;
+            transport.stop();
             for (const { note } of allNotes()) delete note._recordedInSession;
-            scroll.scrollLeft = scroll.scrollLeft % gridWidth();
-            draw();
-        },
-        setRecordingTickHandler(handler) {
-            recordingTickHandler = handler;
         },
         clearRecordingFlags() {
             for (const { note } of allNotes()) delete note._recordedInSession;
-        },
-        tickRecording(col) {
-            // Play notes at this column and advance playhead
-            const tc = totalCols();
-            const wrappedCol = ((col % tc) + tc) % tc;
-            const msPerSixteenth = msPerColumn(getBpm());
-            // Read live, not through the sequencer: the _recordedInSession
-            // flag is on the note objects the recorder is writing.
-            for (const { note: n, track } of allNotes()) {
-                if (n.start === wrappedCol && !n._recordedInSession) {
-                    try {
-                        const entry = getSlotData(track.slot);
-                        const voiceData = entry ? entry.voiceData : null;
-                        playNoteFn(n.midi, n.dur * msPerSixteenth, voiceData, track.slot);
-                        logRecord(`[record:playback] midi=${n.midi} col=${wrappedCol} dur=${n.dur} slot=${track.slot}`);
-                    } catch (e) { /* ignore */ }
-                }
-            }
-            playCol = wrappedCol;
-            draw();
         },
         /** The edited pattern's notes (no slot — the track carries it). */
         getNotes() { return notes; },
@@ -1601,6 +1536,9 @@ export function createPianoroll(opts) {
             return true;
         },
         getSession() { return session; },
+        getTransport() { return transport; },
+        getMode() { return transport.getMode(); },
+        setMode(m) { transport.setMode(m); updateModeButton(); },
         getBpm() { return parseInt(bpmInput.value) || DEFAULT_BPM; },
         /**
          * Sequencer state in the flat shape the song bar still speaks:

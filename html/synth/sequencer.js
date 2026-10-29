@@ -136,6 +136,10 @@ export function createSongSequence(song, getPattern) {
                         trackId: p.track.id,
                         clipId: p.clip.id,
                         patternId: p.pattern.id,
+                        // The note object itself: the recorder marks the
+                        // notes it just wrote so they are not echoed back
+                        // at the player on the same pass.
+                        note: n,
                     });
                 }
             }
@@ -188,7 +192,7 @@ export function createPatternSequence(pattern, slot) {
             const events = [];
             for (const n of pattern.notes) {
                 if (n.start !== col) continue;
-                events.push({ midi: n.midi, dur: n.dur, slot, trackId, clipId: null, patternId: pattern.id });
+                events.push({ midi: n.midi, dur: n.dur, slot, trackId, clipId: null, patternId: pattern.id, note: n });
             }
             return events;
         },

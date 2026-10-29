@@ -106,7 +106,10 @@ describe('createSongSequence — placement', () => {
     test('events carry duration in columns and the ids the UI needs', () => {
         const s = song({ clips: [{ id: 'c1', trackId: 't1', patternId: 'p1', startMeasure: 0 }] });
         const [e] = S.createSongSequence(s, lib(P1())).eventsAt(0);
-        assert.deepEqual(e, { midi: 60, dur: 2, slot: 0, trackId: 't1', clipId: 'c1', patternId: 'p1' });
+        assert.deepEqual(e, {
+            midi: 60, dur: 2, slot: 0, trackId: 't1', clipId: 'c1', patternId: 'p1',
+            note: { midi: 60, start: 0, dur: 2 },
+        });
     });
 
     test('a clip at measure 2 is offset by 32 columns', () => {
@@ -329,7 +332,10 @@ describe('createPatternSequence', () => {
         assert.equal(seq.columnForTick(16), 0);
         assert.equal(seq.columnForTick(20), 4);
         assert.deepEqual(firing(seq, 0), [[60, 5]]);
-        assert.deepEqual(seq.eventsAt(4)[0], { midi: 64, dur: 1, slot: 5, trackId: 'pattern', clipId: null, patternId: 'p1' });
+        assert.deepEqual(seq.eventsAt(4)[0], {
+            midi: 64, dur: 1, slot: 5, trackId: 'pattern', clipId: null, patternId: 'p1',
+            note: { midi: 64, start: 4, dur: 1 },
+        });
     });
 
     test('reads the pattern live — the editor mutates it while it loops', () => {

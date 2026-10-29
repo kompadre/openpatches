@@ -265,6 +265,28 @@ export function createToolbar(opts) {
     });
     pianorollRow.appendChild(pianorollRef.element);
 
+    // The clock. The roll made it (or was handed one); the toolbar drives
+    // takes with it and the song editor draws its playhead from it.
+    const transport = pianorollRef.getTransport();
+
+    // Recording: the transport runs the clock and sounds the arrangement;
+    // the toolbar only has to finalise notes held across the loop seam.
+    transport.subscribe((pos) => {
+        if (!pos.recording || !pos.seam) return;
+        logRecord(`[record] seam at rawCol=${pos.rawCol}, finalizing ${activePresses.size} held note(s)`);
+        for (const [midi, press] of [...activePresses]) {
+            const mapped = transport.mapRecordColumn(press.startCol, activeRecordSlot);
+            const tc = pianorollRef.totalCols ? pianorollRef.totalCols() : 16;
+            const col = mapped && (mapped.fresh ? ((press.startCol % tc) + tc) % tc : mapped.patternCol);
+            if (mapped && col > 0) {
+                logRecord(`[record] seam-split midi=${midi} startCol=${press.startCol} endCol=${pos.rawCol}`);
+                addRecordedNote(midi, press.startCol, pos.rawCol, activeRecordSlot);
+                activePresses.delete(midi);
+            }
+        }
+        if (pianorollRef.clearRecordingFlags) pianorollRef.clearRecordingFlags();
+    });
+
     // Initialize active slot from voice bank's restored active entry
     const initActive = voiceBank._getActive ? voiceBank._getActive() : null;
     if (initActive) {
@@ -275,6 +297,7 @@ export function createToolbar(opts) {
     // --- Song editor (Song tab) ---
     const songEditor = createSongEditor({
         session,
+        transport,
         log: opts.appendLog || (() => {}),
         getSlotData: (slot) => {
             const entries = voiceBank._getEntries ? voiceBank._getEntries() : [];
@@ -553,65 +576,23 @@ export function createToolbar(opts) {
         syncRecordButtons();
         btnPlayStop.textContent = 'Play ▶';
         btnPlayStop.classList.remove('active');
-        if (opts.stopWorker) {
-            opts.stopWorker(opts.tickWorker);
-        } else if (opts.tickWorker) {
-            opts.tickWorker.postMessage({ type: 'stop' });
-        }
+        // One stop: the transport owns the worker and releases the notes.
         if (pianorollRef && pianorollRef.stopRecording) pianorollRef.stopRecording();
-        if (pianorollRef && pianorollRef.stopPlayback) pianorollRef.stopPlayback();
     }
 
     function toggleRecording() {
         if (recording) {
             stopAll();
-        } else {
-            // Recording replaces any running playback — stop it first so the
-            // worker isn't asked to start while it is already looping.
-            if (pianorollRef && pianorollRef.isPlaying && pianorollRef.isPlaying()) {
-                pianorollRef.stopPlayback();
-            }
-            recording = true;
-            recordStartTime = performance.now();
-            syncRecordButtons();
-            btnPlayStop.textContent = 'Stop ■';
-            undoStack.length = 0;
-            if (pianorollRef && pianorollRef.startRecording) pianorollRef.startRecording();
-
-            // Register recording tick handler on pianoroll
-            if (pianorollRef && pianorollRef.setRecordingTickHandler) {
-                pianorollRef.setRecordingTickHandler(function recordingTick(rawCol) {
-                    if (!recording || !pianorollRef) return;
-                    const tc = pianorollRef.totalCols ? pianorollRef.totalCols() : 16;
-                    const wrappedCol = ((rawCol % tc) + tc) % tc;
-
-                    // At loop seam: finalize held notes and clear recording flags
-                    if (wrappedCol === 0 && rawCol > 0) {
-                        logRecord(`[record] seam at rawCol=${rawCol}, finalizing ${activePresses.size} held note(s)`);
-                        for (const [midi, press] of activePresses) {
-                            const pressWrappedCol = ((press.startCol % tc) + tc) % tc;
-                            if (pressWrappedCol > 0) {
-                                logRecord(`[record] seam-split midi=${midi} startCol=${press.startCol} endCol=${rawCol}`);
-                                addRecordedNote(midi, press.startCol, rawCol, activeRecordSlot);
-                                activePresses.delete(midi);
-                            }
-                        }
-                        if (pianorollRef.clearRecordingFlags) pianorollRef.clearRecordingFlags();
-                    }
-
-                    if (pianorollRef.tickRecording) pianorollRef.tickRecording(rawCol);
-                    if (pianorollRef.scrollToCol) pianorollRef.scrollToCol(rawCol);
-                });
-            }
-
-            // Start the tick worker
-            const bpm = pianorollRef && pianorollRef.getBpm ? pianorollRef.getBpm() : 120;
-            if (opts.startWorker) {
-                opts.startWorker(opts.tickWorker, bpm, 0);
-            } else if (opts.tickWorker) {
-                opts.tickWorker.postMessage({ type: 'start', bpm: bpm, startCol: 0 });
-            }
+            return;
         }
+        recording = true;
+        recordStartTime = performance.now();
+        syncRecordButtons();
+        btnPlayStop.textContent = 'Stop ■';
+        undoStack.length = 0;
+        // Starting a take stops any playback first — the transport refuses
+        // to run two things on one clock.
+        if (pianorollRef && pianorollRef.startRecording) pianorollRef.startRecording();
     }
 
     btnRecord.addEventListener('click', toggleRecording);
@@ -638,12 +619,19 @@ export function createToolbar(opts) {
 
     function addRecordedNote(midi, startCol, endCol, slot) {
         if (!pianorollRef || !pianorollRef.addNote) return;
+        // Where does this column land? In song mode that depends on which
+        // clip is under the playhead on this voice; with none, the note was
+        // heard but there is nothing to write it into.
+        const mapped = transport.mapRecordColumn(startCol, slot);
+        if (!mapped) return;              // placed elsewhere: heard, not recorded
         const tc = pianorollRef.totalCols ? pianorollRef.totalCols() : 16;
         // Calculate duration from raw columns (before wrapping)
         const rawDur = Math.max(1, endCol - startCol);
         const dur = Math.min(rawDur, tc); // cap at total cols
-        const s = ((startCol % tc) + tc) % tc;
-        const note = pianorollRef.addNote({ midi, start: s, dur, slot });
+        // `fresh` means this voice has nothing placed yet — wrap on the grid
+        // and let addNote() start a track and a clip at bar 1, as before.
+        const start = mapped.fresh ? ((startCol % tc) + tc) % tc : mapped.patternCol;
+        const note = pianorollRef.addNote({ midi, start, dur, slot, clipId: mapped.fresh ? null : mapped.clipId });
         if (note) {
             note._recordedInSession = true;
             undoStack.push(note);

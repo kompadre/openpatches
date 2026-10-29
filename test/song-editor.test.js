@@ -434,3 +434,66 @@ describe('it follows the session', () => {
         assert.equal(h.song().clips.length, 1);
     });
 });
+
+describe('playhead (phase 5)', () => {
+    async function withTransport() {
+        const { createTransport } = await import('../html/synth/transport.js');
+        const session = createSongSession();
+        session.init();
+        const pattern = M.patternStore.create({ name: 'A', measures: 2, notes: [{ midi: 60, start: 0, dur: 1 }] });
+        let clipId = null;
+        session.update((song) => {
+            const t = M.createTrack({ slot: 0 });
+            song.tracks.push(t);
+            clipId = M.addClip(song, { trackId: t.id, patternId: pattern.id, startMeasure: 0, repeats: 2 }, getPattern).id;
+        }, 'test');
+        const handlers = [];
+        const tickWorker = {
+            postMessage() {}, addEventListener(t, fn) { if (t === 'message') handlers.push(fn); },
+            tick(col) { for (const fn of handlers) fn({ data: { type: 'tick', col } }); },
+        };
+        const transport = createTransport({
+            session, tickWorker, startWorker: () => {}, stopWorker: () => {},
+            playNote: () => {}, getSlotData: () => null,
+            getPattern: (id) => M.patternStore.get(id),
+            getEditTarget: () => ({ trackId: session.get().tracks[0].id, clipId, pattern, slot: 0 }),
+        });
+        const editor = createSongEditor({ session, transport, getSlotData: (s) => BANK[s] || null });
+        return { editor, transport, tickWorker, session, root: editor.element };
+    }
+
+    test('hidden at rest, follows the song column while playing', async () => {
+        const h = await withTransport();
+        const head = () => h.root.querySelector('.song-playhead');
+        assert.equal(head().style.display, 'none');
+
+        h.transport.play();
+        h.tickWorker.tick(0);
+        assert.equal(head().style.display, '');
+        const left0 = parseFloat(head().style.left);
+        h.tickWorker.tick(16);                       // one bar on
+        assert.equal(parseFloat(head().style.left) - left0, MEASURE_W);
+
+        h.transport.stop();
+        assert.equal(head().style.display, 'none');
+    });
+
+    test('hidden in pattern mode — that loop is the roll\'s business', async () => {
+        const h = await withTransport();
+        h.transport.setMode('pattern');
+        h.transport.play();
+        h.tickWorker.tick(4);
+        assert.equal(h.root.querySelector('.song-playhead').style.display, 'none');
+    });
+
+    test('it survives a re-render and does not rebuild the clips per tick', async () => {
+        const h = await withTransport();
+        h.transport.play();
+        h.tickWorker.tick(0);
+        const clipEl = h.root.querySelectorAll('.song-clip')[0];
+        h.tickWorker.tick(4);
+        assert.equal(h.root.querySelectorAll('.song-clip')[0], clipEl, 'a tick moves the line, nothing else');
+        h.editor.render();
+        assert.ok(h.root.querySelector('.song-playhead'), 'still there after a render');
+    });
+});

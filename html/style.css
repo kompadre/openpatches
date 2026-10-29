@@ -4332,6 +4332,22 @@ footer {
 .song-clip-label { padding: 0 0.3rem; font-size: 0.65rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 1px rgba(0,0,0,0.6); }
 .song-clip-handle { position: absolute; right: 0; top: 0; bottom: 0; width: 8px; cursor: ew-resize; background: rgba(255,255,255,0.35); }
 
+.song-playhead {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: #ff3b3b;
+    pointer-events: none;
+    z-index: 3;
+}
+
+.pianoroll-mode.active {
+    /* Pattern mode: the loop on screen is all that sounds. */
+    border-color: #e9a045;
+    color: #e9a045;
+}
+
 .song-add-track-row, .song-clip-actions { display: flex; gap: 0.4rem; padding: 0.3rem; position: sticky; left: 0; }
 .song-empty { padding: 0.5rem; color: #777; font-style: italic; }
 .song-status { min-height: 1em; padding: 0 0.4rem; color: #e9a045; font-size: 0.7rem; }
