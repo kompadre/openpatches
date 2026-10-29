@@ -683,3 +683,90 @@ describe('pattern rename without a double-click', () => {
         assert.equal(M.patternStore.get(h.patterns[0].id).name, 'A');
     });
 });
+
+// A clip dragged into another lane changes track. Only the notes travel —
+// a clip is a pattern id placed somewhere, and the voice is the track's.
+describe('moving clips between tracks', () => {
+    const LANE_H = 30;
+    function two(extraClips = []) {
+        const h = build({
+            patterns: [{ name: 'A', measures: 2, notes: [{ midi: 60, start: 0, dur: 1 }] }],
+            tracks: [{ slot: 0 }, { slot: 1 }],
+            clips: [{ track: 0, pattern: 0, at: 0 }, ...extraClips],
+        });
+        // The harness has no layout: give the lanes stacked rectangles.
+        h.lanes().forEach((lane, i) => {
+            lane.getBoundingClientRect = () => ({ top: i * LANE_H, bottom: (i + 1) * LANE_H, left: 0, right: 1000 });
+        });
+        return h;
+    }
+    const drag = (h, clip, from, to) => {
+        clip.dispatch('mousedown', ev(from));
+        h.doc('mousemove', ev(to));
+        h.doc('mouseup', ev(to));
+    };
+
+    test('a vertical drag moves the clip to the lane under the pointer, same bar', () => {
+        const h = two();
+        const before = h.song().clips[0];
+        drag(h, h.clips()[0], { clientX: 10, clientY: 5 }, { clientX: 10, clientY: LANE_H + 5 });
+        const after = h.song().clips[0];
+        assert.equal(after.trackId, h.song().tracks[1].id);
+        assert.equal(after.startMeasure, 0);
+        assert.equal(after.patternId, before.patternId, 'the same pattern — only the notes moved');
+        assert.equal(h.lanes()[1].querySelectorAll('.song-clip').length, 1, 'drawn in the new lane');
+        assert.equal(h.lanes()[0].querySelectorAll('.song-clip').length, 0);
+    });
+
+    test('it then sounds on the new track\'s voice', async () => {
+        const { createSongSequence } = await import('../html/synth/sequencer.js');
+        const h = two();
+        drag(h, h.clips()[0], { clientX: 10, clientY: 5 }, { clientX: 10, clientY: LANE_H + 5 });
+        const ev0 = createSongSequence(h.song(), getPattern).eventsAt(0);
+        assert.deepEqual(ev0.map(e => [e.midi, e.slot]), [[60, 1]]);
+    });
+
+    test('diagonal: bars and track change together', () => {
+        const h = two();
+        drag(h, h.clips()[0], { clientX: 0, clientY: 5 }, { clientX: 3 * MEASURE_W, clientY: LANE_H + 5 });
+        const c = h.song().clips[0];
+        assert.equal(c.trackId, h.song().tracks[1].id);
+        assert.equal(c.startMeasure, 3);
+    });
+
+    test('while dragging, the clip previews in the target lane in that voice\'s colour', () => {
+        const h = two();
+        const clip = h.clips()[0];
+        clip.dispatch('mousedown', ev({ clientX: 10, clientY: 5 }));
+        h.doc('mousemove', ev({ clientX: 10, clientY: LANE_H + 5 }));
+        assert.equal(clip.parentNode, h.lanes()[1]);
+        assert.equal(clip.style.background, BANK[1].color);
+        h.doc('mousemove', ev({ clientX: 10, clientY: 5 }));
+        assert.equal(clip.parentNode, h.lanes()[0], 'and back');
+        h.doc('mouseup', ev({ clientX: 10, clientY: 5 }));
+        assert.equal(h.song().clips[0].trackId, h.song().tracks[0].id, 'returned home: nothing changed');
+    });
+
+    test('landing on a clip in the other lane is refused and snaps back', () => {
+        const h = two([{ track: 1, pattern: 0, at: 1 }]);          // [1,3) on track 1
+        drag(h, h.clips()[0], { clientX: 0, clientY: 5 }, { clientX: 0, clientY: LANE_H + 5 });  // [0,2) → overlaps
+        assert.equal(h.song().clips[0].trackId, h.song().tracks[0].id);
+        assert.equal(h.status(), 'Clip overlaps');
+        assert.equal(h.lanes()[0].querySelectorAll('.song-clip').length, 1, 're-rendered where it was');
+    });
+
+    test('a pointer outside every lane keeps the last lane it was over', () => {
+        const h = two();
+        drag(h, h.clips()[0], { clientX: 10, clientY: 5 }, { clientX: 10, clientY: 10 * LANE_H });
+        assert.equal(h.song().clips[0].trackId, h.song().tracks[0].id);
+    });
+
+    test('touch: the same, with touches', () => {
+        const h = two();
+        const clip = h.clips()[0];
+        clip.dispatch('touchstart', ev({ touches: [{ clientX: 10, clientY: 5 }] }));
+        h.doc('touchmove', ev({ touches: [{ clientX: 10, clientY: LANE_H + 5 }] }));
+        h.doc('touchend', ev({ changedTouches: [{ clientX: 10, clientY: LANE_H + 5 }] }));
+        assert.equal(h.song().clips[0].trackId, h.song().tracks[1].id);
+    });
+});

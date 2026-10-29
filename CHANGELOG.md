@@ -2,6 +2,10 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-10-29: Moving clips between tracks
+
+- Drag a clip in the Song tab into another lane, diagonally if you like; it previews in the target lane in that voice's colour and lands through `updateClip` with the new `trackId`, so an occupied destination is refused and reported like any other edit. Nothing in the model changed: a clip was already only a pattern placed on a track, so the notes move and the instrument stays the track's. Pure vertical drags now count as moves (they were previously ignored as hold-cancellers). `moving clips between tracks` block in `test/song-editor.test.js`.
+
 ## 2026-10-29: Song-level play controls; the roll's Play loops the pattern where it sits
 
 - **Song tab Play / Stop** — first in its toolbar; Play there is song mode, state mirrored from the transport's broadcasts.

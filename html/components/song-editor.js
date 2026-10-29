@@ -467,7 +467,7 @@ export function createSongEditor(opts = {}) {
         el.style.left = (span.start * MEASURE_W) + 'px';
         el.style.width = ((span.end - span.start) * MEASURE_W - 2) + 'px';
         el.style.background = slotColor(track.slot);
-        el.title = `${pattern.name} × ${clip.repeats} — drag to move, drag the edge to repeat, hold to open, double-click to remove`;
+        el.title = `${pattern.name} × ${clip.repeats} — drag to move (to another track too), drag the edge to repeat, hold to open, double-click to remove`;
 
         const label = document.createElement('span');
         label.className = 'song-clip-label';
@@ -491,6 +491,12 @@ export function createSongEditor(opts = {}) {
         // measures; the model decides whether the result is legal. Below
         // DRAG_THRESHOLD a press is a click: no preview, no re-render.
         //
+        // A move is two-dimensional: sideways by measures, and down or up
+        // into another track's lane. A clip is only a pattern placed
+        // somewhere — the voice is the track's — so crossing lanes needs
+        // nothing but a new trackId, and the model's overlap check covers
+        // the destination as it does the origin.
+        //
         // The body also carries the two gestures the piano roll's notes
         // have: a second press within DOUBLE_TAP_MS removes the clip, and a
         // press held still for LONG_PRESS_MS opens it in the roll. Both are
@@ -508,6 +514,14 @@ export function createSongEditor(opts = {}) {
             const origin = pointer(e);
             let moved = false;
             let hold = null;
+            let targetLane = lane;     // where the body is being dragged to
+            const laneAt = (clientY) => {
+                for (const l of Array.from(grid.querySelectorAll('.song-lane'))) {
+                    const r = l.getBoundingClientRect();
+                    if (clientY >= r.top && clientY < r.bottom) return l;
+                }
+                return null;
+            };
             const detach = () => {
                 if (hold) { clearTimeout(hold); hold = null; }
                 document.removeEventListener('mousemove', onMove);
@@ -522,11 +536,19 @@ export function createSongEditor(opts = {}) {
                 const dy = pt.y - origin.y;
                 if (!moved && Math.abs(dx) < DRAG_THRESHOLD && Math.abs(dy) < DRAG_THRESHOLD) return;
                 if (hold) { clearTimeout(hold); hold = null; }   // it moved: a drag, not a hold
-                if (!moved && Math.abs(dx) < DRAG_THRESHOLD) return;
                 moved = true;
                 const dm = Math.round(dx / MEASURE_W);
                 if (mode === 'move') {
                     el.style.left = (Math.max(0, span.start + dm) * MEASURE_W) + 'px';
+                    // Preview across lanes: re-parent the element and show
+                    // it in the colour of the voice it would play on.
+                    const over = laneAt(pt.y) || targetLane;
+                    if (over !== targetLane) {
+                        targetLane = over;
+                        targetLane.appendChild(el);
+                        const t = session.get().tracks.find(x => x.id === targetLane.dataset.trackId);
+                        if (t) el.style.background = slotColor(t.slot);
+                    }
                 } else {
                     const reps = Math.max(1, Math.round((span.end - span.start + dm) / pattern.measures));
                     el.style.width = (reps * pattern.measures * MEASURE_W - 2) + 'px';
@@ -544,8 +566,9 @@ export function createSongEditor(opts = {}) {
                 selectedClipId = clip.id;
                 if (mode === 'move') {
                     const startMeasure = Math.max(0, span.start + dm);
-                    if (startMeasure === clip.startMeasure) { render(); return; }
-                    change((s) => { updateClip(s, clip.id, { startMeasure }, getPattern); });
+                    const trackId = targetLane.dataset.trackId || clip.trackId;
+                    if (startMeasure === clip.startMeasure && trackId === clip.trackId) { render(); return; }
+                    change((s) => { updateClip(s, clip.id, { startMeasure, trackId }, getPattern); });
                 } else {
                     const repeats = Math.max(1, Math.round((span.end - span.start + dm) / pattern.measures));
                     if (repeats === clip.repeats) { render(); return; }
