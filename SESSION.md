@@ -178,9 +178,26 @@ deliberately later — `pattern.kind` is the hook.
   keys are read-only and left in place until phase 6.
   **Nothing calls `migrateIfNeeded()` yet** — phase 3 wires it at startup.
   `test/song-model.test.js`, `test/song-migration.test.js` (66 tests).
-- [ ] **Phase 2 — sequencer core.** `html/synth/sequencer.js`: given a song +
-  patterns, answer "what starts at absolute column N, on which slot",
-  honoring mute/solo and the loop range. Pure, no DOM, no worker.
+- [x] **Phase 2 — sequencer core (2026-10-29).** `html/synth/sequencer.js`,
+  pure: no DOM, no worker, no audio. One interface for both modes —
+  `createSongSequence(song, getPattern)` and `createPatternSequence(pattern,
+  slot)` both expose `{ kind, length, range, columnForTick(raw), eventsAt(col),
+  locate(col) }`. The transport maps the worker's running count with
+  `columnForTick` (wraps inside `range`: the song's loop in columns, else the
+  whole song; `null` = nothing to play, refuse like the empty roll), fires
+  `eventsAt` (`{midi, dur (columns), slot, trackId, clipId, patternId}`),
+  converts `dur` with `msPerColumn(bpm)`. Editors draw playheads from
+  `locate` (song measure + pattern-local column per track under the head;
+  muted tracks included). **Patterns are snapshotted at compile time** —
+  `patternStore.get()` parses localStorage and must never run on a tick, so
+  a clip/pattern edit means `createSongSequence()` again (cheap; the
+  transport does it on every change). **Mute/solo are read live** from the
+  song's track objects, so toggles land on the next column. Solo beats mute
+  on the same track. A clip whose pattern or track is missing is silence and
+  does not count toward `length`; a hand-edited overlap plays both. Pattern
+  mode reads the pattern live (the editor mutates it while it loops).
+  `test/sequencer.test.js` (37 tests, incl. a full walk asserting every note
+  fires exactly once per pass). Not wired to anything yet — phase 5.
 - [ ] **Phase 3 — pattern editor refactor.** pianoroll.js edits a Pattern
   through a small interface; per-note `slot` removed; existing tests updated.
 - [ ] **Phase 4 — song editor.** `html/components/song-editor.js`: tracks ×
@@ -234,6 +251,7 @@ OpenPatches is a browser-based DX7 patch editor and sequencer. It communicates w
 - `html/synth/midi-devices.js`: device profile table + `detectDeviceType(portName)`; see the profiles entry above. Pure data/regex, no DOM, no MIDI.
 - `html/synth/midi-manager.js`: Web MIDI singleton, same shape as audio-manager. Holds the persisted `deviceType` ('auto' or a profile id) and resolves it via `getDeviceProfile()`; `receiveBank`/`sendBank` consult the profile. Access is requested only on demand and never at import time. Two permission tiers: `requestMidi({sysex:false})` for notes, `requestMidi({sysex:true})` for bulk dumps — the upgrade re-prompts and swaps the `MIDIAccess`, so `attachInputListener()` re-binds the input handler by object identity, and a generation counter stops an older in-flight request clobbering a newer grant. Port selection persists to localStorage by id **with a name fallback** (ids are not stable across sessions). `panic()` = CC 120 + CC 123 on all 16 channels; called on emergency stop, output change, `pagehide` and tab-hide. `receiveBank`/`sendBank` are the real SysEx transport (see syx-builder). Test seams: `_reset()`, `_getAccess()`. **Note output:** `outputMode` (internal/midi/both), `slotChannels[8]` (slot → MIDI channel, identity default), `playNoteOut()`/`stopNoteOut()`/`releaseAllOut()` with an `outNotes` map keyed `"channel:midi"`. `isInternalEnabled()` returns true when MIDI-only is selected but no device is reachable — the app must never go silent because a cable was unplugged. **Output latency:** a persisted setting (`getOutputLatency`/`setOutputLatency`, default 317 measured against a Volca FM, max 1000) added to every note-path timestamp by `sendAt()`, the single send helper; SysEx is unstamped. `panic()` sweeps twice, now and at `+latency`. `playLatencyProbe(midi, {durMs, voiceData, onWire})` is the calibration tick for the settings modal.
 - `html/components/midi-panel.js`: MIDI settings modal (enable, input/output selects, device channel, **device type** with profile notes, output mode, slot map, **output-latency slider + flashing test-tone calibrator** fed by `opts.playTestNote`/`prepareTestNote`/`testVoiceData` from app.js, audition, panic) and `sendBankToDevice()` — the guarded confirm → optional backup → send flow. A failed backup aborts the send; it never falls through to "proceed anyway". Transport is real since Phase 4; the backup step uses `receiveBank`.
+- `html/synth/sequencer.js`: pure sequencer core. `createSongSequence` / `createPatternSequence` share one interface (`length`, `range`, `columnForTick`, `eventsAt`, `locate`); `audibleTrackIds` (solo set if any, else unmuted), `playbackRange`, `wrapToRange`, `msPerColumn`. Snapshots patterns at creation, reads mute/solo live. Imports song-model for `COLS_PER_MEASURE`/`clipSpan` only.
 - `html/synth/tick-worker.js`: Web Worker heartbeat for pianoroll. Atomics.wait path (SharedArrayBuffer) for zero-CPU sleeping, setTimeout fallback. Absolute targeting (`t0 + col * msPer`), spin for sub-ms precision. Start/stop via a generation counter in shared memory (`Int32Array[0]`): app.js `startTickWorker`/`stopTickWorker` bump it + `Atomics.notify`; a loop exits when the counter moves, and a `start` whose `gen` is outdated is ignored. Always start through `opts.startWorker`, never raw `postMessage`. Worker stays alive for reuse.
 - `html/synth/dx7-synth.js`: Batch waveform rendering only (main thread WASM). No realtime synth code.
 - `html/synth/dx7-processor.js`: AudioWorkletProcessor wrapping MSFA DX7 engine. Ring buffer (~300ms lookahead) for audio stability. Handles `voice-snapshot`, `midi`, `patch`, `play-samples`, `channel-volume`, `reinit` messages. MIDI logging via `logMidi` no-op (override to enable).
