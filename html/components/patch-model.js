@@ -50,7 +50,6 @@ const CANVAS_KEY = 'openpatches_canvas';
 const JOBS_KEY = 'openpatches_jobs';
 const PATCH_NAMES_KEY = 'openpatches_patch_names';
 const TAGS_KEY = 'openpatches_all_tags';
-const SONGS_KEY = 'openpatches_songs';
 
 // --- patchStore ---
 
@@ -242,65 +241,4 @@ export const tagStore = {
             saveGlobalTags(tags);
         }
     }
-};
-
-// --- songStore ---
-//
-// A song is a named snapshot of the sequencer: piano roll notes, BPM and
-// measure count, plus the voice bank's slot assignments (the notes reference
-// slots by index, so without them a song is just rhythm). Keyed by name;
-// names are unique, compared exactly after trimming.
-
-function loadSongs() {
-    try {
-        const map = JSON.parse(localStorage.getItem(SONGS_KEY) || '{}');
-        return map && typeof map === 'object' && !Array.isArray(map) ? map : {};
-    } catch { return {}; }
-}
-
-function saveSongs(map) {
-    try {
-        localStorage.setItem(SONGS_KEY, JSON.stringify(map));
-    } catch (e) {
-        console.warn('songStore save failed:', e);
-    }
-}
-
-export const songStore = {
-    /** Saved song names, sorted case-insensitively for the autocomplete. */
-    list() {
-        return Object.keys(loadSongs()).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-    },
-    has(name) {
-        return Object.prototype.hasOwnProperty.call(loadSongs(), String(name).trim());
-    },
-    get(name) {
-        return loadSongs()[String(name).trim()] || null;
-    },
-    /**
-     * Save under a new name. Never overwrites: a collision throws
-     * 'Song exists', which the UI shows verbatim. Loading a song, editing it
-     * and saving it back is deliberately a save-under-another-name.
-     */
-    create(name, data) {
-        const key = String(name == null ? '' : name).trim();
-        if (!key) throw new Error('Song name is empty');
-        const map = loadSongs();
-        if (Object.prototype.hasOwnProperty.call(map, key)) throw new Error('Song exists');
-        // JSON round-trip: the stored copy must not share arrays with the
-        // live sequencer. Typed arrays (voice data) have no toJSON and would
-        // serialise as {"0":..,"1":..}; the replacer turns them into arrays.
-        const plain = (k, v) => (ArrayBuffer.isView(v) ? Array.from(v) : v);
-        map[key] = { name: key, data: JSON.parse(JSON.stringify(data, plain)), savedAt: Date.now() };
-        saveSongs(map);
-        return map[key];
-    },
-    remove(name) {
-        const map = loadSongs();
-        const key = String(name).trim();
-        if (!Object.prototype.hasOwnProperty.call(map, key)) return false;
-        delete map[key];
-        saveSongs(map);
-        return true;
-    },
 };

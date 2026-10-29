@@ -1939,81 +1939,6 @@ h1 {
     justify-content: flex-start;
 }
 
-/* Song bar: name + Save/Delete, with an autocomplete dropdown. */
-.song-bar {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    width: 100%;
-    margin-bottom: 0.4rem;
-    flex-wrap: wrap;
-}
-
-.song-label {
-    font-size: 0.75rem;
-    color: #888;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-}
-
-.song-field {
-    position: relative;
-    flex: 1 1 10rem;
-    min-width: 8rem;
-    max-width: 22rem;
-}
-
-.song-input {
-    width: 100%;
-    box-sizing: border-box;
-    padding: 0.25rem 0.5rem;
-    background: #0f0f23;
-    border: 1px solid #333;
-    border-radius: 4px;
-    color: #ccc;
-    font-size: 0.8rem;
-}
-
-.song-input:focus { outline: none; border-color: #4caf50; }
-
-/* Loaded: read-only, shown in the "active" green rather than greyed out. */
-.song-input:disabled {
-    color: #4caf50;
-    border-color: #2e5b31;
-    opacity: 1;
-}
-
-.song-suggest {
-    position: absolute;
-    top: 100%;
-    left: 0;
-    right: 0;
-    z-index: 50;
-    background: #16213e;
-    border: 1px solid #333;
-    border-top: none;
-    border-radius: 0 0 4px 4px;
-    max-height: 10rem;
-    overflow-y: auto;
-    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5);
-}
-
-.song-suggest-item {
-    padding: 0.3rem 0.5rem;
-    font-size: 0.8rem;
-    color: #ccc;
-    cursor: pointer;
-}
-
-.song-suggest-item:hover { background: #1a2a4e; color: #fff; }
-
-.song-delete { color: #e94560; }
-.song-delete:hover { border-color: #e94560; }
-.song-new { padding: 0.25rem 0.45rem; }
-
-.song-status { font-size: 0.75rem; color: #888; }
-.song-status.ok { color: #4caf50; }
-.song-status.error { color: #e94560; }
 
 .pianoroll-btn {
     background: #16213e;
@@ -4069,15 +3994,6 @@ footer {
     }
     .dock-panel-pianoroll .kb-controls,
     .dock-panel-pianoroll .kb-toggle,
-    .dock-panel-pianoroll .song-bar,
-    .dock-panel-pianoroll .keyboard-wrapper {
-        flex-shrink: 0;
-    }
-    .dock-panel-pianoroll .song-bar {
-        padding: 4px;
-        margin-bottom: 0;
-        box-sizing: border-box;
-    }
     .dock-panel-pianoroll .keyboard-wrapper {
         width: 100%;
         margin-top: 0;

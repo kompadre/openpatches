@@ -12,8 +12,6 @@
 // Pure data and localStorage. No DOM, no audio, no MIDI. patch-model.js owns
 // patches/canvas/jobs; this file owns the sequencer side.
 
-import { songStore as legacySongStore } from './patch-model.js';
-
 // 16 sixteenth notes to the bar. pianoroll.js has its own copy of this
 // constant today; phase 3 makes it import this one.
 export const COLS_PER_MEASURE = 16;
@@ -27,6 +25,12 @@ const PATTERNS_KEY = 'openpatches_patterns';
 const SONGS_KEY = 'openpatches_arrangements';
 const MIGRATION_KEY = 'openpatches_seq_migrated';
 const LEGACY_ROLL_KEY = 'openpatches_pianoroll';
+const LEGACY_SONGS_KEY = 'openpatches_songs';
+
+// Bumped when a new pass is needed. v1 converted the piano-roll blob and the
+// songs saved at that moment; v2 picks up the ones the song bar wrote
+// afterwards, since it kept using the old store until it was removed.
+const MIGRATION_VERSION = 2;
 
 // --- Small helpers ---
 
@@ -375,6 +379,21 @@ export function songFromLegacyRoll(roll, name, opts = {}) {
     return { song, patterns };
 }
 
+/**
+ * The old name-keyed song store, read straight from its key. patch-model.js
+ * no longer exports it — this is the only code left that knows the shape.
+ */
+function readLegacySongs() {
+    try {
+        const map = JSON.parse(localStorage.getItem(LEGACY_SONGS_KEY) || '{}');
+        if (!map || typeof map !== 'object' || Array.isArray(map)) return [];
+        return Object.keys(map)
+            .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+            .map(name => ({ name, data: map[name] && map[name].data }))
+            .filter(rec => rec.data && typeof rec.data === 'object');
+    } catch { return []; }
+}
+
 function readLegacyRoll() {
     try {
         const raw = localStorage.getItem(LEGACY_ROLL_KEY);
@@ -407,10 +426,8 @@ export function buildMigration() {
         }
     }
 
-    for (const name of legacySongStore.list()) {
-        const rec = legacySongStore.get(name);
-        if (!rec) continue;
-        const { song, patterns: pats } = songFromLegacyRoll(rec.data, name);
+    for (const rec of readLegacySongs()) {
+        const { song, patterns: pats } = songFromLegacyRoll(rec.data, rec.name);
         patterns.push(...pats);
         songs.push(song);
     }
@@ -418,29 +435,66 @@ export function buildMigration() {
     return { patterns, songs, currentSongId };
 }
 
+/**
+ * v1 → v2. The song bar went on saving to the legacy store after the first
+ * migration, so anything written since would be stranded when it was
+ * removed. Matched by name: a legacy song whose name is already a song here
+ * was converted by v1. Renaming a migrated song and then upgrading brings
+ * the original back as a duplicate — a visible, recoverable annoyance,
+ * which is the right side to err on when the alternative is losing it.
+ */
+export function buildLegacyCatchUp() {
+    const taken = new Set(songStore.list().map(s => s.name));
+    const patterns = [];
+    const songs = [];
+    for (const rec of readLegacySongs()) {
+        if (taken.has(rec.name)) continue;
+        const { song, patterns: pats } = songFromLegacyRoll(rec.data, rec.name);
+        patterns.push(...pats);
+        songs.push(song);
+    }
+    return { patterns, songs };
+}
+
+/** 0 = never run, else the version of the last completed pass. */
+export function migratedVersion() {
+    try {
+        const raw = localStorage.getItem(MIGRATION_KEY);
+        if (raw == null) return 0;
+        const marker = JSON.parse(raw);
+        return marker && Number.isFinite(marker.version) ? marker.version : 1;
+    } catch { return 1; }
+}
+
 export function hasMigrated() {
-    return localStorage.getItem(MIGRATION_KEY) != null;
+    return migratedVersion() >= MIGRATION_VERSION;
 }
 
 /**
- * Run the migration once, the first time the sequencer loads. Idempotent:
- * guarded by a version key, so a second call is a no-op and cannot duplicate
- * patterns. The legacy keys are deliberately left in place — this release can
- * be rolled back, and phase 6 removes them.
+ * Run the migration once per version, at load. Idempotent: guarded by the
+ * version marker, so a second call is a no-op and cannot duplicate patterns.
+ * The legacy keys are read-only and deliberately **left in place**: they are
+ * a few KB, they are the only copy of anything that went wrong here, and
+ * deleting a user's songs to tidy a key namespace is a bad trade.
  *
  * @returns {{migrated: boolean, patterns: number, songs: number, currentSongId: string|null}}
  */
 export function migrateIfNeeded() {
-    if (hasMigrated()) {
+    const from = migratedVersion();
+    if (from >= MIGRATION_VERSION) {
         return { migrated: false, patterns: 0, songs: 0, currentSongId: null };
     }
-    const { patterns, songs, currentSongId } = buildMigration();
+    // A first run converts everything; an upgrade only sweeps up the legacy
+    // songs saved since, and must not touch the current song.
+    const { patterns, songs, currentSongId } = from === 0
+        ? buildMigration()
+        : { ...buildLegacyCatchUp(), currentSongId: null };
     patternStore.bulkPut(patterns);
     songStore.bulkPut(songs);
     // Written last: if a quota error aborts the writes above, the next load
     // tries again rather than leaving a half-migrated library marked done.
     try {
-        localStorage.setItem(MIGRATION_KEY, JSON.stringify({ at: Date.now(), version: 1 }));
+        localStorage.setItem(MIGRATION_KEY, JSON.stringify({ at: Date.now(), version: MIGRATION_VERSION }));
     } catch (e) {
         console.warn('migration marker save failed:', e);
     }

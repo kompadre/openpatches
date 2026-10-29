@@ -3,7 +3,6 @@
 // Replaces piano-dock.js. Pianoroll/Log logic moved here; Edit tab delegates to edit-panel.js.
 
 import { createPianoroll } from './pianoroll.js';
-import { createSongBar } from './song-bar.js';
 import { createSongSession } from './song-session.js';
 import { createSongEditor } from './song-editor.js';
 import { createVoiceBank } from './voicebank.js';
@@ -200,6 +199,20 @@ export function createToolbar(opts) {
     let recordStartTime = 0;
     let activeRecordSlot = 0;
 
+    // Set once the session exists; the voice bank is built before it and
+    // fires its first snapshot immediately.
+    let sessionRef = null;
+
+    /** Voice bank entries as plain JSON (typed arrays do not survive it). */
+    function serializeBank(entries) {
+        return (entries || []).filter(Boolean).map(e => ({
+            name: e.name,
+            patchId: e.patchId,
+            volume: e.volume,
+            voiceData: e.voiceData instanceof Uint8Array ? Array.from(e.voiceData) : e.voiceData,
+        }));
+    }
+
     const voiceSelect = document.createElement('select');
     voiceSelect.className = 'kb-voice-select';
     voiceSelect.title = 'Active voice for playback and recording';
@@ -234,6 +247,11 @@ export function createToolbar(opts) {
         },
         onSnapshot: (entries) => {
             if (opts.onSnapshot) opts.onSnapshot(entries);
+            // Keep the current song's copy of the voices current. Marked
+            // 'voicebank' so the roll knows the arrangement did not change.
+            if (sessionRef) {
+                sessionRef.update((song) => { song.voiceBank = serializeBank(entries); }, 'voicebank');
+            }
             if (pianorollRef && pianorollRef.renderLegend) pianorollRef.renderLegend();
             if (wrapper._songEditor) wrapper._songEditor.render();
             refreshVoiceSelect();
@@ -247,6 +265,21 @@ export function createToolbar(opts) {
     // it) and the song editor (which arranges it). Runs the migration.
     const session = createSongSession();
     session.init();
+    sessionRef = session;
+
+    // Switching song restores the voices it was written for — what loading
+    // from the old song bar used to do. (Project, in TODO.md, takes over
+    // ownership of the voice bank and this goes with it.)
+    let lastSongId = session.get().id;
+    session.subscribe((ev) => {
+        if (ev.kind !== 'song' || ev.songId === lastSongId) return;
+        lastSongId = ev.songId;
+        const bank = session.get().voiceBank;
+        if (Array.isArray(bank) && bank.length > 0 && voiceBank._setEntries) {
+            stopAll();
+            voiceBank._setEntries(bank);
+        }
+    });
 
     pianorollRef = createPianoroll({
         session,
@@ -319,32 +352,6 @@ export function createToolbar(opts) {
     wrapper._session = session;
     wrapper._songEditor = songEditor;
 
-    // --- Song bar (top) ---
-    // A song is the piano roll plus the voice bank's slots: the notes only
-    // mean something with the sounds they were written for.
-    const songBar = createSongBar({
-        getSong: () => ({
-            ...pianorollRef.getSong(),
-            slots: (voiceBank._getEntries ? voiceBank._getEntries() : [])
-                .filter(Boolean)
-                .map(e => ({
-                    name: e.name,
-                    patchId: e.patchId,
-                    volume: e.volume,
-                    // Typed arrays do not survive JSON; plain arrays do.
-                    voiceData: e.voiceData instanceof Uint8Array ? Array.from(e.voiceData) : e.voiceData,
-                })),
-        }),
-        loadSong: (song) => {
-            // Loading over a running take or playback would leave notes
-            // sounding and the worker ticking for the old pattern.
-            stopAll();
-            if (voiceBank._setEntries) voiceBank._setEntries(song.slots || []);
-            pianorollRef.loadSong(song);
-        },
-        log: opts.appendLog || (() => {}),
-    });
-    pianorollPanel.appendChild(songBar);
     pianorollPanel.appendChild(pianorollRow);
 
     // --- Recording controls (middle section) ---
@@ -806,7 +813,6 @@ export function createToolbar(opts) {
     wrapper._showEdit = () => { expandDock(); activateTab(tabEdit, editPanel); };
     wrapper._showLog = () => { expandDock(); activateTab(tabLog, logPanel); };
     wrapper._logPanel = logPanel;
-    wrapper._songBar = songBar;
     wrapper._setKeyboardCollapsed = setKeyboardCollapsed;
     wrapper._isKeyboardCollapsed = () => kbWrapper.classList.contains('collapsed');
     return wrapper;

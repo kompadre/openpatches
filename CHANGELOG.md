@@ -2,6 +2,20 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-10-29: Patterns, Tracks and the Song editor
+
+The sequencer is rebuilt around reusable **patterns**. Six phases, one commit each.
+
+- **Model** (`html/components/song-model.js`) — Pattern (a bar or more of notes, monotimbral: notes carry no voice), Track (bound to a voice-bank slot = synth channel = MIDI channel), Clip (a pattern on a track at a bar, with repeats), Song (tracks + clips + bpm + loop). Factories are total, so stored or hand-edited data comes back well-formed. Id-keyed stores, so names are free and two patterns may share one. One clip per track per bar.
+- **Migration** — the old flat roll (whose per-note `slot` was the voice) becomes one pattern + track per used slot; legacy saved songs convert the same way, keeping their voice bank. Versioned and idempotent; the legacy keys are never deleted.
+- **Sequencer core** (`html/synth/sequencer.js`) — pure: given a song and its patterns, what starts at column N and on which slot. Patterns are snapshotted at compile time (reading one parses localStorage, which must never happen on a tick); mute/solo are read live. Solo beats mute.
+- **Pattern editor** — the piano roll now edits one pattern, the active voice's. Other tracks draw as read-only ghosts behind it. `notes` became a binding repointed at the active pattern, which is why the editing layer survived the change untouched.
+- **Song editor** (`html/components/song-editor.js`, Song tab) — tracks × bars grid, pattern palette, place/move/repeat/remove clips, per-track voice + mute/solo, song select/name/BPM/loop. Autosaves; model refusals ("Clip overlaps") surface in a status line. A shared `song-session.js` owns the current song so neither editor overwrites the other.
+- **Transport** (`html/synth/transport.js`) — one owner of the clock, subscribed to the tick worker exactly once (previously the roll and the toolbar each drove it). Modes: Song (default, and identical to the old behaviour) and Pattern. Drives both playheads and recording; recording still sounds the whole arrangement as a backing.
+- **Cleanup** — `song-bar.js` and the legacy `songStore` removed; the voice bank now follows the song on a switch; tutorial and HEARME.tts updated.
+
+Caught in review along the way: recording into an empty song dropped the note; the tutorial was opening the wrong tab after the Song tab shifted the indices; and songs saved through the old song bar after the first migration would have been stranded by its removal.
+
 ## 2026-10-29: Bug survey sweep (2026-10-23 survey)
 
 - **WAV import results lost** — `Job.complete()` wrote a stale container copy back over the per-patch saves, so `patchIds` ended up `[]` and Assign/Export/Sort saw nothing (and `restore()` repeated it on every reload). It now writes canvas entries directly and saves the container once. `test/job-complete-patches.test.js`.

@@ -1,6 +1,6 @@
 OpenPatches: A Codebase Audio Tour
 
-This file is intended to be a high-level introduction to the project's anatomy and optimized to be read by TTS. Last commit covered e nine seven six e eight four plus the MIDI output latency work from October twenty-eighth, two thousand twentysix.
+This file is intended to be a high-level introduction to the project's anatomy and optimized to be read by TTS. Last commit covered three d f c two four five plus the Patterns and Songs work from October twenty-ninth, two thousand twentysix.
 
 Welcome to this architectural walkthrough of OpenPatches. This is a browser-based DX seven patch editor, sequencer, and sound design environment. It runs entirely on the client side — no server-side computation for the editor itself. The only server dependency is an inference engine for turning WAV files into DX seven patches, and even that is optional. Everything else — the synthesizer, the sequencer, the patch editing, the voice bank — happens in the browser using vanilla JavaScript, Web Audio, WebAssembly, and Web Workers.
 
@@ -54,7 +54,7 @@ The pianoroll row is a flex container that holds the voice bank on the left and 
 
 Chapter Four: The Pianoroll — Sequencing and Looping
 
-The pianoroll module implements a grid-based sequencer. It renders a canvas element with rows for each MIDI note and columns for each sixteenth-note time step. Notes are stored as objects with MIDI number, start column, duration, and voice bank slot.
+The pianoroll module is the pattern editor. It renders a canvas element with rows for each MIDI note and columns for each sixteenth-note time step. A note is a MIDI number, a start column and a duration — and nothing else. It carries no voice. The voice belongs to the track the pattern is placed on, which is what lets the same pattern be played by a bass in one place and a bell in another.
 
 The pianoroll has a looping system for both playback and recording. The playhead is a red vertical line with a small marker in the header, and by default the view does not move: redrawing a double-wide canvas and scrolling it on every sixteenth note lagged badly on slower machines, so following the playhead is now a Follow toggle in the transport row that is off until you turn it on, and the choice is remembered. With follow on, the canvas doubles in width while playing or recording — the grid content is drawn twice side by side — and as the playhead advances past the first copy, the scroll position wraps back to the beginning, creating a seamless loop. When stopped, or with follow off, the canvas is single width with fixed boundaries.
 
@@ -101,7 +101,7 @@ The tick worker runs alongside the audio system. It's a separate Web Worker that
 
 Chapter Seven: Recording and Playback Integration
 
-Above the piano roll sits the song bar: a Song label, a text box and one button. Type a new name and the button says Save; it stores the notes, the tempo, the number of measures and the eight voice slots under that name, because the notes only make sense with the sounds they were written for. Focus the box and the saved songs drop down; pick one and it loads, the box shows its name greyed out, and the button turns into Delete. Typing a name that is already taken does not load it — Save simply answers Song exists, and nothing is overwritten. A small cross next to the button lets go of the loaded name, keeping the notes, so you can save them again under another. The Record button lives in two places: the mobile keyboard controls, and, for desktop, the piano roll's own transport row next to Play and Stop — the mobile row is hidden on desktop, which is how Record had quietly gone missing there. Both drive the same session. The on-screen keyboard beneath the roll can be folded away with a small Keyboard header bar, and that too is remembered. When the user presses Record, the toolbar registers a recording tick handler on the pianoroll and sends a start message to the tick worker with the current B P M. The tick worker begins emitting column indices at the precise sixteenth-note interval.
+The Record button lives in two places: the mobile keyboard controls, and, for desktop, the piano roll's own transport row next to Play and Stop — the mobile row is hidden on desktop, which is how Record had quietly gone missing there. Both drive the same session. The on-screen keyboard beneath the roll can be folded away with a small Keyboard header bar, and that too is remembered. When the user presses Record, the toolbar asks the transport to start a take, and the transport sends a start message to the tick worker with the current B P M. The tick worker begins emitting column indices at the precise sixteenth-note interval. Recording sounds the whole arrangement underneath, so there is something to play along to, and writes into the pattern on screen.
 
 The recording tick handler processes each tick by calculating the wrapped column position, checking for loop seams, and calling the pianoroll's tick recording method to play back existing notes that aren't flagged as just recorded. If the playhead crosses a loop boundary, it finalizes any held notes and clears the recording flags.
 
@@ -145,6 +145,23 @@ When the application loads, it calls the restore function which reinitializes th
 The synthesizer state is ephemeral — it lives only in the AudioWorklet's memory. When the page reloads, voice snapshots must be re-sent from the voice bank's stored entries. The emergency mute feature reinitializes the engine by calling init engine again and reloading all voice snapshots.
 
 The tick worker is also ephemeral — it's created fresh on each page load and destroyed when the page unloads. The SharedArrayBuffer enables zero-C P U sleeping but requires the C O O P and C O E P headers to be set by the server. Without them, the worker falls back to setTimeout, which works fine but uses slightly more C P U.
+
+
+Chapter Ten and a Half: Patterns, Songs and the Transport
+
+The sequencer is built from four small pieces, and the split is worth understanding because it is what makes a part reusable.
+
+A pattern is a bar or more of notes with no voice attached. A track binds a voice bank slot — which is also the synth channel and the MIDI channel — to a lane. A clip places a pattern on a track at a bar, with a repeat count. A song is tracks and clips, a tempo, and a loop range. Because a clip only references a pattern, the same four bars can appear in a dozen places in a song, and in other songs too; edit it once and every copy follows.
+
+All of this lives in song-model dot js, which is pure data and local storage. Its factories are total: hand them anything — a hand-edited blob, a file from a future import — and they return a well-formed record, dropping what is invalid rather than throwing. A note starting past the end of its pattern is unreachable, so it is dropped; one that merely runs past the end is cut at the end. One clip per track per bar, because a track is a single timeline and two clips in one place would mean two patterns on one voice.
+
+The same file owns the migration from the old piano roll, which stored one flat note list whose per-note slot was the voice. That is exactly a song: group the notes by slot, and each group becomes one pattern on one track, all starting at bar one. It is guarded by a version marker and the legacy keys are never deleted — they are a few kilobytes, and they are the only copy of anything that went wrong.
+
+Both editors share one current song through song-session dot js. The piano roll edits a pattern placed in it; the song editor arranges it. Neither owns the record, because then the other's saves would overwrite it. Notifications carry a source, so an editor can ignore its own echoes — the roll must not re-adopt the song in the middle of a drag.
+
+Sequencer dot js is the part that answers the only question playback asks: what starts at column N, and on which slot. It snapshots its patterns when it is built, deliberately, because reading a pattern means parsing local storage and that must never happen on a tick; an edit rebuilds the sequence instead. Mute and solo it reads live, so toggling them lands on the next column. Solo beats mute on the same track.
+
+Transport dot js is the one owner of the clock. It subscribes to the tick worker exactly once. Before it existed, the roll listened to the worker and the toolbar separately started the worker for takes, which is two owners of one clock and is why a Play during a take could route ticks to the wrong handler. It has two modes: song, which plays the arrangement and is the default, and pattern, which loops the one pattern on screen. Everything else listens to it — the roll draws a playhead at the pattern-local column, and hides it where its pattern is not under the song's playhead, because there is no position in that pattern to show.
 
 
 Chapter Eleven: Web MIDI — Talking to Real Hardware

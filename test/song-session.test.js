@@ -6,14 +6,19 @@ import { test, before, beforeEach, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { installBrowserEnv } from './harness.js';
 
-let createSongSession, M, legacySongStore;
+let createSongSession, M;
 
 before(async () => {
     installBrowserEnv();
     ({ createSongSession } = await import('../html/components/song-session.js'));
     M = await import('../html/components/song-model.js');
-    ({ songStore: legacySongStore } = await import('../html/components/patch-model.js'));
 });
+
+function seedLegacySong(name, data) {
+    const map = JSON.parse(localStorage.getItem('openpatches_songs') || '{}');
+    map[name] = { name, data, savedAt: Date.now() };
+    localStorage.setItem('openpatches_songs', JSON.stringify(map));
+}
 
 beforeEach(() => localStorage.clear());
 
@@ -31,7 +36,7 @@ describe('init', () => {
         localStorage.setItem('openpatches_pianoroll', JSON.stringify({
             measures: 1, bpm: 100, notes: [{ midi: 60, start: 0, dur: 1, slot: 2 }],
         }));
-        legacySongStore.create('Old one', { measures: 1, bpm: 120, notes: [{ midi: 48, start: 0, dur: 1, slot: 0 }] });
+        seedLegacySong('Old one', { measures: 1, bpm: 120, notes: [{ midi: 48, start: 0, dur: 1, slot: 0 }] });
         const song = createSongSession().init();
         assert.equal(song.bpm, 100);
         assert.deepEqual(song.tracks.map(t => t.slot), [2]);
@@ -120,16 +125,6 @@ describe('open / createNew / createFrom / remove', () => {
         assert.notEqual(made.id, 'song_x');
         assert.equal(made.bpm, 77);
         assert.equal(M.songStore.get(made.id).name, 'Copy');
-    });
-
-    test('importLegacyRoll becomes a new song; the current one is kept', () => {
-        const s = createSongSession(); const first = s.init();
-        const made = s.importLegacyRoll({ measures: 1, bpm: 99, notes: [{ midi: 60, start: 0, dur: 1, slot: 4 }] }, 'Take', 'roll');
-        assert.equal(made.name, 'Take');
-        assert.deepEqual(made.tracks.map(t => t.slot), [4]);
-        assert.ok(M.patternStore.get(made.clips[0].patternId), 'its pattern is stored');
-        assert.ok(M.songStore.get(first.id), 'the previous song still exists');
-        assert.equal(s.get().id, made.id);
     });
 
     test('removing the current song moves to another, or to a new empty one', () => {

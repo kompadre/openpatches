@@ -15,13 +15,22 @@ const ROLL_KEY = 'openpatches_pianoroll';
 const LEGACY_SONGS_KEY = 'openpatches_songs';
 const MIGRATION_KEY = 'openpatches_seq_migrated';
 
-let M, legacySongStore;
+let M;
 
 before(async () => {
     installBrowserEnv();
     M = await import('../html/components/song-model.js');
-    ({ songStore: legacySongStore } = await import('../html/components/patch-model.js'));
 });
+
+// The old name-keyed store is gone from the code; the migration is the only
+// thing that still reads its key, so the fixtures write it directly.
+const legacySongStore = {
+    create(name, data) {
+        const map = JSON.parse(localStorage.getItem(LEGACY_SONGS_KEY) || '{}');
+        map[name] = { name, data, savedAt: Date.now() };
+        localStorage.setItem(LEGACY_SONGS_KEY, JSON.stringify(map));
+    },
+};
 
 beforeEach(() => localStorage.clear());
 
@@ -268,5 +277,80 @@ describe('migrateIfNeeded', () => {
         assert.deepEqual(rebuilt.map(key).sort(), original.map(key).sort());
         assert.equal(song.bpm, 96);
         assert.deepEqual(song.voiceBank, slots);
+    });
+});
+
+describe('v1 → v2 catch-up', () => {
+    // The song bar went on writing to the legacy store after the first
+    // migration ran. Removing it without this pass would strand every song
+    // saved in between.
+    const v1Marker = () => localStorage.setItem(MIGRATION_KEY, JSON.stringify({ at: 1, version: 1 }));
+
+    test('a song saved after the first migration is picked up', () => {
+        seedRoll({ measures: 1, bpm: 120, notes: [note(60, 0, 1, 0)] });
+        M.migrateIfNeeded();                       // v2 in one go
+        assert.equal(M.songStore.list().length, 1);
+
+        // Pretend that run was the old v1, then save another legacy song.
+        v1Marker();
+        legacySongStore.create('Saved later', { measures: 2, bpm: 90, notes: [note(48, 0, 4, 1)] });
+
+        const result = M.migrateIfNeeded();
+        assert.equal(result.migrated, true);
+        assert.equal(result.songs, 1);
+        const names = M.songStore.list().map(s => s.name);
+        assert.ok(names.includes('Saved later'));
+        const brought = M.songStore.list().find(s => s.name === 'Saved later');
+        assert.equal(brought.bpm, 90);
+        assert.deepEqual(brought.tracks.map(t => t.slot), [1]);
+    });
+
+    test('songs the first pass already converted are not duplicated', () => {
+        legacySongStore.create('Alpha', { measures: 1, bpm: 120, notes: [note(60, 0, 1, 0)] });
+        M.migrateIfNeeded();
+        assert.equal(M.songStore.list().length, 1);
+
+        v1Marker();
+        const second = M.migrateIfNeeded();
+        assert.equal(second.songs, 0, 'matched by name');
+        assert.equal(M.songStore.list().length, 1);
+    });
+
+    test('the catch-up does not move the current song', () => {
+        seedRoll({ measures: 1, bpm: 120, notes: [note(60, 0, 1, 0)] });
+        const first = M.migrateIfNeeded();
+        v1Marker();
+        legacySongStore.create('Later', { measures: 1, notes: [note(48, 0, 1, 0)] });
+        const result = M.migrateIfNeeded();
+        assert.equal(result.currentSongId, null, 'an upgrade never re-points the session');
+        assert.notEqual(first.currentSongId, null);
+    });
+
+    test('after v2 nothing runs again', () => {
+        legacySongStore.create('A', { measures: 1, notes: [note(60, 0, 1, 0)] });
+        M.migrateIfNeeded();
+        assert.equal(M.migratedVersion(), 2);
+        assert.equal(M.hasMigrated(), true);
+        assert.equal(M.migrateIfNeeded().migrated, false);
+    });
+
+    test('a v1 install with nothing left over is upgraded quietly', () => {
+        v1Marker();
+        const r = M.migrateIfNeeded();
+        assert.equal(r.migrated, true);
+        assert.equal(r.songs, 0);
+        assert.equal(M.migratedVersion(), 2);
+    });
+
+    test('the legacy keys survive the whole thing — they are the only copy', () => {
+        seedRoll({ measures: 1, notes: [note(60, 0, 1, 0)] });
+        legacySongStore.create('A', { measures: 1, notes: [note(48, 0, 1, 0)] });
+        const rollBefore = localStorage.getItem(ROLL_KEY);
+        const songsBefore = localStorage.getItem(LEGACY_SONGS_KEY);
+        M.migrateIfNeeded();
+        v1Marker();
+        M.migrateIfNeeded();
+        assert.equal(localStorage.getItem(ROLL_KEY), rollBefore);
+        assert.equal(localStorage.getItem(LEGACY_SONGS_KEY), songsBefore);
     });
 });

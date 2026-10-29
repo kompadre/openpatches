@@ -269,7 +269,7 @@ export function createPianoroll(opts) {
     // Changes made by other editors: drop the cached patterns (a rename or
     // a duplicate went to the store, not to our copies) and re-read the song.
     session.subscribe((ev) => {
-        if (ev.source === 'roll') return;
+        if (ev.source === 'roll' || ev.source === 'voicebank') return;
         liveCache.clear();
         adoptSong(session.get());
         updateMeasureButtons();
@@ -1559,22 +1559,6 @@ export function createPianoroll(opts) {
          * Replace the sequencer state wholesale. Validates like loadState()
          * — the data comes from storage and may be stale or hand-edited.
          */
-        loadSong(song) {
-            if (playing) stopPlayback();
-            const data = song || {};
-            // A flat slot-tagged note list is one pattern per slot; it comes
-            // in as a new song, so the current arrangement is not lost.
-            openClipId = null;
-            session.importLegacyRoll(data, data.name, 'roll');
-            liveCache.clear();
-            adoptSong(session.get());
-            updateMeasureButtons();
-            scroll.scrollLeft = 0;
-            draw();
-            renderLegend();
-            if (onNotesChange) onNotesChange();
-            saveState();
-        },
         totalCols() { return totalCols(); },
         renderLegend,
         saveState,

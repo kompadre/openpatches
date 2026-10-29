@@ -13,7 +13,7 @@
 // editor can redraw clip widths.
 
 import {
-    createSong, patternStore, songStore, migrateIfNeeded, songFromLegacyRoll,
+    createSong, patternStore, songStore, migrateIfNeeded,
 } from './song-model.js';
 
 const CURRENT_SONG_KEY = 'openpatches_current_song';
@@ -101,18 +101,6 @@ export function createSongSession() {
         /** Store a fully-formed song as a new record and switch to it. */
         createFrom(record, source) {
             adopt(createSong({ ...record, id: undefined }), source);
-            return song;
-        },
-
-        /**
-         * Load a legacy flat roll ({notes with slot, bpm, measures, slots})
-         * as a new song — the song bar's load, until phase 6 removes it.
-         * Switching rather than replacing: the current arrangement is kept.
-         */
-        importLegacyRoll(data, name, source) {
-            const { song: next, patterns } = songFromLegacyRoll(data, name || 'Imported song');
-            patternStore.bulkPut(patterns);
-            adopt(next, source);
             return song;
         },
 

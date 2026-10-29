@@ -69,21 +69,40 @@ const STEPS = [
         noBlur: true,
         illustration: null,
         description:
-            'The <strong>Piano Roll</strong> lets you draw note sequences using the voices from your voice bank.<br><br>' +
+            'The <strong>Piano Roll</strong> edits one <strong>pattern</strong> — a reusable bar or more of notes, played by one voice.<br><br>' +
             '<strong>Getting started:</strong><br>' +
             '1. Assign patches from a container using the <strong>♫</strong> button (up to 8 voices)<br>' +
-            '2. Select a voice in the voice bank on the left — its notes are fully opaque<br>' +
+            '2. Select a voice in the voice bank on the left — you are now editing that voice\'s pattern<br>' +
             '3. <strong>Click+drag</strong> on the grid to draw notes (snaps to pitch and timing)<br>' +
             '4. <strong>Double-click</strong> a note to remove it<br>' +
             '5. <strong>Drag</strong> a note to move it<br>' +
-            '6. Press <strong>▶ Play</strong> to hear the sequence<br><br>' +
-            'Notes from other voices appear dimmed. Only the selected voice\'s notes can be edited.',
+            '6. Press <strong>▶ Play</strong> to hear it<br><br>' +
+            'The other voices\' patterns show dimmed behind, so you can see how the parts fit; only the selected one can be edited. ' +
+            'The <strong>♫ Song / ▭ Pattern</strong> button switches between playing the whole arrangement and looping just this pattern.',
+    },
+    {
+        id: 'song',
+        title: 'Song',
+        highlight: '#piano-dock .dock-tab:nth-child(3)',
+        selectTab: '#piano-dock .dock-tab:nth-child(3)',
+        noBlur: true,
+        illustration: null,
+        description:
+            'The <strong>Song</strong> tab arranges your patterns into a piece.<br><br>' +
+            'Tracks are rows, bars are columns. Every pattern you have made is listed on the left.<br><br>' +
+            '1. <strong>Click a pattern</strong> in the list to select it<br>' +
+            '2. <strong>Click a lane</strong> where you want it — that places a <strong>clip</strong><br>' +
+            '3. <strong>Drag</strong> a clip to move it, drag its <strong>right edge</strong> to repeat it<br>' +
+            '4. <strong>Double-click</strong> a clip to open its pattern in the Piano Roll<br>' +
+            '5. Each row picks the <strong>voice</strong> it plays, with <strong>M</strong>ute and <strong>S</strong>olo<br><br>' +
+            'The same pattern can be placed as many times as you like — that is the point of patterns. ' +
+            'Everything saves as you go; use <strong>+ Song</strong> for a new arrangement.',
     },
     {
         id: 'edit',
         title: 'Edit Patches',
-        highlight: '#piano-dock .dock-tab:nth-child(3)',
-        selectTab: '#piano-dock .dock-tab:nth-child(3)',
+        highlight: '#piano-dock .dock-tab:nth-child(4)',
+        selectTab: '#piano-dock .dock-tab:nth-child(4)',
         clickElement: '.sky-container .patch-edit-btn',
         noBlur: true,
         illustration: null,
