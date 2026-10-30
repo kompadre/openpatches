@@ -306,7 +306,33 @@ Bug survey 2026-10-23 — swept 2026-10-29; everything fixed is in CHANGELOG.md.
 - [ ] `audio-manager` ready-handshake resolves unconditionally after 2 s (deliberate fallback, left alone).
 - [ ] Recorded notes are not clamped to the loop end on insert (the recorder seam-splits held notes, so this does not occur in practice); only interactive resize is clamped.
 
-### e2e suite (2026-10-30) — phase 1 done, phases 2-3 in TODO.md
+### e2e suite (2026-10-30) — phases 1-2 done, phase 3 in TODO.md
+
+Phase 2 added `pianoroll.spec.js` (mouse draw/move/resize/dblclick-delete at
+DPR 2), `persistence.spec.js` (reload round-trip; legacy roll migration,
+idempotent) and `syx.spec.js` (import via filechooser, in-page
+buildBulkDump → parseSyxFile byte round-trip, export download with
+`/api/export-syx` mocked via `page.route` — the static server has no backend).
+23 tests, ~27 s, stable over `--repeat-each=2`. No production code changed.
+
+Browser facts phase 2 ran into (all encoded as comments in the specs):
+
+- The roll's scroll pane is ~180 px tall at 1400×900 and raw `page.mouse`
+  does not auto-scroll: only rows midi ≥ 77 are clickable. A gesture below
+  the fold lands on whatever is under the dock and silently does nothing.
+- Drawing the first note makes `renderLegend()` grow the legend, which
+  **shifts the canvas up a row**. Re-measure `boundingBox()` before every
+  gesture; a cached box points one row off after any draw.
+- The roll's own 350 ms double-click window (same row, ±1 column) turns two
+  fast consecutive gestures into a delete. Tests wait 400 ms between
+  gestures that would collide; automation is otherwise fast enough to
+  trigger it constantly.
+- `html/DEMO.syx` carries **9 named voices**, not 32 — the import skips
+  INIT/blank slots. `syx.spec.js` computes the expected count from the
+  file's bytes so a re-cut bank doesn't break the test.
+- Chromium reports a request handed to the downloader as
+  `net::ERR_ABORTED`; the fixture's failed-request guard ignores exactly
+  that code.
 
 Playwright layer for what `test/harness.js` structurally cannot see: there is
 no AudioContext, AudioWorklet, WebAssembly or Worker in the stub, so the whole

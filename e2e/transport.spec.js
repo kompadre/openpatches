@@ -8,19 +8,9 @@
 // The clock is reached through window.__opDock (app.js) — see the comment
 // there. Everything else is driven through the UI.
 
-import { test, expect, openApp } from './fixtures.js';
+import { test, expect, openApp, openRollTab } from './fixtures.js';
 
 const MS_PER_MIN = 60_000;
-
-/**
- * Open the Piano Roll tab. Its own Play/Stop pair is the desktop control —
- * `.kb-btn-play` on the keyboard is mobile-only and is not clickable at this
- * viewport, so UI-level transport tests have to go through the roll.
- */
-async function openRollTab(page) {
-    await page.locator('.dock-tab', { hasText: 'Piano Roll' }).click();
-    await expect(page.locator('.pianoroll-play')).toBeVisible();
-}
 
 /** Put one note on the roll: startPlayback() is a no-op on an empty roll. */
 async function seedNote(page) {

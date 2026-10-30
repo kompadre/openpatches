@@ -2,6 +2,13 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-10-30: e2e test suite, phase 2
+
+- **Pianoroll mouse interaction** (`e2e/pianoroll.spec.js`, at device pixel ratio 2): drag-draw, click-draw, body move across rows and columns, resize from both edges, double-click delete, and the diagonal-scribble no-op. First machine check of the canvas hit math ever — the unit stub has no layout or pointer. The specs document three browser facts found on the way: the roll's pane is ~180 px tall so only midi ≥ 77 is clickable by raw mouse; drawing the first note grows the legend and shifts the canvas a row (re-measure the box every gesture); and the roll's 350 ms double-click window eats fast consecutive same-cell gestures.
+- **Persistence** (`e2e/persistence.spec.js`): notes and tempo over a real reload, and a boot on top of a legacy `openpatches_pianoroll` blob — notes and BPM come through to the song world, the migration marker and pattern store are written, and a second boot does not duplicate the library.
+- **.syx I/O** (`e2e/syx.spec.js`): import through the File menu's real filechooser (expected voice count read from the bank's own bytes — DEMO.syx carries 9 named voices, not 32), an in-page `buildBulkDump` → `parseSyxFile` round trip asserting the 4104 bytes rebuild to the imported names/algorithms, and the container's export button producing a `.syx` download with `/api/export-syx` mocked (the static test server has no backend).
+- 23 e2e tests, ~27 s, stable over `--repeat-each=2`. No production code changed; `openRollTab` moved into `e2e/fixtures.js`.
+
 ## 2026-10-30: e2e test suite, phase 1
 
 - New **Playwright layer** (`e2e/`, `playwright.config.js`, run with `npx playwright test`) covering what `test/harness.js` structurally cannot: the stub has no AudioContext, AudioWorklet, WebAssembly or Worker, so engine init and real clock timing had only ever been checked by hand. 12 tests, ~13 s. The unit suite stays dependency-free and untouched.

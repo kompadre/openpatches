@@ -51,6 +51,9 @@ export const test = base.extend({
         });
         page.on('requestfailed', (req) => {
             const url = req.url();
+            // ERR_ABORTED is how Chromium reports a request handed off to the
+            // downloader (and a navigation cancelling fetches) — not a failure.
+            if (req.failure()?.errorText === 'net::ERR_ABORTED') return;
             if (!isIgnored(url)) {
                 errors.push(`request failed: ${url} (${req.failure()?.errorText})`);
             }
@@ -74,6 +77,16 @@ export async function openApp(page) {
     await page.goto('/index.html');
     await expect(page.locator('.keyboard .key').first()).toBeVisible();
     await expect(page.locator('#piano-dock')).toBeAttached();
+}
+
+/**
+ * Open the Piano Roll tab. Its own Play/Stop pair is the desktop control —
+ * `.kb-btn-play` on the keyboard is mobile-only and is not clickable at this
+ * viewport, so UI-level transport and roll tests have to go through here.
+ */
+export async function openRollTab(page) {
+    await page.locator('.dock-tab', { hasText: 'Piano Roll' }).click();
+    await expect(page.locator('.pianoroll-play')).toBeVisible();
 }
 
 export { expect };
