@@ -164,13 +164,26 @@ describe('clip geometry', () => {
     const pattern = () => M.createPattern({ id: 'pat_1', measures: 2 });
     const get = (id) => (id === 'pat_1' ? pattern() : null);
 
-    test('a clip spans pattern length × repeats', () => {
+    test('a clip spans pattern length × repeats, in columns', () => {
         const clip = M.createClip({ patternId: 'pat_1', startMeasure: 4, repeats: 3 });
-        assert.deepEqual(M.clipSpan(clip, pattern()), { start: 4, end: 10 });
+        assert.deepEqual(M.clipCols(clip, pattern()), { startCol: 64, endCol: 160 });
+    });
+
+    test('a length of its own wins over the repeat count, and may cut a repeat short', () => {
+        const clip = M.createClip({ patternId: 'pat_1', startCol: 8, lengthCols: 40 });
+        assert.deepEqual(M.clipCols(clip, pattern()), { startCol: 8, endCol: 48 });
+        assert.equal(clip.repeats, undefined, 'exactly one length is stored');
+        assert.equal(M.clipRepeats(clip, pattern()), 1.25);
+    });
+
+    test('a clip that follows its pattern grows with it', () => {
+        const clip = M.createClip({ patternId: 'pat_1', repeats: 2 });
+        assert.equal(M.clipCols(clip, M.createPattern({ measures: 2 })).endCol, 64);
+        assert.equal(M.clipCols(clip, M.createPattern({ measures: 4 })).endCol, 128);
     });
 
     test('a dangling pattern reference has no span', () => {
-        assert.equal(M.clipSpan(M.createClip({ patternId: 'gone' }), null), null);
+        assert.equal(M.clipCols(M.createClip({ patternId: 'gone' }), null), null);
     });
 
     test('song length is the furthest clip end', () => {
@@ -245,9 +258,29 @@ describe('clip placement', () => {
         const s = song();
         const clip = M.addClip(s, { trackId: 'trk_1', patternId: 'pat_1', startMeasure: 0, repeats: 2 }, get);
         M.updateClip(s, clip.id, { startMeasure: 1 }, get);
-        assert.equal(s.clips[0].startMeasure, 1, 'overlapping only itself is allowed');
+        assert.equal(s.clips[0].startCol, 16, 'overlapping only itself is allowed');
+        M.updateClip(s, clip.id, { startCol: 24 }, get);
+        assert.equal(s.clips[0].startCol, 24, 'and in columns, off the bar line');
         M.updateClip(s, clip.id, { repeats: 4 }, get);
         assert.equal(s.clips[0].repeats, 4);
+    });
+
+    test('a length of its own replaces the repeat count, and repeats bring it back', () => {
+        const s = song();
+        const clip = M.addClip(s, { trackId: 'trk_1', patternId: 'pat_1', repeats: 2 }, get);
+        M.updateClip(s, clip.id, { lengthCols: 40 }, get);
+        assert.equal(s.clips[0].lengthCols, 40);
+        assert.equal(s.clips[0].repeats, undefined, 'no stale second opinion');
+        M.updateClip(s, clip.id, { repeats: 3 }, get);
+        assert.equal(s.clips[0].repeats, 3);
+        assert.equal(s.clips[0].lengthCols, undefined);
+    });
+
+    test('a clip may be moved and cut short in one go, off the bar line', () => {
+        const s = song();
+        const clip = M.addClip(s, { trackId: 'trk_1', patternId: 'pat_1' }, get);
+        M.updateClip(s, clip.id, { startCol: 4, lengthCols: 20 }, get);
+        assert.deepEqual(M.clipCols(s.clips[0], get('pat_1')), { startCol: 4, endCol: 24 });
     });
 
     test('updateClip refuses a move onto a neighbour and leaves the clip put', () => {
@@ -255,7 +288,7 @@ describe('clip placement', () => {
         const a = M.addClip(s, { trackId: 'trk_1', patternId: 'pat_1', startMeasure: 0 }, get); // [0,2)
         M.addClip(s, { trackId: 'trk_1', patternId: 'pat_1', startMeasure: 2 }, get);           // [2,4)
         assert.throws(() => M.updateClip(s, a.id, { startMeasure: 3 }, get), /Clip overlaps/);
-        assert.equal(s.clips.find(c => c.id === a.id).startMeasure, 0);
+        assert.equal(s.clips.find(c => c.id === a.id).startCol, 0);
     });
 
     test('updateClip on an unknown clip throws', () => {

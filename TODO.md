@@ -12,7 +12,6 @@ Project backlog. Parent tasks with nested subtasks; `[ ]` pending, `[x]` done,
 
 - [ ] Add the concept of **Project** for global settings (tempo, voice bank, MIDI settings, the pattern and song libraries).
 - [ ] Add the possibility of **exporting a project** (and importing it back).
-- [ ] Sub-measure placement and extension of patterns in Song editor.
 - [ ] Multi-timbral tracks and multi-voice patterns. Pattern defines notes in Voice slots. Track defines specific patches for those slots: 
 
    Pattern 1:

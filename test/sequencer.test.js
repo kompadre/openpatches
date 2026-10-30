@@ -64,16 +64,22 @@ describe('audibleTrackIds', () => {
 });
 
 describe('playbackRange / wrapToRange', () => {
+    // The song length is given in columns, which is what a clip's geometry
+    // is: a song can end part-way through a bar.
     test('no loop: the whole song', () => {
-        assert.deepEqual(S.playbackRange(M.createSong(), 3), { startCol: 0, endCol: 48 });
+        assert.deepEqual(S.playbackRange(M.createSong(), 48), { startCol: 0, endCol: 48 });
+    });
+
+    test('a song ending mid-bar plays to exactly there', () => {
+        assert.deepEqual(S.playbackRange(M.createSong(), 40), { startCol: 0, endCol: 40 });
     });
 
     test('a loop range wins, in columns', () => {
-        assert.deepEqual(S.playbackRange(M.createSong({ loop: { start: 1, end: 3 } }), 8), { startCol: 16, endCol: 48 });
+        assert.deepEqual(S.playbackRange(M.createSong({ loop: { start: 1, end: 3 } }), 128), { startCol: 16, endCol: 48 });
     });
 
     test('a loop past the end of the song is honoured (silence is a choice)', () => {
-        assert.deepEqual(S.playbackRange(M.createSong({ loop: { start: 4, end: 6 } }), 2), { startCol: 64, endCol: 96 });
+        assert.deepEqual(S.playbackRange(M.createSong({ loop: { start: 4, end: 6 } }), 32), { startCol: 64, endCol: 96 });
     });
 
     test('an empty song without a loop has nothing to play', () => {
@@ -426,5 +432,70 @@ describe('msPerColumn', () => {
     test('a sixteenth at 120 bpm is 125 ms', () => {
         assert.equal(S.msPerColumn(120), 125);
         assert.equal(S.msPerColumn(60), 250);
+    });
+});
+
+// A clip's length is free-form (song-model.js), so it can start part-way
+// through a bar and stop part-way through a repeat.
+describe('clips off the bar line, and cut short', () => {
+    test('a clip starting mid-bar fires its notes there', () => {
+        const sg = song({ clips: [{ id: 'c1', trackId: 't1', patternId: 'p1', startCol: 4 }] });
+        const seq = S.createSongSequence(sg, lib(P1()));
+        assert.deepEqual(firing(seq, 4), [[60, 0]], 'the pattern\'s column 0, four columns in');
+        assert.deepEqual(firing(seq, 8), [[64, 0]], 'and its column 4');
+        assert.deepEqual(firing(seq, 0), [], 'nothing before it starts');
+    });
+
+    test('a length of its own stops the clip part-way through a repeat', () => {
+        // p1 is one bar; 24 columns is one and a half of them, so the
+        // second pass is cut off before the note at column 15.
+        const sg = song({ clips: [{ id: 'c1', trackId: 't1', patternId: 'p1', startCol: 0, lengthCols: 24 }] });
+        const seq = S.createSongSequence(sg, lib(P1()));
+        assert.deepEqual(firing(seq, 15), [[67, 0]], 'the first pass is whole');
+        assert.deepEqual(firing(seq, 20), [[64, 0]], 'the second pass has started');
+        assert.deepEqual(firing(seq, 31), [], 'but it ends at 24, before its last note');
+        assert.equal(seq.length, 24, 'the song is as long as the clip, not the repeat');
+        assert.deepEqual(seq.range, { startCol: 0, endCol: 32 },
+            'but it plays to the end of that bar — a clip cut to one beat must not loop the song every beat');
+    });
+
+    test('a note still sounding at the clip end is cut there', () => {
+        // p1's note at column 0 runs two columns; a clip one column long
+        // must not let it ring past its own end.
+        const sg = song({ clips: [{ id: 'c1', trackId: 't1', patternId: 'p1', startCol: 0, lengthCols: 1 }] });
+        const seq = S.createSongSequence(sg, lib(P1()));
+        assert.deepEqual(seq.eventsAt(0).map(e => [e.midi, e.dur]), [[60, 1]], 'two columns clipped to one');
+    });
+
+    test('a whole-length clip leaves its notes alone', () => {
+        const sg = song({ clips: [{ id: 'c1', trackId: 't1', patternId: 'p1', startCol: 0, repeats: 1 }] });
+        const seq = S.createSongSequence(sg, lib(P1()));
+        assert.deepEqual(seq.eventsAt(0).map(e => [e.midi, e.dur]), [[60, 2]]);
+    });
+
+    test('the last placement of a cut-short clip is the short one', () => {
+        const sg = song({ clips: [{ id: 'c1', trackId: 't1', patternId: 'p1', startCol: 8, lengthCols: 40 }] });
+        assert.deepEqual(S.patternPlacements(sg, 'p1', lib(P1())), [
+            { clipId: 'c1', trackId: 't1', startCol: 8, endCol: 24 },
+            { clipId: 'c1', trackId: 't1', startCol: 24, endCol: 40 },
+            { clipId: 'c1', trackId: 't1', startCol: 40, endCol: 48 },
+        ]);
+    });
+
+    test('the playhead reports the pattern column over an off-grid clip', () => {
+        const sg = song({ clips: [{ id: 'c1', trackId: 't1', patternId: 'p1', startCol: 6 }] });
+        const seq = S.createSongSequence(sg, lib(P1()));
+        assert.equal(seq.locate(10).tracks.t1.patternCol, 4);
+        assert.equal(seq.locate(5).tracks.t1, undefined, 'not under it yet');
+    });
+
+    test('two clips may sit in one bar when neither covers the other', () => {
+        const sg = song({ clips: [
+            { id: 'c1', trackId: 't1', patternId: 'p1', startCol: 0, lengthCols: 8 },
+            { id: 'c2', trackId: 't1', patternId: 'p1', startCol: 8, lengthCols: 8 },
+        ] });
+        assert.equal(M.findClipOverlap(sg, sg.clips[0], lib(P1()), null), null);
+        const seq = S.createSongSequence(sg, lib(P1()));
+        assert.deepEqual(firing(seq, 8), [[60, 0]], 'the second clip restarts the pattern mid-bar');
     });
 });

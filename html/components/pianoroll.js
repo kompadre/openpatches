@@ -201,7 +201,7 @@ export function createPianoroll(opts) {
         tracks = song.tracks.map(t => {
             const clips = song.clips
                 .filter(c => c.trackId === t.id)
-                .sort((a, b) => a.startMeasure - b.startMeasure);
+                .sort((a, b) => a.startCol - b.startCol);
             const clip = clips.find(c => c.id === openClipId) || clips[0] || null;
             return {
                 id: t.id, slot: t.slot, name: t.name,
@@ -235,7 +235,7 @@ export function createPianoroll(opts) {
                 track = createTrack({ name: slotName(slot), slot });
                 song.tracks.push(track);
             }
-            addClip(song, { trackId: track.id, patternId: pattern.id, startMeasure: 0 }, (id) => livePattern(id));
+            addClip(song, { trackId: track.id, patternId: pattern.id, startCol: 0 }, (id) => livePattern(id));
         }, 'roll');
         adoptSong(session.get());
         return tracks.find(t => t.slot === slot);

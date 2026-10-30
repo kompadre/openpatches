@@ -253,7 +253,7 @@ describe('pattern mode placements', () => {
         });
         assert.equal(h.transport.play(), true, 'the backing alone is worth hearing');
         h.transport.stop();
-        h.session.update((song) => { song.clips[1].startMeasure = 2; }, 'test');
+        h.session.update((song) => { song.clips[1].startCol = 32; }, 'test');
         assert.equal(h.transport.play(), false, 'nothing inside the window');
     });
 });

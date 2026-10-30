@@ -4,6 +4,10 @@
 // notes carry no voice, so the same pattern can be played by any voice.
 // (`kind` is the hook for the multitimbral/drum patterns planned later.)
 //
+// A **Clip** is a pattern placed on a track. Its geometry is in **columns**
+// (sixteenths), not bars, so a clip can start and end part-way through a
+// bar; `clipCols()` is the one place that resolves it.
+//
 // A **Song** arranges patterns as **clips** on **tracks**. A track is bound
 // to a voice-bank slot, which is also the synth channel and the MIDI output
 // channel — that mapping is unchanged from the piano-roll era. A pattern can
@@ -20,6 +24,9 @@ export const MIN_BPM = 32;
 export const MAX_BPM = 255;
 export const DEFAULT_BPM = 120;
 export const PATTERN_KINDS = ['mono'];
+// A clip cannot start past, or run past, bar 4097. Generous: the point is
+// to keep a hand-edited record from producing a grid megapixels wide.
+const MAX_CLIP_COL = 4096 * COLS_PER_MEASURE;
 
 const PATTERNS_KEY = 'openpatches_patterns';
 const SONGS_KEY = 'openpatches_arrangements';
@@ -122,14 +129,31 @@ export function createTrack(partial = {}) {
     };
 }
 
+/**
+ * A clip is a pattern placed on a track, at `startCol` (`startMeasure` is
+ * the old spelling, still read).
+ *
+ * Its length is either **its own** — `lengthCols`, what dragging the clip's
+ * edge sets, free-form so the clip may end part-way through a repeat — or
+ * **its pattern's**: `repeats` whole pattern lengths, which follow the
+ * pattern as the pattern grows. Exactly one of the two is stored, so there
+ * is never a stale second opinion; `clipCols()` resolves them, because the
+ * length of a repeat is not knowable without the pattern and this factory
+ * does not have one. Pass `lengthCols: null` to go back to following.
+ */
 export function createClip(partial = {}) {
-    return {
+    const startCol = partial.startCol != null
+        ? clampInt(partial.startCol, 0, MAX_CLIP_COL, 0)
+        : clampInt(partial.startMeasure, 0, 4096, 0) * COLS_PER_MEASURE;
+    const clip = {
         id: partial.id || uid('clip'),
         trackId: partial.trackId || null,
         patternId: partial.patternId || null,
-        startMeasure: clampInt(partial.startMeasure, 0, 4096, 0),
-        repeats: clampInt(partial.repeats, 1, 256, 1),
+        startCol,
     };
+    if (partial.lengthCols != null) clip.lengthCols = clampInt(partial.lengthCols, 1, MAX_CLIP_COL, COLS_PER_MEASURE);
+    else clip.repeats = clampInt(partial.repeats, 1, 256, 1);
+    return clip;
 }
 
 export function createSong(partial = {}) {
@@ -170,40 +194,55 @@ export function patternCols(pattern) {
 }
 
 /**
- * Where a clip sits, in measures: [start, end). Needs the pattern because
- * the length of a clip is the pattern's length times its repeat count.
- * Returns null when the pattern is missing (a dangling reference).
+ * Where a clip sits, in columns: [startCol, endCol). Needs the pattern,
+ * which is what a repeat's length is measured in. Returns null when the
+ * pattern is missing (a dangling reference).
  */
-export function clipSpan(clip, pattern) {
+export function clipCols(clip, pattern) {
     if (!clip || !pattern) return null;
-    const len = pattern.measures * clip.repeats;
-    return { start: clip.startMeasure, end: clip.startMeasure + len };
+    const len = clip.lengthCols != null ? clip.lengthCols : patternCols(pattern) * clip.repeats;
+    return { startCol: clip.startCol, endCol: clip.startCol + len };
 }
 
-/** Song length in measures — the furthest clip end, 0 for an empty song. */
-export function songLength(song, getPattern) {
+/** How many times a clip plays its pattern — fractional for a cut-short one. */
+export function clipRepeats(clip, pattern) {
+    const span = clipCols(clip, pattern);
+    if (!span) return 0;
+    return (span.endCol - span.startCol) / patternCols(pattern);
+}
+
+/** Song length in columns — the furthest clip end, 0 for an empty song. */
+export function songLengthCols(song, getPattern) {
     let end = 0;
     for (const clip of song.clips) {
-        const span = clipSpan(clip, getPattern(clip.patternId));
-        if (span && span.end > end) end = span.end;
+        const span = clipCols(clip, getPattern(clip.patternId));
+        if (span && span.endCol > end) end = span.endCol;
     }
     return end;
 }
 
 /**
- * The clip already occupying any measure `clip` wants, on the same track.
- * One clip per track per measure: tracks are monophonic timelines, so two
+ * Song length in whole measures — the bar the furthest clip ends in, so a
+ * clip finishing mid-bar still gets a whole bar of grid to sit on.
+ */
+export function songLength(song, getPattern) {
+    return Math.ceil(songLengthCols(song, getPattern) / COLS_PER_MEASURE);
+}
+
+/**
+ * The clip already occupying any column `clip` wants, on the same track.
+ * One clip per track per column: tracks are monophonic timelines, so two
  * clips in the same place would mean two patterns on one voice.
  */
 export function findClipOverlap(song, clip, getPattern, ignoreClipId) {
-    const span = clipSpan(clip, getPattern(clip.patternId));
+    const span = clipCols(clip, getPattern(clip.patternId));
     if (!span) return null;
     for (const other of song.clips) {
         if (other.id === clip.id || other.id === ignoreClipId) continue;
         if (other.trackId !== clip.trackId) continue;
-        const otherSpan = clipSpan(other, getPattern(other.patternId));
+        const otherSpan = clipCols(other, getPattern(other.patternId));
         if (!otherSpan) continue;
-        if (span.start < otherSpan.end && otherSpan.start < span.end) return other;
+        if (span.startCol < otherSpan.endCol && otherSpan.startCol < span.endCol) return other;
     }
     return null;
 }
@@ -223,14 +262,36 @@ export function addClip(song, partial, getPattern) {
     return clip;
 }
 
+/**
+ * The caller's changes in the fields a clip actually stores. Needed because
+ * the changes are spread over the existing record: `{startMeasure: 2}` on a
+ * record that already has `startCol` would otherwise be read straight past,
+ * and the move would silently do nothing.
+ */
+function canonicalChanges(changes) {
+    const next = { ...changes };
+    if (next.startMeasure != null) {
+        if (next.startCol == null) next.startCol = clampInt(next.startMeasure, 0, 4096, 0) * COLS_PER_MEASURE;
+        delete next.startMeasure;
+    }
+    // Asking for repeats is asking the clip to follow its pattern again, so
+    // a length of its own has to go.
+    if (next.repeats != null && next.lengthCols === undefined) next.lengthCols = null;
+    return next;
+}
+
 /** Move/resize an existing clip, refusing an overlap. Returns the clip. */
 export function updateClip(song, clipId, changes, getPattern) {
     const clip = song.clips.find(c => c.id === clipId);
     if (!clip) throw new Error('Clip not found');
-    const next = createClip({ ...clip, ...changes, id: clip.id });
+    const next = createClip({ ...clip, ...canonicalChanges(changes), id: clip.id });
     if (!song.tracks.some(t => t.id === next.trackId)) throw new Error('Clip has no track');
     if (!getPattern(next.patternId)) throw new Error('Clip pattern is missing');
     if (findClipOverlap(song, next, getPattern, clipId)) throw new Error('Clip overlaps');
+    // Assigned key by key, after clearing the two length spellings: exactly
+    // one of them is ever stored, and a leftover would be a stale opinion.
+    delete clip.lengthCols;
+    delete clip.repeats;
     Object.assign(clip, next);
     return clip;
 }
@@ -385,7 +446,7 @@ export function songFromLegacyRoll(roll, name, opts = {}) {
         const track = createTrack({ name: slotName(slot), slot });
         patterns.push(pattern);
         tracks.push(track);
-        clips.push(createClip({ trackId: track.id, patternId: pattern.id, startMeasure: 0, repeats: 1 }));
+        clips.push(createClip({ trackId: track.id, patternId: pattern.id, startCol: 0, repeats: 1 }));
     }
 
     const song = createSong({

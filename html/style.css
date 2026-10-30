@@ -4257,9 +4257,14 @@ footer {
     position: relative;
     flex: 0 0 auto;
     height: 1.9rem;
-    background-image: repeating-linear-gradient(to right, #1f1f33 0, #1f1f33 1px, transparent 1px, transparent 48px);
+    /* Two grids: bar lines, and fainter snap lines under them. At Bar snap
+       the periods are equal and the snap layer hides beneath the bar one. */
+    background-image:
+        repeating-linear-gradient(to right, #191930 0, #191930 1px, transparent 1px, transparent var(--song-snap-w, 48px)),
+        repeating-linear-gradient(to right, #1f1f33 0, #1f1f33 1px, transparent 1px, transparent var(--song-measure-w, 48px));
 }
 .song-ruler-lane { height: 1.2rem; }
+.song-snap, .song-zoom { min-width: 3.5rem; }
 .song-ruler-tick { position: absolute; top: 0; padding-left: 3px; color: #777; font-size: 0.6rem; line-height: 1.2rem; }
 .song-loop-band { position: absolute; bottom: 0; height: 3px; background: #e94560; opacity: 0.8; }
 .song-lane { border-bottom: 1px solid rgba(255,255,255,0.08); cursor: copy; }

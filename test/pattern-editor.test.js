@@ -420,7 +420,7 @@ describe('transport integration (phase 5)', () => {
         h.roll.stopPlayback();
 
         // Move slot 0's clip out of the window: now only the edited voice.
-        h.roll.getSession().update((s) => { s.clips[0].startMeasure = 3; }, 'test');
+        h.roll.getSession().update((s) => { s.clips[0].startCol = 48; }, 'test');
         h.roll.startPlayback();
         h.played.length = 0;
         h.tickWorker.tick(0);
@@ -468,7 +468,7 @@ describe('transport integration (phase 5)', () => {
     test('the loop is the clip\'s own window, so the playhead is there from the first tick', () => {
         const h = build();
         drawNote(h, 60, 0);                       // slot 0, bar 1
-        h.roll.getSession().update((s) => { s.clips[0].startMeasure = 1; }, 'test');   // now bar 2
+        h.roll.getSession().update((s) => { s.clips[0].startCol = 16; }, 'test');   // now bar 2
         h.roll.startPlayback();
         assert.deepEqual(h.roll.getTransport().getSequence().range, { startCol: 16, endCol: 32 });
         h.ctx._calls.length = 0;

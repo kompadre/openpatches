@@ -14,7 +14,7 @@
 //  - Mute/solo are read **live** from the song's track objects, so toggling
 //    them mid-playback takes effect on the next column without a rebuild.
 
-import { COLS_PER_MEASURE, clipSpan } from '../components/song-model.js';
+import { COLS_PER_MEASURE, clipCols, patternCols as patternColsOf } from '../components/song-model.js';
 
 /**
  * Tracks that may sound: the soloed ones if any are soloed, otherwise the
@@ -28,19 +28,20 @@ export function audibleTrackIds(tracks) {
 }
 
 /**
- * The columns a song plays: its loop range if it has one (measures →
- * columns), otherwise the whole song. `null` when there is nothing to play —
- * the transport treats that like the empty piano roll and refuses to start.
+ * The columns a song plays: its loop range if it has one (the loop is set
+ * in whole bars), otherwise the whole song. `null` when there is nothing to
+ * play — the transport treats that like the empty piano roll and refuses to
+ * start.
  */
-export function playbackRange(song, lengthMeasures) {
+export function playbackRange(song, lengthCols) {
     if (song.loop) {
         return {
             startCol: song.loop.start * COLS_PER_MEASURE,
             endCol: song.loop.end * COLS_PER_MEASURE,
         };
     }
-    if (lengthMeasures <= 0) return null;
-    return { startCol: 0, endCol: lengthMeasures * COLS_PER_MEASURE };
+    if (lengthCols <= 0) return null;
+    return { startCol: 0, endCol: lengthCols };
 }
 
 /** Map the worker's running count (0, 1, 2, …) onto a column in the range. */
@@ -72,14 +73,18 @@ export function patternPlacements(song, patternId, getPattern) {
     const out = [];
     const pattern = getPattern(patternId);
     if (!pattern) return out;
-    const patternCols = pattern.measures * COLS_PER_MEASURE;
+    const patternCols = patternColsOf(pattern);
     for (const clip of song.clips) {
         if (clip.patternId !== patternId) continue;
-        const span = clipSpan(clip, pattern);
+        const span = clipCols(clip, pattern);
         if (!span) continue;
-        for (let r = 0; r < clip.repeats; r++) {
-            const startCol = span.start * COLS_PER_MEASURE + r * patternCols;
-            out.push({ clipId: clip.id, trackId: clip.trackId, startCol, endCol: startCol + patternCols });
+        // A clip may end part-way through a repeat; that last placement is
+        // short, and looping it is what the roll's Play then hears.
+        for (let at = span.startCol; at < span.endCol; at += patternCols) {
+            out.push({
+                clipId: clip.id, trackId: clip.trackId,
+                startCol: at, endCol: Math.min(at + patternCols, span.endCol),
+            });
         }
     }
     out.sort((a, b) => a.startCol - b.startCol);
@@ -125,16 +130,16 @@ export function createSongSequence(song, getPattern, opts = {}) {
     for (const clip of song.clips) {
         const pattern = getPattern(clip.patternId);
         const track = trackById.get(clip.trackId);
-        const span = clipSpan(clip, pattern);
+        const span = clipCols(clip, pattern);
         if (!pattern || !track || !span) continue;
-        const patternCols = pattern.measures * COLS_PER_MEASURE;
+        const patternCols = patternColsOf(pattern);
         const entry = {
             clip,
             track,
             pattern,
             patternCols,
-            startCol: span.start * COLS_PER_MEASURE,
-            endCol: span.end * COLS_PER_MEASURE,
+            startCol: span.startCol,
+            endCol: span.endCol,
             // Notes indexed by pattern-local start column, so a tick is a
             // map lookup, not a scan of every note in every clip.
             notesByCol: indexNotes(pattern.notes),
@@ -143,8 +148,11 @@ export function createSongSequence(song, getPattern, opts = {}) {
         if (entry.endCol > lengthCols) lengthCols = entry.endCol;
     }
 
-    const lengthMeasures = lengthCols / COLS_PER_MEASURE;
-    const range = opts.range || playbackRange(song, lengthMeasures);
+    // A song plays to the end of the bar its last clip ends in, not to the
+    // clip's own end: a clip cut to one beat would otherwise loop the song
+    // every beat. Clips sit off the bar line; the arrangement does not.
+    const playCols = Math.ceil(lengthCols / COLS_PER_MEASURE) * COLS_PER_MEASURE;
+    const range = opts.range || playbackRange(song, playCols);
     if (!range) return emptySequence('song');
 
     // Which placements cover a column — resolved per column on demand; a
@@ -181,7 +189,9 @@ export function createSongSequence(song, getPattern, opts = {}) {
                 for (const n of notes) {
                     events.push({
                         midi: n.midi,
-                        dur: n.dur,
+                        // Cut at the clip's end: a clip stopped part-way
+                        // through its pattern takes its notes with it.
+                        dur: Math.min(n.dur, p.endCol - col),
                         slot: p.track.slot,
                         trackId: p.track.id,
                         clipId: p.clip.id,

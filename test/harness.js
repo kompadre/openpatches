@@ -37,7 +37,13 @@ class StubElement {
         this.tagName = String(tagName).toUpperCase();
         this.children = [];
         this.parentNode = null;
-        this.style = {};
+        // Plain properties, plus the custom-property API the song grid uses
+        // for its CSS variables; both read back through `style`.
+        this.style = {
+            setProperty(name, value) { this[name] = String(value); },
+            getPropertyValue(name) { return this[name] || ''; },
+            removeProperty(name) { delete this[name]; },
+        };
         this.dataset = {};
         this.listeners = {};
         this._className = '';

@@ -28,7 +28,7 @@ import {
     createSongSequence, createPatternSequence, msPerColumn,
     patternPlacements, nearestPlacement,
 } from './sequencer.js';
-import { COLS_PER_MEASURE, clipSpan } from '../components/song-model.js';
+import { COLS_PER_MEASURE, clipCols } from '../components/song-model.js';
 
 const MODE_KEY = 'openpatches_transport_mode';
 const ACCOMPANY_KEY = 'openpatches_transport_accompany';
@@ -205,9 +205,9 @@ export function createTransport(opts) {
             const { startCol, endCol } = sequence.range;
             return session.get().clips.some(c => {
                 const p = getPattern(c.patternId);
-                const span = p && clipSpan(c, p);
+                const span = p && clipCols(c, p);
                 return !!span && p.notes.length > 0
-                    && span.start * COLS_PER_MEASURE < endCol && span.end * COLS_PER_MEASURE > startCol;
+                    && span.startCol < endCol && span.endCol > startCol;
             });
         }
         return session.get().clips.some(c => {

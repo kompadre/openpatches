@@ -26,6 +26,7 @@ const BANK = [
     { name: 'Bass', color: '#bbb002', voiceData: 'b' },
 ];
 const getPattern = (id) => M.patternStore.get(id);
+const COLS = 16;              // COLS_PER_MEASURE — a bar, in columns
 
 function build({ patterns = [], tracks = [], clips = [] } = {}) {
     const session = createSongSession();
@@ -109,14 +110,14 @@ describe('rendering', () => {
 });
 
 describe('placing clips', () => {
-    test('click a lane with a pattern selected → a clip at that measure', () => {
+    test('click a lane with a pattern selected → a clip at that bar', () => {
         const h = build({ patterns: [{ name: 'A', measures: 2 }], tracks: [{ slot: 0 }] });
         h.click(h.items()[0]);
         assert.equal(h.editor.getSelectedPatternId(), h.patterns[0].id);
         h.click(h.lanes()[0], 3 * MEASURE_W + 5);
         const song = h.song();
         assert.equal(song.clips.length, 1);
-        assert.equal(song.clips[0].startMeasure, 3);
+        assert.equal(song.clips[0].startCol, 3 * COLS, 'bars are the default snap');
         assert.equal(song.clips[0].patternId, h.patterns[0].id);
         assert.equal(M.songStore.get(song.id).clips.length, 1, 'autosaved');
         assert.equal(h.editor.getSelectedClipId(), song.clips[0].id, 'the new clip is selected');
@@ -150,7 +151,7 @@ describe('placing clips', () => {
     });
 });
 
-describe('moving and repeating clips', () => {
+describe('moving and lengthening clips', () => {
     function one(extraClips = []) {
         return build({
             patterns: [{ name: 'A', measures: 2 }], tracks: [{ slot: 0 }],
@@ -158,13 +159,13 @@ describe('moving and repeating clips', () => {
         });
     }
 
-    test('drag moves by whole measures', () => {
+    test('drag moves by whole bars at the default snap', () => {
         const h = one();
         const clip = h.clips()[0];
         clip.dispatch('mousedown', ev({ clientX: 10 }));
         h.doc('mousemove', ev({ clientX: 10 + 3 * MEASURE_W }));
         h.doc('mouseup', ev({ clientX: 10 + 3 * MEASURE_W }));
-        assert.equal(h.song().clips[0].startMeasure, 3);
+        assert.equal(h.song().clips[0].startCol, 3 * COLS);
     });
 
     test('a jitter under the threshold is a click, not a move', () => {
@@ -173,7 +174,7 @@ describe('moving and repeating clips', () => {
         clip.dispatch('mousedown', ev({ clientX: 10 }));
         h.doc('mousemove', ev({ clientX: 12 }));
         h.doc('mouseup', ev({ clientX: 12 }));
-        assert.equal(h.song().clips[0].startMeasure, 0);
+        assert.equal(h.song().clips[0].startCol, 0);
         // Nothing happened, so nothing was redrawn: the same element is
         // still there, and the click that follows selects it as usual.
         assert.equal(h.clips()[0], clip, 'no re-render for a wobble');
@@ -187,37 +188,48 @@ describe('moving and repeating clips', () => {
         clip.dispatch('mousedown', ev({ clientX: 0 }));
         h.doc('mousemove', ev({ clientX: 2 * MEASURE_W }));
         h.doc('mouseup', ev({ clientX: 2 * MEASURE_W }));             // → [2,4) overlaps
-        assert.equal(h.song().clips[0].startMeasure, 0);
+        assert.equal(h.song().clips[0].startCol, 0);
         assert.equal(h.status(), 'Clip overlaps');
         assert.equal(h.clips()[0].style.left, '0px', 're-rendered in place');
     });
 
-    test('cannot be dragged before measure 0', () => {
+    test('cannot be dragged before the start of the song', () => {
         const h = one();
         const clip = h.clips()[0];
         clip.dispatch('mousedown', ev({ clientX: 200 }));
         h.doc('mousemove', ev({ clientX: 0 }));
         h.doc('mouseup', ev({ clientX: 0 }));
-        assert.equal(h.song().clips[0].startMeasure, 0);
+        assert.equal(h.song().clips[0].startCol, 0);
     });
 
-    test('dragging the handle sets repeats in pattern-length steps', () => {
+    test('dragging the handle gives the clip a length of its own', () => {
         const h = one();
         const handle = h.clips()[0].querySelector('.song-clip-handle');
         handle.dispatch('mousedown', ev({ clientX: 2 * MEASURE_W }));
         h.doc('mousemove', ev({ clientX: 2 * MEASURE_W + 4 * MEASURE_W }));
         h.doc('mouseup', ev({ clientX: 2 * MEASURE_W + 4 * MEASURE_W }));
-        assert.equal(h.song().clips[0].repeats, 3, '2 bars + 4 bars = 6 = 3 × 2');
+        assert.equal(h.song().clips[0].lengthCols, 6 * COLS, '2 bars + 4 bars');
+        assert.equal(h.song().clips[0].repeats, undefined, 'it no longer follows its pattern');
         assert.equal(h.clips()[0].querySelector('.song-clip-label').textContent, 'A ×3');
     });
 
-    test('shrinking below one repeat stops at one', () => {
+    test('a length that is not whole repeats is shown as a fraction', () => {
+        const h = one();
+        const handle = h.clips()[0].querySelector('.song-clip-handle');
+        handle.dispatch('mousedown', ev({ clientX: 0 }));
+        h.doc('mousemove', ev({ clientX: MEASURE_W }));                 // 2 bars + 1 = 1.5 repeats
+        h.doc('mouseup', ev({ clientX: MEASURE_W }));
+        assert.equal(h.song().clips[0].lengthCols, 3 * COLS);
+        assert.equal(h.clips()[0].querySelector('.song-clip-label').textContent, 'A ×1.5');
+    });
+
+    test('shrinking stops at one snap cell', () => {
         const h = one();
         const handle = h.clips()[0].querySelector('.song-clip-handle');
         handle.dispatch('mousedown', ev({ clientX: 100 }));
         h.doc('mousemove', ev({ clientX: -500 }));
         h.doc('mouseup', ev({ clientX: -500 }));
-        assert.equal(h.song().clips[0].repeats, 1);
+        assert.equal(h.song().clips[0].lengthCols, COLS, 'one bar, the default snap');
     });
 
     test('touchcancel abandons the drag', () => {
@@ -226,7 +238,7 @@ describe('moving and repeating clips', () => {
         clip.dispatch('touchstart', ev({ touches: [{ clientX: 0, clientY: 0 }] }));
         h.doc('touchmove', ev({ touches: [{ clientX: 3 * MEASURE_W, clientY: 0 }] }));
         h.doc('touchcancel', ev({}));
-        assert.equal(h.song().clips[0].startMeasure, 0);
+        assert.equal(h.song().clips[0].startCol, 0);
         assert.equal(h.clips()[0].style.left, '0px');
     });
 });
@@ -330,7 +342,7 @@ describe('clip gestures', () => {
         h.clips()[0].dispatch('mousedown', ev({ clientX: 0 }));
         h.doc('mousemove', ev({ clientX: MEASURE_W }));
         h.doc('mouseup', ev({ clientX: MEASURE_W }));
-        assert.equal(h.song().clips[0].startMeasure, 1);
+        assert.equal(h.song().clips[0].startCol, COLS);
         t.mock.timers.tick(50);
         h.clips()[0].dispatch('mousedown', ev({ clientX: MEASURE_W }));
         h.doc('mouseup', ev({ clientX: MEASURE_W }));
@@ -371,7 +383,7 @@ describe('clip gestures', () => {
         t.mock.timers.tick(600);
         assert.deepEqual(h.opened, []);
         h.doc('mouseup', ev({ clientX: MEASURE_W }));
-        assert.equal(h.song().clips[0].startMeasure, 1);
+        assert.equal(h.song().clips[0].startCol, COLS);
     });
 
     test('releasing before 600 ms cancels the hold', (t) => {
@@ -713,7 +725,7 @@ describe('moving clips between tracks', () => {
         drag(h, h.clips()[0], { clientX: 10, clientY: 5 }, { clientX: 10, clientY: LANE_H + 5 });
         const after = h.song().clips[0];
         assert.equal(after.trackId, h.song().tracks[1].id);
-        assert.equal(after.startMeasure, 0);
+        assert.equal(after.startCol, 0);
         assert.equal(after.patternId, before.patternId, 'the same pattern — only the notes moved');
         assert.equal(h.lanes()[1].querySelectorAll('.song-clip').length, 1, 'drawn in the new lane');
         assert.equal(h.lanes()[0].querySelectorAll('.song-clip').length, 0);
@@ -732,7 +744,7 @@ describe('moving clips between tracks', () => {
         drag(h, h.clips()[0], { clientX: 0, clientY: 5 }, { clientX: 3 * MEASURE_W, clientY: LANE_H + 5 });
         const c = h.song().clips[0];
         assert.equal(c.trackId, h.song().tracks[1].id);
-        assert.equal(c.startMeasure, 3);
+        assert.equal(c.startCol, 3 * COLS);
     });
 
     test('while dragging, the clip previews in the target lane, keeping its pattern colour', () => {
@@ -813,5 +825,113 @@ describe('pattern colours', () => {
         h.session.update((s) => { s.clips[0].trackId = s.tracks[1].id; }, 'test');
         assert.equal(h.clips()[0].style.background, '#102030');
         assert.equal(h.lanes()[1].style.backgroundColor, 'rgba(187,176,2,0.16)');
+    });
+});
+
+// Clips are not bar-aligned by nature: their geometry is columns. The Snap
+// select decides how coarsely a pointer may land, and Zoom widens the bar
+// so the fine resolutions are something a pointer can actually hit.
+describe('sub-bar placement and length', () => {
+    // A function, not a constant: describe bodies run before before(),
+    // where MEASURE_W is imported.
+    const colW = (zoom = 1) => MEASURE_W * zoom / COLS;
+
+    function one({ snap, zoom, clips = [{ track: 0, pattern: 0, at: 0 }] } = {}) {
+        if (snap != null) localStorage.setItem('openpatches_song_snap', String(snap));
+        if (zoom != null) localStorage.setItem('openpatches_song_zoom', String(zoom));
+        return build({ patterns: [{ name: 'A', measures: 2 }], tracks: [{ slot: 0 }], clips });
+    }
+    const pick = (h, cls, value) => {
+        const sel = h.btn(cls);
+        sel.value = String(value);
+        sel.dispatch('change');
+    };
+
+    test('the toolbar offers a snap and a zoom, defaulting to bars at ×1', () => {
+        const h = one({ clips: [] });
+        assert.equal(h.btn('song-snap').value, String(COLS));
+        assert.equal(h.btn('song-zoom').value, '1');
+        assert.deepEqual(
+            Array.from(h.btn('song-snap').children).map(o => o.textContent),
+            ['Bar', '1/2', '1/4', '1/8', '1/16']);
+    });
+
+    test('a finer snap places a clip part-way through a bar', () => {
+        const h = one({ clips: [] });
+        pick(h, 'song-snap', 4);                             // quarter notes
+        h.click(h.items()[0]);
+        h.click(h.lanes()[0], MEASURE_W + 7 * colW());       // bar 2, a shade past beat 2
+        assert.equal(h.song().clips[0].startCol, COLS + 4, 'floored to the quarter it fell in');
+    });
+
+    test('the snap is remembered, and is what a drag moves by', () => {
+        const h = one({ snap: 8 });                      // halves
+        assert.equal(h.btn('song-snap').value, '8');
+        const clip = h.clips()[0];
+        clip.dispatch('mousedown', ev({ clientX: 0 }));
+        h.doc('mousemove', ev({ clientX: 11 * colW() })); // 11 columns → nearest half is 8
+        h.doc('mouseup', ev({ clientX: 11 * colW() }));
+        assert.equal(h.song().clips[0].startCol, 8);
+    });
+
+    test('a drag snaps the distance, not the position: an off-grid clip stays off it', () => {
+        const h = one({ snap: COLS, clips: [{ track: 0, pattern: 0, at: 0 }] });
+        h.session.update((s) => { s.clips[0].startCol = 3; }, 'test');
+        const clip = h.clips()[0];
+        clip.dispatch('mousedown', ev({ clientX: 0 }));
+        h.doc('mousemove', ev({ clientX: MEASURE_W }));
+        h.doc('mouseup', ev({ clientX: MEASURE_W }));
+        assert.equal(h.song().clips[0].startCol, 3 + COLS, 'moved a bar, kept its offset');
+    });
+
+    test('the edge handle lengthens by sub-bar steps', () => {
+        const h = one({ snap: 4 });
+        const handle = h.clips()[0].querySelector('.song-clip-handle');
+        handle.dispatch('mousedown', ev({ clientX: 0 }));
+        h.doc('mousemove', ev({ clientX: 5 * colW() }));  // 5 columns → nearest quarter is 4
+        h.doc('mouseup', ev({ clientX: 5 * colW() }));
+        assert.equal(h.song().clips[0].lengthCols, 2 * COLS + 4);
+    });
+
+    test('a clip is drawn, and overlaps, at its column position', () => {
+        const h = one({ clips: [] });
+        h.session.update((s) => {
+            M.addClip(s, { trackId: s.tracks[0].id, patternId: h.patterns[0].id, startCol: 8, lengthCols: 20 }, getPattern);
+        }, 'test');
+        const el = h.clips()[0];
+        assert.equal(el.style.left, (8 * colW()) + 'px');
+        assert.equal(el.style.width, (20 * colW() - 2) + 'px');
+        // [8,28) is taken, so a clip at bar 1 ([0,32)) cannot go in beside it.
+        assert.throws(() => h.session.update((s) => {
+            M.addClip(s, { trackId: s.tracks[0].id, patternId: h.patterns[0].id, startCol: 0 }, getPattern);
+        }, 'test'), /overlaps/);
+    });
+
+    test('zoom widens the bar; everything on the grid follows', () => {
+        const h = one();
+        assert.equal(h.clips()[0].style.width, (2 * MEASURE_W - 2) + 'px');
+        pick(h, 'song-zoom', 4);
+        assert.equal(h.clips()[0].style.width, (2 * 4 * MEASURE_W - 2) + 'px');
+        assert.ok(parseFloat(h.root.querySelector('.song-ruler-lane').style.width) >= 16 * 4 * MEASURE_W);
+        assert.equal(localStorage.getItem('openpatches_song_zoom'), '4', 'remembered');
+    });
+
+    test('the grid draws a snap line under every bar line', () => {
+        const h = one({ snap: 4, zoom: 2 });
+        const g = h.root.querySelector('.song-grid');
+        assert.equal(g.style.getPropertyValue('--song-measure-w'), (2 * MEASURE_W) + 'px');
+        assert.equal(g.style.getPropertyValue('--song-snap-w'), (4 * colW(2)) + 'px');
+    });
+
+    test('a drag at a fine snap still cannot cross a neighbour', () => {
+        // Zoomed, because a column is 3px at ×1 and a 3px drag never clears
+        // DRAG_THRESHOLD — which is what the zoom is for.
+        const h = one({ snap: 1, zoom: 2, clips: [{ track: 0, pattern: 0, at: 0 }, { track: 0, pattern: 0, at: 2 }] });
+        const clip = h.clips()[0];                       // [0,32)
+        clip.dispatch('mousedown', ev({ clientX: 0 }));
+        h.doc('mousemove', ev({ clientX: colW(2) }));    // → [1,33) runs into [32,64)
+        h.doc('mouseup', ev({ clientX: colW(2) }));
+        assert.equal(h.song().clips[0].startCol, 0);
+        assert.equal(h.status(), 'Clip overlaps');
     });
 });

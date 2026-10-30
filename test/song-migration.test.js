@@ -87,7 +87,7 @@ describe('songFromLegacyRoll', () => {
         const { song } = M.songFromLegacyRoll({
             measures: 1, notes: [note(60, 0, 1, 0), note(62, 0, 1, 1)],
         }, 'T');
-        assert.deepEqual(song.clips.map(c => [c.startMeasure, c.repeats]), [[0, 1], [0, 1]]);
+        assert.deepEqual(song.clips.map(c => [c.startCol, c.repeats]), [[0, 1], [0, 1]]);
     });
 
     test('clips point at the patterns and tracks that were just made', () => {

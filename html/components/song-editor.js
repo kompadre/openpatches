@@ -1,10 +1,15 @@
 // Song editor — arrange patterns as clips on tracks.
 //
-// A grid: tracks are rows, measures are columns. Left of it a palette of
+// A grid: tracks are rows, bars are columns. Left of it a palette of
 // every pattern in the library. Pick a pattern, click an empty spot on a
 // lane, and a clip is placed there; drag a clip to move it, drag its right
-// edge to repeat it, select it and press Delete (or the Remove button) to
+// edge to lengthen it, select it and press Delete (or the Remove button) to
 // take it out. Each row binds to a voice-bank slot and has mute/solo.
+//
+// Placing, moving and lengthening all happen at the **snap** resolution,
+// a bar by default and down to a sixteenth — clips are not bar-aligned by
+// nature, their geometry is columns (see song-model.js). **Zoom** widens
+// the bar so the finer resolutions are something a pointer can hit.
 // Everything autosaves through the song session — there is no Save button
 // and no "Song exists": songs are id-keyed, names are just labels.
 //
@@ -12,17 +17,37 @@
 // pattern to the piano roll via opts.onOpenPattern.
 
 import {
-    addClip, updateClip, removeClip, removeTrack, clipSpan, songLength,
-    createPattern, createTrack, patternStore, patternUsage,
+    addClip, updateClip, removeClip, removeTrack, clipCols, clipRepeats, songLength,
+    createPattern, createTrack, patternStore, patternUsage, patternCols,
     COLS_PER_MEASURE, MAX_SLOTS, MIN_BPM, MAX_BPM,
 } from './song-model.js';
 import { createSongSession } from './song-session.js';
 
-export const MEASURE_W = 48;      // px per measure in the grid
+export const MEASURE_W = 48;      // px per measure in the grid, at zoom ×1
 const MIN_GRID_MEASURES = 16;     // never show an empty, zero-width song
 const DRAG_THRESHOLD = 4;         // px before a press becomes a drag
 const LONG_PRESS_MS = 600;        // a still press this long opens the clip in the roll
 const DOUBLE_TAP_MS = 400;        // two presses on one clip within this remove it (as in the roll)
+
+const SNAP_KEY = 'openpatches_song_snap';
+const ZOOM_KEY = 'openpatches_song_zoom';
+// Grid resolutions, in columns. A bar is the default, so the grid behaves
+// exactly as it always did until the user asks for something finer.
+export const SNAPS = [
+    { cols: COLS_PER_MEASURE, label: 'Bar' },
+    { cols: 8, label: '1/2' },
+    { cols: 4, label: '1/4' },
+    { cols: 2, label: '1/8' },
+    { cols: 1, label: '1/16' },
+];
+export const ZOOMS = [1, 2, 4, 8];
+
+function loadNum(key, allowed, fallback) {
+    try {
+        const v = Number(localStorage.getItem(key));
+        return allowed.includes(v) ? v : fallback;
+    } catch { return fallback; }
+}
 
 export function createSongEditor(opts = {}) {
     const session = opts.session || createSongSession();
@@ -39,6 +64,14 @@ export function createSongEditor(opts = {}) {
     let unsubscribe = null;
     let unsubscribeTransport = null;
     let playheadEl = null;
+    let snapCols = loadNum(SNAP_KEY, SNAPS.map(s => s.cols), COLS_PER_MEASURE);
+    let zoom = loadNum(ZOOM_KEY, ZOOMS, 1);
+
+    /** Grid scale. One bar is MEASURE_W at zoom ×1; a column is 1/16 of it. */
+    const measureW = () => MEASURE_W * zoom;
+    const colW = () => measureW() / COLS_PER_MEASURE;
+    /** Round a column count to the snap resolution (a delta, or a position). */
+    const snap = (cols) => Math.round(cols / snapCols) * snapCols;
 
     const root = document.createElement('div');
     root.className = 'song-editor';
@@ -217,6 +250,42 @@ export function createSongEditor(opts = {}) {
         loopStart.addEventListener('change', applyLoop);
         loopEnd.addEventListener('change', applyLoop);
         toolbar.appendChild(loopLabel);
+
+        // Snap and zoom are view settings, not part of the song: they are
+        // persisted on their own and a re-render reads them back.
+        toolbar.appendChild(chooser('Snap ', 'song-snap',
+            'Grid resolution for placing, moving and lengthening clips',
+            SNAPS.map(x => [x.cols, x.label]), snapCols,
+            (v) => { snapCols = v; store(SNAP_KEY, v); render(); }));
+        toolbar.appendChild(chooser('Zoom ', 'song-zoom',
+            'Width of a bar — the finer snaps need the room',
+            ZOOMS.map(z => [z, '\u00d7' + z]), zoom,
+            (v) => { zoom = v; store(ZOOM_KEY, v); render(); }));
+    }
+
+    function store(key, value) {
+        try { localStorage.setItem(key, String(value)); } catch { /* ignore */ }
+    }
+
+    /** A labelled <select> over numeric [value, label] pairs. */
+    function chooser(text, className, title, options, value, onPick) {
+        const label = document.createElement('label');
+        label.className = 'song-field';
+        label.textContent = text;
+        const sel = document.createElement('select');
+        sel.className = className;
+        sel.title = title;
+        for (const [v, l] of options) {
+            const opt = document.createElement('option');
+            opt.value = String(v);
+            opt.textContent = l;
+            if (v === value) opt.selected = true;
+            sel.appendChild(opt);
+        }
+        sel.value = String(value);
+        sel.addEventListener('change', () => onPick(Number(sel.value)));
+        label.appendChild(sel);
+        return label;
     }
 
     // --- Palette: the pattern library ---
@@ -338,14 +407,32 @@ export function createSongEditor(opts = {}) {
         return { x: t.clientX, y: t.clientY };
     }
 
-    function measureAt(lane, clientX) {
+    /**
+     * The column a click lands on, floored to the snap cell the way a click
+     * used to be floored to its bar: anywhere inside a cell means that cell.
+     */
+    function colAt(lane, clientX) {
         const rect = lane.getBoundingClientRect();
-        return Math.max(0, Math.floor((clientX - rect.left + (lane.scrollLeft || 0)) / MEASURE_W));
+        const col = (clientX - rect.left + (lane.scrollLeft || 0)) / colW();
+        return Math.max(0, Math.floor(col / snapCols) * snapCols);
+    }
+
+    /** "bar 3" / "bar 3 beat 2.5" — where a column is, for a tooltip. */
+    function positionLabel(col) {
+        const bar = Math.floor(col / COLS_PER_MEASURE) + 1;
+        const beat = (col % COLS_PER_MEASURE) / 4;
+        if (beat === 0) return `bar ${bar}`;
+        return `bar ${bar} beat ${Math.round((beat + 1) * 100) / 100}`;
     }
 
     function renderGrid(song) {
         grid.innerHTML = '';
         const cols = gridMeasures(song);
+        // The bar lines and the (fainter) snap lines are gradients in the
+        // stylesheet; these are their periods. At Bar snap the two coincide
+        // and the snap layer is invisible, which is the point.
+        grid.style.setProperty('--song-measure-w', measureW() + 'px');
+        grid.style.setProperty('--song-snap-w', (snapCols * colW()) + 'px');
 
         // Measure ruler
         const ruler = document.createElement('div');
@@ -356,19 +443,19 @@ export function createSongEditor(opts = {}) {
         ruler.appendChild(rulerHead);
         const rulerLane = document.createElement('div');
         rulerLane.className = 'song-ruler-lane';
-        rulerLane.style.width = (cols * MEASURE_W) + 'px';
+        rulerLane.style.width = (cols * measureW()) + 'px';
         for (let m = 0; m < cols; m++) {
             const tick = document.createElement('span');
             tick.className = 'song-ruler-tick';
-            tick.style.left = (m * MEASURE_W) + 'px';
+            tick.style.left = (m * measureW()) + 'px';
             tick.textContent = String(m + 1);
             rulerLane.appendChild(tick);
         }
         if (song.loop) {
             const band = document.createElement('div');
             band.className = 'song-loop-band';
-            band.style.left = (song.loop.start * MEASURE_W) + 'px';
-            band.style.width = ((song.loop.end - song.loop.start) * MEASURE_W) + 'px';
+            band.style.left = (song.loop.start * measureW()) + 'px';
+            band.style.width = ((song.loop.end - song.loop.start) * measureW()) + 'px';
             rulerLane.appendChild(band);
         }
         ruler.appendChild(rulerLane);
@@ -455,7 +542,7 @@ export function createSongEditor(opts = {}) {
 
         const lane = document.createElement('div');
         lane.className = 'song-lane';
-        lane.style.width = (cols * MEASURE_W) + 'px';
+        lane.style.width = (cols * measureW()) + 'px';
         // The whole lane carries the voice, quietly; clips carry their
         // pattern's colour on top. (backgroundColor, not background: the
         // bar grid is a background-image on the same element.)
@@ -469,9 +556,9 @@ export function createSongEditor(opts = {}) {
                 render();
                 return;
             }
-            const startMeasure = measureAt(lane, e.clientX);
+            const startCol = colAt(lane, e.clientX);
             change((s) => {
-                const clip = addClip(s, { trackId: track.id, patternId: selectedPatternId, startMeasure }, getPattern);
+                const clip = addClip(s, { trackId: track.id, patternId: selectedPatternId, startCol }, getPattern);
                 selectedClipId = clip.id;
             });
         });
@@ -479,7 +566,7 @@ export function createSongEditor(opts = {}) {
         for (const clip of song.clips) {
             if (clip.trackId !== track.id) continue;
             const pattern = getPattern(clip.patternId);
-            const span = clipSpan(clip, pattern);
+            const span = clipCols(clip, pattern);
             if (!span) continue;                     // dangling: silence, not a crash
             lane.appendChild(renderClip(clip, pattern, span, track, lane));
         }
@@ -487,18 +574,27 @@ export function createSongEditor(opts = {}) {
         return row;
     }
 
+    /** ' ×3' / ' ×2.5' — how many times the clip plays its pattern, '' for once. */
+    function repeatLabel(clip, pattern) {
+        const reps = clipRepeats(clip, pattern);
+        if (reps === 1) return '';
+        return ' \u00d7' + (Math.round(reps * 100) / 100);
+    }
+
     function renderClip(clip, pattern, span, track, lane) {
         const el = document.createElement('div');
         el.className = 'song-clip' + (clip.id === selectedClipId ? ' selected' : '');
         el.dataset.clipId = clip.id;
-        el.style.left = (span.start * MEASURE_W) + 'px';
-        el.style.width = ((span.end - span.start) * MEASURE_W - 2) + 'px';
+        el.style.left = (span.startCol * colW()) + 'px';
+        el.style.width = ((span.endCol - span.startCol) * colW() - 2) + 'px';
         el.style.background = pattern.color;
-        el.title = `${pattern.name} × ${clip.repeats} — drag to move (to another track too), drag the edge to repeat, hold to open, double-click to remove`;
+        const reps = repeatLabel(clip, pattern);
+        el.title = `${pattern.name}${reps} at ${positionLabel(span.startCol)} — drag to move (to another track too), `
+            + 'drag the edge to lengthen, hold to open, double-click to remove';
 
         const label = document.createElement('span');
         label.className = 'song-clip-label';
-        label.textContent = clip.repeats > 1 ? `${pattern.name} ×${clip.repeats}` : pattern.name;
+        label.textContent = pattern.name + reps;
         el.appendChild(label);
 
         const handle = document.createElement('span');
@@ -514,9 +610,11 @@ export function createSongEditor(opts = {}) {
             selectedPatternId = clip.patternId;
             render();
         });
-        // Move (body) or repeat (handle). Pointer deltas are snapped to
-        // measures; the model decides whether the result is legal. Below
-        // DRAG_THRESHOLD a press is a click: no preview, no re-render.
+        // Move (body) or lengthen (handle). Pointer deltas are snapped to
+        // the snap resolution — the delta, not the position, so a clip put
+        // deliberately off the grid stays off it — and the model decides
+        // whether the result is legal. Below DRAG_THRESHOLD a press is a
+        // click: no preview, no re-render.
         //
         // A move is two-dimensional: sideways by measures, and down or up
         // into another track's lane. A clip is only a pattern placed
@@ -564,9 +662,9 @@ export function createSongEditor(opts = {}) {
                 if (!moved && Math.abs(dx) < DRAG_THRESHOLD && Math.abs(dy) < DRAG_THRESHOLD) return;
                 if (hold) { clearTimeout(hold); hold = null; }   // it moved: a drag, not a hold
                 moved = true;
-                const dm = Math.round(dx / MEASURE_W);
+                const dCols = snap(dx / colW());
                 if (mode === 'move') {
-                    el.style.left = (Math.max(0, span.start + dm) * MEASURE_W) + 'px';
+                    el.style.left = (Math.max(0, span.startCol + dCols) * colW()) + 'px';
                     // Preview across lanes: re-parent the element. It keeps
                     // its pattern colour — the lane's tint says which voice.
                     const over = laneAt(pt.y) || targetLane;
@@ -575,8 +673,7 @@ export function createSongEditor(opts = {}) {
                         targetLane.appendChild(el);
                     }
                 } else {
-                    const reps = Math.max(1, Math.round((span.end - span.start + dm) / pattern.measures));
-                    el.style.width = (reps * pattern.measures * MEASURE_W - 2) + 'px';
+                    el.style.width = (resizedLength(span, dCols) * colW() - 2) + 'px';
                 }
             };
             const finish = (ev) => {
@@ -587,17 +684,19 @@ export function createSongEditor(opts = {}) {
                     if (mode === 'move') lastPress = { clipId: clip.id, at: Date.now() };
                     return;
                 }
-                const dm = Math.round((pointer(ev).x - origin.x) / MEASURE_W);
+                const dCols = snap((pointer(ev).x - origin.x) / colW());
                 selectedClipId = clip.id;
                 if (mode === 'move') {
-                    const startMeasure = Math.max(0, span.start + dm);
+                    const startCol = Math.max(0, span.startCol + dCols);
                     const trackId = targetLane.dataset.trackId || clip.trackId;
-                    if (startMeasure === clip.startMeasure && trackId === clip.trackId) { render(); return; }
-                    change((s) => { updateClip(s, clip.id, { startMeasure, trackId }, getPattern); });
+                    if (startCol === clip.startCol && trackId === clip.trackId) { render(); return; }
+                    change((s) => { updateClip(s, clip.id, { startCol, trackId }, getPattern); });
                 } else {
-                    const repeats = Math.max(1, Math.round((span.end - span.start + dm) / pattern.measures));
-                    if (repeats === clip.repeats) { render(); return; }
-                    change((s) => { updateClip(s, clip.id, { repeats }, getPattern); });
+                    // Dragging the edge gives the clip a length of its own;
+                    // it stops following its pattern's (see createClip).
+                    const lengthCols = resizedLength(span, dCols);
+                    if (lengthCols === span.endCol - span.startCol) { render(); return; }
+                    change((s) => { updateClip(s, clip.id, { lengthCols }, getPattern); });
                 }
             };
             const cancel = () => {
@@ -625,6 +724,11 @@ export function createSongEditor(opts = {}) {
         return el;
     }
 
+    /** A clip's length after dragging its edge by `dCols`, never under one snap cell. */
+    function resizedLength(span, dCols) {
+        return Math.max(snapCols, span.endCol - span.startCol + dCols);
+    }
+
     /**
      * Park the playhead at a song column. Both modes have one — pattern
      * mode loops a window of the song — except a pattern placed nowhere,
@@ -640,7 +744,7 @@ export function createSongEditor(opts = {}) {
         // Offset from the lane's left edge; the head column's width is a
         // rem value the stylesheet adds as margin-left, so the playhead
         // tracks it at any root font size instead of a pixel guess.
-        playheadEl.style.left = ((col / COLS_PER_MEASURE) * MEASURE_W) + 'px';
+        playheadEl.style.left = ((col / COLS_PER_MEASURE) * measureW()) + 'px';
     }
 
     function deleteClip(clipId) {
@@ -664,7 +768,7 @@ export function createSongEditor(opts = {}) {
         selectedPatternId = clip.patternId;
         // Park the song position on this clip so it, and not another
         // placement of the same pattern, is what the roll's Play loops.
-        if (transport && transport.setSongPosition) transport.setSongPosition(clip.startMeasure * COLS_PER_MEASURE);
+        if (transport && transport.setSongPosition) transport.setSongPosition(clip.startCol);
         if (opts.onOpenPattern) opts.onOpenPattern(clipId, clip.trackId, clip.patternId);
         render();
     }
