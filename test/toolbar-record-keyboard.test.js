@@ -75,8 +75,13 @@ describe('desktop Record button', () => {
 
     test('starts a recording session and stops it again', () => {
         const { recDesktop, recMobile, playRoll, roll } = build();
+        // With the clock stopped, Rec is a step record (toolbar-step-record
+        // test); a live take is Rec over a running clock.
+        roll.addNote({ midi: 60, start: 0, dur: 1, slot: 0 });
+        roll.startPlayback();
+        started.length = 0;
         recDesktop.dispatch('click');
-        assert.deepEqual(started, [{ bpm: 120, col: 0 }], 'the tick worker is started for the recorder');
+        assert.deepEqual(started, [{ bpm: 120, col: 0 }], 'the tick worker is restarted for the recorder');
         assert.ok(recDesktop.classList.contains('active'));
         assert.match(recDesktop.textContent, /Stop/);
         assert.equal(recMobile.textContent, 'Stop ■', 'the mobile button mirrors it');
@@ -93,6 +98,10 @@ describe('desktop Record button', () => {
 
     test('a key pressed during the session is recorded into the roll', async () => {
         const { dock, recDesktop, roll } = build();
+        // A live take (Rec over a running clock); a quick tap into a step
+        // record would be a rest — see toolbar-step-record.test.js.
+        roll.addNote({ midi: 60, start: 4, dur: 1, slot: 0 });
+        roll.startPlayback();
         recDesktop.dispatch('click');
         const key = dock.querySelectorAll('.key')[0];   // C2
         const ev = { button: 0, preventDefault() {} };
@@ -103,8 +112,8 @@ describe('desktop Record button', () => {
         recDesktop.dispatch('click');
 
         const notes = roll.getNotes();
-        assert.equal(notes.length, 1);
-        assert.equal(notes[0].midi, 36);
+        assert.equal(notes.length, 2);
+        assert.equal(notes[1].midi, 36);
     });
 
     test('either button ends a session the other one started', () => {
@@ -163,7 +172,7 @@ describe('collapsible keyboard', () => {
         const { dock, kbToggle, recDesktop } = build();
         kbToggle.dispatch('click');
         recDesktop.dispatch('click');
-        assert.equal(started.length, 1);
+        assert.ok(recDesktop.classList.contains('active'), 'a step record is armed');
         assert.equal(dock._isKeyboardCollapsed(), true);
     });
 });

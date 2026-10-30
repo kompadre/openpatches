@@ -1968,6 +1968,8 @@ h1 {
     border-color: #ff6b8a;
     animation: rec-pulse 1s infinite;
 }
+/* A step record is armed, not running: lit, but no pulse. */
+.pianoroll-record.step { animation: none; }
 
 .pianoroll-accompany.active {
     /* Pattern only: the rest of the song is muted inside the loop. */
@@ -3971,6 +3973,9 @@ footer {
     }
     .kb-btn-record.active {
         animation: rec-pulse 1s infinite;
+    }
+    .kb-btn-record.step {
+        animation: none;
     }
     @keyframes rec-pulse {
         0% { opacity: 1; }

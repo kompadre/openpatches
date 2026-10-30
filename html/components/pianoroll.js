@@ -105,14 +105,16 @@ export function createPianoroll(opts) {
         playNote: (midi, durMs, voiceData, slot) => playNoteFn(midi, durMs, voiceData, slot),
         getSlotData: (slot) => getSlotData(slot),
         getPattern: (id) => livePattern(id),
-        getEditTarget: () => {
-            const e = activeEntry();
-            if (!e || !e.pattern) return null;
-            return { trackId: e.id, clipId: e.clipId, pattern: e.pattern, slot: e.slot };
-        },
+        getEditTarget: () => editTarget(),
         onStop: opts.onStopPlayback || null,
         log: opts.log || null,
     });
+    /** The pattern on screen, as the transport and the step record see it. */
+    function editTarget() {
+        const e = activeEntry();
+        if (!e || !e.pattern) return null;
+        return { trackId: e.id, clipId: e.clipId, pattern: e.pattern, slot: e.slot };
+    }
     const CANVAS_H = HEADER_H + NOTES.length * ROW_H;
     let looping = false;
     // Scroll the view to keep the playhead in sight while playing/recording.
@@ -519,6 +521,7 @@ export function createPianoroll(opts) {
     const ctx = canvas.getContext('2d');
     let playing = false;
     let playCol = -1;
+    let stepCol = -1;   // the step record's cursor; drawn as the playhead while the clock is stopped
     let dragging = false;
     let dragStart = null;
 
@@ -735,8 +738,9 @@ export function createPianoroll(opts) {
         // with a marker in the header so it reads even over dense notes.
         // Deliberately high-contrast — with follow-scroll off this is the
         // only thing telling the user where playback is.
-        if (playCol >= 0) {
-            const x = ox + LABEL_W + playCol * COL_W;
+        const cursorCol = playCol >= 0 ? playCol : stepCol;
+        if (cursorCol >= 0) {
+            const x = ox + LABEL_W + cursorCol * COL_W;
             ctx.fillStyle = PLAYHEAD_COLOR;
             ctx.fillRect(x - 1, 0, 2, CANVAS_H);
             ctx.beginPath();
@@ -1326,6 +1330,9 @@ export function createPianoroll(opts) {
         // Rewind the view only when it is following; otherwise the user
         // owns the scroll position and yanking it would undo whatever
         // they were looking at.
+        // The toolbar may claim the press first: Play during a step record
+        // turns it into a live take rather than playing over it.
+        if (opts.onBeforePlay && opts.onBeforePlay()) return;
         if (transport.play({ mode: 'pattern' }) && followPlayhead) scroll.scrollLeft = LABEL_W;
     }
 
@@ -1479,7 +1486,7 @@ export function createPianoroll(opts) {
          * Insert a note on `slot`'s track (the recorder names the slot it
          * recorded on, which need not be the one being edited).
          */
-        addNote({ midi, start, dur, slot, clipId }) {
+        addNote({ midi, start, dur, slot, clipId, reveal }) {
             const target = slot != null ? slot : currentSlot();
             // The recorder names the clip when the song's playhead is over
             // one; otherwise the voice's own track takes the note.
@@ -1495,8 +1502,11 @@ export function createPianoroll(opts) {
             // Stopped: bring the new note to the centre. Recording: the
             // horizontal position is the follow-scroll's (or the user's), so
             // only nudge vertically, and only if the note is off screen.
-            if (!looping) this.scrollTo(start, midi);
-            else this.revealRow(midi);
+            // `reveal: 'row'` (the step record) centres the row every time
+            // and scrolls sideways only if the column is out of view.
+            if (reveal === 'row') { this.centerRow(midi); this.revealCol(start); }
+            else if (looping) this.revealRow(midi);
+            else this.scrollTo(start, midi);
             return note;
         },
         /**
@@ -1512,6 +1522,50 @@ export function createPianoroll(opts) {
             const bottom = top + scroll.clientHeight;
             if (y >= top && y + ROW_H <= bottom) return false;
             scroll.scrollTop = Math.max(0, y + ROW_H / 2 - scroll.clientHeight / 2);
+            return true;
+        },
+        /**
+         * Change a note's length in place — the step record grows a held
+         * note a sixteenth at a time. Saved like any edit; no clamping
+         * here, the caller knows the pattern's end.
+         */
+        setNoteDur(note, dur) {
+            const owner = tracks.find(t => t.pattern && t.pattern.notes.indexOf(note) >= 0);
+            if (!owner || !(dur >= 1) || note.dur === dur) return false;
+            note.dur = dur;
+            draw();
+            if (onNotesChange) onNotesChange();
+            saveState([owner.pattern]);
+            return true;
+        },
+        /**
+         * Park the step record's cursor at a pattern column, or hide it
+         * with -1. Drawn exactly like the playhead, which takes over
+         * whenever the clock runs.
+         */
+        setStepCursor(col) {
+            stepCol = col >= 0 ? col : -1;
+            draw();
+            if (stepCol >= 0) this.revealCol(stepCol);
+        },
+        getStepCursor() { return stepCol; },
+        /** { trackId, clipId, pattern, slot } for the pattern on screen, or null. */
+        getEditTarget() { return editTarget(); },
+        /** Scroll vertically so `midi`'s row is centred, whether or not it was in view. */
+        centerRow(midi) {
+            const row = NOTES.findIndex(n => n.midi === midi);
+            if (row < 0) return false;
+            const y = HEADER_H + row * ROW_H;
+            scroll.scrollTop = Math.max(0, y + ROW_H / 2 - scroll.clientHeight / 2);
+            return true;
+        },
+        /** Scroll sideways to centre column `col`, but only when it is out of view. */
+        revealCol(col) {
+            const x = LABEL_W + col * COL_W;
+            const left = scroll.scrollLeft;
+            const right = left + scroll.clientWidth;
+            if (x >= left + LABEL_W && x + COL_W <= right) return false;
+            scroll.scrollLeft = Math.max(0, x - scroll.clientWidth / 2);
             return true;
         },
         removeNote(note) {

@@ -2,6 +2,17 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-10-30: Step record — Rec without Play
+
+- **Rec with the clock stopped arms a step record** instead of starting a take. A key (on screen or MIDI) held for a full second puts a sixteenth on the grid at the step cursor and grows it by one for every further second — the length on the grid when the key comes up is the length kept. **A tap shorter than a second is a sixteenth rest; two such taps within half a second are a quarter rest.** Keys down together are a chord with their own hold times; when the last comes up the cursor moves past the longest note (or the rest), wrapping at the pattern's end. The roll centres vertically on each new note and scrolls sideways only when the cursor leaves the view. Undo works as for a take. The cursor is drawn as the roll's playhead (`setStepCursor`) and the Rec button is lit without the pulse (`.step`).
+- Steps go **into the pattern on screen** (the roll's `getEditTarget()`), not through the take's slot-based `mapRecordColumn`: the voice select's record slot and the roll can disagree (opening a clip from the Song tab on a track whose slot holds no patch moves the roll but not the recorder, since `_setActiveSlot` ignores empty slots), and the first browser check saw exactly that — notes landing in another track's pattern or nowhere, with no error. With nothing on screen the note starts a track on the record slot. Step notes carry no `_recordedInSession` guard, so they sound on the first pass of a take that follows.
+- **Rec over a running clock is still a live take**, and **Play while a step record is armed converts it into one** (the roll's `onBeforePlay` hook; the mobile Play goes through the same path) — which is now how a take on an empty song begins, since Play alone refuses an empty roll. A clock started elsewhere (the Song tab's Play) ends the step record.
+- `test/toolbar-step-record.test.js`; the Rec-from-stopped cases in `toolbar-record-keyboard.test.js` now start playback first.
+
+## 2026-10-30: Song tab playhead no longer trails the head column
+
+- The playhead's left offset was a fixed 192px (12rem at a 16px root font) and short of the real head width at any other size or zoom. The head width is one CSS variable (`--song-head-w`) that the head column takes as flex basis and the playhead as margin-left; the editor only positions the playhead within the lane.
+
 ## 2026-10-29: Pattern colours in the Song tab
 
 - Patterns carry a `color` (`#rrggbb`), defaulted by the factory from a hash of the id over a new `PATTERN_COLORS` palette distinct from the voice-bank colours, so existing records pick up a stable colour with no migration. Lanes are tinted with their track's voice (translucent background colour under the bar grid); clips are painted with their pattern's colour; each palette row has a colour-picker swatch and a matching left border. A clip moved to another track keeps its colour — the pattern is what the colour belongs to. `pattern colours` block in `test/song-editor.test.js`.
