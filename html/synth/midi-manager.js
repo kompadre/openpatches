@@ -68,6 +68,7 @@ let outputLatencyMs = DEFAULT_OUTPUT_LATENCY_MS;
 let deviceType = DEVICE_TYPE_AUTO;       // profile id, or 'auto' = detect from the output port name
 let lastAuditionVoice = null;           // dedupe key for the loaded edit buffer
 let slotChannels = defaultSlotChannels();
+let sendClock = false;                  // drive an external device from our transport
 
 // VoiceBank slot → MIDI out channel. Identity by default, matching the
 // internal engine's slot==channel convention. The map is free-form on
@@ -554,6 +555,9 @@ export function releaseAllOut() {
  */
 export function panic() {
     outNotes.clear();
+    // A device left running by a closing tab is the worst kind of stuck
+    // note: panic() is what pagehide calls.
+    clockStop();
     const port = getOutputPort();
     if (!port) return false;
     const now = performance.now();
@@ -567,6 +571,126 @@ export function panic() {
             sendAt(port, [0xB0 | ch, ALL_NOTES_OFF, 0], now);
         }
     } catch {
+        return false;
+    }
+    return true;
+}
+
+// --- MIDI clock out ---
+//
+// Beat clock is 24 ticks to the quarter note; a column is a sixteenth, so
+// six clocks to the column. The transport announces start, stop and every
+// column it reaches, and the six clocks for that column are scheduled here
+// in one timestamped batch — the tick worker wakes once per column, and a
+// 24-PPQN timer of our own would be both redundant and less accurate.
+//
+// They are timed off a base anchored at the first column rather than off
+// each tick's own arrival: the worker's jitter would otherwise read as
+// tempo wobble on the device, and a batch arriving late could be stamped
+// behind the batch before it. The base re-anchors when the tempo changes.
+//
+// Deliberately independent of `outputMode`: driving an external drum
+// machine while listening to the internal synth is an ordinary thing to
+// want. It goes through sendAt() like every note, so the device's sense of
+// the beat matches what the internal synth is playing.
+
+const CLOCK_TICK = 0xF8;
+const CLOCK_START = 0xFA;
+const CLOCK_CONTINUE = 0xFB;
+const CLOCK_STOP = 0xFC;
+const SONG_POSITION = 0xF2;
+/** 24 PPQN over four sixteenths to the quarter. */
+export const CLOCKS_PER_COLUMN = 6;
+
+let clockRunning = false;
+let clockBase = null;        // { at, rawCol, msPerClock } — see above
+
+const msPerClock = (bpm) => 60000 / bpm / 24;
+
+export function getSendClock() { return sendClock; }
+
+export function setSendClock(on) {
+    const next = !!on;
+    if (next !== sendClock) {
+        sendClock = next;
+        if (!sendClock) clockStop();     // never leave a device running
+        saveState();
+    }
+    return sendClock;
+}
+
+/** Switched on, and somewhere to send it. */
+export function isClockOutEnabled() {
+    return sendClock && !!getOutputPort();
+}
+
+export function isClockRunning() { return clockRunning; }
+
+/**
+ * Tell the device the transport has started. `startCol` is the song column
+ * being started from, in sixteenths — which is exactly what a Song Position
+ * counts, so anywhere but the top is a position followed by Continue rather
+ * than a bare Start.
+ */
+export function clockStart(startCol = 0, when = performance.now()) {
+    clockRunning = false;
+    clockBase = null;
+    if (!isClockOutEnabled()) return false;
+    const port = getOutputPort();
+    try {
+        const beats = Math.max(0, Math.min(0x3FFF, Math.round(startCol) || 0));
+        if (beats > 0) {
+            sendAt(port, [SONG_POSITION, beats & 0x7F, (beats >> 7) & 0x7F], when);
+            sendAt(port, [CLOCK_CONTINUE], when);
+        } else {
+            sendAt(port, [CLOCK_START], when);
+        }
+    } catch (err) {
+        console.warn('[midi] clock start failed:', err);
+        return false;
+    }
+    clockRunning = true;
+    return true;
+}
+
+/**
+ * Schedule this column's six clocks. `rawCol` is the worker's running
+ * count, which keeps climbing across a loop seam — that is what makes the
+ * base arithmetic drift-free.
+ *
+ * @returns {number} how many clocks went out
+ */
+export function clockColumn(rawCol, bpm, when = performance.now()) {
+    if (!clockRunning || !isClockOutEnabled()) return 0;
+    const port = getOutputPort();
+    const ms = msPerClock(bpm);
+    if (!clockBase || clockBase.msPerClock !== ms) clockBase = { at: when, rawCol, msPerClock: ms };
+    const base = clockBase.at + (rawCol - clockBase.rawCol) * CLOCKS_PER_COLUMN * ms;
+    try {
+        for (let i = 0; i < CLOCKS_PER_COLUMN; i++) sendAt(port, [CLOCK_TICK], base + i * ms);
+    } catch (err) {
+        console.warn('[midi] clock failed:', err);
+        return 0;
+    }
+    return CLOCKS_PER_COLUMN;
+}
+
+/**
+ * Stop the device. Stamped now, so it lands when the user asked rather than
+ * at the end of the column already scheduled; the handful of clocks still
+ * queued behind it are ignored by a stopped device.
+ */
+export function clockStop(when = performance.now()) {
+    const was = clockRunning;
+    clockRunning = false;
+    clockBase = null;
+    if (!was) return false;
+    const port = getOutputPort();
+    if (!port) return false;
+    try {
+        sendAt(port, [CLOCK_STOP], when);
+    } catch (err) {
+        console.warn('[midi] clock stop failed:', err);
         return false;
     }
     return true;
@@ -816,6 +940,7 @@ function saveState() {
             outputMode,
             slotChannels,
             auditionEnabled,
+            sendClock,
             outputLatencyMs,
             deviceType,
             enabled: everEnabled,
@@ -844,6 +969,7 @@ function initFromStorage() {
     if (Number.isInteger(saved.inputChannel)) inputChannel = saved.inputChannel;
     if (saved.outputMode === 'midi' || saved.outputMode === 'both') outputMode = saved.outputMode;
     auditionEnabled = !!saved.auditionEnabled;
+    sendClock = !!saved.sendClock;
     everEnabled = !!saved.enabled;
     deviceType = isDeviceType(saved.deviceType) ? saved.deviceType : DEVICE_TYPE_AUTO;
     outputLatencyMs = DEFAULT_OUTPUT_LATENCY_MS;
@@ -883,6 +1009,9 @@ export function _reset() {
     inputChannel = -1;
     outputMode = 'internal';
     auditionEnabled = false;
+    sendClock = false;
+    clockRunning = false;
+    clockBase = null;
     everEnabled = false;
     outputLatencyMs = DEFAULT_OUTPUT_LATENCY_MS;
     deviceType = DEVICE_TYPE_AUTO;

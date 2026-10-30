@@ -23,12 +23,18 @@
 //
 // Recording runs in either. The clock is the same; what differs is where a
 // recorded column lands, which is `mapRecordColumn()`.
+//
+// This clock can also be heard outside: when MIDI clock out is switched on,
+// start, stop and every column are handed to midi-manager, which turns each
+// column into its six 24-PPQN ticks. Nothing here changes if it is off, and
+// the transport never asks whether a device is listening.
 
 import {
     createSongSequence, createPatternSequence, msPerColumn,
     patternPlacements, nearestPlacement,
 } from './sequencer.js';
 import { COLS_PER_MEASURE, clipCols } from '../components/song-model.js';
+import * as midiManager from './midi-manager.js';
 
 const MODE_KEY = 'openpatches_transport_mode';
 const ACCOMPANY_KEY = 'openpatches_transport_accompany';
@@ -172,6 +178,8 @@ export function createTransport(opts) {
     function onTick(rawCol) {
         if (!playing && !recording) return;
         if (!sequence || !sequence.range) return;
+        // First, before any note work: these are timestamps for the device.
+        midiManager.clockColumn(rawCol, getBpm());
         const col = sequence.columnForTick(rawCol);
         // The seam is the wrap back to the first column of the range; the
         // recorder finalises notes held across it.
@@ -231,6 +239,7 @@ export function createTransport(opts) {
         lastCol = sequence.range.startCol;
         consecutiveErrors = 0;
         notify({ col: lastCol });
+        midiManager.clockStart(lastCol);
         startWorkerAt(0);
         return true;
     }
@@ -241,6 +250,7 @@ export function createTransport(opts) {
         recording = false;
         lastCol = -1;
         warnedOutsideClip = false;
+        midiManager.clockStop();
         stopTheWorker();
         notify({ col: -1 });
         // Stopping the clock only stops new note-ons; whatever is ringing
@@ -264,6 +274,7 @@ export function createTransport(opts) {
         consecutiveErrors = 0;
         warnedOutsideClip = false;
         notify({ col: lastCol });
+        midiManager.clockStart(lastCol);
         startWorkerAt(0);
         return true;
     }

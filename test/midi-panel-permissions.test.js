@@ -37,7 +37,8 @@ function openPanel() {
     const sysexRow = q('.midi-sysex-warning');
     return {
         enable: q('.midi-enable-btn'),
-        audBox: document.body.querySelectorAll('INPUT').find(i => i.type === 'checkbox'),
+        // By class, not "the first checkbox": the panel has more than one.
+        audBox: q('.midi-audition'),
         sysexRow,
         sysexBtn: sysexRow.querySelector('button'),
     };

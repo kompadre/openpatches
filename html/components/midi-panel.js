@@ -196,6 +196,28 @@ export function openMidiSettings(opts = {}) {
             'channel it is set to and ignores the rest, which is harmless.'));
         deviceArea.appendChild(mapWrap);
 
+        // --- MIDI clock out ---
+        // Not part of "play notes through": clocking a drum machine while
+        // listening to the internal synth is an ordinary thing to want.
+        const clockRow = el('label', 'midi-checkbox');
+        const clockBox = document.createElement('input');
+        clockBox.type = 'checkbox';
+        clockBox.className = 'midi-send-clock';
+        clockBox.checked = midi.getSendClock();
+        clockRow.appendChild(clockBox);
+        clockRow.appendChild(el('span', null, ' Send MIDI clock'));
+        deviceArea.appendChild(clockRow);
+        deviceArea.appendChild(el('div', 'midi-hint',
+            'Drives an external sequencer or drum machine from this app\u2019s transport: ' +
+            'start, stop and 24 ticks to the quarter note, at the song\u2019s tempo. ' +
+            'Starting anywhere but bar 1 sends the position first, so the device picks up ' +
+            'where we are. It goes out with the same output latency as the notes, so the ' +
+            'device stays in step with what you hear.'));
+        clockBox.addEventListener('change', () => {
+            midi.setSendClock(clockBox.checked);
+            appendLog(clockBox.checked ? 'MIDI clock out enabled' : 'MIDI clock out disabled');
+        });
+
         // --- Output latency ---
         // Every MIDI note is sent this much later than the internal synth is
         // told to play it, because the local engine has buffering of its own
@@ -321,6 +343,7 @@ export function openMidiSettings(opts = {}) {
         const audRow = el('label', 'midi-checkbox');
         const audBox = document.createElement('input');
         audBox.type = 'checkbox';
+        audBox.className = 'midi-audition';
         audBox.checked = midi.getAuditionEnabled();
         audRow.appendChild(audBox);
         audRow.appendChild(el('span', null, ' Audition patches on the device'));

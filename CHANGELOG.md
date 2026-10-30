@@ -2,6 +2,13 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-10-30: MIDI clock out
+
+- **"Send MIDI clock"** in the MIDI settings (off by default): the app's transport drives an external sequencer or drum machine. Start, Stop, and 24 ticks to the quarter note at the song's tempo, from both Play and Record. Starting anywhere but the top sends a Song Position first and Continues from it — a MIDI Song Position counts sixteenths, which is exactly our columns, so a loop starting at bar 2 tells the device so.
+- The tick worker wakes once per column (a sixteenth), so each column is scheduled as **six timestamped clocks in one batch** rather than run off a 24-PPQN timer of our own. Their times come from a base anchored at the first column, not from each tick's own arrival: a device reads the gaps as the tempo, so worker jitter would be audible wobble, and a late batch could otherwise be stamped behind the batch before it. The base re-anchors on a tempo change. Measured in a browser against a fake port: 48 clocks in a second at 120 BPM, every gap 20.833 ms.
+- Clock goes out through the same path as notes, so it carries the output latency and the device stays in step with what you hear. It is deliberately independent of "Play notes through" — clocking a drum machine while listening to the internal synth is an ordinary thing to want. Panic stops it, which is what a closing tab calls.
+- `test/midi-clock.test.js`. The audition checkbox gained a `.midi-audition` class so a panel test stops identifying it as "the first checkbox".
+
 ## 2026-10-30: Sub-bar clips in the Song editor
 
 - **Clips are no longer bar-aligned.** Their geometry is columns (sixteenths): `clip.startCol` replaces `startMeasure`, and a clip's length is either **its own** — `lengthCols`, what dragging its right edge sets, free-form so a clip can stop part-way through a repeat — or **its pattern's**, `repeats` whole pattern lengths that grow with the pattern. Exactly one of the two is ever stored; `clipCols(clip, pattern)` resolves them and replaces `clipSpan()`.
