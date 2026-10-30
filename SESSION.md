@@ -359,6 +359,15 @@ yet stable enough to be an AGENTS.md rule.)_
   pattern palette at x=-4432 (fixed: `width: 100%`). `align-items: safe center`
   does **not** rescue this — measured, no effect. `.edit-panel-inner` is still
   vulnerable but unreachable in practice; see TODO.md.
+- 2026-10-30: **`e.touches` is truthy-but-empty on `touchend`** — the lifted
+  finger's position is only in `e.changedTouches`. Any handler shared between
+  touchmove and touchend must check `length`, not existence, before indexing
+  (song-editor's `pointer()` is the reference). The unit harness has no
+  TouchEvent, so this class only ever surfaces in `e2e/mobile.spec.js` or on a
+  device. Related: a child sized with `height: 100%` needs a parent with a
+  *definite* height — `min-height` alone resolves the percentage as `auto`
+  (the mobile keyboard collapsed this way; absolutely-positioned siblings
+  resolve against the used height instead, which is how it ended up inverted).
 - 2026-10-30: **a sibling worktree's dev server will silently serve you the
   wrong files.** Parallel checkouts under `.cache/claude-hfi/.../<name>` all run
   the same `server.py`, so whoever binds the port first wins and the loser's

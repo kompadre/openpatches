@@ -2,6 +2,14 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-10-30: Mobile glitch hunt — clip touch-drag crash, inverted keyboard
+
+- **Fixed: clips could not be moved by touch — the drag crashed on release.** `pointer()` in song-editor.js read `e.touches[0]` whenever `e.touches` existed, but on `touchend` the list exists and is *empty* (the finger just left; its final position is in `changedTouches`). Every touch-drag threw `Cannot read properties of undefined (reading 'clientX')` at the commit step and the clip snapped back. Now checks `length` before indexing. Canvas.js has the same truthiness pattern but only in touchstart/touchmove handlers, where the list is never empty — audited, left alone.
+- **Fixed: the mobile keyboard was an inverted piano.** White keys are `height: 100%` against a keyboard that only had `min-height: 80px` — an indefinite height, so the percentage collapsed to the 20px label height, while the absolutely-positioned black keys resolved their `62%` against the *used* 80px. Result: 50px black keys towering over 20px white ones. The keyboard now has a definite `height: 80px`.
+- **Diagnosed: the remembered "Song editor basically unusable on mobile" was the stranding bug fixed earlier today**, and mobile was its worst case — pre-fix, a single small clip put the Play button at x=-258 and the palette at x=-262 on a 390px screen, because the un-wrapped toolbar alone exceeds the viewport. Reproduced against the old CSS, confirmed cured by the same `width: 100%`.
+- **New `e2e/mobile.spec.js`** (4 tests, iPhone-class viewport with touch): song editor fits the screen with a long song; tap places a clip and a swipe scrolls the grid (CDP-driven real touch events); a touch-drag moves a clip without throwing; white keys taller than black and overlapping. The two fix-tests were confirmed to fail with the fixes reverted.
+- Swept Canvas, Piano Roll, Song and Edit tabs at 390×844 DPR 3: no other stranded controls, no page errors, layouts coherent.
+
 ## 2026-10-30: Visual glitch hunt — song editor stranding, palette row wrap
 
 - **Fixed: a long song made the pattern palette unreachable.** With a clip out at bar 200 the song editor took its *content* width (~10 000 px) instead of the dock's. Because `.dock-panel` centres its panels, that overflow was split across both sides — and the start side of a centred overflow cannot be scrolled to, so the palette sat at **x=-4432** with no way to get to it. `.song-editor` is now `width: 100%; min-width: 0` (and `.song-body` `min-width: 0`), which makes the dock's width authoritative and leaves the grid's own `overflow: auto` to absorb the song's length. Note for the future: `align-items: safe center` does **not** fix this — it was measured and makes no difference.

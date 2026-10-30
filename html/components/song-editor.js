@@ -408,7 +408,13 @@ export function createSongEditor(opts = {}) {
     // --- Grid: tracks × measures ---
 
     function pointer(e) {
-        const t = e.touches ? e.touches[0] : (e.changedTouches ? e.changedTouches[0] : e);
+        // On touchend `e.touches` exists but is EMPTY — the finger just left
+        // the screen; its final position is in `changedTouches`. Checking
+        // truthiness instead of length made every touch-drag of a clip throw
+        // right at the commit step, so clips could not be moved on a phone.
+        const t = (e.touches && e.touches.length) ? e.touches[0]
+            : (e.changedTouches && e.changedTouches.length) ? e.changedTouches[0]
+            : e;
         return { x: t.clientX, y: t.clientY };
     }
 

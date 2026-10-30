@@ -4038,7 +4038,12 @@ footer {
         width: 100% !important;
         padding: 0 !important;
         box-sizing: border-box;
-        min-height: 80px !important;
+        /* A definite height, not min-height: the white keys below are
+           `height: 100%`, and a percentage against a min-height-only parent
+           is indefinite — they collapsed to their 20px label height while
+           the (absolutely positioned) black keys resolved their 62% against
+           the used 80px, leaving black keys taller than white ones. */
+        height: 80px !important;
         position: relative;
     }
     .key.white {
