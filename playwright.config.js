@@ -7,7 +7,7 @@
 // so the e2e runs exercise the same cross-origin-isolated context as a user.
 import { defineConfig, devices } from '@playwright/test';
 
-const PORT = 8111;   // not 8000 — leaves the hand-run dev server alone
+const PORT = 8123;   // not 8000 — leaves the hand-run dev server alone
 
 export default defineConfig({
     testDir: './e2e',
@@ -43,7 +43,11 @@ export default defineConfig({
     webServer: {
         command: `python3 server.py ${PORT}`,
         url: `http://localhost:${PORT}/index.html`,
-        reuseExistingServer: !process.env.CI,
+        // Never reuse: a server already on this port may be serving a
+        // *different* git worktree of this repo (sibling checkouts run the
+        // same server.py), and reusing it silently tests the wrong files —
+        // which has happened. Failing to bind is the better outcome.
+        reuseExistingServer: false,
         stdout: 'ignore',
         stderr: 'pipe',
     },

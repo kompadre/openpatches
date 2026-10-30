@@ -350,6 +350,24 @@ npx playwright show-trace test-results/<dir>/trace.zip
 _(Things discovered mid-task that the next agent needs to know, but that aren't
 yet stable enough to be an AGENTS.md rule.)_
 
+- 2026-10-30: **the dock centres its panels, which is a stranding trap.**
+  `.dock-panel { align-items: center }`: a panel wider than the dock overflows
+  on *both* sides, and the start side of a centred overflow cannot be scrolled
+  to — the left edge is gone for good, not merely off screen. So **every dock
+  panel must size itself to the dock and scroll internally; none may take its
+  content width.** `.song-editor` violated this and a clip at bar 200 put the
+  pattern palette at x=-4432 (fixed: `width: 100%`). `align-items: safe center`
+  does **not** rescue this — measured, no effect. `.edit-panel-inner` is still
+  vulnerable but unreachable in practice; see TODO.md.
+- 2026-10-30: **a sibling worktree's dev server will silently serve you the
+  wrong files.** Parallel checkouts under `.cache/claude-hfi/.../<name>` all run
+  the same `server.py`, so whoever binds the port first wins and the loser's
+  `python3 server.py <port>` dies quietly. This cost real debugging time: the
+  song-editor bug looked unreproducible for several runs because port 8111 was
+  held by the `elm` worktree. `playwright.config.js` now uses port 8123 with
+  `reuseExistingServer: false` so a clash fails loudly. When probing by hand,
+  check `pwdx $(pgrep -f 'server.py <port>')` before trusting a result.
+
 - 2026-10-24: single-engine refactor (committed in c55711b). One long-lived worklet engine for all audible output; previews (canvas playPatch, edit panel) now play realtime on channel 15 instead of offline-render → decode → inject. `playNoteRealtime` releases the previous preview note before starting a new one (note-off matches all notes with same channel+midi). One shared main-thread offline instance (`dx7-synth.js` `renderOffline` + `batchRenderWaveforms`, re-exported by audio-manager) — was two. New WASM exports: `all_notes_off()` (keyup+fade, state survives; also CC 120/123) and `get_channel_samples(ch, n)` (pre-filter int32 capture of last render; single static buffer — read before the next call). `send_midi` drops messages instead of nanosleep-spinning when the ring is full. Deliberately ONE wasm build: compile-flagging `channel_outputs_` out would have meant either losing per-channel capture everywhere or shipping two binaries. `playSamplesInWorklet`/`play-samples` kept but currently unused.
 
 ## Architecture

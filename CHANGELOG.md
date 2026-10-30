@@ -2,6 +2,15 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-10-30: Visual glitch hunt — song editor stranding, palette row wrap
+
+- **Fixed: a long song made the pattern palette unreachable.** With a clip out at bar 200 the song editor took its *content* width (~10 000 px) instead of the dock's. Because `.dock-panel` centres its panels, that overflow was split across both sides — and the start side of a centred overflow cannot be scrolled to, so the palette sat at **x=-4432** with no way to get to it. `.song-editor` is now `width: 100%; min-width: 0` (and `.song-body` `min-width: 0`), which makes the dock's width authoritative and leaves the grid's own `overflow: auto` to absorb the song's length. Note for the future: `align-items: safe center` does **not** fix this — it was measured and makes no difference.
+- **Fixed: pattern palette rows were double-height.** `.song-pattern-len` ("16 bars") is squeezed by the flexible name beside it and broke after the number, so every row in the palette was 28 px instead of 14. Now `white-space: nowrap`.
+- **New `e2e/layout.spec.js`** (3 tests): a long song scrolls the grid rather than widening the editor; the panel still contains its content when the grid's overflow is taken away (the case that actually pins the fix — it fails at x=-4432 without it); and palette rows stay on one line. Both fixes were confirmed to fail these tests when reverted.
+- **Swept and found clean** at 1440×900 and 1920×1080, across every desktop tab and seeded with long songs, 8 tracks, 12 patterns, zoom ×4 and 120-character names: no off-viewport controls, no unexpected horizontal scrolling, no text escaping its container.
+- **Logged, not fixed:** `.edit-panel-inner` has the same content-sized weakness (strands at x=-2384 when forced) but real content tops out at 526 px so nothing triggers it, and it is deliberately centred at `min-width: 400px` — fixing it blind would change how the panel looks. That plus a generic audit of the other panels are in TODO.md.
+- `playwright.config.js` moved to port 8123 with `reuseExistingServer: false`: a sibling git worktree running the same `server.py` had bound 8111 and was silently serving its files to the whole hunt, which is why the bug looked unreproducible at first.
+
 ## 2026-10-30: e2e test suite, phase 3 — complete
 
 - **MIDI panel end to end** (`e2e/midi.spec.js`) against a fake `navigator.requestMIDIAccess` injected before any app code runs (same shape as the unit stub's ports, reachable at `window.__midiFake`). Proven: the API is untouched until the user clicks Enable (the panel's own privacy promise); device lists populate and a port choice survives a reload; the send-clock checkbox persists; **Play with send-clock on streams a timestamped 24 PPQN clock to the fake port** — Start first, Stop last, ~48 ticks/s at 120 BPM, stamps monotonic and ~20.8 ms apart; and a note-on from the fake input presses the on-screen key (note-off releases it).

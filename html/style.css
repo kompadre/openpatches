@@ -2209,6 +2209,12 @@ h1 {
 .dock-panel {
     display: none;
     flex-direction: column;
+    /* Centring splits any overflow across both sides, and the start side of
+       a centred overflow cannot be scrolled to. A panel wider than the dock
+       therefore strands its own left edge off screen for good — so every
+       panel must size itself to the dock and scroll internally, never take
+       its content width. (`align-items: safe center` does NOT rescue this;
+       it was measured and makes no difference.) */
     align-items: center;
     width: 95vw;
     max-width: 95vw;
@@ -4118,6 +4124,12 @@ footer {
     flex-direction: column;
     min-height: 0;
     flex: 1 1 auto;
+    /* The dock's width is authoritative, never the song's length. Without
+       this the editor is free to take its content width, and a song with a
+       clip out at bar 200 makes it thousands of pixels wide — the grid's
+       own overflow is what has to absorb that. */
+    width: 100%;
+    min-width: 0;
     gap: 0.3rem;
     font-size: 0.75rem;
     color: #ccc;
@@ -4164,6 +4176,7 @@ footer {
 .song-body {
     display: flex;
     min-height: 0;
+    min-width: 0;
     flex: 1 1 auto;
     gap: 0.4rem;
 }
@@ -4215,7 +4228,9 @@ footer {
 .song-pattern-swatch::-moz-color-swatch { border: none; border-radius: 2px; }
 .song-pattern-name { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .song-pattern-name[contenteditable="true"] { outline: 1px solid #e94560; background: #0f0f23; }
-.song-pattern-len { color: #777; font-size: 0.65rem; }
+/* nowrap: "16 bars" is squeezed by the (flexible) name beside it and would
+   otherwise break after the number, doubling the height of every palette row. */
+.song-pattern-len { color: #777; font-size: 0.65rem; white-space: nowrap; }
 .song-pattern-item .song-btn { padding: 0 0.3rem; opacity: 0.6; }
 .song-pattern-item:hover .song-btn { opacity: 1; }
 

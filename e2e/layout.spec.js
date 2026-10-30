@@ -1,0 +1,118 @@
+// Layout invariants — the "is anything unreachable?" tests.
+//
+// The dock centres its panels (`.dock-panel { align-items: center }`). That
+// is a trap: a centred box wider than its container overflows on *both*
+// sides, and the start side of a centred overflow cannot be scrolled to.
+// A panel that takes its content width therefore strands its own left edge —
+// the song palette, the track heads — off screen permanently. Measured on a
+// long song: the palette sat at x=-4412 with no way to reach it.
+//
+// The guard is that every panel sizes itself to the dock and scrolls
+// internally. These tests hold the panels to that.
+
+import { test, expect, openApp } from './fixtures.js';
+
+/** A song with a clip far out at bar 200 — ~10 000 px of grid. */
+async function seedLongSong(page) {
+    await page.evaluate(async () => {
+        const sm = await import('/html/components/song-model.js');
+        const dock = window.__opDock;
+        const pattern = sm.createPattern({ name: 'P', measures: 1 });
+        sm.patternStore.put(pattern);
+        dock._session.update((song) => {
+            const track = sm.createTrack({ name: 'T', slot: 0 });
+            song.tracks.push(track);
+            sm.addClip(song, {
+                patternId: pattern.id, trackId: track.id, startCol: 200 * 16, repeats: 1,
+            }, (id) => sm.patternStore.get(id));
+        }, 'e2e');
+        dock._songEditor.render();
+    });
+}
+
+async function openSongTab(page) {
+    await page.locator('.dock-tab', { hasText: 'Song' }).click();
+    await expect(page.locator('.song-editor')).toBeVisible();
+}
+
+function layout(page) {
+    return page.evaluate(() => {
+        const box = (sel) => {
+            const el = document.querySelector(sel);
+            if (!el) return null;
+            const r = el.getBoundingClientRect();
+            return { x: Math.round(r.x), width: Math.round(r.width) };
+        };
+        const grid = document.querySelector('.song-grid');
+        const dock = document.querySelector('#piano-dock');
+        return {
+            palette: box('.song-palette'),
+            editor: box('.song-editor'),
+            panel: box('.dock-panel.active'),
+            gridClientW: grid.clientWidth,
+            gridScrollW: grid.scrollWidth,
+            dockOverflow: dock.scrollWidth - dock.clientWidth,
+        };
+    });
+}
+
+test.describe('layout invariants', () => {
+    test('a long song scrolls the grid, it does not widen the editor', async ({ page }) => {
+        await openApp(page);
+        await openSongTab(page);
+        await seedLongSong(page);
+
+        const l = await layout(page);
+
+        // The palette is the thing that goes missing, so check it first.
+        expect(l.palette.x, 'palette pushed off the left edge').toBeGreaterThanOrEqual(0);
+
+        // The editor is the dock's width, never the song's length.
+        expect(l.editor.width).toBeLessThanOrEqual(l.panel.width + 1);
+
+        // The grid is what absorbs the song: it must actually be scrolling.
+        expect(l.gridScrollW).toBeGreaterThan(l.gridClientW);
+
+        // And nothing leaks out to scroll the dock sideways.
+        expect(l.dockOverflow).toBeLessThanOrEqual(2);
+    });
+
+    test('the panel contains its content even if the grid stops absorbing it', async ({ page }) => {
+        // The containment above must not depend on the grid's cooperation.
+        // Take the grid's own overflow away — the state the observed
+        // breakage was in — and the palette must still be reachable. Without
+        // `width: 100%` on .song-editor this fails with the palette at
+        // x=-4412; it is the test that actually pins the fix down.
+        await openApp(page);
+        await openSongTab(page);
+        await seedLongSong(page);
+
+        await page.addStyleTag({ content: '.song-grid { overflow: visible !important; }' });
+        await expect.poll(async () => (await layout(page)).palette.x).toBeGreaterThanOrEqual(0);
+
+        const l = await layout(page);
+        expect(l.editor.width).toBeLessThanOrEqual(l.panel.width + 1);
+    });
+
+    test('pattern palette rows stay on one line', async ({ page }) => {
+        await openApp(page);
+        await page.evaluate(async () => {
+            const sm = await import('/html/components/song-model.js');
+            sm.patternStore.put(sm.createPattern({ name: 'A long pattern name', measures: 16 }));
+            window.__opDock._songEditor.render();
+        });
+        await openSongTab(page);
+
+        // "16 bars" is squeezed by the flexible name beside it and used to
+        // break after the number, doubling the height of every row.
+        const rows = await page.locator('.song-pattern-len').evaluateAll((els) =>
+            els.map((el) => {
+                const lineHeight = parseFloat(getComputedStyle(el).lineHeight) || 12;
+                return { text: el.textContent, lines: Math.round(el.getBoundingClientRect().height / lineHeight) };
+            }));
+        expect(rows.length).toBeGreaterThan(0);
+        for (const row of rows) {
+            expect(row.lines, `"${row.text}" wrapped onto ${row.lines} lines`).toBe(1);
+        }
+    });
+});
