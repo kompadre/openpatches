@@ -37,12 +37,12 @@
 - Never export `malloc`/`free` from WASM. Use static pre-allocated buffers (`get_patch_buffer()`, `load_voice_from_buffer()`).
 - AudioManager is a singleton — `initAudio()` runs once. Never re-call `addModule()` after initial setup.
 - Shutdown is disabled for testing — `shutdownAll()`, `setPianorollStop()`, `extendIdle()` are no-ops.
-- Commit on task completion, once the user has verified the fix is correct.
 - Match existing code style in each file. Don't introduce conventions that conflict with neighbors.
 - Use `pianoDockWrapper` (module-scoped in app.js) to access `_voiceBank`, `_pianoroll`, `_showLog` — NOT `document.getElementById('piano-dock')` which returns the outer container, not the inner wrapper.
 - VoiceBank assigns colors by slot index (PATCH_COLORS[8]). Pianoroll receives color via `setActivePatch(id, data, color, channel)` — always pass `entry.color` from voicebank.
 - VoiceBank channel = array index. Entries have no `channel` property. Slot IS the channel.
 - Keep `HEARME.tts` up to date when making significant architectural changes. It's a spoken-word audio tour of the codebase optimized for TTS. Update the commit hash and date in the preamble.
+- Use npx playwright to render Web UI or hunting for an illusive JavaScript behavioral bug. 
 
 ## Git & Version Control Rules
 
