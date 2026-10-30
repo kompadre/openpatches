@@ -19,7 +19,6 @@ import {
 import { createSongSession } from './song-session.js';
 
 export const MEASURE_W = 48;      // px per measure in the grid
-export const TRACK_HEAD_W = 192;  // .song-track-head width (12rem), for the playhead
 const MIN_GRID_MEASURES = 16;     // never show an empty, zero-width song
 const DRAG_THRESHOLD = 4;         // px before a press becomes a drag
 const LONG_PRESS_MS = 600;        // a still press this long opens the clip in the roll
@@ -638,7 +637,10 @@ export function createSongEditor(opts = {}) {
             return;
         }
         playheadEl.style.display = '';
-        playheadEl.style.left = (TRACK_HEAD_W + (col / COLS_PER_MEASURE) * MEASURE_W) + 'px';
+        // Offset from the lane's left edge; the head column's width is a
+        // rem value the stylesheet adds as margin-left, so the playhead
+        // tracks it at any root font size instead of a pixel guess.
+        playheadEl.style.left = ((col / COLS_PER_MEASURE) * MEASURE_W) + 'px';
     }
 
     function deleteClip(clipId) {

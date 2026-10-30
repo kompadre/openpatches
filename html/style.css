@@ -4209,6 +4209,7 @@ footer {
 
 /* Grid */
 .song-grid {
+    --song-head-w: 15rem;  /* the sticky head column; the playhead is offset by it */
     flex: 1 1 auto;
     min-width: 0;
     min-height: 0;
@@ -4221,7 +4222,7 @@ footer {
 .song-ruler, .song-track { display: flex; align-items: stretch; }
 .song-ruler { position: sticky; top: 0; z-index: 2; background: #12122a; border-bottom: 1px solid #2a2a3e; }
 .song-track-head {
-    flex: 0 0 12rem;
+    flex: 0 0 var(--song-head-w);
     position: sticky;
     left: 0;
     z-index: 1;
@@ -4279,6 +4280,7 @@ footer {
 
 .song-playhead {
     position: absolute;
+    margin-left: var(--song-head-w);
     top: 0;
     bottom: 0;
     width: 2px;
