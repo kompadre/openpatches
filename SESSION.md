@@ -306,80 +306,44 @@ Bug survey 2026-10-23 — swept 2026-10-29; everything fixed is in CHANGELOG.md.
 - [ ] `audio-manager` ready-handshake resolves unconditionally after 2 s (deliberate fallback, left alone).
 - [ ] Recorded notes are not clamped to the loop end on insert (the recorder seam-splits held notes, so this does not occur in practice); only interactive resize is clamped.
 
-### e2e suite (2026-10-30) — phases 1-2 done, phase 3 in TODO.md
+### e2e suite (Playwright) — complete, now a standing layer
 
-Phase 2 added `pianoroll.spec.js` (mouse draw/move/resize/dblclick-delete at
-DPR 2), `persistence.spec.js` (reload round-trip; legacy roll migration,
-idempotent) and `syx.spec.js` (import via filechooser, in-page
-buildBulkDump → parseSyxFile byte round-trip, export download with
-`/api/export-syx` mocked via `page.route` — the static server has no backend).
-23 tests, ~27 s, stable over `--repeat-each=2`. No production code changed.
-
-Browser facts phase 2 ran into (all encoded as comments in the specs):
-
-- The roll's scroll pane is ~180 px tall at 1400×900 and raw `page.mouse`
-  does not auto-scroll: only rows midi ≥ 77 are clickable. A gesture below
-  the fold lands on whatever is under the dock and silently does nothing.
-- Drawing the first note makes `renderLegend()` grow the legend, which
-  **shifts the canvas up a row**. Re-measure `boundingBox()` before every
-  gesture; a cached box points one row off after any draw.
-- The roll's own 350 ms double-click window (same row, ±1 column) turns two
-  fast consecutive gestures into a delete. Tests wait 400 ms between
-  gestures that would collide; automation is otherwise fast enough to
-  trigger it constantly.
-- `html/DEMO.syx` carries **9 named voices**, not 32 — the import skips
-  INIT/blank slots. `syx.spec.js` computes the expected count from the
-  file's bytes so a re-cut bank doesn't break the test.
-- Chromium reports a request handed to the downloader as
-  `net::ERR_ABORTED`; the fixture's failed-request guard ignores exactly
-  that code.
-
-Playwright layer for what `test/harness.js` structurally cannot see: there is
-no AudioContext, AudioWorklet, WebAssembly or Worker in the stub, so the whole
-engine-init path and all real clock timing were previously only ever checked by
-hand. Phase 1 covers boot, the audio graph, and the transport; the remaining
-phases (pianoroll mouse interaction, persistence, file I/O, MIDI panel, small
-visual regression) are a parent task in TODO.md.
+All three phases done 2026-10-30 (see CHANGELOG.md). 31 tests, ~35 s. What a
+future agent needs:
 
 ```bash
-npx playwright test                 # whole suite (~13 s, 12 tests)
-npx playwright test e2e/audio.spec.js
-npx playwright test --headed        # watch it
+npx playwright test                  # whole suite; starts server.py 8111 itself
+npx playwright test e2e/midi.spec.js
+npx playwright test e2e/visual.spec.js --update-snapshots   # after an intentional style change
 npx playwright show-trace test-results/<dir>/trace.zip
 ```
 
-- First real dependency: `package.json` + `@playwright/test`. The unit suite
-  stays dependency-free — `node --test test/` does not touch any of this, and
-  a missing browser cannot break it.
-- `playwright.config.js` starts `python3 server.py 8111` itself (port 8111, not
-  8000, so a hand-run dev server is left alone). The server's COOP/COEP headers
-  are what make SharedArrayBuffer available, so e2e runs in the same
-  cross-origin-isolated context as a user; `boot.spec.js` asserts that directly,
-  which is the cheapest guard against a header regression.
-- Chromium gets `--autoplay-policy=no-user-gesture-required` so the audio
-  context can come up without a trusted gesture.
-- `e2e/fixtures.js` seeds `openpatches_tutorial` and `openpatches_demo_offered`
-  before any app code runs — a virgin profile opens the tutorial modal and then
-  a `confirm()`, both of which block everything else. It also **fails any test
-  on a console error, uncaught exception or failed request**; that guard is
-  most of the value here. Its ignore list is deliberately tiny.
-- **Test hook:** `window.__opDock = dock` in app.js (one line, next to
-  `pianoDockWrapper`). The transport and the roll are otherwise unreachable
-  from outside the module graph. Nothing in the app reads it. `audio-manager.js`
-  needs no hook — `page.evaluate(() => import('/html/synth/audio-manager.js'))`
-  gets the *same* singleton, because the module registry is keyed by URL.
-- Gotcha found while writing this: `.kb-btn-play` is **mobile-only** and is not
-  clickable at a desktop viewport. UI-level transport tests go through the
-  Piano Roll tab's `.pianoroll-play` / `.pianoroll-stop`.
-- Caveat on the audio tests: `initAudio()` has a 2 s fallback timeout and
-  resolves even if the worklet never reports ready, so "audio is ready" alone
-  does not prove the synth loaded. `audio.spec.js` fetches `msfa.wasm` and
-  runs `WebAssembly.validate` on it separately for that reason.
-- The tempo test asserts rawCol is strictly monotonic and that the columns
-  observed match `bpm * 4` sixteenths/min within 15%, measured between the
-  first and last tick (not the whole sleep — worker spin-up is not musical
-  time). 15% is loose for headless scheduling but a half-/double-time bug is
-  off by 100%.
+- Layer covers what `test/harness.js` structurally cannot: real AudioContext/
+  AudioWorklet/WASM init, real Worker clock timing, canvas pointer math,
+  reload/migration boots, filechooser/download plumbing, a fake
+  `navigator.requestMIDIAccess` end to end, and four masked screenshots.
+  The unit suite stays dependency-free; `@playwright/test` is the project's
+  only npm dependency.
+- `e2e/fixtures.js` seeds past the first-run prompts and **fails any test on a
+  console error, uncaught exception or failed request** (ignore list is tiny;
+  `net::ERR_ABORTED` is the downloader, not a failure). `openApp`/`openRollTab`
+  live there too.
+- Test hook: `window.__opDock` (app.js, next to `pianoDockWrapper`). Importing
+  a module URL from `page.evaluate` returns the app's own singleton.
+- Browser facts the specs are written around (each documented where it bites):
+  `.kb-btn-play` is mobile-only; the roll's pane is ~180 px tall so raw mouse
+  work stays at midi ≥ 77; the legend growing on first draw shifts the canvas
+  a row (re-measure boundingBox every gesture); the roll's 350 ms dblclick
+  window eats fast same-cell gestures; `initAudio()`'s 2 s fallback means
+  "ready" alone doesn't prove the WASM loaded; DEMO.syx carries 9 named
+  voices; `/api/export-syx` needs the real backend and is mocked with
+  `page.route`.
+- Visual baselines are Linux-Chromium renders in `e2e/visual.spec.js-snapshots/`
+  (maxDiffPixelRatio 0.02 for font rasterization). They will not match on
+  macOS/Windows — regenerate or skip there.
+- Deferred by decision: loop-marker/foldX hit-testing (needs looping+follow
+  playback state mid-gesture), real MIDI hardware, exact audio output
+  comparison, full-page screenshots (night sky and spectrograms animate).
 
 ## Open Questions / Gotchas In Flight
 

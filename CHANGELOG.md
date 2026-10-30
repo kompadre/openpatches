@@ -2,6 +2,12 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-10-30: e2e test suite, phase 3 — complete
+
+- **MIDI panel end to end** (`e2e/midi.spec.js`) against a fake `navigator.requestMIDIAccess` injected before any app code runs (same shape as the unit stub's ports, reachable at `window.__midiFake`). Proven: the API is untouched until the user clicks Enable (the panel's own privacy promise); device lists populate and a port choice survives a reload; the send-clock checkbox persists; **Play with send-clock on streams a timestamped 24 PPQN clock to the fake port** — Start first, Stop last, ~48 ticks/s at 120 BPM, stamps monotonic and ~20.8 ms apart; and a note-on from the fake input presses the on-screen key (note-off releases it).
+- **Visual regression net** (`e2e/visual.spec.js`): four masked, animation-disabled screenshots — menu bar, keyboard, the piano roll tab's chrome with the grid canvas masked, and the MIDI settings modal. Baselines are Linux-Chromium renders in `e2e/visual.spec.js-snapshots/`; `maxDiffPixelRatio` 0.02 absorbs font rasterization wobble. Regenerate with `--update-snapshots` after intentional style changes.
+- This closes the e2e parent task: **31 tests, ~35 s, stable over `--repeat-each=2`**, across boot, audio graph, transport timing, pianoroll pointer math, persistence/migration, .syx I/O, MIDI, and visuals. Deferred by decision: loop-marker/foldX hit-testing, real MIDI hardware, exact audio comparison, full-page screenshots. The standing-layer notes live in SESSION.md.
+
 ## 2026-10-30: e2e test suite, phase 2
 
 - **Pianoroll mouse interaction** (`e2e/pianoroll.spec.js`, at device pixel ratio 2): drag-draw, click-draw, body move across rows and columns, resize from both edges, double-click delete, and the diagonal-scribble no-op. First machine check of the canvas hit math ever — the unit stub has no layout or pointer. The specs document three browser facts found on the way: the roll's pane is ~180 px tall so only midi ≥ 77 is clickable by raw mouse; drawing the first note grows the legend and shifts the canvas a row (re-measure the box every gesture); and the roll's 350 ms double-click window eats fast consecutive same-cell gestures.
