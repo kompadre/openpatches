@@ -2,6 +2,13 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-10-30: MIDI clock in — following an external device
+
+- **"Sync to external clock"** in the MIDI settings (off by default). With it on, Play and Record only **arm**: the Play button pulses amber, nothing runs, and the device's Start runs us — from the top — at the device's tempo, measured from its clock (the mean of the last quarter note's worth of periods). Its Stop pauses us and leaves us armed, so its next Start or Continue is followed too; Continue resumes from where we were. Our own Stop disarms. **Song Position is ignored**, by decision.
+- Realtime bytes (0xF8 and up) are routed to the clock before SysEx and notes — they may legally arrive mid-SysEx, and the note handler drops them anyway. A slave **does not send clock** (it would loop straight back onto the bus), and switching to slave while clocking a device stops that device first.
+- The recorder's time base is now the moment the transport actually begins a take, not the moment Rec was pressed, and its column arithmetic uses the transport's effective tempo: under an external clock the two moments can be seconds apart and the tempos differ. (Rec on a stopped transport is a step record; Play then Rec arms a take.) A take into an empty song still starts on the device's Start.
+- `test/midi-clock-in.test.js`; verified in a browser with a hand-driven fake input: armed → Start → columns → device Stop (paused, armed) → Continue → our Stop → a later Start ignored. This closes the "basic internal clock sending / syncing with external" item.
+
 ## 2026-10-30: MIDI clock out
 
 - **"Send MIDI clock"** in the MIDI settings (off by default): the app's transport drives an external sequencer or drum machine. Start, Stop, and 24 ticks to the quarter note at the song's tempo, from both Play and Record. Starting anywhere but the top sends a Song Position first and Continues from it — a MIDI Song Position counts sixteenths, which is exactly our columns, so a loop starting at bar 2 tells the device so.

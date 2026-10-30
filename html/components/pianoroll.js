@@ -124,6 +124,7 @@ export function createPianoroll(opts) {
     // owns the scroll position and the red playhead shows where we are.
     let followPlayhead = false;
     let recordingActive = false;   // between startRecording() and stopRecording()
+    let waitingForClock = false;   // armed, and the external clock has not started us
 
     function totalCols() { return measures * COLS_PER_MEASURE; }
     function gridWidth() { return totalCols() * COL_W; }
@@ -290,6 +291,7 @@ export function createPianoroll(opts) {
     const playBtn = document.createElement('button');
     playBtn.className = 'pianoroll-btn pianoroll-play';
     playBtn.textContent = '\u25B6 Play';
+    const playBtnTitle = playBtn.title || '';
     controls.appendChild(playBtn);
 
     const stopBtn = document.createElement('button');
@@ -1349,9 +1351,14 @@ export function createPianoroll(opts) {
     transport.subscribe((pos) => {
         playing = pos.playing;
         recordingActive = pos.recording;
+        waitingForClock = !!pos.waiting;
         looping = pos.playing || pos.recording;
-        playBtn.disabled = looping;
-        stopBtn.disabled = !looping;
+        // Armed for an external clock counts as "going" for the buttons —
+        // Stop is how you take it back — but not for the drawing.
+        playBtn.disabled = looping || waitingForClock;
+        stopBtn.disabled = !(looping || waitingForClock);
+        playBtn.classList.toggle('waiting', waitingForClock);
+        playBtn.title = waitingForClock ? 'Waiting for the external MIDI clock to start' : playBtnTitle;
         playCol = pos.edit ? pos.edit.patternCol : -1;
 
         if (!looping) {
@@ -1464,7 +1471,8 @@ export function createPianoroll(opts) {
         draw,
         startPlayback,
         stopPlayback,
-        isPlaying() { return playing; },
+        /** Also true while armed for an external clock: the toolbar's Play/Stop toggle must be able to disarm. */
+        isPlaying() { return playing || waitingForClock; },
         isFollowing() { return followPlayhead; },
         setFollowPlayhead,
         /**

@@ -69,6 +69,7 @@ let deviceType = DEVICE_TYPE_AUTO;       // profile id, or 'auto' = detect from 
 let lastAuditionVoice = null;           // dedupe key for the loaded edit buffer
 let slotChannels = defaultSlotChannels();
 let sendClock = false;                  // drive an external device from our transport
+let syncToClock = false;                // ...or be driven by one (see "MIDI clock in")
 
 // VoiceBank slot → MIDI out channel. Identity by default, matching the
 // internal engine's slot==channel convention. The map is free-form on
@@ -334,6 +335,11 @@ function attachInputListener() {
     boundInput = port;
     if (port) {
         port.onmidimessage = (e) => {
+            // System realtime (one byte, 0xF8 and up) is the clock's; the
+            // note handler drops everything above 0xF0 anyway. Routed first
+            // because realtime may legally arrive in the middle of SysEx.
+            const status = e.data && e.data[0];
+            if (status >= 0xF8) { handleRealtime(status, e.timeStamp > 0 ? e.timeStamp : performance.now()); return; }
             // A pending SysEx receive gets first look and swallows what it
             // consumes; the note handler never wants SysEx anyway.
             if (consumeSysex(e.data)) return;
@@ -619,9 +625,12 @@ export function setSendClock(on) {
     return sendClock;
 }
 
-/** Switched on, and somewhere to send it. */
+/**
+ * Switched on, somewhere to send it, and not ourselves following a clock —
+ * re-emitting the clock we are slaved to would loop it back onto the bus.
+ */
 export function isClockOutEnabled() {
-    return sendClock && !!getOutputPort();
+    return sendClock && !syncToClock && !!getOutputPort();
 }
 
 export function isClockRunning() { return clockRunning; }
@@ -694,6 +703,108 @@ export function clockStop(when = performance.now()) {
         return false;
     }
     return true;
+}
+
+// --- MIDI clock in ---
+//
+// The other direction: an external device runs, we follow. The transport
+// subscribes here and, while "sync to external clock" is on, takes its
+// columns from these events instead of the tick worker — six clocks to a
+// column, as on the way out. Our own Play then only arms: nothing sounds
+// until the device sends Start (the user's call, as is ignoring Song
+// Position — Continue resumes from wherever we were).
+//
+// The tempo is measured, not taken from the song: the mean of the last
+// quarter note's worth of clock periods, for note durations. Devices send
+// clock while stopped too, so the estimate runs whenever clock arrives and
+// columns are counted only between Start/Continue and Stop.
+
+const TEMPO_WINDOW = 24;              // clock periods averaged: one quarter note
+const TEMPO_GAP_RESET_MS = 2000;      // a silence this long starts the estimate over
+
+let clockIn = { running: false, clocks: 0, lastAt: 0, periods: [] };
+const clockInSubscribers = new Set();
+
+export function getSyncToClock() { return syncToClock; }
+
+export function setSyncToClock(on) {
+    const next = !!on;
+    if (next !== syncToClock) {
+        syncToClock = next;
+        if (syncToClock) clockStop();     // we cannot be both master and slave
+        clockIn = { running: false, clocks: 0, lastAt: 0, periods: [] };
+        saveState();
+        emitClockIn({ type: 'sync', on: syncToClock });
+    }
+    return syncToClock;
+}
+
+/**
+ * Follow the external clock. Events, each with `when` (performance.now()):
+ *   { type: 'start' }            — the device started from the top
+ *   { type: 'continue' }         — resumed (we ignore Song Position, so from wherever we were)
+ *   { type: 'stop' }
+ *   { type: 'column', rawCol }   — every sixth clock while running; rawCol counts from Start
+ *   { type: 'sync', on }         — the setting was switched
+ * @returns {() => void} unsubscribe
+ */
+export function subscribeClockIn(fn) {
+    clockInSubscribers.add(fn);
+    return () => clockInSubscribers.delete(fn);
+}
+
+function emitClockIn(event) {
+    for (const fn of [...clockInSubscribers]) {
+        try { fn(event); } catch (err) { console.warn('[midi] clock-in subscriber failed:', err); }
+    }
+}
+
+/** The device's tempo as measured from its clock, or null before two clocks have arrived. */
+export function getExternalBpm() {
+    const p = clockIn.periods;
+    if (p.length === 0) return null;
+    const mean = p.reduce((a, b) => a + b, 0) / p.length;
+    return mean > 0 ? 60000 / (mean * 24) : null;
+}
+
+export function isExternalClockRunning() { return clockIn.running; }
+
+function handleRealtime(status, when) {
+    if (!syncToClock) return;
+    switch (status) {
+        case CLOCK_TICK: {
+            const gap = when - clockIn.lastAt;
+            if (clockIn.lastAt > 0 && gap > 0 && gap < TEMPO_GAP_RESET_MS) {
+                clockIn.periods.push(gap);
+                if (clockIn.periods.length > TEMPO_WINDOW) clockIn.periods.shift();
+            } else if (gap >= TEMPO_GAP_RESET_MS) {
+                clockIn.periods = [];
+            }
+            clockIn.lastAt = when;
+            if (!clockIn.running) return;
+            // The first clock after Start is column 0, the seventh column 1.
+            if (clockIn.clocks % CLOCKS_PER_COLUMN === 0) {
+                emitClockIn({ type: 'column', rawCol: clockIn.clocks / CLOCKS_PER_COLUMN, when });
+            }
+            clockIn.clocks++;
+            return;
+        }
+        case CLOCK_START:
+            clockIn.running = true;
+            clockIn.clocks = 0;
+            emitClockIn({ type: 'start', when });
+            return;
+        case CLOCK_CONTINUE:
+            clockIn.running = true;
+            emitClockIn({ type: 'continue', when });
+            return;
+        case CLOCK_STOP:
+            clockIn.running = false;
+            emitClockIn({ type: 'stop', when });
+            return;
+        default:
+            // Active Sensing, Reset, undefined: nothing to follow.
+    }
 }
 
 // --- Bulk dump transport ---
@@ -941,6 +1052,7 @@ function saveState() {
             slotChannels,
             auditionEnabled,
             sendClock,
+            syncToClock,
             outputLatencyMs,
             deviceType,
             enabled: everEnabled,
@@ -970,6 +1082,7 @@ function initFromStorage() {
     if (saved.outputMode === 'midi' || saved.outputMode === 'both') outputMode = saved.outputMode;
     auditionEnabled = !!saved.auditionEnabled;
     sendClock = !!saved.sendClock;
+    syncToClock = !!saved.syncToClock;
     everEnabled = !!saved.enabled;
     deviceType = isDeviceType(saved.deviceType) ? saved.deviceType : DEVICE_TYPE_AUTO;
     outputLatencyMs = DEFAULT_OUTPUT_LATENCY_MS;
@@ -1010,8 +1123,11 @@ export function _reset() {
     outputMode = 'internal';
     auditionEnabled = false;
     sendClock = false;
+    syncToClock = false;
     clockRunning = false;
     clockBase = null;
+    clockIn = { running: false, clocks: 0, lastAt: 0, periods: [] };
+    clockInSubscribers.clear();
     everEnabled = false;
     outputLatencyMs = DEFAULT_OUTPUT_LATENCY_MS;
     deviceType = DEVICE_TYPE_AUTO;

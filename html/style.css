@@ -1970,6 +1970,13 @@ h1 {
 }
 /* A step record is armed, not running: lit, but no pulse. */
 .pianoroll-record.step { animation: none; }
+/* Armed for an external MIDI clock: Play is taken, nothing runs yet. */
+.pianoroll-play.waiting, .song-play.waiting {
+    opacity: 1;
+    border-color: #e9a045;
+    color: #e9a045;
+    animation: rec-pulse 1s infinite;
+}
 
 .pianoroll-accompany.active {
     /* Pattern only: the rest of the song is muted inside the loop. */

@@ -150,11 +150,16 @@ export function createSongEditor(opts = {}) {
             playBtn = button('\u25B6 Play', 'Play the song from the start of its loop', () => {
                 transport.play({ mode: 'song' });
             }, 'song-btn song-play');
+            // Armed for an external clock: Play is taken but nothing runs
+            // until the device starts us. The pulse says so; Stop disarms.
+            const waitTitle = 'Waiting for the external MIDI clock to start';
+            playBtn.dataset.waitTitle = waitTitle;
             stopBtn = button('\u25A0 Stop', 'Stop', () => transport.stop(), 'song-btn song-stop');
             toolbar.appendChild(playBtn);
             toolbar.appendChild(stopBtn);
             syncTransportButtons({
                 playing: transport.isPlaying(), recording: transport.isRecording(), mode: transport.getMode(),
+                waiting: transport.isWaiting ? transport.isWaiting() : false,
             });
         }
 
@@ -754,10 +759,12 @@ export function createSongEditor(opts = {}) {
 
     function syncTransportButtons(pos) {
         if (!playBtn) return;
-        const running = pos.playing || pos.recording;
+        const running = pos.playing || pos.recording || !!pos.waiting;
         playBtn.disabled = running;
         stopBtn.disabled = !running;
         playBtn.classList.toggle('active', !!pos.playing && pos.mode === 'song');
+        playBtn.classList.toggle('waiting', !!pos.waiting);
+        playBtn.title = pos.waiting ? playBtn.dataset.waitTitle : 'Play the song from the start of its loop';
     }
 
     function openClip(clipId) {

@@ -203,6 +203,7 @@ export function createToolbar(opts) {
     let stepStartedAt = 0;        // first press of the step in progress
     let lastRestAt = -Infinity;   // release of the last single-tap rest, for the double tap
     let stepTimer = null;
+    let takeRunning = false;      // the transport's view, for re-basing recordStartTime
     let activeRecordSlot = 0;
 
     // Set once the session exists; the voice bank is built before it and
@@ -321,6 +322,11 @@ export function createToolbar(opts) {
         // The clock starting under a step record (the Song tab's Play,
         // say) ends it: the playhead takes the cursor's place.
         if (stepping && (pos.playing || pos.recording)) endStepRecord();
+        // The take's time base is the moment the transport actually began
+        // recording, not the moment Rec was pressed: under an external
+        // clock the two can be seconds apart.
+        if (pos.recording && !takeRunning) recordStartTime = performance.now();
+        takeRunning = pos.recording;
         if (!pos.recording || !pos.seam) return;
         logRecord(`[record] seam at rawCol=${pos.rawCol}, finalizing ${activePresses.size} held note(s)`);
         for (const [midi, press] of [...activePresses]) {
@@ -468,7 +474,10 @@ export function createToolbar(opts) {
     const now = () => performance.now();
 
     function colAt(when) {
-        const bpm = pianorollRef && pianorollRef.getBpm ? pianorollRef.getBpm() : 120;
+        // The transport's tempo, not the song's: under an external clock
+        // they differ, and the columns must match what is being heard.
+        const bpm = transport && transport.getEffectiveBpm ? transport.getEffectiveBpm()
+            : pianorollRef && pianorollRef.getBpm ? pianorollRef.getBpm() : 120;
         const msPerSixteenth = (60000 / bpm) / 4;
         return Math.round((when - recordStartTime) / msPerSixteenth);
     }

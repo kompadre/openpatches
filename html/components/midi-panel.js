@@ -218,6 +218,24 @@ export function openMidiSettings(opts = {}) {
             appendLog(clockBox.checked ? 'MIDI clock out enabled' : 'MIDI clock out disabled');
         });
 
+        const syncRow = el('label', 'midi-checkbox');
+        const syncBox = document.createElement('input');
+        syncBox.type = 'checkbox';
+        syncBox.className = 'midi-sync-clock';
+        syncBox.checked = midi.getSyncToClock();
+        syncRow.appendChild(syncBox);
+        syncRow.appendChild(el('span', null, ' Sync to external clock'));
+        deviceArea.appendChild(syncRow);
+        deviceArea.appendChild(el('div', 'midi-hint',
+            'Follow the clock on the MIDI input instead of running our own: Play and Record ' +
+            'then wait for the device\u2019s Start, run at its tempo, and pause when it stops. ' +
+            'Song Position is ignored \u2014 Continue picks up where we were. ' +
+            'While this is on, clock is not sent out, so it cannot loop back.'));
+        syncBox.addEventListener('change', () => {
+            midi.setSyncToClock(syncBox.checked);
+            appendLog(syncBox.checked ? 'Following external MIDI clock' : 'Back on the internal clock');
+        });
+
         // --- Output latency ---
         // Every MIDI note is sent this much later than the internal synth is
         // told to play it, because the local engine has buffering of its own

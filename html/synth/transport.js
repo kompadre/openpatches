@@ -28,6 +28,15 @@
 // start, stop and every column are handed to midi-manager, which turns each
 // column into its six 24-PPQN ticks. Nothing here changes if it is off, and
 // the transport never asks whether a device is listening.
+//
+// And it can be someone else's: with "sync to external clock" on, Play (or
+// Record) only **arms** — the worker is not started, and the columns come
+// from midi-manager's clock-in events once the device sends Start. The
+// device's Stop pauses us but leaves us armed, so its next Start or
+// Continue is followed too; our own Stop disarms. Song Position is
+// ignored, so Continue resumes from wherever we were. Note durations use
+// the device's measured tempo, falling back to the song's until it is
+// known.
 
 import {
     createSongSequence, createPatternSequence, msPerColumn,
@@ -80,6 +89,7 @@ export function createTransport(opts) {
     let placement = null;     // the placement pattern mode is looping, null when alone
     let consecutiveErrors = 0;
     let warnedOutsideClip = false;
+    let armed = null;         // 'play' | 'record' while waiting on, or following, an external clock
     const subscribers = new Set();
 
     function editTarget() {
@@ -113,6 +123,19 @@ export function createTransport(opts) {
         return session.get().bpm;
     }
 
+    /** The tempo notes are timed with: the device's when we follow one and it is known, else the song's. */
+    function effectiveBpm() {
+        if (armed) {
+            const ext = midiManager.getExternalBpm();
+            if (ext) return ext;
+        }
+        return getBpm();
+    }
+
+    const slaved = () => midiManager.getSyncToClock();
+    /** Armed and the device has not started us (yet, or again). */
+    const waiting = () => !!armed && !playing && !recording;
+
     function notify(extra = {}) {
         const t = editTarget();
         const col = extra.col != null ? extra.col : lastCol;
@@ -135,7 +158,11 @@ export function createTransport(opts) {
         // tab's playhead: the same as `col` whenever the sequence is the
         // song (both modes, except a lone pattern), -1 otherwise.
         const songCol = col >= 0 && sequence && sequence.kind === 'song' ? col : -1;
-        const pos = { playing, recording, mode, col, songCol, edit, seam: false, rawCol: -1, ...extra };
+        const pos = {
+            playing, recording, mode, col, songCol, edit, seam: false, rawCol: -1,
+            waiting: waiting(), bpm: effectiveBpm(),
+            ...extra,
+        };
         for (const fn of [...subscribers]) {
             try { fn(pos); } catch (e) { console.warn('[transport] subscriber failed:', e); }
         }
@@ -154,7 +181,7 @@ export function createTransport(opts) {
 
     /** Sound everything that begins at `col`, each voice on its own slot. */
     function fire(col) {
-        const ms = msPerColumn(getBpm());
+        const ms = msPerColumn(effectiveBpm());
         for (const ev of sequence.eventsAt(col)) {
             // A note just played in by the user must not be echoed back at
             // them on the same pass; the flag is cleared at the loop seam.
@@ -193,9 +220,45 @@ export function createTransport(opts) {
     if (tickWorker && tickWorker.addEventListener) {
         tickWorker.addEventListener('message', (e) => {
             if (!e.data || e.data.type !== 'tick') return;
+            if (armed) return;             // following a device: its clock, not the worker's
             onTick(e.data.col);
         });
     }
+
+    // The external clock. Only heard while armed — pressing Play is still
+    // the user's decision; the device decides when.
+    midiManager.subscribeClockIn((ev) => {
+        if (ev.type === 'sync') {
+            // Switched off under us: whatever we were waiting for will not
+            // come. Switched on while running: the worker's take ends.
+            if (armed || playing || recording) stop();
+            return;
+        }
+        if (!armed) return;
+        if (ev.type === 'start' || ev.type === 'continue') {
+            const fromTop = ev.type === 'start' || lastCol < 0;
+            refresh();
+            // A take into an empty song has no range and still runs (the
+            // recorder keeps its own time); playback with nothing to play
+            // was refused at Play, so this guard is for safety.
+            if (armed === 'record') recording = true;
+            else if (sequence.range) playing = true;
+            else return;
+            if (fromTop) lastCol = sequence.range ? sequence.range.startCol : 0;
+            consecutiveErrors = 0;
+            log(`[transport] external clock ${ev.type}`);
+            notify({ col: lastCol });
+        } else if (ev.type === 'stop') {
+            if (!playing && !recording) return;
+            playing = false;
+            recording = false;
+            log('[transport] external clock stopped — still armed');
+            notify({ col: lastCol });
+            if (onStop) onStop();
+        } else if (ev.type === 'column') {
+            onTick(ev.rawCol);
+        }
+    });
 
     function hasAnythingToPlay() {
         if (!sequence || !sequence.range) return false;
@@ -232,22 +295,35 @@ export function createTransport(opts) {
     function play({ mode: wanted } = {}) {
         if (recording) return false;      // the take owns the clock
         if (wanted) api.setMode(wanted);
-        if (playing) stop();
+        if (playing || armed) stop();
         refresh();
         if (!hasAnythingToPlay()) return false;
-        playing = true;
         lastCol = sequence.range.startCol;
         consecutiveErrors = 0;
+        if (slaved()) return arm('play');
+        playing = true;
         notify({ col: lastCol });
         midiManager.clockStart(lastCol);
         startWorkerAt(0);
         return true;
     }
 
+    /**
+     * Wait for the device. The playhead is parked at the start column and
+     * the position broadcast says `waiting`, so the buttons can show it.
+     */
+    function arm(what) {
+        armed = what;
+        log(`[transport] armed for ${what}, waiting for MIDI clock start`);
+        notify({ col: lastCol });
+        return true;
+    }
+
     function stop() {
-        const wasRunning = playing || recording;
+        const wasRunning = playing || recording || !!armed;
         playing = false;
         recording = false;
+        armed = null;
         lastCol = -1;
         warnedOutsideClip = false;
         midiManager.clockStop();
@@ -262,17 +338,18 @@ export function createTransport(opts) {
     /** Start a take. `mode` names the scope, as for play(). */
     function startRecording({ mode: wanted } = {}) {
         if (wanted) api.setMode(wanted);
-        if (playing) stop();
+        if (playing || armed) stop();
         refresh();
         if (!sequence.range) {
             // Nothing placed yet: a pattern-length loop so the take has a
             // grid to land on.
             log('[transport] recording into an empty song');
         }
-        recording = true;
         lastCol = sequence.range ? sequence.range.startCol : 0;
         consecutiveErrors = 0;
         warnedOutsideClip = false;
+        if (slaved()) return arm('record');
+        recording = true;
         notify({ col: lastCol });
         midiManager.clockStart(lastCol);
         startWorkerAt(0);
@@ -317,7 +394,7 @@ export function createTransport(opts) {
          */
         setMode(next) {
             if (!MODES.includes(next) || next === mode) return mode;
-            if (playing || recording) stop();
+            if (playing || recording || armed) stop();
             mode = next;
             try { localStorage.setItem(MODE_KEY, mode); } catch { /* ignore */ }
             refresh();
@@ -328,7 +405,11 @@ export function createTransport(opts) {
         startRecording, stopRecording,
         isPlaying() { return playing; },
         isRecording() { return recording; },
-        isRunning() { return playing || recording; },
+        /** Armed for an external clock that has not started us (yet, or again). */
+        isWaiting() { return waiting(); },
+        /** Playing, recording, or armed and waiting — anything Stop would end. */
+        isRunning() { return playing || recording || !!armed; },
+        getEffectiveBpm() { return effectiveBpm(); },
         getSequence() { return sequence; },
         getColumn() { return lastCol; },
         hasAnythingToPlay() { return hasAnythingToPlay(); },
