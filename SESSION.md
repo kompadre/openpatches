@@ -306,6 +306,55 @@ Bug survey 2026-10-23 — swept 2026-10-29; everything fixed is in CHANGELOG.md.
 - [ ] `audio-manager` ready-handshake resolves unconditionally after 2 s (deliberate fallback, left alone).
 - [ ] Recorded notes are not clamped to the loop end on insert (the recorder seam-splits held notes, so this does not occur in practice); only interactive resize is clamped.
 
+### e2e suite (2026-10-30) — phase 1 done, phases 2-3 in TODO.md
+
+Playwright layer for what `test/harness.js` structurally cannot see: there is
+no AudioContext, AudioWorklet, WebAssembly or Worker in the stub, so the whole
+engine-init path and all real clock timing were previously only ever checked by
+hand. Phase 1 covers boot, the audio graph, and the transport; the remaining
+phases (pianoroll mouse interaction, persistence, file I/O, MIDI panel, small
+visual regression) are a parent task in TODO.md.
+
+```bash
+npx playwright test                 # whole suite (~13 s, 12 tests)
+npx playwright test e2e/audio.spec.js
+npx playwright test --headed        # watch it
+npx playwright show-trace test-results/<dir>/trace.zip
+```
+
+- First real dependency: `package.json` + `@playwright/test`. The unit suite
+  stays dependency-free — `node --test test/` does not touch any of this, and
+  a missing browser cannot break it.
+- `playwright.config.js` starts `python3 server.py 8111` itself (port 8111, not
+  8000, so a hand-run dev server is left alone). The server's COOP/COEP headers
+  are what make SharedArrayBuffer available, so e2e runs in the same
+  cross-origin-isolated context as a user; `boot.spec.js` asserts that directly,
+  which is the cheapest guard against a header regression.
+- Chromium gets `--autoplay-policy=no-user-gesture-required` so the audio
+  context can come up without a trusted gesture.
+- `e2e/fixtures.js` seeds `openpatches_tutorial` and `openpatches_demo_offered`
+  before any app code runs — a virgin profile opens the tutorial modal and then
+  a `confirm()`, both of which block everything else. It also **fails any test
+  on a console error, uncaught exception or failed request**; that guard is
+  most of the value here. Its ignore list is deliberately tiny.
+- **Test hook:** `window.__opDock = dock` in app.js (one line, next to
+  `pianoDockWrapper`). The transport and the roll are otherwise unreachable
+  from outside the module graph. Nothing in the app reads it. `audio-manager.js`
+  needs no hook — `page.evaluate(() => import('/html/synth/audio-manager.js'))`
+  gets the *same* singleton, because the module registry is keyed by URL.
+- Gotcha found while writing this: `.kb-btn-play` is **mobile-only** and is not
+  clickable at a desktop viewport. UI-level transport tests go through the
+  Piano Roll tab's `.pianoroll-play` / `.pianoroll-stop`.
+- Caveat on the audio tests: `initAudio()` has a 2 s fallback timeout and
+  resolves even if the worklet never reports ready, so "audio is ready" alone
+  does not prove the synth loaded. `audio.spec.js` fetches `msfa.wasm` and
+  runs `WebAssembly.validate` on it separately for that reason.
+- The tempo test asserts rawCol is strictly monotonic and that the columns
+  observed match `bpm * 4` sixteenths/min within 15%, measured between the
+  first and last tick (not the whole sleep — worker spin-up is not musical
+  time). 15% is loose for headless scheduling but a half-/double-time bug is
+  off by 100%.
+
 ## Open Questions / Gotchas In Flight
 
 _(Things discovered mid-task that the next agent needs to know, but that aren't

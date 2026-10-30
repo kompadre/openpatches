@@ -733,6 +733,12 @@ function initToolbar() {
     pianoDock.appendChild(dock);
     pianoDockWrapper = dock;
 
+    // Read-only handle for the e2e suite (e2e/). The wrapper — and through it
+    // the transport and the roll — is otherwise unreachable from outside the
+    // module graph, and real clock timing is exactly what test/harness.js
+    // cannot check: the stub has no worker. Nothing in the app reads this.
+    window.__opDock = dock;
+
     if (isMobile) {
         const sky = document.getElementById('night-sky');
         const canvasPanel = dock.querySelector('.dock-panel-canvas');

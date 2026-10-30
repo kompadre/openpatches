@@ -19,3 +19,7 @@ node_modules/
 deploy/app/
 
 .tmp/
+
+# Playwright e2e
+test-results/
+playwright-report/

@@ -2,6 +2,15 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-10-30: e2e test suite, phase 1
+
+- New **Playwright layer** (`e2e/`, `playwright.config.js`, run with `npx playwright test`) covering what `test/harness.js` structurally cannot: the stub has no AudioContext, AudioWorklet, WebAssembly or Worker, so engine init and real clock timing had only ever been checked by hand. 12 tests, ~13 s. The unit suite stays dependency-free and untouched.
+- The config starts `python3 server.py 8111` itself, so e2e runs under the same COOP/COEP cross-origin isolation a user gets — and asserts it, which makes a header regression a test failure instead of a silent loss of SharedArrayBuffer.
+- `e2e/fixtures.js` seeds the tutorial and demo-offer keys past the first-run prompts, and **fails any test on a console error, uncaught exception or failed request**. That guard is most of the point: a browser-only throw was previously invisible to CI.
+- Covered: boot smoke (shell renders, cross-origin isolation, reload-restore path, tutorial still fires on a virgin profile); the audio graph (`msfa.wasm` is served and validates, a key press brings the engine to `ready`, `addModule` runs **exactly once** across many gestures per the singleton rule, notes round-trip through the real worklet); the transport (Play/Stop, the empty-roll no-op, held notes released, and columns advancing at `bpm * 4` sixteenths/min with rawCol strictly monotonic).
+- One-line test hook `window.__opDock` in app.js — the transport and roll are otherwise unreachable from outside the module graph. Nothing in the app reads it. `audio-manager.js` needed no hook: importing it from `page.evaluate` returns the same singleton.
+- Phases 2-3 (pianoroll mouse interaction, persistence, file I/O, MIDI panel, small visual regression) are in TODO.md.
+
 ## 2026-10-30: MIDI clock in — following an external device
 
 - **"Sync to external clock"** in the MIDI settings (off by default). With it on, Play and Record only **arm**: the Play button pulses amber, nothing runs, and the device's Start runs us — from the top — at the device's tempo, measured from its clock (the mean of the last quarter note's worth of periods). Its Stop pauses us and leaves us armed, so its next Start or Continue is followed too; Continue resumes from where we were. Our own Stop disarms. **Song Position is ignored**, by decision.
