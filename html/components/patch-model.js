@@ -20,6 +20,60 @@ export function patchIdFromRaw(raw) {
     return hashString(String.fromCharCode.apply(null, raw));
 }
 
+// --- Voice identity ---
+
+// Pure base64 decoder — this module runs under node:test where atob is not
+// guaranteed by the harness.
+const B64_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+function base64ToBytes(b64) {
+    const clean = b64.replace(/=+$/, '');
+    const out = [];
+    let buffer = 0, bits = 0;
+    for (const ch of clean) {
+        const v = B64_CHARS.indexOf(ch);
+        if (v < 0) return null;
+        buffer = (buffer << 6) | v;
+        bits += 6;
+        if (bits >= 8) {
+            bits -= 8;
+            out.push((buffer >> bits) & 0xFF);
+        }
+    }
+    return out;
+}
+
+/**
+ * Name-independent identity of a voice: the patch bytes hashed with the
+ * embedded name characters zeroed, so a renamed copy of the same patch gets
+ * the same key. Unlike patch ids (which deliberately include the name so two
+ * records can coexist), one voiceKey means one VoiceBank slot.
+ *
+ * Accepts base64 strings, Uint8Array, or plain arrays — the three encodings
+ * voice data travels in. Name offsets: 118-127 in the 128-byte packed
+ * format, 145-154 in 155-byte unpacked VCED. Unknown lengths hash as-is.
+ */
+export function voiceKey(voiceData) {
+    let bytes = null;
+    if (typeof voiceData === 'string') {
+        if (voiceData.length === 0) return null;
+        bytes = base64ToBytes(voiceData);
+        // Not base64: still a usable identity — hash the string itself
+        // rather than silently disabling dedup for this voice.
+        if (!bytes) return hashString(voiceData);
+    } else if (voiceData && typeof voiceData.length === 'number') {
+        bytes = Array.from(voiceData);
+    }
+    if (!bytes || bytes.length === 0) return null;
+    if (bytes.length === 128) {
+        for (let i = 118; i < 128; i++) bytes[i] = 0;
+    } else if (bytes.length === 155) {
+        for (let i = 145; i < 155; i++) bytes[i] = 0;
+    }
+    let s = '';
+    for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+    return hashString(s);
+}
+
 // --- Patch factory ---
 
 export function createPatch(partial) {

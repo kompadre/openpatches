@@ -9,6 +9,41 @@ drifts belongs here.
 _(Keep a short list of what is in flight, what is done, and what is blocked.
 Replace entries as work completes — this is a working set, not a changelog.)_
 
+### VoiceBank de-flaking (2026-10-31) — phases 0–2 done, popover next
+
+From TODO.md: the relation between engine patches, VoiceBank, playing
+pattern and Song tracks was flaky. Plan agreed with the user; the one way
+to assign a patch is the patch's own ♫ control; no drag-in, no reorder.
+
+- [x] **Phase 0 — identity.** `patch-model.js` exports `voiceKey(voiceData)`:
+  name-independent hash of the patch bytes (name zeroed at 118–127 packed /
+  145–154 VCED), normalised across base64 / `Uint8Array` / `Array`. A
+  non-base64 string hashes as-is rather than disabling dedup. Pure base64
+  decoder inside — node:test has no `atob`. `test/voice-key.test.js`.
+- [x] **Phase 1 — fixed slots.** `voicebank.js` entries are a fixed
+  `Array(8)`; the index IS the channel, removal leaves a `null` hole (was a
+  splice that shifted every channel below and recolored it). Holes survive
+  save/load and song serialization (`serializeBank` in toolbar.js keeps
+  nulls, trims trailing).
+- [x] **Phase 2 — single write path.** `assignToSlot(idx, patch)` is the one
+  mutator (exposed `_assignToSlot`); same voiceKey elsewhere = move (old
+  slot empties, volume travels), never a copy. Deleted: drop-into-bank,
+  reorder drag handle, `addEntryAt`/`insertEntry`, app.js onPlay auto-add,
+  patch-row full-row click assign. `_addEntry` remains as the interim ♫
+  path: first empty slot, or just select the existing entry.
+  `test/voicebank-slot-state.test.js` rewritten to the new contract.
+- [ ] **Phase 3 — assign popover** in `patch-row.js`: ♫ toggles an inline
+  panel, buttons 1–8 showing occupants, first empty pre-focused, commit on
+  click → `_assignToSlot` → snapshot → engine.
+- [ ] **Phase 4 — slot badge** on every patch row showing its voiceKey's
+  slot (registry rebuilt on snapshot, `voicebank-changed` event).
+- [ ] **Phase 5 — Mixer tab** (user decision 2026-10-31): a proper dock tab
+  on desktop *and* mobile — vertical volume bars per VoiceBank channel,
+  plus Mute and Solo (both over `setChannelVolume`, no wasm change).
+  VoiceBank leaves the pattern-editor row.
+- [ ] **Phase 6 — e2e**: assign → badge everywhere, reassign empties old
+  slot, reload keeps holes.
+
 ### MIDI clock (2026-10-30) — both halves code complete; receive awaits browser check
 
 From TODO.md: basic internal clock sending / syncing with external. Done

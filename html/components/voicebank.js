@@ -1,6 +1,14 @@
 // VoiceBank — patch selector for pianoroll
 // Each entry has a color that maps to pianoroll note colors.
 // Volume overlay: click+drag horizontally to adjust channel volume (0-127).
+//
+// The bank is a fixed array of MAX_SLOTS positions: the slot index IS the
+// synth channel (AGENTS.md), so entries never shift. Removing one leaves a
+// hole; colors are a pure function of the index and never move. The one
+// write path is assignToSlot — no drag-in, no reordering — and it enforces
+// the invariant that a voice (by voiceKey) occupies at most one slot.
+
+import { voiceKey } from './patch-model.js';
 
 const STORAGE_KEY = 'openpatches_voicebank';
 const MAX_SLOTS = 8;
@@ -8,9 +16,18 @@ const DEFAULT_VOLUME = 100;
 
 const PATCH_COLORS = ['#e94560', '#4caf50', '#2196f3', '#ff9800', '#9c27b0', '#00bcd4', '#ff5722', '#607d8b'];
 
+// Deep copy of voice data in any of its travelling encodings; null if the
+// input is none of them. Strings are immutable, so they pass through.
+function copyVoice(voiceData) {
+    if (typeof voiceData === 'string') return voiceData;
+    if (voiceData instanceof Uint8Array) return new Uint8Array(voiceData);
+    if (Array.isArray(voiceData)) return voiceData.slice();
+    return null;
+}
+
 export function createVoiceBank(opts) {
     const { onSelect, onVolumeChange, onPreview, onSnapshot } = opts;
-    let entries = [];
+    let entries = new Array(MAX_SLOTS).fill(null);
     let activeId = null;
 
     function notifySnapshot() {
@@ -29,116 +46,6 @@ export function createVoiceBank(opts) {
     list.className = 'voicebank-list';
     container.appendChild(list);
 
-    // Drop target for canvas patches
-    container.addEventListener('dragover', (e) => {
-        if (!window._draggedPatch) return;
-        e.preventDefault();
-        e.stopPropagation();
-        container.classList.add('voicebank-drag-over');
-        const items = [...list.querySelectorAll('.voicebank-item')];
-        items.forEach(i => i.classList.remove('voicebank-drop-target'));
-        const afterItem = getInsertAfterItem(items, e.clientY);
-        if (afterItem) {
-            afterItem.classList.add('voicebank-drop-target');
-        } else if (items.length > 0) {
-            items[items.length - 1].classList.add('voicebank-drop-target');
-        }
-    });
-
-    container.addEventListener('dragleave', (e) => {
-        if (!container.contains(e.relatedTarget)) {
-            container.classList.remove('voicebank-drag-over');
-            list.querySelectorAll('.voicebank-drop-target').forEach(i => i.classList.remove('voicebank-drop-target'));
-        }
-    });
-
-    container.addEventListener('drop', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        container.classList.remove('voicebank-drag-over');
-        list.querySelectorAll('.voicebank-drop-target').forEach(i => i.classList.remove('voicebank-drop-target'));
-        if (!window._draggedPatch) return;
-
-        const patch = window._draggedPatch;
-        const items = [...list.querySelectorAll('.voicebank-item')];
-        const afterItem = getInsertAfterItem(items, e.clientY);
-        console.log('[voicebank] drop afterItem:', afterItem?.dataset?.vbIdx, 'entries:', entries.length, 'patch:', patch.name, 'voice_data type:', typeof patch.voice_data, 'length:', patch.voice_data?.length);
-
-        // Determine target slot index
-        let targetIdx = entries.length; // default: append
-        if (afterItem) {
-            const idx = parseInt(afterItem.dataset.vbIdx);
-            // If targeting bottom half of previous slot, use that slot
-            if (idx > 0 && !entries[idx] && entries[idx - 1]) {
-                targetIdx = idx - 1;
-            } else {
-                targetIdx = idx;
-            }
-        }
-        console.log('[voicebank] targetIdx:', targetIdx, 'entries[targetIdx]:', entries[targetIdx]?.name || null);
-
-        // Deep copy voice data
-        let voiceCopy;
-        if (typeof patch.voice_data === 'string') {
-            voiceCopy = patch.voice_data;
-        } else if (patch.voice_data instanceof Uint8Array) {
-            voiceCopy = new Uint8Array(patch.voice_data);
-        } else if (Array.isArray(patch.voice_data)) {
-            voiceCopy = patch.voice_data.slice();
-        } else {
-            console.log('[voicebank] voice_data not a recognized type, aborting');
-            window._draggedPatch = null;
-            return;
-        }
-        console.log('[voicebank] voiceCopy ready, type:', typeof voiceCopy, 'length:', voiceCopy?.length);
-
-        // Dedup: remove existing entry with same voice data
-        const voiceKey = typeof voiceCopy === 'string' ? voiceCopy : Array.from(voiceCopy).join(',');
-        const existingIdx = entries.findIndex(e => {
-            if (!e) return false;
-            if (typeof e.voiceData === 'string' && typeof voiceCopy === 'string') return e.voiceData === voiceCopy;
-            if (Array.isArray(e.voiceData) && Array.isArray(voiceCopy)) return Array.from(e.voiceData).join(',') === voiceKey;
-            return false;
-        });
-        if (existingIdx >= 0) {
-            console.log('[voicebank] dedup: removing existing at', existingIdx);
-            entries.splice(existingIdx, 1);
-            if (existingIdx < targetIdx) targetIdx--;
-        }
-        console.log('[voicebank] inserting at', targetIdx, 'entries before:', entries.length);
-
-        // Insert at target position, shift others down
-        const color = PATCH_COLORS[targetIdx % PATCH_COLORS.length];
-        const newEntry = {
-            id: 'vb_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
-            name: patch.name || 'Untitled',
-            voiceData: voiceCopy,
-            patchId: patch.name,
-            color,
-            volume: DEFAULT_VOLUME,
-        };
-        entries.splice(targetIdx, 0, newEntry);
-
-        // Trim to max slots
-        while (entries.length > MAX_SLOTS) entries.pop();
-
-        activeId = newEntry.id;
-        render();
-        fireSelect();
-        saveState();
-        notifySnapshot();
-
-        window._draggedPatch = null;
-    });
-
-    function getInsertAfterItem(items, clientY) {
-        for (const item of items) {
-            const rect = item.getBoundingClientRect();
-            if (clientY < rect.top + rect.height / 2) return item;
-        }
-        return null;
-    }
-
     function fireSelect() {
         const active = entries.find(e => e && e.id === activeId);
         if (onSelect && active) {
@@ -147,10 +54,10 @@ export function createVoiceBank(opts) {
         }
     }
 
-    // Color is a function of the slot index (AGENTS.md), so it has to be
-    // recomputed after any splice — remove/reorder/insert all shift indices.
+    // Colors are a function of the slot index. Slots no longer shift, but
+    // state saved by the old splice-based bank can still carry stale colors.
     function reindexColors() {
-        for (let i = 0; i < entries.length; i++) {
+        for (let i = 0; i < MAX_SLOTS; i++) {
             if (entries[i]) entries[i].color = PATCH_COLORS[i % PATCH_COLORS.length];
         }
     }
@@ -193,31 +100,9 @@ export function createVoiceBank(opts) {
                 slotNum.textContent = (i + 1);
                 item.appendChild(slotNum);
 
-                // Drag handle for reordering
-                const dragHandle = document.createElement('button');
-                dragHandle.className = 'voicebank-drag-handle';
-                dragHandle.textContent = '\u2B0D';
-                dragHandle.title = 'Drag to reorder';
-                dragHandle.draggable = true;
-                dragHandle.addEventListener('click', (e) => e.stopPropagation());
-                dragHandle.addEventListener('dragstart', (e) => {
-                    e.dataTransfer.effectAllowed = 'move';
-                    e.dataTransfer.setData('text/plain', entry.id);
-                    item.classList.add('dragging');
-                    window._vbDragSourceId = entry.id;
-                });
-                dragHandle.addEventListener('dragend', () => {
-                    item.classList.remove('dragging');
-                    window._vbDragSourceId = null;
-                    list.querySelectorAll('.drag-over-top, .drag-over-bottom').forEach(el => {
-                        el.classList.remove('drag-over-top', 'drag-over-bottom');
-                    });
-                });
-                item.appendChild(dragHandle);
-
                 const playBtn = document.createElement('button');
                 playBtn.className = 'voicebank-play';
-                playBtn.textContent = '\u25B6';
+                playBtn.textContent = '▶';
                 playBtn.title = 'Preview';
                 playBtn.addEventListener('click', (e) => {
                     e.stopPropagation();
@@ -245,49 +130,13 @@ export function createVoiceBank(opts) {
 
                 const removeBtn = document.createElement('button');
                 removeBtn.className = 'voicebank-remove';
-                removeBtn.textContent = '\u00D7';
+                removeBtn.textContent = '×';
                 removeBtn.title = 'Remove';
                 removeBtn.addEventListener('click', (e) => {
                     e.stopPropagation();
                     removeEntry(entry.id);
                 });
                 item.appendChild(removeBtn);
-
-                // Reorder drop targets
-                item.addEventListener('dragover', (e) => {
-                    if (!window._vbDragSourceId) return;
-                    e.preventDefault();
-                    e.dataTransfer.dropEffect = 'move';
-                    const rect = item.getBoundingClientRect();
-                    const midY = rect.top + rect.height / 2;
-                    item.classList.remove('drag-over-top', 'drag-over-bottom');
-                    item.classList.add(e.clientY < midY ? 'drag-over-top' : 'drag-over-bottom');
-                });
-                item.addEventListener('dragleave', () => {
-                    item.classList.remove('drag-over-top', 'drag-over-bottom');
-                });
-                item.addEventListener('drop', (e) => {
-                    e.preventDefault();
-                    item.classList.remove('drag-over-top', 'drag-over-bottom');
-                    if (window._draggedPatch) {
-                        // External drop — let it bubble to container handler
-                        return;
-                    }
-                    e.stopPropagation();
-                    if (!window._vbDragSourceId) return;
-                    const fromId = window._vbDragSourceId;
-                    const fromIdx = entries.findIndex(en => en && en.id === fromId);
-                    let toIdx = i;
-                    const rect = item.getBoundingClientRect();
-                    if (e.clientY >= rect.top + rect.height / 2) toIdx = i + 1;
-                    if (fromIdx < 0 || fromIdx === toIdx || fromIdx === toIdx - 1) return;
-                    const [moved] = entries.splice(fromIdx, 1);
-                    if (toIdx > fromIdx) toIdx--;
-                    entries.splice(toIdx, 0, moved);
-                    render();
-                    saveState();
-                    notifySnapshot();
-                });
 
                 // Click to select (desktop only — mobile uses handleVolStart tap detection)
                 item.addEventListener('click', (e) => {
@@ -364,88 +213,93 @@ export function createVoiceBank(opts) {
         }
     }
 
-    function addEntry(name, voiceData, patchId) {
-        if (!voiceData) return;
-        if (entries.length >= MAX_SLOTS) return;
-
-        // Deep copy voiceData to avoid stale references
-        let voiceCopy;
-        if (typeof voiceData === 'string') {
-            voiceCopy = voiceData; // strings are immutable
-        } else if (voiceData instanceof Uint8Array) {
-            voiceCopy = new Uint8Array(voiceData); // true deep copy
-        } else if (Array.isArray(voiceData)) {
-            voiceCopy = voiceData.slice();
-        } else {
-            return;
-        }
-
-        // Dedup by content (string compare for base64, byte compare for arrays)
-        const voiceKey = typeof voiceCopy === 'string' ? voiceCopy : Array.from(voiceCopy).join(',');
-        const existing = entries.find(e => {
-            if (!e) return false;
-            if (typeof e.voiceData === 'string' && typeof voiceCopy === 'string') {
-                return e.voiceData === voiceCopy;
-            }
-            if (Array.isArray(e.voiceData) && Array.isArray(voiceCopy)) {
-                return Array.from(e.voiceData).join(',') === voiceKey;
-            }
-            return false;
-        });
-        if (existing) {
-            activeId = existing.id;
-            render();
-            fireSelect();
-            saveState();
-            return;
-        }
-
-        insertEntry(entries.length, name, voiceCopy, patchId);
-    }
-
-    function addEntryAt(idx, name, voiceData, patchId) {
-        if (!voiceData || idx < 0 || idx >= MAX_SLOTS) return;
-
-        let voiceCopy;
-        if (typeof voiceData === 'string') {
-            voiceCopy = voiceData;
-        } else if (voiceData instanceof Uint8Array) {
-            voiceCopy = new Uint8Array(voiceData);
-        } else if (Array.isArray(voiceData)) {
-            voiceCopy = voiceData.slice();
-        } else {
-            return;
-        }
-
-        insertEntry(idx, name, voiceCopy, patchId);
-    }
-
-    function insertEntry(idx, name, voiceCopy, patchId) {
-        const color = PATCH_COLORS[idx % PATCH_COLORS.length];
-        const newEntry = {
+    function makeEntry(idx, name, voiceCopy, patchId, key, volume) {
+        return {
             id: 'vb_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
             name: name || 'Untitled',
             voiceData: voiceCopy,
             patchId: patchId || name,
-            color,
-            volume: DEFAULT_VOLUME,
+            voiceKey: key,
+            color: PATCH_COLORS[idx % PATCH_COLORS.length],
+            volume: volume == null ? DEFAULT_VOLUME : volume,
         };
+    }
 
+    function firstEmptySlot() {
+        return entries.findIndex(e => !e);
+    }
+
+    function findSlotByKey(key) {
+        if (!key) return -1;
+        return entries.findIndex(e => e && e.voiceKey === key);
+    }
+
+    /**
+     * THE write path. Puts a voice into slot `idx`, replacing whatever is
+     * there. One voice, one slot: if these bytes (by voiceKey) already live
+     * in another slot, this is a move — the old slot empties rather than
+     * leaving a duplicate. Returns true if the bank changed or the voice was
+     * already in place (which just selects it).
+     */
+    function assignToSlot(idx, { name, voiceData, patchId }) {
+        if (idx < 0 || idx >= MAX_SLOTS) return false;
+        const voiceCopy = copyVoice(voiceData);
+        if (!voiceCopy) return false;
+        const key = voiceKey(voiceCopy);
+
+        const existingIdx = findSlotByKey(key);
+        if (existingIdx === idx) {
+            // Same voice, same slot: just select it. The existing entry
+            // keeps its id and volume.
+            activeId = entries[idx].id;
+            render();
+            fireSelect();
+            saveState();
+            return true;
+        }
+        let volume = null;
+        if (existingIdx >= 0) {
+            volume = entries[existingIdx].volume;
+            entries[existingIdx] = null;
+        }
+
+        const newEntry = makeEntry(idx, name, voiceCopy, patchId, key, volume);
         entries[idx] = newEntry;
         activeId = newEntry.id;
         render();
         fireSelect();
         saveState();
         notifySnapshot();
+        return true;
+    }
+
+    // Interim single entry point until the per-patch slot picker lands:
+    // assign to the first empty slot; a voice already in the bank just
+    // becomes the selection.
+    function addEntry(name, voiceData, patchId) {
+        const voiceCopy = copyVoice(voiceData);
+        if (!voiceCopy) return;
+        const existingIdx = findSlotByKey(voiceKey(voiceCopy));
+        if (existingIdx >= 0) {
+            activeId = entries[existingIdx].id;
+            render();
+            fireSelect();
+            saveState();
+            return;
+        }
+        const idx = firstEmptySlot();
+        if (idx < 0) return;
+        assignToSlot(idx, { name, voiceData: voiceCopy, patchId });
     }
 
     function removeEntry(id) {
         const idx = entries.findIndex(e => e && e.id === id);
-        if (idx >= 0) {
-            entries.splice(idx, 1);
-        }
+        if (idx < 0) return;
+        // A hole, not a splice: the slot is the channel, entries below must
+        // keep their index, color and volume.
+        entries[idx] = null;
         if (activeId === id) {
-            const first = entries[0] || null;
+            const first = entries.find(e => e) || null;
             activeId = first ? first.id : null;
             if (activeId) fireSelect();
         }
@@ -475,19 +329,42 @@ export function createVoiceBank(opts) {
         }
     }
 
+    // Rebuild the fixed slot array from a plain list, keeping positions and
+    // dropping voiceKey duplicates (first occurrence wins). Shared by
+    // loadState and _setEntries; old saved state (dense, spliced) comes
+    // through unchanged because its indices were already its slots.
+    function slotsFromList(list, mapEntry) {
+        const slots = new Array(MAX_SLOTS).fill(null);
+        const seen = new Set();
+        (Array.isArray(list) ? list : []).slice(0, MAX_SLOTS).forEach((e, i) => {
+            if (!e || !e.voiceData) return;
+            const voiceCopy = copyVoice(e.voiceData);
+            if (!voiceCopy) return;
+            const key = e.voiceKey || voiceKey(voiceCopy);
+            if (key && seen.has(key)) return;
+            if (key) seen.add(key);
+            slots[i] = mapEntry(e, i, voiceCopy, key);
+        });
+        return slots;
+    }
+
     function loadState() {
         try {
             const raw = localStorage.getItem(STORAGE_KEY);
             if (!raw) return;
             const data = JSON.parse(raw);
-            entries = (data.entries || []).filter(e => e != null);
+            // Saved entries keep their ids and volumes; only the fixed-array
+            // shape, the voiceKey backfill and the dedup are imposed here.
+            entries = slotsFromList(data.entries, (e, i, voiceCopy, key) => ({
+                ...e,
+                voiceData: voiceCopy,
+                voiceKey: key,
+                volume: e.volume == null ? DEFAULT_VOLUME : e.volume,
+            }));
             activeId = data.activeId || null;
-            if (activeId && !entries.find(e => e.id === activeId)) {
-                activeId = entries.length > 0 ? entries[0].id : null;
-            }
-            // Backfill volume for entries saved before volume feature
-            for (const entry of entries) {
-                if (entry.volume == null) entry.volume = DEFAULT_VOLUME;
+            if (activeId && !entries.find(e => e && e.id === activeId)) {
+                const first = entries.find(e => e);
+                activeId = first ? first.id : null;
             }
         } catch (e) {
             console.warn('VoiceBank load failed:', e);
@@ -499,8 +376,10 @@ export function createVoiceBank(opts) {
     render();
 
     container._addEntry = addEntry;
+    container._assignToSlot = assignToSlot;
+    container._firstEmptySlot = firstEmptySlot;
     container._removeEntry = removeEntry;
-    container._clear = () => { entries = []; activeId = null; render(); saveState(); notifySnapshot(); };
+    container._clear = () => { entries = new Array(MAX_SLOTS).fill(null); activeId = null; render(); saveState(); notifySnapshot(); };
     container._getActive = getActive;
     container._setActive = setActive;
     container._getEntries = () => entries;
@@ -514,23 +393,14 @@ export function createVoiceBank(opts) {
     };
     container._render = render;
     container._notifySnapshot = notifySnapshot;
-    // Replace every slot at once (song load). Entries get fresh ids and
-    // index-derived colors; the first slot becomes active so the piano roll
-    // and keyboard follow, exactly as after a reload.
+    // Replace every slot at once (song load). Entries get fresh ids but keep
+    // their saved slot positions; the first occupied slot becomes active so
+    // the piano roll and keyboard follow, exactly as after a reload.
     container._setEntries = (list) => {
-        entries = (Array.isArray(list) ? list : [])
-            .filter(e => e && e.voiceData)
-            .slice(0, MAX_SLOTS)
-            .map((e, i) => ({
-                id: 'vb_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
-                name: e.name || 'Untitled',
-                voiceData: e.voiceData instanceof Uint8Array ? new Uint8Array(e.voiceData)
-                    : Array.isArray(e.voiceData) ? e.voiceData.slice() : e.voiceData,
-                patchId: e.patchId || e.name,
-                color: PATCH_COLORS[i % PATCH_COLORS.length],
-                volume: e.volume == null ? DEFAULT_VOLUME : e.volume,
-            }));
-        activeId = entries.length > 0 ? entries[0].id : null;
+        entries = slotsFromList(list, (e, i, voiceCopy, key) =>
+            makeEntry(i, e.name, voiceCopy, e.patchId || e.name, key, e.volume));
+        const first = entries.find(e => e);
+        activeId = first ? first.id : null;
         render();
         fireSelect();
         saveState();

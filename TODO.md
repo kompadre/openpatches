@@ -27,3 +27,4 @@ Project backlog. Parent tasks with nested subtasks; `[ ]` pending, `[x]` done,
 
    - [ ] When assigning a multi-voice pattern to a track that doesn't define enough voices ask user to do it.
    - [ ] "Song" tab pattern visualization: paint small colored dots (different colors for different voices) where notes are inside that pattern. Generate an image blob. Cache that blob,  invalidate cache when pattern changes.
+

@@ -547,13 +547,9 @@ function importSyxBank(arrayBuffer, name, sourceLabel) {
 function getCanvasOpts() {
     return {
         onPlay: (patch) => {
-            if (patch.voice_data) {
-                activeSyxVoiceData = patch.voice_data;
-                // Also add to voice bank so pianoroll has a channel
-                if (pianoDockWrapper && pianoDockWrapper._voiceBank) {
-                    pianoDockWrapper._voiceBank._addEntry(patch.name || 'Untitled', patch.voice_data, patch.name);
-                }
-            }
+            // Auditioning must not touch the voice bank — assignment goes
+            // through onSelect (the ♫ button) and nothing else.
+            if (patch.voice_data) activeSyxVoiceData = patch.voice_data;
             return playPatch(patch);
         },
         onSelect: (patch) => {

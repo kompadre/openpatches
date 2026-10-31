@@ -509,10 +509,8 @@ export function createPatchRow(patch, opts = {}) {
             row.appendChild(removeBtn);
         }
 
-        // Click row → select
-        row.addEventListener('click', () => {
-            if (onSelect) onSelect(patch);
-        });
+        // No click-row-to-assign: the ♫ button is the one way into the
+        // voice bank, a stray click on a row must not move voices around.
     }
 
     // Store patch data reference

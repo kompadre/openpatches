@@ -210,14 +210,20 @@ export function createToolbar(opts) {
     // fires its first snapshot immediately.
     let sessionRef = null;
 
-    /** Voice bank entries as plain JSON (typed arrays do not survive it). */
+    /**
+     * Voice bank entries as plain JSON (typed arrays do not survive it).
+     * Holes are kept as nulls — the index is the slot is the channel — with
+     * trailing ones trimmed so an untouched bank still serializes to [].
+     */
     function serializeBank(entries) {
-        return (entries || []).filter(Boolean).map(e => ({
+        const out = (entries || []).map(e => e ? {
             name: e.name,
             patchId: e.patchId,
             volume: e.volume,
             voiceData: e.voiceData instanceof Uint8Array ? Array.from(e.voiceData) : e.voiceData,
-        }));
+        } : null);
+        while (out.length > 0 && out[out.length - 1] == null) out.pop();
+        return out;
     }
 
     const voiceSelect = document.createElement('select');
