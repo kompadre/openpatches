@@ -7,19 +7,25 @@
 // so the e2e runs exercise the same cross-origin-isolated context as a user.
 import { defineConfig, devices } from '@playwright/test';
 
-// The port is scoped to the tmux pane, so the user (and any other agent)
-// can run this repo's server.py at the same time without the two fighting
-// over one port — or, worse, one silently serving a *different* worktree to
-// the other's tests. `TMUX_PANE` is `%N`; the port is `8100 + (N % 100)`,
-// which keeps the pane's last digit as the port's last digit. Outside tmux,
-// fall back to a fixed port in the same family. Never 8000 — that leaves
-// the hand-run dev server alone. See SESSION.md, "Pane-scoped ports".
-function panePort() {
+// The port is scoped to the worktree *and* the tmux pane, so the user (and
+// any other agent, in any sibling checkout) can run this repo's server.py at
+// the same time without the two fighting over one port — or, worse, one
+// silently serving a *different* worktree to the other's tests. Both have
+// happened. A hash of the worktree path picks the middle digits (two
+// checkouts get different ports even in one pane); `TMUX_PANE` (`%N`) keeps
+// its last digit as the port's last digit, per the pane convention. Range
+// 8100–8899 — never 8000, which is the hand-run dev server's.
+// See SESSION.md, "Pane-scoped ports".
+function derivePort() {
+    const path = process.cwd();
+    let h = 5381;
+    for (let i = 0; i < path.length; i++) h = (((h << 5) + h) + path.charCodeAt(i)) >>> 0;
     const n = parseInt(String(process.env.TMUX_PANE || '').replace(/\D/g, ''), 10);
-    return Number.isFinite(n) ? 8100 + (n % 100) : 8100;
+    const lastDigit = Number.isFinite(n) ? n % 10 : h % 10;
+    return 8100 + (h % 80) * 10 + lastDigit;
 }
 
-const PORT = panePort();
+const PORT = derivePort();
 
 export default defineConfig({
     testDir: './e2e',

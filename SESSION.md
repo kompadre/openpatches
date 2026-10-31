@@ -17,11 +17,14 @@ same port fight over it: one process fails to bind, or — worse — a stale
 server from the other pane keeps serving a **different worktree** and the
 tests silently pass against the wrong files. Both have happened.
 
-- **Derive every port you bind from `$TMUX_PANE`.** It is `%N` (`%2` here).
-  Take the digits; **the port's last digit must equal the pane number's last
-  digit.** The project convention is `8100 + (N % 100)` — pane `%2` → `8102`,
-  pane `%13` → `8113` — which satisfies the rule and keeps two-digit panes
-  distinct from single-digit ones.
+- **Derive every port you bind from the worktree path and `$TMUX_PANE`.**
+  The path hash separates sibling checkouts even inside one pane; the pane
+  keeps your last-digit convention: **the port's last digit must equal the
+  pane number's last digit** (`TMUX_PANE` is `%N`; `%2` here). The project
+  convention, implemented in `playwright.config.js` (`derivePort()`):
+  `h = djb2(cwd)`; `port = 8100 + (h % 80) * 10 + (N % 10)` — range
+  8100–8899, with `h % 10` standing in for the pane digit when `$TMUX_PANE`
+  is unset. This worktree on pane `%2` → `8572`.
 - **Never kill a process you did not start.** A server on someone else's port
   is theirs. If your port is busy, that is your own orphan: find it with
   `pgrep -af "server.py <your-port>"` and kill only that.
@@ -30,8 +33,8 @@ tests silently pass against the wrong files. Both have happened.
   (`/tmp/op-smoke-%2.mjs`), so two panes cannot collide or clobber each
   other's output. This should be rare: prefer a path inside the worktree, and
   prefer no file at all.
-- If `$TMUX_PANE` is unset, say so and pick a port in the same `81xx` family
-  rather than guessing a shared default.
+- If `$TMUX_PANE` is unset, say so; the path hash alone still gives a
+  worktree-stable port — never fall back to a shared fixed default.
 
 ## Current Tasks & Goals
 
