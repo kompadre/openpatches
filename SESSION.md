@@ -9,7 +9,7 @@ drifts belongs here.
 _(Keep a short list of what is in flight, what is done, and what is blocked.
 Replace entries as work completes — this is a working set, not a changelog.)_
 
-### VoiceBank de-flaking (2026-10-31) — phases 0–2 done, popover next
+### VoiceBank de-flaking (2026-10-31) — phases 0–3 done, badge next
 
 From TODO.md: the relation between engine patches, VoiceBank, playing
 pattern and Song tracks was flaky. Plan agreed with the user; the one way
@@ -32,9 +32,15 @@ to assign a patch is the patch's own ♫ control; no drag-in, no reorder.
   patch-row full-row click assign. `_addEntry` remains as the interim ♫
   path: first empty slot, or just select the existing entry.
   `test/voicebank-slot-state.test.js` rewritten to the new contract.
-- [ ] **Phase 3 — assign popover** in `patch-row.js`: ♫ toggles an inline
-  panel, buttons 1–8 showing occupants, first empty pre-focused, commit on
-  click → `_assignToSlot` → snapshot → engine.
+- [x] **Phase 3 — assign popover.** `attachAssignPopover` in patch-row.js
+  (also on canvas container headers' 🎵): ♫ toggles `.patch-assign-pop`,
+  buttons 1–8 with occupant name/color, `.current` on the patch's own slot,
+  first empty pre-focused, commit on click → app.js `onAssignSlot` →
+  `_assignToSlot`. Decided with the user: target occupied + patch
+  unassigned = **silent overwrite**; patch already in a slot = **swap**
+  (entries move wholesale — ids, names, volumes travel). Falls back to
+  legacy onSelect where onAssignSlot/getBankEntries aren't wired.
+  `test/patch-assign-popover.test.js`.
 - [ ] **Phase 4 — slot badge** on every patch row showing its voiceKey's
   slot (registry rebuilt on snapshot, `voicebank-changed` event).
 - [ ] **Phase 5 — Mixer tab** (user decision 2026-10-31): a proper dock tab

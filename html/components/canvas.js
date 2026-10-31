@@ -4,7 +4,7 @@
 
 import { canvasStore, patchStore, jobStore, createPatch, patchIdFromVoiceData } from './patch-model.js';
 import { createTagEditor } from './tag-editor.js';
-import { createPatchRow, getDraggedPatch, clearDraggedPatch } from './patch-row.js';
+import { createPatchRow, getDraggedPatch, clearDraggedPatch, attachAssignPopover } from './patch-row.js';
 // Cyclic with job.js (it imports canvas.js) — only used inside functions, so the
 // binding is always initialized by the time it is read.
 import { jobManager } from './job.js';
@@ -333,11 +333,8 @@ function renderFloatingPatch(patchId, entry) {
     const assignBtn = document.createElement('button');
     assignBtn.className = 'sky-container-assign';
     assignBtn.textContent = '🎵';
-    assignBtn.title = 'Add to voicebank';
-    assignBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (optsRef && optsRef.onSelect) optsRef.onSelect(patch);
-    });
+    assignBtn.title = 'Assign to voicebank slot';
+    attachAssignPopover(assignBtn, header, patch, optsRef || {});
     headerRight.appendChild(assignBtn);
 
     const editBtn = document.createElement('button');
@@ -889,6 +886,8 @@ function renderContainer(ctr) {
                     isMinified: true,
                     onPlay: optsRef ? optsRef.onPlay : null,
                     onSelect: optsRef ? optsRef.onSelect : null,
+                    onAssignSlot: optsRef ? optsRef.onAssignSlot : null,
+                    getBankEntries: optsRef ? optsRef.getBankEntries : null,
                     onEdit: optsRef ? optsRef.onEdit : null,
                     onRemove: (p) => {
                         group.patchIds = (group.patchIds || []).filter(id => id !== p.id);
@@ -916,6 +915,8 @@ function renderContainer(ctr) {
                 isMinified: true,
                 onPlay: optsRef ? optsRef.onPlay : null,
                 onSelect: optsRef ? optsRef.onSelect : null,
+                onAssignSlot: optsRef ? optsRef.onAssignSlot : null,
+                getBankEntries: optsRef ? optsRef.getBankEntries : null,
                 onEdit: optsRef ? optsRef.onEdit : null,
                 onRemove: (p) => {
                     ctr.patchIds = (ctr.patchIds || []).filter(id => id !== p.id);

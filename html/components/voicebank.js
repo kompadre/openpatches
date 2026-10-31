@@ -235,11 +235,12 @@ export function createVoiceBank(opts) {
     }
 
     /**
-     * THE write path. Puts a voice into slot `idx`, replacing whatever is
-     * there. One voice, one slot: if these bytes (by voiceKey) already live
-     * in another slot, this is a move — the old slot empties rather than
-     * leaving a duplicate. Returns true if the bank changed or the voice was
-     * already in place (which just selects it).
+     * THE write path. Puts a voice into slot `idx`. One voice, one slot:
+     *  - target occupied, voice not in the bank → silent overwrite;
+     *  - voice already in another slot → the two slots swap (a plain move
+     *    when the target is empty), entries keep their ids and volumes;
+     *  - voice already in `idx` → just select it.
+     * Returns true if the bank changed or the voice was already in place.
      */
     function assignToSlot(idx, { name, voiceData, patchId }) {
         if (idx < 0 || idx >= MAX_SLOTS) return false;
@@ -257,15 +258,17 @@ export function createVoiceBank(opts) {
             saveState();
             return true;
         }
-        let volume = null;
         if (existingIdx >= 0) {
-            volume = entries[existingIdx].volume;
-            entries[existingIdx] = null;
+            // Swap: whatever sits in the target takes the vacated slot.
+            const moving = entries[existingIdx];
+            entries[existingIdx] = entries[idx];
+            entries[idx] = moving;
+            activeId = moving.id;
+        } else {
+            const newEntry = makeEntry(idx, name, voiceCopy, patchId, key, null);
+            entries[idx] = newEntry;
+            activeId = newEntry.id;
         }
-
-        const newEntry = makeEntry(idx, name, voiceCopy, patchId, key, volume);
-        entries[idx] = newEntry;
-        activeId = newEntry.id;
         render();
         fireSelect();
         saveState();

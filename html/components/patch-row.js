@@ -2,7 +2,7 @@
 
 import { decodeWavSamples, drawMiniWaveform, wavSampleCache, releaseWavUrl } from './patch.js';
 import { createTagEditor } from './tag-editor.js';
-import { patchStore, canvasStore } from './patch-model.js';
+import { patchStore, canvasStore, voiceKey } from './patch-model.js';
 import { batchRenderWaveforms } from '../synth/dx7-synth.js';
 
 // Global drag state (shared with canvas.js for drop detection)
@@ -86,6 +86,89 @@ export function reorderContainerPatch(containerId, patchId, targetId, before) {
     return moved;
 }
 
+// --- Assign popover ---
+
+// Only one popover at a time; opening one closes the other.
+let _openPopover = null;
+
+/**
+ * The ♫ button's slot picker — the one way into the voice bank. Eight
+ * buttons, one per slot, each wearing its occupant's name and color; the
+ * first empty slot is pre-focused. Clicking a slot commits at once:
+ *  - occupied slot, patch not in the bank → silent overwrite;
+ *  - patch already in another slot → the two slots swap.
+ * (Both are assignToSlot's contract — the popover only picks the index.)
+ *
+ * Without onAssignSlot/getBankEntries wiring the button falls back to
+ * onSelect, the legacy first-empty-slot assign.
+ */
+export function attachAssignPopover(assignBtn, anchorEl, patch, opts) {
+    const { onAssignSlot, getBankEntries, onSelect } = opts;
+    if (!onAssignSlot || !getBankEntries) {
+        assignBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (onSelect) onSelect(patch);
+        });
+        return;
+    }
+
+    let pop = null;
+
+    function close() {
+        if (!pop) return;
+        pop.remove();
+        pop = null;
+        if (_openPopover === close) _openPopover = null;
+        document.removeEventListener('click', onDocClick);
+        document.removeEventListener('keydown', onKeyDown);
+    }
+
+    function onDocClick(e) {
+        if (pop && !pop.contains(e.target) && e.target !== assignBtn) close();
+    }
+
+    function onKeyDown(e) {
+        if (e.key === 'Escape') close();
+    }
+
+    assignBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (pop) { close(); return; }
+        if (_openPopover) _openPopover();
+        _openPopover = close;
+
+        const entries = getBankEntries() || [];
+        const key = voiceKey(patch.voice_data);
+        const currentSlot = key ? entries.findIndex(en => en && en.voiceKey === key) : -1;
+
+        pop = document.createElement('div');
+        pop.className = 'patch-assign-pop';
+        let focusBtn = null;
+        for (let i = 0; i < 8; i++) {
+            const occ = entries[i];
+            const btn = document.createElement('button');
+            btn.className = 'patch-assign-slot'
+                + (occ ? ' occupied' : '')
+                + (i === currentSlot ? ' current' : '');
+            btn.textContent = i + 1;
+            btn.title = i === currentSlot ? 'Current slot'
+                : occ ? occ.name : 'Empty slot ' + (i + 1);
+            if (occ && occ.color) btn.style.borderColor = occ.color;
+            if (!occ && !focusBtn) focusBtn = btn;
+            btn.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                close();
+                onAssignSlot(patch, i);
+            });
+            pop.appendChild(btn);
+        }
+        anchorEl.appendChild(pop);
+        if (focusBtn) focusBtn.focus();
+        document.addEventListener('click', onDocClick);
+        document.addEventListener('keydown', onKeyDown);
+    });
+}
+
 // --- Patch row ---
 
 export function createPatchRow(patch, opts = {}) {
@@ -159,11 +242,8 @@ export function createPatchRow(patch, opts = {}) {
         const assignBtn = document.createElement('button');
         assignBtn.className = 'patch-assign';
         assignBtn.textContent = '♫';
-        assignBtn.title = 'Add to voicebank';
-        assignBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            if (onSelect) onSelect(patch);
-        });
+        assignBtn.title = 'Assign to voicebank slot';
+        attachAssignPopover(assignBtn, row, patch, opts);
         row.appendChild(assignBtn);
 
         if (onEdit) {
@@ -476,11 +556,8 @@ export function createPatchRow(patch, opts = {}) {
         const assignBtn = document.createElement('button');
         assignBtn.className = 'patch-assign';
         assignBtn.textContent = '♫';
-        assignBtn.title = 'Add to voicebank';
-        assignBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            if (onSelect) onSelect(patch);
-        });
+        assignBtn.title = 'Assign to voicebank slot';
+        attachAssignPopover(assignBtn, row, patch, opts);
         row.appendChild(assignBtn);
 
         // Edit button

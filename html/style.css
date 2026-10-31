@@ -1570,6 +1570,56 @@ h1 {
     border-color: #4caf50;
 }
 
+/* The ♫ slot picker. Anchored to the row (or container header), which gets
+   position:relative via the rules below. */
+.patch-assign-pop {
+    position: absolute;
+    right: 0.4rem;
+    top: 100%;
+    z-index: 1000;
+    display: flex;
+    gap: 3px;
+    padding: 5px;
+    background: #131326;
+    border: 1px solid #333;
+    border-radius: 6px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6);
+}
+
+.patch-assign-slot {
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    background: #1a1a2e;
+    border: 1px solid #333;
+    border-radius: 4px;
+    color: #888;
+    font-size: 0.7rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.patch-assign-slot.occupied {
+    color: #ddd;
+    border-width: 2px;
+}
+
+.patch-assign-slot.current {
+    background: #0f3460;
+    color: #fff;
+}
+
+.patch-assign-slot:hover,
+.patch-assign-slot:focus {
+    background: #16213e;
+    outline: 1px solid #4caf50;
+}
+
+.patch-row,
+.sky-container-header {
+    position: relative;
+}
+
 .syx-link {
     display: inline-block;
     padding: 0.5rem 1rem;

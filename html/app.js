@@ -566,6 +566,27 @@ function getCanvasOpts() {
                 }
             }
         },
+        // The ♫ popover's commit: load the voice into the chosen slot and
+        // bring the roll into view, same as onSelect used to.
+        onAssignSlot: (patch, slot) => {
+            if (!patch.voice_data || !pianoDockWrapper || !pianoDockWrapper._voiceBank) return;
+            activeSyxVoiceData = patch.voice_data;
+            pianoDockWrapper._voiceBank._assignToSlot(slot, {
+                name: patch.name || 'Untitled',
+                voiceData: patch.voice_data,
+                patchId: patch.name,
+            });
+            const isMobile = window.matchMedia('(max-width: 600px)').matches;
+            if (isMobile && pianoDockWrapper._showPianoroll) {
+                pianoDockWrapper._showPianoroll();
+            } else {
+                pianoDockWrapper.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        },
+        getBankEntries: () => {
+            if (!pianoDockWrapper || !pianoDockWrapper._voiceBank) return [];
+            return pianoDockWrapper._voiceBank._getEntries();
+        },
         onAssignToPianoroll: (patches) => {
             if (!pianoDockWrapper || !pianoDockWrapper._voiceBank) return;
             for (const patch of patches) {

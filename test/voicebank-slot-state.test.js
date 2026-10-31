@@ -129,6 +129,32 @@ describe('one voice, one slot', () => {
         assert.equal(occupied(bank).length, 1);
     });
 
+    test('assigning an unassigned voice onto an occupied slot overwrites it silently', () => {
+        localStorage.clear();
+        const bank = createVoiceBank({});
+        bank._assignToSlot(2, { name: 'Old', voiceData: 'old-data' });
+        bank._assignToSlot(2, { name: 'New', voiceData: 'new-data' });
+        const e = bank._getEntries();
+        assert.equal(e[2].name, 'New');
+        assert.equal(occupied(bank).length, 1, 'the old voice is gone, not relocated');
+    });
+
+    test('assigning a voice that already has a slot onto an occupied one swaps them', () => {
+        localStorage.clear();
+        const bank = createVoiceBank({});
+        bank._assignToSlot(0, { name: 'A', voiceData: 'a-data' });
+        bank._assignToSlot(3, { name: 'B', voiceData: 'b-data' });
+        bank._getEntries()[0].volume = 42;
+        bank._getEntries()[3].volume = 90;
+        bank._assignToSlot(3, { name: 'A', voiceData: 'a-data' });
+        const e = bank._getEntries();
+        assert.equal(e[3].name, 'A');
+        assert.equal(e[0].name, 'B', 'the displaced voice takes the vacated slot');
+        assert.equal(e[3].volume, 42, 'volumes travel with their voices');
+        assert.equal(e[0].volume, 90);
+        assert.equal(bank._getActive().name, 'A', 'the assigned voice becomes active');
+    });
+
     test('dedup sees through encodings: Array and Uint8Array of the same bytes match', () => {
         localStorage.clear();
         const bank = createVoiceBank({});
@@ -136,7 +162,7 @@ describe('one voice, one slot', () => {
         bank._assignToSlot(4, { name: 'Bass copy', voiceData: Uint8Array.from([1, 2, 3]), patchId: 'p2' });
         assert.equal(occupied(bank).length, 1, 'same bytes may not occupy two slots');
         assert.equal(bank._getEntries()[0], null);
-        assert.equal(bank._getEntries()[4].name, 'Bass copy');
+        assert.equal(bank._getEntries()[4].name, 'Bass', 'the entry moves wholesale, keeping its name');
     });
 
     test('addEntry fills the first empty slot and re-selects an existing voice', () => {
