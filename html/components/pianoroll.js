@@ -839,6 +839,22 @@ export function createPianoroll(opts) {
     let lastClickTime = 0;
     let lastClickRow = -1;
     let lastClickCol = -1;
+    let seekingPlayhead = false;
+
+    // Step record: drag the playhead by its header marker. Only live while
+    // the step cursor is shown (the clock is stopped — playCol owns the
+    // header otherwise). The toolbar is told so its own cursor follows.
+    function seekStep(col) {
+        col = Math.max(0, Math.min(totalCols() - 1, col));
+        if (col === stepCol) return;
+        stepCol = col;
+        draw();
+        if (opts.onStepSeek) opts.onStepSeek(col);
+    }
+
+    function stepSeekTo(x) {
+        seekStep(pixelToCol(foldX(x)));
+    }
 
     canvas.addEventListener('mousedown', (e) => {
         const rect = canvas.getBoundingClientRect();
@@ -848,6 +864,18 @@ export function createPianoroll(opts) {
         const col = pixelToCol(x);
 
         if (col < 0) return;
+
+        // The header strip belongs to the playhead: while a step record is
+        // armed it is the cursor's drag handle, and it never draws notes —
+        // pixelToRow clamps, so a header click used to land a note on the
+        // top row.
+        if (y <= HEADER_H) {
+            if (stepCol >= 0) {
+                seekingPlayhead = true;
+                stepSeekTo(x);
+            }
+            return;
+        }
 
         const now = Date.now();
         const target = findInteractionTarget(x, y);
@@ -896,6 +924,11 @@ export function createPianoroll(opts) {
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
         lastMousePos = { x, y };
+
+        if (seekingPlayhead) {
+            stepSeekTo(x);
+            return;
+        }
 
         if (resizingNote && moveStartPos) {
             const dx = x - moveStartPos.x;
@@ -961,6 +994,11 @@ export function createPianoroll(opts) {
 
     canvas.addEventListener('mouseup', (e) => {
         canvas.style.cursor = '';
+
+        if (seekingPlayhead) {
+            seekingPlayhead = false;
+            return;
+        }
 
         if (resizingNote) {
             if (moveCommitted) {
@@ -1037,6 +1075,8 @@ export function createPianoroll(opts) {
 
     canvas.addEventListener('mouseleave', () => {
         canvas.style.cursor = '';
+        // A seek is already committed as it moves; just stop following.
+        seekingPlayhead = false;
         if (resizingNote && moveOriginal) {
             resizingNote.dur = moveOriginal.dur;
             resizingNote.start = moveOriginal.start;
@@ -1557,6 +1597,10 @@ export function createPianoroll(opts) {
             if (stepCol >= 0) this.revealCol(stepCol);
         },
         getStepCursor() { return stepCol; },
+        // Programmatic twin of the header drag: moves the step cursor and
+        // reports it through the same onStepSeek callback. No-op unless a
+        // step record is showing the cursor.
+        seekStep(col) { if (stepCol >= 0) seekStep(col); },
         /** { trackId, clipId, pattern, slot } for the pattern on screen, or null. */
         getEditTarget() { return editTarget(); },
         /** Scroll vertically so `midi`'s row is centred, whether or not it was in view. */

@@ -2129,6 +2129,17 @@ h1 {
     margin-left: 0.5rem;
 }
 
+/* Step length picker — only on screen while a step record is armed. */
+.pianoroll-step-len {
+    padding: 0.15rem 0.3rem;
+    background: #0f0f23;
+    border: 1px solid #e94560;
+    border-radius: 4px;
+    color: #ccc;
+    font-size: 0.75rem;
+    cursor: pointer;
+}
+
 .pianoroll-bpm {
     width: 3.2rem;
     padding: 0.15rem 0.3rem;

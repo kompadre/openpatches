@@ -211,8 +211,7 @@ export function createToolbar(opts) {
     let stepping = false;         // a step record: the clock is stopped, see below
     let stepCol = 0;              // where the next step lands, in sixteenths from the window start
     let stepMaxDur = 0;           // the longest note of the step in progress
-    let stepStartedAt = 0;        // first press of the step in progress
-    let lastRestAt = -Infinity;   // release of the last single-tap rest, for the double tap
+
     let stepTimer = null;
     let takeRunning = false;      // the transport's view, for re-basing recordStartTime
     let activeRecordSlot = 0;
@@ -330,6 +329,11 @@ export function createToolbar(opts) {
             startTake();
             return true;
         },
+        // The step cursor dragged by its header marker: follow it, so the
+        // next step lands where the playhead was put.
+        onStepSeek: (col) => {
+            if (stepping) stepCol = col;
+        },
     });
     pianorollRow.appendChild(pianorollRef.element);
 
@@ -413,9 +417,38 @@ export function createToolbar(opts) {
     btnRecordDesktop.className = 'pianoroll-btn pianoroll-record';
     btnRecordDesktop.textContent = '\u25CF Rec';
     btnRecordDesktop.title = 'Record from the on-screen keyboard or a MIDI controller into the piano roll. '
-        + 'Stopped: step by step — a sixteenth per second a key is held, a short tap is a rest, two taps a quarter rest. '
+        + 'Stopped: step by step — a tap places a note of the chosen length (one more per second held), '
+        + 'a short tap with no note is a rest to the next beat, and the playhead can be dragged by its header marker. '
         + 'Playing: a live take.';
-    if (pianorollRef && pianorollRef.insertControl) pianorollRef.insertControl(btnRecordDesktop);
+
+    // The step length: how long a note the next step places (and the unit
+    // further held seconds grow it by). Only shown while a step record is
+    // armed — it means nothing otherwise. Inserted before the Rec button:
+    // insertControl always lands right after Stop, so the row reads
+    // Stop | Rec | step length.
+    const STEP_LEN_KEY = 'openpatches_step_len';
+    const stepLenSelect = document.createElement('select');
+    stepLenSelect.className = 'pianoroll-step-len';
+    stepLenSelect.title = 'Step length: the note each step places';
+    for (const [label, cols] of [['1/16', 1], ['1/8', 2], ['1/4', 4], ['1/2', 8], ['1/1', 16]]) {
+        const opt = document.createElement('option');
+        opt.value = cols;
+        opt.textContent = label;
+        stepLenSelect.appendChild(opt);
+    }
+    stepLenSelect.value = parseInt(localStorage.getItem(STEP_LEN_KEY)) || 1;
+    stepLenSelect.style.display = 'none';
+    stepLenSelect.addEventListener('change', () => {
+        localStorage.setItem(STEP_LEN_KEY, stepLenSelect.value);
+    });
+    if (pianorollRef && pianorollRef.insertControl) {
+        pianorollRef.insertControl(stepLenSelect);
+        pianorollRef.insertControl(btnRecordDesktop);
+    }
+
+    function stepLen() {
+        return parseInt(stepLenSelect.value) || 1;
+    }
 
     function syncRecordButtons() {
         const on = recording || stepping;
@@ -425,6 +458,7 @@ export function createToolbar(opts) {
         }
         btnRecord.textContent = on ? 'Stop ■' : 'Record ●';
         btnRecordDesktop.textContent = on ? '\u25A0 Stop Rec' : '\u25CF Rec';
+        stepLenSelect.style.display = stepping ? '' : 'none';
     }
 
     const btnPlayStop = document.createElement('button');
@@ -668,14 +702,16 @@ export function createToolbar(opts) {
     }
 
     // --- Step record -------------------------------------------------------
-    // Rec with the clock stopped. A key held for a full second puts a
-    // sixteenth on the grid at the step cursor, and every further second
-    // grows it by one — what is on the grid when the key comes up is what
-    // is kept, so the grid is the only clock to watch. A tap shorter than a
-    // second is a sixteenth rest; two such taps in quick succession are a
-    // quarter rest. Keys down together make a chord; when the last of them
-    // comes up the step is done and the cursor moves on past its longest
-    // note (or the rest), wrapping at the pattern's end.
+    // Rec with the clock stopped. A key held for a full second puts a note
+    // of the chosen step length (the `stepLenSelect` above, visible only
+    // here) on the grid at the step cursor, and every further second grows
+    // it by one more step length — what is on the grid when the key comes
+    // up is what is kept, so the grid is the only clock to watch. A tap
+    // shorter than a second is a rest: the cursor jumps to the next beat.
+    // Keys down together make a chord; when the last of them comes up the
+    // step is done and the cursor moves on past its longest note, wrapping
+    // at the pattern's end. The cursor can also be dragged by its header
+    // marker in the roll (`onStepSeek`).
     //
     // Notes go into the pattern on screen (the roll's edit target), not
     // through the take's slot mapping: the voice select and the roll can
@@ -684,15 +720,14 @@ export function createToolbar(opts) {
     // cursor is drawn. With nothing on screen the note starts a track on
     // the record slot, as a take does.
 
-    const STEP_MS_PER_COL = 1000;
+    const STEP_MS_PER_UNIT = 1000;
     const STEP_GROW_INTERVAL_MS = 100;
-    const REST_DOUBLE_TAP_MS = 500;
+    const BEAT_COLS = 4;          // a beat is a quarter: four sixteenths
 
     function startStepRecord() {
         stepping = true;
         stepCol = 0;
         stepMaxDur = 0;
-        lastRestAt = -Infinity;
         stepPresses.clear();
         undoStack.length = 0;
         // The step lands in the pattern window, exactly as a take does.
@@ -721,12 +756,12 @@ export function createToolbar(opts) {
         return pianorollRef && pianorollRef.totalCols ? pianorollRef.totalCols() : 16;
     }
 
-    /** Put a sixteenth at the cursor, in the pattern on screen. */
+    /** Put one step length at the cursor, in the pattern on screen. */
     function addStepNote(midi) {
         if (!pianorollRef || !pianorollRef.addNote) return null;
         const t = pianorollRef.getEditTarget ? pianorollRef.getEditTarget() : null;
         const note = pianorollRef.addNote({
-            midi, start: stepCol, dur: 1,
+            midi, start: stepCol, dur: Math.min(stepLen(), stepTotalCols() - stepCol),
             slot: t ? t.slot : activeRecordSlot,
             clipId: t ? t.clipId : null,
             reveal: 'row',
@@ -741,15 +776,15 @@ export function createToolbar(opts) {
 
     /**
      * Bring a held key's note up to date at time `at`: nothing under a
-     * second, then one sixteenth per full second, never past the end of
+     * second, then one step length per full second, never past the end of
      * the pattern. The note is created the moment the first second is up.
      */
     function syncStepNote(midi, press, at) {
-        const held = Math.floor((at - press.startTime) / STEP_MS_PER_COL);
+        const held = Math.floor((at - press.startTime) / STEP_MS_PER_UNIT);
         if (held < 1) return;
         if (!press.note) press.note = addStepNote(midi);
         if (!press.note) return;
-        const dur = Math.max(1, Math.min(held, stepTotalCols() - press.note.start));
+        const dur = Math.max(1, Math.min(held * stepLen(), stepTotalCols() - press.note.start));
         if (dur !== press.note.dur && pianorollRef.setNoteDur) pianorollRef.setNoteDur(press.note, dur);
     }
 
@@ -759,7 +794,6 @@ export function createToolbar(opts) {
     }
 
     function stepNoteOn(midi, when) {
-        if (stepPresses.size === 0) stepStartedAt = when;
         stepPresses.set(midi, { note: null, startTime: when });
         if (!stepTimer) stepTimer = setInterval(growHeldSteps, STEP_GROW_INTERVAL_MS);
     }
@@ -771,21 +805,15 @@ export function createToolbar(opts) {
         if (press.note) stepMaxDur = Math.max(stepMaxDur, press.note.dur);
         if (stepPresses.size > 0) return;
         // Last key up: the step is done. Past its longest note — or, when
-        // nothing was held long enough for one, a rest: a sixteenth, or a
-        // quarter when this tap followed another one closely.
+        // nothing was held long enough for one, a rest: the cursor jumps to
+        // the next beat (the next quarter boundary, a full beat when it is
+        // already on one).
         stopStepTimer();
-        let advance;
         if (stepMaxDur > 0) {
-            advance = stepMaxDur;
-            lastRestAt = -Infinity;
-        } else if (stepStartedAt - lastRestAt <= REST_DOUBLE_TAP_MS) {
-            advance = 3;                  // the first tap already took one
-            lastRestAt = -Infinity;
+            stepCol = (stepCol + stepMaxDur) % stepTotalCols();
         } else {
-            advance = 1;
-            lastRestAt = when;
+            stepCol = (stepCol - (stepCol % BEAT_COLS) + BEAT_COLS) % stepTotalCols();
         }
-        stepCol = (stepCol + advance) % stepTotalCols();
         stepMaxDur = 0;
         if (pianorollRef.setStepCursor) pianorollRef.setStepCursor(stepCol);
     }

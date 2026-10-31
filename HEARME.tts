@@ -1,6 +1,6 @@
 OpenPatches: A Codebase Audio Tour
 
-This file is intended to be a high-level introduction to the project's anatomy and optimized to be read by TTS. Last commit covered six nine zero five c e zero, the VoiceBank de-flaking and Mixer tab work from October thirty-first, two thousand twentysix.
+This file is intended to be a high-level introduction to the project's anatomy and optimized to be read by TTS. Last commit covered a three four nine f c f, the VoiceBank Mixer and step-record ergonomics work from October thirty-first, two thousand twentysix.
 
 Welcome to this architectural walkthrough of OpenPatches. This is a browser-based DX seven patch editor, sequencer, and sound design environment. It runs entirely on the client side — no server-side computation for the editor itself. The only server dependency is an inference engine for turning WAV files into DX seven patches, and even that is optional. Everything else — the synthesizer, the sequencer, the patch editing, the voice bank — happens in the browser using vanilla JavaScript, Web Audio, WebAssembly, and Web Workers.
 
@@ -110,6 +110,8 @@ The Record button lives in two places: the mobile keyboard controls, and, for de
 The recording tick handler processes each tick by calculating the wrapped column position, checking for loop seams, and calling the pianoroll's tick recording method to play back existing notes that aren't flagged as just recorded. If the playhead crosses a loop boundary, it finalizes any held notes and clears the recording flags.
 
 When the user presses a key on the keyboard during recording, the start handler records the press time and column. The sound is played immediately through the play note function. When the key is released, the end handler calculates the duration from the elapsed time and adds a note to the pianoroll with the correct start position and duration. The note gets flagged so the tick recording method won't play it again during the same loop iteration.
+
+Record with the clock stopped is a step record instead of a take. A key held for a full second places a note of the chosen step length — a selector that only appears while stepping, from a sixteenth up to a whole note — and each further second held grows it by one more step length. A short tap is a rest that jumps the cursor to the next beat, and the cursor itself can be dragged by the playhead's marker in the roll's header strip.
 
 The undo system maintains a rolling stack of five note references. Each time a note is recorded, it gets pushed onto the stack. Pressing undo pops the last note and removes it from the pianoroll.
 

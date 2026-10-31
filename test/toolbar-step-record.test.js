@@ -1,11 +1,13 @@
 // Step record: Rec with the clock stopped.
 //
-// A key held for a full second puts a sixteenth at the step cursor and grows
-// it by one per further second; a tap shorter than a second is a sixteenth
-// rest, two such taps in quick succession a quarter rest. The last key-up of
-// a step moves the cursor on. Rec while the clock runs is still a live take,
-// and Play while a step record is armed becomes one. Notes go into the
-// pattern on screen, not through the take's slot mapping.
+// A key held for a full second puts a note of the chosen step length (the
+// picker only on screen while stepping; default a sixteenth) at the step
+// cursor and grows it by one more step length per further second; a tap
+// shorter than a second is a rest that jumps the cursor to the next beat.
+// The last key-up of a step moves the cursor on; the cursor can also be
+// seeked by dragging the playhead's header marker. Rec while the clock runs
+// is still a live take, and Play while a step record is armed becomes one.
+// Notes go into the pattern on screen, not through the take's slot mapping.
 
 import { test, before, beforeEach, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -223,51 +225,100 @@ describe('notes', () => {
 });
 
 describe('rests', () => {
-    test('a tap shorter than a second is a sixteenth rest', async () => {
+    test('a tap shorter than a second jumps the cursor to the next beat', async () => {
         const h = build();
         h.rec.dispatch('click');
         await h.hold(60, 300);
         assert.deepEqual(h.notes(), [], 'no note');
-        assert.equal(h.roll.getStepCursor(), 1, 'but the cursor moved on');
+        assert.equal(h.roll.getStepCursor(), 4, 'on a beat already: a full beat on');
         await h.hold(62, 1000);
-        assert.deepEqual(h.notes(), [{ midi: 62, start: 1, dur: 1 }]);
+        assert.deepEqual(h.notes(), [{ midi: 62, start: 4, dur: 1 }]);
     });
 
-    test('two taps in quick succession are a quarter rest', async () => {
+    test('off the beat, a tap closes out the beat in progress', async () => {
         const h = build();
         h.rec.dispatch('click');
-        await h.hold(60, 200);
-        clock += 300;                       // 0.3 s between the taps
-        await h.hold(60, 200);
-        assert.deepEqual(h.notes(), []);
+        await h.hold(62, 1000);             // a sixteenth → cursor 1
+        await h.hold(60, 200);              // rest: to the next beat
         assert.equal(h.roll.getStepCursor(), 4);
-        await h.hold(62, 1000);
-        assert.equal(h.notes()[0].start, 4);
+        await h.hold(62, 1000);             // → 5
+        await h.hold(60, 200);
+        assert.equal(h.roll.getStepCursor(), 8);
     });
 
-    test('taps far apart are two sixteenth rests, and a third tap starts over', async () => {
+    test('a rest at the last beat wraps to the top of the pattern', async () => {
         const h = build();
         h.rec.dispatch('click');
+        for (let i = 0; i < 3; i++) await h.hold(60, 200);   // 4, 8, 12
+        assert.equal(h.roll.getStepCursor(), 12);
         await h.hold(60, 200);
-        clock += 900;
-        await h.hold(60, 200);
-        assert.equal(h.roll.getStepCursor(), 2);
-        clock += 100;
-        await h.hold(60, 200);
-        clock += 100;
-        await h.hold(60, 200);
-        assert.equal(h.roll.getStepCursor(), 2 + 4, 'the pair after it is a quarter again');
+        assert.equal(h.roll.getStepCursor(), 0, 'wrapped');
+    });
+});
+
+describe('step length', () => {
+    const select = (h) => h.dock.querySelector('.pianoroll-step-len');
+
+    test('the picker is only on screen while a step record is armed', () => {
+        const h = build();
+        assert.equal(select(h).style.display, 'none');
+        h.rec.dispatch('click');
+        assert.equal(select(h).style.display, '');
+        h.rec.dispatch('click');
+        assert.equal(select(h).style.display, 'none');
     });
 
-    test('a note between two taps keeps them apart', async () => {
+    test('a step places a note of the chosen length and the cursor skips past it', async () => {
         const h = build();
         h.rec.dispatch('click');
-        await h.hold(60, 200);              // rest → 1
-        clock += 100;
-        await h.hold(62, 1000);             // note at 1 → 2
-        clock += 100;
-        await h.hold(60, 200);              // a single rest again → 3
-        assert.equal(h.roll.getStepCursor(), 3);
+        select(h).value = '4';              // a quarter
+        await h.hold(60, 1000);
+        assert.deepEqual(h.notes(), [{ midi: 60, start: 0, dur: 4 }]);
+        assert.equal(h.roll.getStepCursor(), 4);
+    });
+
+    test('every further held second grows the note by one more step length', async () => {
+        const h = build();
+        h.rec.dispatch('click');
+        select(h).value = '2';              // an eighth
+        await h.hold(60, 3000);
+        assert.deepEqual(h.notes(), [{ midi: 60, start: 0, dur: 6 }], 'three seconds, three eighths');
+        assert.equal(h.roll.getStepCursor(), 6);
+    });
+
+    test('a long step is clamped to the pattern end', async () => {
+        const h = build();
+        h.rec.dispatch('click');
+        select(h).value = '16';
+        await h.hold(60, 1000);             // a whole note in a 16-col pattern
+        await h.hold(62, 1000);             // wrapped: another, clamped from col 0
+        assert.deepEqual(h.notes().map(n => [n.midi, n.start, n.dur]), [[60, 0, 16], [62, 0, 16]]);
+    });
+
+    test('the choice is persisted', () => {
+        const h = build();
+        select(h).value = '8';
+        select(h).dispatch('change');
+        assert.equal(localStorage.getItem('openpatches_step_len'), '8');
+    });
+});
+
+describe('seeking the cursor', () => {
+    test('a header drag reported by the roll moves the next step', async () => {
+        const h = build();
+        h.rec.dispatch('click');
+        h.roll.seekStep(9);
+        await h.hold(60, 1000);
+        assert.deepEqual(h.notes(), [{ midi: 60, start: 9, dur: 1 }]);
+        assert.equal(h.roll.getStepCursor(), 10);
+    });
+
+    test('a rest after a seek still lands on a beat boundary', async () => {
+        const h = build();
+        h.rec.dispatch('click');
+        h.roll.seekStep(5);
+        await h.hold(60, 200);
+        assert.equal(h.roll.getStepCursor(), 8);
     });
 });
 

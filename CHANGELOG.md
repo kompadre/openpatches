@@ -2,6 +2,13 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-10-31: Step record ergonomics — step length, beat-jump rests, draggable playhead
+
+- **Step length picker** (`.pianoroll-step-len`, in the transport row after Rec, visible only while a step record is armed): the note each step places — 1/16, 1/8, 1/4, 1/2, 1/1 — and the unit each further held second grows it by. Persisted in `openpatches_step_len`.
+- **Rests jump to the next beat.** A tap shorter than a second used to advance one sixteenth (with a 500 ms double-tap for a quarter); it now moves the cursor to the next quarter boundary — a full beat when already on one. The double-tap rule and its `lastRestAt` state are gone.
+- **The playhead is draggable while stepping.** The roll's header strip is the cursor's handle: click or drag it and the next step lands there (`seekStep(col)` in pianoroll.js → `onStepSeek` → the toolbar's cursor). The header is now a dead zone for note drawing — a click there used to fall through `pixelToRow`'s clamp and land a note on the top row.
+- Tests: `toolbar-step-record.test.js` reworked to the new contract plus step-length, clamp, persistence and seek cases (731 unit passing); `e2e/pianoroll.spec.js` gains a `step record UI` block — picker visibility and persistence, a real-mouse header drag moving the cursor without drawing, and the header staying inert outside a step record (50 e2e passing).
+
 ## 2026-10-31: VoiceBank de-flaking — one write path, slot badges, the Mixer tab
 
 The relation between engine patches, the VoiceBank, the playing pattern and the Song editor's tracks was flaky. Root cause was not one bug but an architecture: **four uncoordinated writers** into a bank whose array was `splice`d even though the slot index *is* the synth channel.

@@ -122,3 +122,45 @@ test.describe('pianoroll mouse interaction', () => {
         expect(await getNotes(page)).toEqual([]);
     });
 });
+
+test.describe('step record UI', () => {
+    test.beforeEach(async ({ page }) => {
+        await openApp(page);
+        await openRollTab(page);
+    });
+
+    test('the step-length picker appears with the step record and is honoured', async ({ page }) => {
+        const picker = page.locator('.pianoroll-step-len');
+        await expect(picker).toBeHidden();
+
+        await page.locator('.pianoroll-record').click();
+        await expect(picker).toBeVisible();
+        await picker.selectOption('4');
+
+        // Stepping itself is covered by the unit suite; the browser-only
+        // part is the picker's visibility and that the choice persists.
+        await page.locator('.pianoroll-record').click();
+        await expect(picker).toBeHidden();
+        await page.reload();
+        await expect(page.locator('.keyboard .key').first()).toBeVisible();
+        expect(await page.evaluate(() => localStorage.getItem('openpatches_step_len'))).toBe('4');
+    });
+
+    test('dragging the header marker moves the step cursor', async ({ page }) => {
+        await page.locator('.pianoroll-record').click();
+        expect(await page.evaluate(() => window.__opDock._pianoroll.getStepCursor())).toBe(0);
+
+        // Drag along the header strip from column 0 to column 9.
+        await drag(page, { x: cellX(0), y: HEADER_H / 2 }, { x: cellX(9), y: HEADER_H / 2 });
+        expect(await page.evaluate(() => window.__opDock._pianoroll.getStepCursor())).toBe(9);
+
+        // And no note was drawn by the gesture.
+        expect(await getNotes(page)).toEqual([]);
+    });
+
+    test('a header click outside a step record does not seek or draw', async ({ page }) => {
+        await page.mouse.click((await canvasOrigin(page)).x + cellX(5), (await canvasOrigin(page)).y + HEADER_H / 2);
+        expect(await page.evaluate(() => window.__opDock._pianoroll.getStepCursor())).toBe(-1);
+        expect(await getNotes(page)).toEqual([]);
+    });
+});
