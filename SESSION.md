@@ -4,6 +4,35 @@ Living project state. Agents own this file: update it as the codebase and the
 work-in-progress change. AGENTS.md holds the durable rules; everything that
 drifts belongs here.
 
+## Proposed AGENTS.md rule — Pane-scoped ports and paths
+
+_(Written 2026-10-31 at the user's request, in AGENTS.md voice and ready to
+move there verbatim. Until it moves, treat it as binding anyway.)_
+
+### Pane-scoped ports and external paths
+
+The user works in the same repo at the same time, on their own tmux pane, and
+runs the same `server.py`. Two agents (or an agent and the user) binding the
+same port fight over it: one process fails to bind, or — worse — a stale
+server from the other pane keeps serving a **different worktree** and the
+tests silently pass against the wrong files. Both have happened.
+
+- **Derive every port you bind from `$TMUX_PANE`.** It is `%N` (`%2` here).
+  Take the digits; **the port's last digit must equal the pane number's last
+  digit.** The project convention is `8100 + (N % 100)` — pane `%2` → `8102`,
+  pane `%13` → `8113` — which satisfies the rule and keeps two-digit panes
+  distinct from single-digit ones.
+- **Never kill a process you did not start.** A server on someone else's port
+  is theirs. If your port is busy, that is your own orphan: find it with
+  `pgrep -af "server.py <your-port>"` and kill only that.
+- **Same rule for anything you create outside the project working directory**
+  — a file, a directory, a socket, a lock. Put the pane number in the name
+  (`/tmp/op-smoke-%2.mjs`), so two panes cannot collide or clobber each
+  other's output. This should be rare: prefer a path inside the worktree, and
+  prefer no file at all.
+- If `$TMUX_PANE` is unset, say so and pick a port in the same `81xx` family
+  rather than guessing a shared default.
+
 ## Current Tasks & Goals
 
 _(Keep a short list of what is in flight, what is done, and what is blocked.

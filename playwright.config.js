@@ -7,7 +7,19 @@
 // so the e2e runs exercise the same cross-origin-isolated context as a user.
 import { defineConfig, devices } from '@playwright/test';
 
-const PORT = 8123;   // not 8000 — leaves the hand-run dev server alone
+// The port is scoped to the tmux pane, so the user (and any other agent)
+// can run this repo's server.py at the same time without the two fighting
+// over one port — or, worse, one silently serving a *different* worktree to
+// the other's tests. `TMUX_PANE` is `%N`; the port is `8100 + (N % 100)`,
+// which keeps the pane's last digit as the port's last digit. Outside tmux,
+// fall back to a fixed port in the same family. Never 8000 — that leaves
+// the hand-run dev server alone. See SESSION.md, "Pane-scoped ports".
+function panePort() {
+    const n = parseInt(String(process.env.TMUX_PANE || '').replace(/\D/g, ''), 10);
+    return Number.isFinite(n) ? 8100 + (n % 100) : 8100;
+}
+
+const PORT = panePort();
 
 export default defineConfig({
     testDir: './e2e',
