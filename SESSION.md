@@ -9,7 +9,7 @@ drifts belongs here.
 _(Keep a short list of what is in flight, what is done, and what is blocked.
 Replace entries as work completes — this is a working set, not a changelog.)_
 
-### VoiceBank de-flaking (2026-10-31) — phases 0–4 done, Mixer tab next
+### VoiceBank de-flaking (2026-10-31) — phases 0–5 done, e2e+housekeeping last
 
 **Working convention (user, 2026-10-31):** the full Playwright run,
 HEARME.tts, CHANGELOG.md and the TODO.md reconciliation happen only on a
@@ -55,10 +55,18 @@ to assign a patch is the patch's own ♫ control; no drag-in, no reorder.
   render, so there is nothing to unsubscribe. `createSlotBadge(patch)` on
   both row variants and on canvas container headers; hidden when the voice
   is not banked. `test/patch-slot-badge.test.js`.
-- [ ] **Phase 5 — Mixer tab** (user decision 2026-10-31): a proper dock tab
-  on desktop *and* mobile — vertical volume bars per VoiceBank channel,
-  plus Mute and Solo (both over `setChannelVolume`, no wasm change).
-  VoiceBank leaves the pattern-editor row.
+- [x] **Phase 5 — Mixer tab.** New 🎚️ dock tab/panel (desktop *and*
+  mobile); the voicebank element moved from `pianorollRow` into it and now
+  renders eight vertical channel strips: slot pill (color), name, fader
+  (vertical drag), volume, M/S/▶/×. The `compact` mode and app.js's mobile
+  compact block are gone. **Mute/Solo:** `entry.volume` = fader,
+  `entry.effectiveVolume` = what the engine hears (0 when muted or
+  solo-silenced); `applyMix()` recomputes the whole bank (solo couples
+  strips) and pushes changed channels via onVolumeChange;
+  `sendVoiceSnapshot` reads `effectiveVolume ?? volume`, so **a snapshot
+  can never un-mute a channel**. muted/solo persist (localStorage + song
+  serializeBank). `_toggleMute`/`_toggleSolo`/`_showMixer` handles.
+  `test/voicebank-mix.test.js`; verified visually in Chromium.
 - [ ] **Phase 6 — e2e**: assign → badge everywhere, reassign empties old
   slot, reload keeps holes.
 

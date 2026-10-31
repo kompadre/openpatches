@@ -87,6 +87,14 @@ describe('channel volumes in sendVoiceSnapshot', () => {
         assert.deepEqual(volumeMsgs(), [[0, 100]]);
     });
 
+    test('the snapshot speaks effectiveVolume — it cannot un-mute a channel', () => {
+        sent.length = 0;
+        audio.sendVoiceSnapshot([
+            { voiceData: fakeVoice(0x55), volume: 100, effectiveVolume: 0 },
+        ]);
+        assert.deepEqual(volumeMsgs(), [[0, 0]], 'the muted 0, not the fader 100');
+    });
+
     test('a direct setChannelVolume suppresses a redundant snapshot push', () => {
         audio.setChannelVolume(3, 42);
         sent.length = 0;

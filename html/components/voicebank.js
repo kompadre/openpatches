@@ -1,12 +1,19 @@
-// VoiceBank — patch selector for pianoroll
-// Each entry has a color that maps to pianoroll note colors.
-// Volume overlay: click+drag horizontally to adjust channel volume (0-127).
+// VoiceBank — the Mixer. One vertical channel strip per slot: fader (drag
+// vertically, 0-127), Mute, Solo, preview and remove. Each entry has a
+// color that maps to pianoroll note colors.
 //
 // The bank is a fixed array of MAX_SLOTS positions: the slot index IS the
 // synth channel (AGENTS.md), so entries never shift. Removing one leaves a
 // hole; colors are a pure function of the index and never move. The one
 // write path is assignToSlot — no drag-in, no reordering — and it enforces
 // the invariant that a voice (by voiceKey) occupies at most one slot.
+//
+// Mute/Solo are plain channel-volume overrides, no engine change:
+// `entry.volume` stays the fader's value, `entry.effectiveVolume` is what
+// the engine hears — 0 when muted, or when another strip is soloed and this
+// one is not. Both the live onVolumeChange callback and audio-manager's
+// sendVoiceSnapshot speak effectiveVolume, so a snapshot can never un-mute
+// a channel behind the user's back.
 
 import { voiceKey } from './patch-model.js';
 
@@ -39,7 +46,7 @@ export function createVoiceBank(opts) {
 
     const header = document.createElement('div');
     header.className = 'voicebank-header';
-    header.textContent = 'Voices';
+    header.textContent = 'Mixer';
     container.appendChild(header);
 
     const list = document.createElement('div');
@@ -62,43 +69,124 @@ export function createVoiceBank(opts) {
         }
     }
 
+    // --- Mute / Solo ---
+
+    function anySolo() {
+        return entries.some(e => e && e.solo);
+    }
+
+    function effVol(entry) {
+        const vol = entry.volume ?? DEFAULT_VOLUME;
+        if (anySolo()) return entry.solo ? vol : 0;
+        return entry.muted ? 0 : vol;
+    }
+
+    /**
+     * Recompute every strip's effectiveVolume. Mute and Solo couple the
+     * strips (soloing one silences the others; removing the soloed one
+     * un-silences them), so this runs over the whole bank after any change.
+     * Slots whose effective volume moved are pushed via onVolumeChange.
+     */
+    function applyMix(fire = true) {
+        for (let i = 0; i < MAX_SLOTS; i++) {
+            const e = entries[i];
+            if (!e) continue;
+            const v = effVol(e);
+            if (e.effectiveVolume !== v) {
+                e.effectiveVolume = v;
+                if (fire && onVolumeChange) onVolumeChange(i, v);
+            }
+        }
+    }
+
+    function toggleMute(idx) {
+        const e = entries[idx];
+        if (!e) return;
+        e.muted = !e.muted;
+        applyMix();
+        render();
+        saveState();
+        notifySnapshot();
+    }
+
+    function toggleSolo(idx) {
+        const e = entries[idx];
+        if (!e) return;
+        e.solo = !e.solo;
+        applyMix();
+        render();
+        saveState();
+        notifySnapshot();
+    }
+
+    // --- Render ---
+
     function render() {
         reindexColors();
         list.innerHTML = '';
         for (let i = 0; i < MAX_SLOTS; i++) {
             const entry = entries[i];
             const item = document.createElement('div');
-            item.className = 'voicebank-item' + (entry && entry.id === activeId ? ' active' : '');
+            item.className = 'voicebank-item'
+                + (entry && entry.id === activeId ? ' active' : '')
+                + (entry && entry.muted ? ' muted' : '')
+                + (entry && entry.solo ? ' soloed' : '')
+                + (entry && entry.effectiveVolume === 0 && (entry.volume ?? DEFAULT_VOLUME) > 0 ? ' silenced' : '');
             item.dataset.vbIdx = i;
 
+            // Slot number — doubles as the color chip
+            const slotNum = document.createElement('span');
+            slotNum.className = 'voicebank-slot-num';
+            slotNum.textContent = (i + 1);
+            if (entry) slotNum.style.background = entry.color;
+            item.appendChild(slotNum);
+
             if (entry) {
-                const isCompact = container.classList.contains('compact');
+                const nameEl = document.createElement('span');
+                nameEl.className = 'voicebank-name';
+                nameEl.textContent = entry.name;
+                nameEl.title = entry.name;
+                item.appendChild(nameEl);
 
-                // Volume overlay
+                // Fader: a vertical track whose fill is the user volume.
+                // Dimmed by CSS when the strip is effectively silent.
+                const fader = document.createElement('div');
+                fader.className = 'voicebank-fader';
                 const overlay = document.createElement('div');
-                overlay.className = 'voicebank-volume-overlay voicebank-dot';
+                overlay.className = 'voicebank-volume-overlay';
                 overlay.style.background = entry.color;
-                if (isCompact) {
-                    const vol = (entry.volume ?? DEFAULT_VOLUME) / 127 * 100;
-                    overlay.style.position = 'absolute';
-                    overlay.style.left = '0';
-                    overlay.style.bottom = '0';
-                    overlay.style.top = 'auto';
-                    overlay.style.width = '100%';
-                    overlay.style.height = vol + '%';
-                    overlay.style.opacity = entry.id === activeId ? '0.5' : '0.15';
-                    overlay.style.pointerEvents = 'none';
-                    overlay.style.zIndex = '0';
-                } else {
-                    overlay.style.width = ((entry.volume ?? DEFAULT_VOLUME) / 127 * 100) + '%';
-                }
-                item.appendChild(overlay);
+                overlay.style.height = ((entry.volume ?? DEFAULT_VOLUME) / 127 * 100) + '%';
+                fader.appendChild(overlay);
+                item.appendChild(fader);
 
-                // Slot number (for compact mode)
-                const slotNum = document.createElement('span');
-                slotNum.className = 'voicebank-slot-num';
-                slotNum.textContent = (i + 1);
-                item.appendChild(slotNum);
+                const volEl = document.createElement('span');
+                volEl.className = 'voicebank-vol';
+                volEl.textContent = entry.volume ?? DEFAULT_VOLUME;
+                item.appendChild(volEl);
+
+                // M / S / preview / remove
+                const controls = document.createElement('div');
+                controls.className = 'voicebank-strip-controls';
+
+                const muteBtn = document.createElement('button');
+                muteBtn.className = 'voicebank-mute' + (entry.muted ? ' on' : '');
+                muteBtn.textContent = 'M';
+                muteBtn.title = entry.muted ? 'Unmute' : 'Mute';
+                muteBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    toggleMute(i);
+                });
+                controls.appendChild(muteBtn);
+
+                const soloBtn = document.createElement('button');
+                soloBtn.className = 'voicebank-solo' + (entry.solo ? ' on' : '');
+                soloBtn.textContent = 'S';
+                soloBtn.title = entry.solo ? 'Unsolo' : 'Solo';
+                soloBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    toggleSolo(i);
+                });
+                controls.appendChild(soloBtn);
 
                 const playBtn = document.createElement('button');
                 playBtn.className = 'voicebank-play';
@@ -108,25 +196,7 @@ export function createVoiceBank(opts) {
                     e.stopPropagation();
                     if (onPreview) onPreview(entry, i);
                 });
-                item.appendChild(playBtn);
-
-                // Normal dot for list mode
-                const dot = document.createElement('span');
-                dot.className = 'voicebank-dot';
-                dot.style.background = entry.color;
-                if (isCompact) dot.style.display = 'none';
-                item.appendChild(dot);
-
-                const nameEl = document.createElement('span');
-                nameEl.className = 'voicebank-name';
-                nameEl.textContent = isCompact ? entry.name : (i + 1) + '. ' + entry.name;
-                item.appendChild(nameEl);
-
-                // Volume label
-                const volEl = document.createElement('span');
-                volEl.className = 'voicebank-vol';
-                volEl.textContent = entry.volume ?? DEFAULT_VOLUME;
-                item.appendChild(volEl);
+                controls.appendChild(playBtn);
 
                 const removeBtn = document.createElement('button');
                 removeBtn.className = 'voicebank-remove';
@@ -136,9 +206,11 @@ export function createVoiceBank(opts) {
                     e.stopPropagation();
                     removeEntry(entry.id);
                 });
-                item.appendChild(removeBtn);
+                controls.appendChild(removeBtn);
 
-                // Click to select (desktop only — mobile uses handleVolStart tap detection)
+                item.appendChild(controls);
+
+                // Click anywhere else on the strip to select
                 item.addEventListener('click', (e) => {
                     if (item._dragging) return;
                     activeId = entry.id;
@@ -147,34 +219,30 @@ export function createVoiceBank(opts) {
                     saveState();
                 });
 
-                // Volume drag + tap-to-select
+                // Fader drag (mouse or touch), vertical. A tap without
+                // movement falls through to selection.
                 function handleVolStart(e) {
                     if (e.type === 'mousedown' && e.button !== 0) return;
                     if (e.type === 'touchstart') e.preventDefault();
-                    const rect = item.getBoundingClientRect();
+                    const rect = fader.getBoundingClientRect();
                     let didDrag = false;
 
                     function onMove(ev) {
-                        let pct;
-                        if (isCompact) {
-                            const clientY = ev.touches ? ev.touches[0].clientY : ev.clientY;
-                            const y = rect.bottom - clientY;
-                            pct = Math.max(0, Math.min(1, y / rect.height));
-                            overlay.style.height = (pct * 100) + '%';
-                        } else {
-                            const clientX = ev.touches ? ev.touches[0].clientX : ev.clientX;
-                            const x = clientX - rect.left;
-                            pct = Math.max(0, Math.min(1, x / rect.width));
-                            overlay.style.width = (pct * 100) + '%';
-                        }
+                        const clientY = ev.touches ? ev.touches[0].clientY : ev.clientY;
+                        const y = rect.bottom - clientY;
+                        const pct = Math.max(0, Math.min(1, y / rect.height));
+                        overlay.style.height = (pct * 100) + '%';
                         const vol = Math.round(pct * 127);
                         entry.volume = vol;
                         volEl.textContent = vol;
                         didDrag = true;
-                        if (onVolumeChange) onVolumeChange(i, vol);
+                        // The engine hears the fader through the mix: a
+                        // muted or solo-silenced strip stays silent.
+                        entry.effectiveVolume = effVol(entry);
+                        if (onVolumeChange) onVolumeChange(i, entry.effectiveVolume);
                     }
 
-                    function onUp(ev) {
+                    function onUp() {
                         document.removeEventListener('mousemove', onMove);
                         document.removeEventListener('mouseup', onUp);
                         document.removeEventListener('touchmove', onMove);
@@ -199,8 +267,8 @@ export function createVoiceBank(opts) {
                     document.addEventListener('touchend', onUp);
                 }
 
-                item.addEventListener('mousedown', handleVolStart);
-                item.addEventListener('touchstart', handleVolStart, { passive: false });
+                fader.addEventListener('mousedown', handleVolStart);
+                fader.addEventListener('touchstart', handleVolStart, { passive: false });
             } else {
                 item.classList.add('voicebank-empty');
                 const placeholder = document.createElement('span');
@@ -222,6 +290,8 @@ export function createVoiceBank(opts) {
             voiceKey: key,
             color: PATCH_COLORS[idx % PATCH_COLORS.length],
             volume: volume == null ? DEFAULT_VOLUME : volume,
+            muted: false,
+            solo: false,
         };
     }
 
@@ -269,6 +339,7 @@ export function createVoiceBank(opts) {
             entries[idx] = newEntry;
             activeId = newEntry.id;
         }
+        applyMix();
         render();
         fireSelect();
         saveState();
@@ -306,6 +377,8 @@ export function createVoiceBank(opts) {
             activeId = first ? first.id : null;
             if (activeId) fireSelect();
         }
+        // Removing the soloed strip un-silences the others.
+        applyMix();
         render();
         saveState();
         notifySnapshot();
@@ -363,6 +436,8 @@ export function createVoiceBank(opts) {
                 voiceData: voiceCopy,
                 voiceKey: key,
                 volume: e.volume == null ? DEFAULT_VOLUME : e.volume,
+                muted: !!e.muted,
+                solo: !!e.solo,
             }));
             activeId = data.activeId || null;
             if (activeId && !entries.find(e => e && e.id === activeId)) {
@@ -374,14 +449,18 @@ export function createVoiceBank(opts) {
         }
     }
 
-    // Init
+    // Init. The mix is computed silently — the engine is not up yet; the
+    // first snapshot carries the effective volumes.
     loadState();
+    applyMix(false);
     render();
 
     container._addEntry = addEntry;
     container._assignToSlot = assignToSlot;
     container._firstEmptySlot = firstEmptySlot;
     container._removeEntry = removeEntry;
+    container._toggleMute = toggleMute;
+    container._toggleSolo = toggleSolo;
     container._clear = () => { entries = new Array(MAX_SLOTS).fill(null); activeId = null; render(); saveState(); notifySnapshot(); };
     container._getActive = getActive;
     container._setActive = setActive;
@@ -400,10 +479,14 @@ export function createVoiceBank(opts) {
     // their saved slot positions; the first occupied slot becomes active so
     // the piano roll and keyboard follow, exactly as after a reload.
     container._setEntries = (list) => {
-        entries = slotsFromList(list, (e, i, voiceCopy, key) =>
-            makeEntry(i, e.name, voiceCopy, e.patchId || e.name, key, e.volume));
+        entries = slotsFromList(list, (e, i, voiceCopy, key) => ({
+            ...makeEntry(i, e.name, voiceCopy, e.patchId || e.name, key, e.volume),
+            muted: !!e.muted,
+            solo: !!e.solo,
+        }));
         const first = entries.find(e => e);
         activeId = first ? first.id : null;
+        applyMix();
         render();
         fireSelect();
         saveState();

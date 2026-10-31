@@ -91,6 +91,11 @@ export function createToolbar(opts) {
     tabSong.innerHTML = '<span>🎼</span><span>Song</span>';
     tabSong.title = 'Song';
 
+    const tabMixer = document.createElement('button');
+    tabMixer.className = 'dock-tab dock-tab-mixer' + (effectiveInitialTab === 'mixer' ? ' active' : '');
+    tabMixer.innerHTML = '<span>🎚️</span><span>Mixer</span>';
+    tabMixer.title = 'Mixer';
+
     const tabEdit = document.createElement('button');
     tabEdit.className = 'dock-tab' + (effectiveInitialTab === 'edit' ? ' active' : '');
     tabEdit.innerHTML = '<span>✏️</span><span>Edit</span>';
@@ -113,6 +118,7 @@ export function createToolbar(opts) {
     tabBar.appendChild(tabCanvas);
     tabBar.appendChild(tabPianoroll);
     tabBar.appendChild(tabSong);
+    tabBar.appendChild(tabMixer);
     tabBar.appendChild(tabEdit);
     tabBar.appendChild(tabLog);
     tabBar.appendChild(tabStop);
@@ -131,6 +137,9 @@ export function createToolbar(opts) {
     const songPanel = document.createElement('div');
     songPanel.className = 'dock-panel dock-panel-song' + (effectiveInitialTab === 'song' ? ' active' : '');
 
+    const mixerPanel = document.createElement('div');
+    mixerPanel.className = 'dock-panel dock-panel-mixer' + (effectiveInitialTab === 'mixer' ? ' active' : '');
+
     const editPanel = document.createElement('div');
     editPanel.className = 'dock-panel' + (effectiveInitialTab === 'edit' ? ' active' : '');
 
@@ -140,12 +149,13 @@ export function createToolbar(opts) {
     wrapper.appendChild(canvasPanel);
     wrapper.appendChild(pianorollPanel);
     wrapper.appendChild(songPanel);
+    wrapper.appendChild(mixerPanel);
     wrapper.appendChild(editPanel);
     wrapper.appendChild(logPanel);
 
     function activateTab(tab, panel) {
-        [tabCanvas, tabPianoroll, tabSong, tabEdit, tabLog].forEach(t => t.classList.remove('active'));
-        [canvasPanel, pianorollPanel, songPanel, editPanel, logPanel].forEach(p => p.classList.remove('active'));
+        [tabCanvas, tabPianoroll, tabSong, tabMixer, tabEdit, tabLog].forEach(t => t.classList.remove('active'));
+        [canvasPanel, pianorollPanel, songPanel, mixerPanel, editPanel, logPanel].forEach(p => p.classList.remove('active'));
         tab.classList.add('active');
         panel.classList.add('active');
     }
@@ -179,6 +189,7 @@ export function createToolbar(opts) {
         requestAnimationFrame(positionBlackKeys);
     });
     tabSong.addEventListener('click', () => handleTabClick(tabSong, songPanel));
+    tabMixer.addEventListener('click', () => handleTabClick(tabMixer, mixerPanel));
     tabEdit.addEventListener('click', () => handleTabClick(tabEdit, editPanel));
     tabLog.addEventListener('click', () => handleTabClick(tabLog, logPanel));
     tabCollapse.addEventListener('click', () => {
@@ -220,6 +231,8 @@ export function createToolbar(opts) {
             name: e.name,
             patchId: e.patchId,
             volume: e.volume,
+            muted: !!e.muted,
+            solo: !!e.solo,
             voiceData: e.voiceData instanceof Uint8Array ? Array.from(e.voiceData) : e.voiceData,
         } : null);
         while (out.length > 0 && out[out.length - 1] == null) out.pop();
@@ -272,7 +285,9 @@ export function createToolbar(opts) {
     });
     // Fire initial snapshot after onSnapshot callback is wired
     if (voiceBank._notifySnapshot) voiceBank._notifySnapshot();
-    pianorollRow.appendChild(voiceBank);
+    // The bank lives in the Mixer tab — desktop and mobile alike. The
+    // pattern editor reaches it through the kb-voice-select and the legend.
+    mixerPanel.appendChild(voiceBank);
 
     // One current song, shared by the piano roll (which edits a pattern in
     // it) and the song editor (which arranges it). Runs the migration.
@@ -984,6 +999,7 @@ export function createToolbar(opts) {
     wrapper._showCanvas = () => { expandDock(); activateTab(tabCanvas, canvasPanel); };
     wrapper._showPianoroll = () => { expandDock(); activateTab(tabPianoroll, pianorollPanel); };
     wrapper._showEdit = () => { expandDock(); activateTab(tabEdit, editPanel); };
+    wrapper._showMixer = () => { expandDock(); activateTab(tabMixer, mixerPanel); };
     wrapper._showLog = () => { expandDock(); activateTab(tabLog, logPanel); };
     wrapper._logPanel = logPanel;
     wrapper._setKeyboardCollapsed = setKeyboardCollapsed;

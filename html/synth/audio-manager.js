@@ -160,7 +160,9 @@ export function sendVoiceSnapshot(entries) {
         const entry = entries[i];
         if (!entry || !entry.voiceData) continue;
 
-        const volume = entry.volume ?? DEFAULT_VOLUME;
+        // effectiveVolume folds in Mute/Solo; falling back to the fader
+        // volume keeps old snapshots (and tests) meaningful.
+        const volume = entry.effectiveVolume ?? entry.volume ?? DEFAULT_VOLUME;
         if (lastSentVolume[i] !== volume) {
             lastSentVolume[i] = volume;
             setChannelVolume(i, volume);

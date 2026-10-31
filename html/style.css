@@ -1818,13 +1818,13 @@ h1 {
 }
 
 /* VoiceBank */
+/* The Mixer: eight vertical channel strips. */
 .voicebank {
-    min-width: 160px;
-    max-width: 200px;
+    width: 100%;
     border: 1px solid #333;
     border-radius: 4px;
     background: #12121f;
-    flex-shrink: 0;
+    box-sizing: border-box;
 }
 
 .voicebank-header {
@@ -1839,23 +1839,30 @@ h1 {
 
 .voicebank-list {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
+    gap: 6px;
+    padding: 8px;
+    align-items: stretch;
 }
 
 .voicebank-item {
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: 110px;
     display: flex;
+    flex-direction: column;
     align-items: center;
-    gap: 0.3rem;
-    padding: 0.25rem 0.5rem;
+    gap: 4px;
+    padding: 6px 4px;
     font-size: 0.72rem;
     color: #aaa;
     cursor: pointer;
-    transition: background 0.1s;
-    border-bottom: 1px solid #1e1e30;
-    min-height: 24px;
-    position: relative;
-    overflow: hidden;
+    background: #0d0d18;
+    border: 1px solid #222;
+    border-radius: 4px;
+    transition: background 0.1s, border-color 0.1s;
     user-select: none;
+    min-height: 170px;
 }
 
 .voicebank-item:hover {
@@ -1864,65 +1871,131 @@ h1 {
 
 .voicebank-item.active {
     background: #16213e;
+    border-color: #4a4a6a;
     color: #fff;
-}
-
-.voicebank-item.active .voicebank-volume-overlay {
-    opacity: 0.5;
 }
 
 .voicebank-item.voicebank-empty {
     opacity: 0.3;
     cursor: default;
+    border-style: dashed;
+    justify-content: center;
 }
 
-.voicebank-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 2px;
-    flex-shrink: 0;
+.voicebank-slot-num {
+    min-width: 16px;
+    padding: 0 4px;
+    border-radius: 3px;
+    background: #222;
+    color: #0d0d18;
+    font-size: 0.65rem;
+    font-weight: 700;
+    line-height: 16px;
+    text-align: center;
+}
+
+.voicebank-empty .voicebank-slot-num {
+    color: #666;
 }
 
 .voicebank-name {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    min-width: 0;
+    max-width: 100%;
+    font-size: 0.62rem;
+}
+
+/* The fader: a vertical track, filled from the bottom with the strip's
+   color up to the user volume. Muted/solo-silenced strips dim the fill —
+   the fader keeps its value, only the mix output is 0. */
+.voicebank-fader {
     position: relative;
-    z-index: 1;
+    flex: 1 1 auto;
+    width: 26px;
+    min-height: 60px;
+    background: #0a0a15;
+    border: 1px solid #2a2a3e;
+    border-radius: 3px;
+    overflow: hidden;
+    cursor: ns-resize;
+    touch-action: none;
 }
 
 .voicebank-volume-overlay {
     position: absolute;
-    top: 0;
+    bottom: 0;
     left: 0;
-    height: 100%;
-    opacity: 0.15;
+    width: 100%;
+    opacity: 0.7;
     pointer-events: none;
-    z-index: 0;
+    transition: opacity 0.1s;
+}
+
+.voicebank-item.silenced .voicebank-volume-overlay {
+    opacity: 0.15;
 }
 
 .voicebank-vol {
-    margin-left: auto;
     font-size: 0.6rem;
     color: #555;
     min-width: 1.5em;
-    text-align: right;
-    position: relative;
-    z-index: 1;
+    text-align: center;
+}
+
+.voicebank-item.active .voicebank-vol {
+    color: #999;
+}
+
+.voicebank-strip-controls {
+    display: flex;
+    gap: 3px;
+    align-items: center;
+}
+
+.voicebank-mute,
+.voicebank-solo {
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    background: #1a1a2e;
+    border: 1px solid #333;
+    border-radius: 3px;
+    color: #666;
+    font-size: 0.6rem;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.voicebank-mute:hover,
+.voicebank-solo:hover {
+    color: #ccc;
+    border-color: #555;
+}
+
+.voicebank-mute.on {
+    background: #e94560;
+    border-color: #e94560;
+    color: #0d0d18;
+}
+
+.voicebank-solo.on {
+    background: #ffc107;
+    border-color: #ffc107;
+    color: #0d0d18;
 }
 
 .voicebank-play {
+    width: 18px;
+    height: 18px;
+    padding: 0;
     background: none;
-    border: none;
+    border: 1px solid transparent;
     color: #666;
     font-size: 0.6rem;
-    padding: 0;
-    cursor: pointer;
-    position: relative;
-    z-index: 1;
-    flex-shrink: 0;
     line-height: 1;
+    cursor: pointer;
 }
 
 .voicebank-play:hover {
@@ -1930,16 +2003,15 @@ h1 {
 }
 
 .voicebank-remove {
-    background: none;
-    border: none;
-    color: #555;
-    font-size: 0.7rem;
+    width: 18px;
+    height: 18px;
     padding: 0;
-    cursor: pointer;
-    position: relative;
-    z-index: 1;
-    flex-shrink: 0;
+    background: none;
+    border: 1px solid transparent;
+    color: #555;
+    font-size: 0.75rem;
     line-height: 1;
+    cursor: pointer;
 }
 
 .voicebank-remove:hover {
@@ -1949,6 +2021,12 @@ h1 {
 .voicebank-placeholder {
     color: #333;
     font-size: 0.65rem;
+}
+
+/* The mixer sizes itself to the dock (see .dock-panel's stranded-edge
+   warning) — the .voicebank child is width:100% and the strips share it. */
+.dock-panel-mixer.active {
+    padding: 0.5rem 0;
 }
 
 .pianoroll-controls {
@@ -3895,89 +3973,21 @@ footer {
 
     .pianoroll-hint { display: none !important; }
 
-    .voicebank {
-        height: 25vh;
-        min-height: 80px;
-        border-left: none;
-        border-top: 1px solid #333;
-        min-width: 0;
-        max-width: none;
+    /* The Mixer on a phone: the same eight strips, tighter. */
+    .voicebank-list {
+        gap: 3px;
+        padding: 4px;
+    }
+    .voicebank-item {
+        min-height: 130px;
+        padding: 4px 2px;
+    }
+    .voicebank-fader {
         width: 100%;
+        max-width: 26px;
     }
-    
-    /* VoiceBank compact mode */
-    .voicebank.compact {
-        display: flex !important;
-        flex-direction: column !important;
-        width: 100% !important;
-        height: 25vh !important;
-        min-height: 80px !important;
-        min-width: 0 !important;
-        max-width: none !important;
-        box-sizing: border-box;
-        flex-shrink: 0 !important;
-        overflow: hidden;
-    }
-    .voicebank.compact .voicebank-header { display: none !important; }
-    .voicebank.compact .voicebank-list {
-        display: grid !important;
-        grid-template-columns: repeat(8, 1fr);
-        gap: 2px;
-        padding: 2px;
-        overflow: hidden;
-        min-width: 0;
-        flex: 1 1 0 !important;
-    }
-    .voicebank.compact .voicebank-play,
-    .voicebank.compact .voicebank-remove,
-    .voicebank.compact .voicebank-vol { display: none !important; }
-
-    .voicebank.compact .voicebank-item {
-        display: flex !important;
-        flex-direction: column !important;
-        align-items: center;
-        justify-content: flex-end;
-        border: 1px solid #222;
-        border-radius: 3px 3px 0 0;
-        padding: 2px 0 !important;
-        margin: 0 !important;
-        position: relative;
-        background: #0a0a15;
-        min-width: 0 !important;
-        overflow: hidden;
-    }
-    .voicebank.compact .voicebank-item.active {
-        background: #16213e;
-        border-color: #444;
-    }
-    .voicebank.compact .voicebank-dot {
-        width: 100% !important;
-        bottom: 0 !important;
-        top: auto !important;
-        left: 0 !important;
-        border-radius: 2px 2px 0 0;
-        position: absolute;
-        transition: height 0.1s;
-        opacity: 0.3;
-        z-index: 0;
-    }
-    .voicebank.compact .voicebank-name {
+    .voicebank-name {
         font-size: 0.5rem;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        max-width: 100%;
-        z-index: 2;
-        pointer-events: none;
-        text-align: center;
-        padding: 0 1px;
-    }
-    .voicebank.compact .voicebank-slot-num {
-        font-size: 0.7rem;
-        font-weight: bold;
-        margin-bottom: 2px;
-        z-index: 2;
-        pointer-events: none;
     }
 
     /* Keyboard recording controls */

@@ -763,10 +763,6 @@ function initToolbar() {
         const sky = document.getElementById('night-sky');
         const canvasPanel = dock.querySelector('.dock-panel-canvas');
         if (sky && canvasPanel) canvasPanel.appendChild(sky);
-        if (dock._voiceBank) {
-            dock._voiceBank.classList.add('compact');
-            if (dock._voiceBank._render) dock._voiceBank._render();
-        }
     }
 
     // Register pianoroll stop for audio-manager shutdown
