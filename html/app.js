@@ -7,6 +7,7 @@ import { acquire, shutdownAll, extendIdle, playNoteRealtime, playNoteOnChannel, 
 import { patchStore, canvasStore, jobStore, createPatch } from './components/patch-model.js';
 import { initCanvas, addContainer, addPatchToContainer, refreshCanvas } from './components/canvas.js';
 import { createToolbar } from './components/toolbar.js';
+import { updateBankSlots } from './components/patch-row.js';
 import { openEdit } from './components/edit-panel.js';
 import { Job, jobManager } from './components/job.js';
 import { initTutorial, startTutorial, restartTutorial, isTutorialActive } from './components/tutorial.js';
@@ -725,6 +726,8 @@ function initToolbar() {
         onPlaybackStop,
         onEmergencyStop: doEmergencyStop,
         onSnapshot: (entries) => {
+            // Every patch row showing one of these voices wears its slot.
+            updateBankSlots(entries);
             if (isReady()) {
                 sendVoiceSnapshot(entries);
             } else {

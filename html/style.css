@@ -1570,6 +1570,21 @@ h1 {
     border-color: #4caf50;
 }
 
+/* Voice bank slot pill. Present on every row showing a banked voice; the
+   background is the slot's color, so it reads the same as the roll's notes. */
+.patch-slot-badge {
+    flex-shrink: 0;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 3px;
+    border-radius: 3px;
+    color: #0d0d18;
+    font-size: 0.62rem;
+    font-weight: 700;
+    line-height: 16px;
+    text-align: center;
+}
+
 /* The ♫ slot picker. Anchored to the row (or container header), which gets
    position:relative via the rules below. */
 .patch-assign-pop {

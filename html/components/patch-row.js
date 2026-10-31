@@ -86,6 +86,52 @@ export function reorderContainerPatch(containerId, patchId, targetId, before) {
     return moved;
 }
 
+// --- Voice bank slot badges ---
+
+// voiceKey → {slot, color} for every occupied slot, rebuilt from each bank
+// snapshot. Patches are identified by their voice bytes, not their id, so
+// every row showing the same voice — canvas, container, edit panel, a
+// renamed copy — wears the same slot number.
+const _slotByVoiceKey = new Map();
+
+function applyBadge(badge) {
+    const key = badge.dataset.voiceKey;
+    const hit = key ? _slotByVoiceKey.get(key) : null;
+    if (hit) {
+        badge.textContent = hit.slot + 1;
+        badge.title = 'Voice bank slot ' + (hit.slot + 1);
+        badge.style.background = hit.color || '';
+        badge.style.display = '';
+    } else {
+        badge.textContent = '';
+        badge.title = 'Not in the voice bank';
+        badge.style.display = 'none';
+    }
+}
+
+/**
+ * Point every badge on screen at the current bank. Rows are rebuilt
+ * constantly (every canvas render), so badges are refreshed by query rather
+ * than by subscription — nothing to unsubscribe when a row is discarded.
+ */
+export function updateBankSlots(entries) {
+    _slotByVoiceKey.clear();
+    (entries || []).forEach((e, i) => {
+        if (e && e.voiceKey) _slotByVoiceKey.set(e.voiceKey, { slot: i, color: e.color });
+    });
+    document.querySelectorAll('.patch-slot-badge').forEach(applyBadge);
+}
+
+/** The slot pill for a patch: its number when banked, hidden when not. */
+export function createSlotBadge(patch) {
+    const badge = document.createElement('span');
+    badge.className = 'patch-slot-badge';
+    const key = voiceKey(patch.voice_data);
+    if (key) badge.dataset.voiceKey = key;
+    applyBadge(badge);
+    return badge;
+}
+
 // --- Assign popover ---
 
 // Only one popover at a time; opening one closes the other.
@@ -190,7 +236,9 @@ export function createPatchRow(patch, opts = {}) {
     makeStarDraggable(star, row, patch);
 
     if (isMinified) {
-        // Minified: star + name + mini spec + play + assign
+        // Minified: star + slot badge + name + mini spec + play + assign
+        row.appendChild(createSlotBadge(patch));
+
         const nameEl = document.createElement('span');
         nameEl.className = 'patch-name';
         nameEl.textContent = patch.name || ('#' + (patch.rank || ''));
@@ -454,7 +502,8 @@ export function createPatchRow(patch, opts = {}) {
             document.addEventListener('touchcancel', onCancel);
         }, { passive: true });
     } else {
-        // Full row: spec + name + algo + fb + dist + actions
+        // Full row: slot badge + spec + name + algo + fb + dist + actions
+        row.appendChild(createSlotBadge(patch));
 
         // Spectrogram + play button
         const specWrap = document.createElement('div');

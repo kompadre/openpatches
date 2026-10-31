@@ -9,7 +9,14 @@ drifts belongs here.
 _(Keep a short list of what is in flight, what is done, and what is blocked.
 Replace entries as work completes — this is a working set, not a changelog.)_
 
-### VoiceBank de-flaking (2026-10-31) — phases 0–3 done, badge next
+### VoiceBank de-flaking (2026-10-31) — phases 0–4 done, Mixer tab next
+
+**Working convention (user, 2026-10-31):** the full Playwright run,
+HEARME.tts, CHANGELOG.md and the TODO.md reconciliation happen only on a
+task's **last** phase. Intermediate phases run `node --check` + `node --test`
+and tick this file only. (Open: AGENTS.md "Keep it current ... in the same
+commit/change" reads per-change; awaiting the user's wording if SESSION.md
+should be deferred too.)
 
 From TODO.md: the relation between engine patches, VoiceBank, playing
 pattern and Song tracks was flaky. Plan agreed with the user; the one way
@@ -41,8 +48,13 @@ to assign a patch is the patch's own ♫ control; no drag-in, no reorder.
   (entries move wholesale — ids, names, volumes travel). Falls back to
   legacy onSelect where onAssignSlot/getBankEntries aren't wired.
   `test/patch-assign-popover.test.js`.
-- [ ] **Phase 4 — slot badge** on every patch row showing its voiceKey's
-  slot (registry rebuilt on snapshot, `voicebank-changed` event).
+- [x] **Phase 4 — slot badge.** `patch-row.js` keeps a `voiceKey →
+  {slot,color}` registry; `updateBankSlots(entries)` (called from app.js's
+  `onSnapshot`) rebuilds it and refreshes every `.patch-slot-badge` **by
+  document query, not subscription** — rows are rebuilt on every canvas
+  render, so there is nothing to unsubscribe. `createSlotBadge(patch)` on
+  both row variants and on canvas container headers; hidden when the voice
+  is not banked. `test/patch-slot-badge.test.js`.
 - [ ] **Phase 5 — Mixer tab** (user decision 2026-10-31): a proper dock tab
   on desktop *and* mobile — vertical volume bars per VoiceBank channel,
   plus Mute and Solo (both over `setChannelVolume`, no wasm change).

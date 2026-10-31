@@ -4,7 +4,7 @@
 
 import { canvasStore, patchStore, jobStore, createPatch, patchIdFromVoiceData } from './patch-model.js';
 import { createTagEditor } from './tag-editor.js';
-import { createPatchRow, getDraggedPatch, clearDraggedPatch, attachAssignPopover } from './patch-row.js';
+import { createPatchRow, getDraggedPatch, clearDraggedPatch, attachAssignPopover, createSlotBadge } from './patch-row.js';
 // Cyclic with job.js (it imports canvas.js) — only used inside functions, so the
 // binding is always initialized by the time it is read.
 import { jobManager } from './job.js';
@@ -320,6 +320,8 @@ function renderFloatingPatch(patchId, entry) {
 
     const headerLeft = document.createElement('div');
     headerLeft.className = 'sky-container-header-left';
+
+    headerLeft.appendChild(createSlotBadge(patch));
 
     const nameEl = document.createElement('span');
     nameEl.className = 'patch-name';
