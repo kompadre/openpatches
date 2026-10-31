@@ -89,4 +89,10 @@ export async function openRollTab(page) {
     await expect(page.locator('.pianoroll-play')).toBeVisible();
 }
 
+/** Open the Mixer tab — where the voice bank lives on every viewport. */
+export async function openMixerTab(page) {
+    await page.locator('.dock-tab-mixer').click();
+    await expect(page.locator('.voicebank')).toBeVisible();
+}
+
 export { expect };

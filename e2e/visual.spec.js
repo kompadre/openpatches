@@ -8,7 +8,7 @@
 // --update-snapshots` after an intentional style change, and eyeball the
 // diff image in test-results/ before accepting an unintentional one.
 
-import { test, expect, openApp, openRollTab } from './fixtures.js';
+import { test, expect, openApp, openRollTab, openMixerTab } from './fixtures.js';
 
 // Font rasterization wobbles a little across kernels/fontconfig; allow a
 // small per-pixel tolerance rather than chasing antialiasing ghosts.
@@ -27,15 +27,34 @@ test.describe('visual regression', () => {
         await expect(page.locator('.keyboard-wrapper')).toHaveScreenshot('keyboard.png', SHOT);
     });
 
-    test('piano roll tab: transport row and voicebank', async ({ page }) => {
+    test('piano roll tab: transport row and keyboard', async ({ page }) => {
         await openRollTab(page);
 
-        // The roll's chrome — tab strip, transport controls, voicebank
-        // list — with the grid canvas itself masked out.
+        // The roll's chrome — tab strip, transport controls, keyboard —
+        // with the grid canvas itself masked out. (The voice bank moved to
+        // the Mixer tab, below.)
         await expect(page.locator('#piano-dock')).toHaveScreenshot('pianoroll-tab.png', {
             ...SHOT,
             mask: [page.locator('#piano-dock canvas')],
         });
+    });
+
+    test('mixer tab: channel strips, mute and solo', async ({ page }) => {
+        // Seeded through the bank's own write path with fixed names and
+        // bytes, so the strips are identical on every run.
+        await page.evaluate(() => {
+            const vb = window.__opDock._voiceBank;
+            const voice = (fill) => btoa(String.fromCharCode(...new Uint8Array(128).fill(fill)));
+            vb._assignToSlot(0, { name: 'BRASS', voiceData: voice(1) });
+            vb._assignToSlot(1, { name: 'STRINGS', voiceData: voice(2) });
+            vb._assignToSlot(3, { name: 'BASS', voiceData: voice(3) });
+            vb._toggleMute(1);
+            vb._toggleSolo(3);
+        });
+        await openMixerTab(page);
+
+        // Every strip state in one frame: plain, muted, soloed, empty.
+        await expect(page.locator('.voicebank')).toHaveScreenshot('mixer-tab.png', SHOT);
     });
 
     test('MIDI settings modal', async ({ page }) => {

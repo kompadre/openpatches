@@ -1,6 +1,6 @@
 OpenPatches: A Codebase Audio Tour
 
-This file is intended to be a high-level introduction to the project's anatomy and optimized to be read by TTS. Last commit covered five c seven d d c f, the song-level play controls and accompaniment work from October twenty-ninth, two thousand twentysix.
+This file is intended to be a high-level introduction to the project's anatomy and optimized to be read by TTS. Last commit covered six nine zero five c e zero, the VoiceBank de-flaking and Mixer tab work from October thirty-first, two thousand twentysix.
 
 Welcome to this architectural walkthrough of OpenPatches. This is a browser-based DX seven patch editor, sequencer, and sound design environment. It runs entirely on the client side — no server-side computation for the editor itself. The only server dependency is an inference engine for turning WAV files into DX seven patches, and even that is optional. Everything else — the synthesizer, the sequencer, the patch editing, the voice bank — happens in the browser using vanilla JavaScript, Web Audio, WebAssembly, and Web Workers.
 
@@ -49,7 +49,7 @@ Each tab has a corresponding panel. Only one panel is visible at a time. The act
 
 The Piano Roll panel is the most complex. It contains three sections stacked vertically: the pianoroll row at the top, the recording controls in the middle, and the keyboard at the bottom.
 
-The pianoroll row is a flex container that holds the voice bank on the left and the pianoroll grid on the right in landscape mode, or stacked vertically in portrait mode. The voice bank takes up twenty-five viewport height units on mobile with compact vertical bars.
+The pianoroll row holds the pianoroll grid. The voice bank used to sit beside it, but it now lives in its own Mixer tab, on every screen size.
 
 
 Chapter Four: The Pianoroll — Sequencing and Looping
@@ -69,17 +69,21 @@ During playback, the pianoroll's tick handler plays all notes at the current col
 The pianoroll also handles touch interactions. When stopped, a long press of one second creates a note at that position. An immediate drag scrolls the canvas. Existing notes can be resized by dragging their edges or moved by dragging their centers. Double-tap deletes a note.
 
 
-Chapter Five: The Voice Bank
+Chapter Five: The Voice Bank and the Mixer
 
 The voice bank manages up to eight DX seven patches that are loaded into the synthesizer's memory. Each slot has a color, a name, voice data, and a volume level.
 
-On desktop, the voice bank displays as a vertical list of items with drag handles, play buttons, and remove buttons. The volume overlay fills from left to right. Clicking an item selects it as the active slot for the pianoroll and keyboard.
+The single most important rule here is that the slot index *is* the synth channel, and also the MIDI channel. Because a Song track binds itself to a slot number, the bank is a fixed array of eight positions that never shift. Removing a voice leaves a hole rather than closing the gap. This sounds like a small detail but it was the source of a whole family of bugs: the bank used to splice its array, so deleting the voice in slot two silently moved every voice below it up a channel, and tracks started playing the wrong sound.
 
-On mobile, the voice bank switches to compact mode — vertical bars arranged horizontally. Each bar represents a slot, with the height indicating the volume level. Tapping a bar selects it as the active voice. Dragging vertically on a bar adjusts the volume, with the bar growing or shrinking from the bottom.
+There is exactly one way to put a patch into the bank, and that is the music-note button on the patch itself. Clicking it opens a small picker of eight numbered buttons, each showing which voice currently occupies that slot, with the first empty slot pre-focused. Clicking a number commits immediately. If the target slot is occupied and the patch is not yet in the bank, the occupant is silently overwritten. If the patch already lives in another slot, the two slots swap. There is no dragging a patch into the bank and no reordering inside it — those paths existed once and were the other half of the flakiness, because merely auditioning a patch would quietly rewrite a channel.
 
-The voice bank persists its state to local storage, including the entries array and the active entry I D. When entries change, it fires a snapshot notification that triggers the synthesizer to reload all voice patches into the DX seven engine.
+Voices are identified by a voice key: a hash of the patch bytes with the embedded name characters zeroed out, normalised across the three encodings voice data travels in. The point is that a renamed copy of a patch is the same voice, so one voice key can occupy at most one slot. That same key drives the slot badge — a small colored pill showing the slot number, drawn on every patch row anywhere in the app that shows that voice. Assign a patch once and all of its copies, in every container, show the same number and follow it when it moves.
 
-The voice bank also handles drop targets for patches dragged from the canvas. When a patch is dropped onto the voice bank, it gets added to the next available slot with its voice data and color assigned automatically.
+The bank renders as the Mixer tab: eight vertical channel strips, each with a slot pill, the voice name, a vertical fader you drag, the volume reading, and four buttons — mute, solo, preview, and remove.
+
+Mute and solo needed no change to the WebAssembly engine at all. They are channel volume overrides. The entry's volume property stays whatever the fader says, while a second property, effective volume, is what the engine actually hears: zero when the strip is muted, or when some other strip is soloed and this one is not. A single apply-mix function recomputes the whole bank after any change, because solo couples the strips together — soloing one silences the others, and removing the soloed strip releases them again. One subtle consequence worth knowing: the voice snapshot sent to the synthesizer carries effective volume, not the fader value. If it carried the fader value, the next unrelated change to the bank would re-send it and silently un-mute the channel.
+
+The voice bank persists its state to local storage, including the entries array, the active entry I D, and each strip's mute and solo flags. When entries change, it fires a snapshot notification that triggers the synthesizer to reload all voice patches into the DX seven engine.
 
 
 Chapter Six: The DX Seven Synthesizer Engine
@@ -133,7 +137,7 @@ The dock panel system uses display none by default and display flex when active.
 
 The canvas dock panel on mobile contains the night-sky element with all the floating patches and containers. Touch events are handled with custom handlers that support drag-to-reposition, long-press to create notes, and drag between containers.
 
-The voice bank compact mode on mobile displays as horizontal bars with vertical volume indication. The keyboard shows a single octave with octave selector buttons below. The pianoroll controls hide non-essential buttons behind an ellipsis menu.
+The Mixer tab is the same on mobile as on desktop — the same eight vertical strips, only tighter. The keyboard shows a single octave with octave selector buttons below. The pianoroll controls hide non-essential buttons behind an ellipsis menu.
 
 
 Chapter Ten: Data Flow and State Management
