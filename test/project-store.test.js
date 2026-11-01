@@ -1,0 +1,319 @@
+// project-store: the in-memory body, the debounced flush, the backend seam.
+//
+// The contract that matters is that **callers stay synchronous**. A mutator
+// edits the open body and calls touch(); the write happens later, on its
+// own. These tests pin that, the ordering guarantees around it, and the
+// unload behaviour — which is autosave-on-hidden, because a page cannot
+// confirm anything during unload and an IndexedDB write started there is
+// not guaranteed to commit.
+
+import { test, before, beforeEach, describe } from 'node:test';
+import assert from 'node:assert/strict';
+import { installBrowserEnv } from './harness.js';
+
+let createProjectStore, createMemoryBackend, createProject;
+
+before(async () => {
+    installBrowserEnv();
+    ({ createProjectStore, createMemoryBackend } = await import('../html/components/project-store.js'));
+    ({ createProject } = await import('../html/components/project-model.js'));
+});
+
+const tick = (ms = 0) => new Promise(r => setTimeout(r, ms));
+
+let backend;
+
+beforeEach(() => {
+    localStorage.clear();
+    backend = createMemoryBackend();
+});
+
+/** A store over the shared backend, with the page lifecycle left alone. */
+function makeStore(opts = {}) {
+    return createProjectStore({ backend, debounceMs: 10, bindLifecycle: false, ...opts });
+}
+
+async function opened(opts = {}) {
+    const store = makeStore(opts);
+    await store.adopt({ name: 'Piece', bpm: 120 });
+    return store;
+}
+
+describe('adopt and open', () => {
+    test('adopt writes through at once — an unsaved project would not survive the tab', async () => {
+        const store = await opened();
+        assert.equal(store.get().name, 'Piece');
+        assert.equal(store.isDirty(), false, 'already flushed');
+        assert.deepEqual(await backend.listIds(), [store.getId()]);
+    });
+
+    test('a body comes back from the backend normalised', async () => {
+        const store = await opened();
+        const id = store.getId();
+        await store.close();
+        assert.equal(store.get(), null);
+
+        const again = await store.open(id);
+        assert.equal(again.name, 'Piece');
+        assert.equal(again.sections.length, 1, 'normalizeProject ran on the way in');
+    });
+
+    test('a missing id returns null and leaves the open project where it was', async () => {
+        // A stale index row pointing at a body that is gone must not cost
+        // the user the project they are working on.
+        const store = await opened();
+        const id = store.getId();
+        store.get().bpm = 140;
+        store.touch();
+
+        assert.equal(await store.open('prj_nope'), null);
+        assert.equal(store.getId(), id, 'still open');
+        assert.equal(store.get().bpm, 140);
+        assert.equal((await backend.load(id)).bpm, 140, 'and the pending edit was flushed on the way');
+    });
+
+    test('opening another project flushes the one in hand first', async () => {
+        const store = await opened();
+        const first = store.getId();
+        store.get().bpm = 155;
+        store.touch();                    // pending, not yet written
+
+        await store.adopt({ name: 'Second' });
+        const stored = await backend.load(first);
+        assert.equal(stored.bpm, 155, 'the edit was not lost by the switch');
+    });
+});
+
+describe('the debounced flush', () => {
+    test('touch does not write immediately — that is what keeps callers sync', async () => {
+        const store = await opened();
+        store.get().bpm = 140;
+        store.touch();
+        assert.equal(store.isDirty(), true);
+        assert.equal((await backend.load(store.getId())).bpm, 120, 'still the old body');
+
+        await tick(30);
+        assert.equal(store.isDirty(), false);
+        assert.equal((await backend.load(store.getId())).bpm, 140);
+    });
+
+    test('a burst of edits produces one write', async () => {
+        const store = await opened();
+        let writes = 0;
+        const save = backend.save;
+        backend.save = (...a) => { writes++; return save(...a); };
+
+        for (let i = 0; i < 20; i++) { store.get().bpm = 100 + i; store.touch(); }
+        await tick(30);
+
+        assert.equal(writes, 1, 'the debounce collapsed the burst');
+        assert.equal((await backend.load(store.getId())).bpm, 119, 'and the last value won');
+    });
+
+    test('flush() writes now and resolves when it has landed', async () => {
+        const store = await opened();
+        store.get().bpm = 140;
+        store.touch();
+        await store.flush();
+        assert.equal((await backend.load(store.getId())).bpm, 140);
+        assert.equal(store.isDirty(), false);
+    });
+
+    test('flush with nothing pending is a no-op, not a write', async () => {
+        const store = await opened();
+        let writes = 0;
+        const save = backend.save;
+        backend.save = (...a) => { writes++; return save(...a); };
+        await store.flush();
+        await store.flush();
+        assert.equal(writes, 0);
+    });
+
+    test('touch bumps modified, which is what the profile index sorts on', async () => {
+        const store = await opened();
+        const before = store.get().modified;
+        await tick(2);
+        store.touch();
+        assert.ok(store.get().modified >= before);
+    });
+
+    test('a failed write stays dirty and the next flush retries it', async () => {
+        const errors = [];
+        const store = await opened({ onError: (e) => errors.push(e) });
+        const save = backend.save;
+        let fail = true;
+        backend.save = (...a) => (fail ? Promise.reject(new Error('QuotaExceeded')) : save(...a));
+
+        store.get().bpm = 140;
+        store.touch();
+        await tick(30);
+        assert.equal(errors.length, 1);
+        assert.equal(store.isDirty(), true, 'the body on disk is still stale, so say so');
+        assert.equal((await backend.load(store.getId())).bpm, 120, 'nothing was written');
+
+        // The backend recovers. Nothing re-touched the body — the retry has
+        // to come from the still-dirty flag alone, or the edit is lost.
+        fail = false;
+        await store.flush();
+        assert.equal(store.isDirty(), false);
+        assert.equal((await backend.load(store.getId())).bpm, 140);
+    });
+
+    test('writes are serialised, so a slow save cannot be overtaken', async () => {
+        const store = await opened();
+        const order = [];
+        let resolveFirst;
+        let n = 0;
+        backend.save = (id, body) => {
+            n++;
+            if (n === 1) {
+                return new Promise((r) => { resolveFirst = () => { order.push('first'); r(); }; });
+            }
+            order.push('second:' + body.bpm);
+            return Promise.resolve();
+        };
+
+        store.get().bpm = 1; store.touch();
+        await tick(20);                      // first write is in flight, hanging
+        store.get().bpm = 2; store.touch();
+        await tick(20);                      // second queued behind it
+        assert.deepEqual(order, [], 'nothing finished while the first hangs');
+
+        resolveFirst();
+        await store.flush();
+        assert.deepEqual(order, ['first', 'second:2'], 'in order, newest last');
+    });
+});
+
+describe('remove and clear', () => {
+    test('removing the open project closes it', async () => {
+        const store = await opened();
+        const id = store.getId();
+        await store.remove(id);
+        assert.equal(store.get(), null);
+        assert.deepEqual(await backend.listIds(), []);
+    });
+
+    test('removing another project leaves the open one alone', async () => {
+        const store = await opened();
+        const keep = store.getId();
+        await store.adopt({ name: 'Other' });
+        const other = store.getId();
+        await store.remove(keep);
+        assert.equal(store.getId(), other);
+        assert.deepEqual(await backend.listIds(), [other]);
+    });
+
+    test('a pending flush cannot resurrect a project that was just removed', async () => {
+        const store = await opened();
+        const id = store.getId();
+        store.get().bpm = 140;
+        store.touch();                     // scheduled
+        await store.remove(id);
+        await tick(30);                    // the timer would have fired by now
+        assert.deepEqual(await backend.listIds(), [], 'stayed removed');
+    });
+
+    test('clear drops every body — the project half of "delete everything"', async () => {
+        const store = await opened();
+        await store.adopt({ name: 'Second' });
+        assert.equal((await backend.listIds()).length, 2);
+        await store.clear();
+        assert.deepEqual(await backend.listIds(), []);
+        assert.equal(store.get(), null);
+    });
+});
+
+describe('subscribers', () => {
+    test('open, edit and close are announced', async () => {
+        const seen = [];
+        const store = makeStore();
+        store.subscribe((e) => seen.push(e.reason));
+        await store.adopt({ name: 'Piece' });
+        store.touch();
+        await store.close();
+        assert.deepEqual(seen, ['open', 'edit', 'close']);
+    });
+
+    test('a throwing subscriber does not stop the others', async () => {
+        const store = await opened();
+        const seen = [];
+        store.subscribe(() => { throw new Error('boom'); });
+        store.subscribe(() => seen.push('ok'));
+        store.touch();
+        assert.deepEqual(seen, ['ok']);
+    });
+
+    test('unsubscribing stops the calls', async () => {
+        const store = await opened();
+        let n = 0;
+        const off = store.subscribe(() => n++);
+        store.touch();
+        off();
+        store.touch();
+        assert.equal(n, 1);
+    });
+});
+
+describe('the page going away', () => {
+    // No confirm() on the way out: a page cannot show one during unload, and
+    // an IndexedDB write started there is not guaranteed to commit. The
+    // answer is to have already written — on `hidden`, which fires while the
+    // page is still alive and is the only one a mobile tab-kill honours.
+
+    test('visibilitychange -> hidden flushes immediately', async () => {
+        const store = createProjectStore({ backend, debounceMs: 10_000, bindLifecycle: true });
+        await store.adopt({ name: 'Piece' });
+        store.get().bpm = 140;
+        store.touch();
+        assert.equal(store.isDirty(), true);
+
+        document.visibilityState = 'hidden';
+        for (const fn of document._listeners.visibilitychange || []) fn();
+        await tick(5);
+
+        assert.equal((await backend.load(store.getId())).bpm, 140,
+            'the debounce would not have fired for another ten seconds');
+    });
+
+    test('becoming visible again does not write', async () => {
+        const store = createProjectStore({ backend, debounceMs: 10_000, bindLifecycle: true });
+        await store.adopt({ name: 'Piece' });
+        let writes = 0;
+        const save = backend.save;
+        backend.save = (...a) => { writes++; return save(...a); };
+
+        store.get().bpm = 140;
+        store.touch();
+        document.visibilityState = 'visible';
+        for (const fn of document._listeners.visibilitychange || []) fn();
+        await tick(5);
+        assert.equal(writes, 0);
+    });
+});
+
+describe('the body is plain JSON', () => {
+    test('what comes out of the backend is a copy, not the live object', async () => {
+        const store = await opened();
+        const stored = await backend.load(store.getId());
+        stored.name = 'Mutated';
+        assert.equal(store.get().name, 'Piece', 'the open body is untouched');
+    });
+
+    test('editing the open body after a flush does not reach back into the backend', async () => {
+        const store = await opened();
+        store.get().name = 'Changed';
+        assert.equal((await backend.load(store.getId())).name, 'Piece', 'not until touch + flush');
+    });
+
+    test('renormalize re-runs the cross-record invariants after direct rummaging', async () => {
+        const store = await opened();
+        const project = store.get();
+        project.tracks.push(...createProject({
+            tracks: [{ slot: 0, name: 'A' }, { slot: 0, name: 'B' }],
+        }).tracks);
+        project.tracks.push({ id: 'dup', name: 'C', slot: 0, volume: 1, mute: false, solo: false });
+        store.renormalize();
+        assert.equal(store.get().tracks.length, 1, 'one track per slot');
+    });
+});

@@ -138,10 +138,60 @@ Per the working convention: phases 1–5 run `node --check` + `node --test`
 and tick this file only; phase 6 does the full Playwright run, HEARME.tts,
 CHANGELOG.md and the TODO.md reconciliation.
 
-- [ ] **1. Model + stores.** New `project-model.js` (Project, Section,
-  Track-merged-with-slot, Pattern) and `projectStore` with the in-memory
-  body + debounced flush + injectable backend. Profile store. Unit tests
-  only, no UI.
+- [x] **1. Model + stores — done 2026-11-02, 824 unit passing (+90).**
+  Three new files, nothing existing touched; nothing is wired up yet.
+  - `html/components/project-model.js` — pure data, no DOM/audio/MIDI/
+    storage. Project, Section, Track (merged with the voice bank slot),
+    Pattern, Clip; geometry (`clipCols`, `sectionLengthCols`); mutators
+    (`addClip`/`updateClip`, `addTrack`/`removeTrack`,
+    `addPattern`/`removePattern`, `addSection`/`removeSection`).
+    `SCHEMA_VERSION = 1` is written into every body, for phase 5's import.
+  - **`effectiveBpm(project, section)`** is the only place tempo is
+    decided — `section.bpm` is **nullable**, null defers to the project,
+    a number overrides. That nullability is the whole Allegro feature, and
+    it is also the seam the later rit./accel. automation grows from.
+  - **`normalizeProject()`** holds the invariants no single factory can
+    see: one track per slot (a later duplicate is **dropped, not
+    renumbered** — renumbering would silently move a part to another
+    instrument), at most `MAX_SLOTS` tracks, always ≥1 section, and no
+    orphan clips. `removeTrack`/`removePattern` sweep **every** section,
+    which is the point of project-level tracks.
+  - **One mute/solo per strip**, with `audibleTracks()` and
+    `effectiveVolume()` kept side by side so the scheduler's view and the
+    mixer's view cannot drift apart again.
+  - `html/components/project-store.js` — in-memory body + debounced flush
+    + pluggable backend (`createMemoryBackend` for tests,
+    `createIdbBackend`, `createDefaultBackend` picking by capability).
+    Writes are serialised through an `inFlight` chain so a slow save
+    cannot be overtaken by a later one; a failed write **stays dirty** and
+    is retried rather than assumed written.
+  - `html/components/profile-store.js` — `openpatches_profile`: project
+    index (upserted from each body, so it cannot drift), current pointer
+    (falls to the most recent on removal), tag vocabulary, and
+    `uniqueName()` for phase 5's collision rule.
+  - Tests: `test/project-model.test.js` (43), `test/project-store.test.js`
+    (23), `test/profile-store.test.js` (24).
+
+  **Gotcha found while testing, worth remembering:** `JSON.stringify` turns
+  a `Uint8Array` into `{"0":1,"1":2}` — an *object*. A caller assigning
+  `track.voiceData = someUint8Array` directly (past the factory) would get
+  a body that works perfectly in memory and loses its patch on the next
+  load. `normalizeVoiceData()` therefore accepts that object shape too, and
+  a test pins it.
+
+  **Decided while building (the user asked about `window.onleave`):** there
+  is **no "Save your changes?" on the way out**, and there cannot be. A
+  page cannot show its own `confirm()` during `beforeunload` — browsers
+  offer only their own generic dialog — and an IndexedDB transaction opened
+  during unload is **not guaranteed to commit**. So the store autosaves, as
+  the rest of the app always has: debounced flush plus an immediate one on
+  `visibilitychange -> hidden`, which fires while the page is still alive
+  and is the only one a mobile tab-kill honours (`beforeunload` is skipped
+  there and in bfcache). `pagehide` is wired as belt-and-braces. Worst case
+  is losing the last few hundred ms, and there is nothing to confirm.
+  *(If an explicit Save/discard is ever wanted, that is a separate feature
+  — a dirty indicator and "revert to last saved" layered on top of
+  autosave, not an unload handler.)*
 - [ ] **2. Session + clock.** `project-session.js` replaces
   `song-session.js`; transport and sequencer read tracks from the project
   and the timeline from the active section; **one** mute/solo path.
