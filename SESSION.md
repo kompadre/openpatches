@@ -49,6 +49,138 @@ run `node --check` + `node --test` and tick this file only. (Open: AGENTS.md
 "Keep it current ... in the same commit/change" reads per-change; awaiting
 the user's wording if SESSION.md should be deferred too.)
 
+### Project + Export (2026-11-02) — PLANNED with the user, not started
+
+From TODO.md (both "Project" and "exporting a project" bullets, now cut).
+**A major version change: no retro-compatibility, existing data is wiped.**
+
+#### The model, as decided with the user
+
+**Profile** — localStorage, never exported. The layer above projects: the
+project index, the current-project pointer, MIDI *machine* settings (port
+selection, the 317 ms output latency — port ids are not stable across
+sessions and the latency was measured against this user's hardware, so
+importing someone else's would be actively wrong), UI prefs
+(`_roll_prefs`, `_kb_collapsed`, `_song_zoom`, `_song_snap`, `_step_len`,
+`_transport_mode`, `_transport_accompany`), lifecycle flags (`_tutorial`,
+`_demo_offered`) and the **global tag vocabulary**.
+
+**Project** — one piece of music, body in IndexedDB. Two dimensions:
+- **Tracks** — the vertical axis, project-level. See the merge below.
+- **Sections** — an ordered sequence of smaller pieces (the user's word,
+  chosen over "movement" as ambiguous and "part" as actively misleading —
+  a Cubase Part is a per-track event container, i.e. our *clip*). Each
+  section is a sequence of **Patterns** placed on the project's tracks.
+- Also project-owned: patches, canvas layout, jobs, tempo, tags-in-use.
+
+**Tempo**: project-level, with a **nullable per-section override that wins
+when set** — announced per section the way a movement announces Allegro.
+Song-level automation (gradual rit./accel.) is a later feature.
+
+**Patterns belong to the project**, referenced by sections.
+
+#### The structural merge: Track *is* the voice bank slot
+
+The user's "Tracks are the other dimension of the Project" collapses a
+duality the code already strains against: every lookup is
+`tracks.find(t => t.slot === slot)`, so one-track-per-slot is assumed
+everywhere while the model never enforced it.
+
+**They have already drifted into a live bug — two independent mute/solo
+systems for one strip:** `song.tracks[].mute/.solo`, written by the Song
+tab's track-header M/S (song-editor.js:540) and read by `sequencer.js:25`
+to decide which notes are **scheduled**; and the bank entry's
+`.muted/.solo`, written by the Mixer strip's M/S, feeding `effectiveVolume`
+to decide channel **volume**. Neither shows the other; they can disagree.
+
+A Track becomes one object — `{id, name, slot/channel, patch, volume,
+mute, solo}` — and that whole class of bug goes. `song.voiceBank` and the
+global `openpatches_voicebank` both die, as song-model.js:175's own comment
+already predicted.
+
+#### Persistence: sync callers, async backend
+
+Decided: project bodies in IndexedDB, loaded on open, dumped back on save.
+**The trap:** every store today is synchronous `localStorage.setItem`, and
+there are **31 synchronous save call sites**; the test harness stubs
+localStorage and has no IndexedDB at all (test/harness.js:248).
+
+So `projectStore` keeps the loaded body **in memory as the source of
+truth** — which is exactly what "load on open, dump on save" means — with
+all existing synchronous mutators writing to it unchanged, and a
+**debounced async flush** of the whole body behind an **injectable
+backend** (in-memory in tests, IndexedDB in the browser). No call site
+becomes async and the harness needs no IndexedDB stub.
+
+#### Clear History is broken — fold the fix in
+
+`menu-clear-history` (app.js:935) removes 5 of 23 keys. **Survivors
+include `_patterns` and `_arrangements`** (every pattern and song),
+`_patch_names` and `_all_tags` (so a re-imported patch silently picks up
+its old rename), plus every pref and both legacy keys.
+
+**And the WAV blobs leak permanently.** IndexedDB `uploads` is pruned only
+when a container is deleted from the canvas (canvas.js:253);
+`canvasStore.clear()` drops the container records *without iterating them
+first*, orphaning every imported WAV with no remaining reference and no UI
+that can reach it. "Clear History" is itself the cause.
+
+The refactor fixes this structurally rather than by chasing a key list:
+clear the profile, drop the project store, clear the upload store. Pin it
+with a test asserting storage is **empty**, not that five keys were
+removed. Menu item renamed to say what it does ("Delete all projects and
+patches"); the demo-offered flag and MIDI machine settings are kept —
+they are profile-level and not "history".
+
+#### Phases
+
+Per the working convention: phases 1–5 run `node --check` + `node --test`
+and tick this file only; phase 6 does the full Playwright run, HEARME.tts,
+CHANGELOG.md and the TODO.md reconciliation.
+
+- [ ] **1. Model + stores.** New `project-model.js` (Project, Section,
+  Track-merged-with-slot, Pattern) and `projectStore` with the in-memory
+  body + debounced flush + injectable backend. Profile store. Unit tests
+  only, no UI.
+- [ ] **2. Session + clock.** `project-session.js` replaces
+  `song-session.js`; transport and sequencer read tracks from the project
+  and the timeline from the active section; **one** mute/solo path.
+  `song.voiceBank` and `openpatches_voicebank` removed.
+- [ ] **3. Editors rewired.** The song editor becomes the **Section**
+  editor (edits the one active section); VoiceBank/Mixer binds to project
+  tracks; pianoroll takes patterns from the project; canvas and patches
+  scoped to the project.
+- [ ] **4. Project management + the wipe fix.** Project list/switcher,
+  new/rename/delete/duplicate, and the Clear History rewrite above.
+- [ ] **5. Export / Import.** Single JSON file with `schemaVersion`
+  (extension TBD — `.opproj`?). Export inlines patches, carries only
+  tags **used in the project**, and writes jobs with their `fileName` plus
+  a `sourceMissing` marker and **no WAV bytes** (the containers of patches
+  they produced survive intact). Import always mints fresh ids so the same
+  file twice gives two projects, suffixes the **incoming** name on
+  collision, and unions tags into the profile vocabulary.
+- [ ] **6. Rename pass + close-out.** Song→Project/Section across file
+  names (`song-model.js`, `song-editor.js`, `song-session.js`), exports
+  (`createSongSequence`, `songCol`, `songPos`), ~40 `.song-*` CSS classes,
+  tab labels and e2e selectors. Deliberately last and separate, so a
+  rename conflict cannot hide inside a model change. `.midi-section` →
+  `.midi-group` to free the word for the musical meaning.
+
+#### Deferred by decision, recorded so they are not re-litigated
+
+- **No project-level UI beyond one section.** The model carries N sections;
+  the UI edits exactly one. No section list, no whole-piece playback.
+- **A section or pattern overriding a track's config (patch included) at
+  runtime** — wanted, later.
+- **Patch duplication across projects is accepted.** `voiceKey()` already
+  exists when dedup is wanted. The user notes sections and patterns will
+  be the real redundancy once projects are cloned; a shared-reference
+  store is a later concern.
+- **No WAVs in the export, ever**; at most a future "re-upload a missing
+  WAV" path, with nothing done with it for now.
+- Switching projects swaps the whole canvas and patch workspace — there is
+  no global patch library. Accepted consequence of project-owned patches.
+
 ### MIDI clock (2026-10-30) — DONE, browser-checked 2026-11-01
 
 From TODO.md: basic internal clock sending / syncing with external. Done

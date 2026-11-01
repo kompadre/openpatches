@@ -14,9 +14,10 @@ Project backlog. Parent tasks with nested subtasks; `[ ]` pending, `[x]` done,
 
 ### Ideas
 
-- [ ] Add the concept of **Project** for global settings (tempo, voice bank, MIDI settings, the pattern and song libraries).
-- [ ] Add the possibility of **exporting a project** (and importing it back).
-- [ ] Multi-timbral tracks and multi-voice patterns. Pattern defines notes in Voice slots. Track defines specific patches for those slots: 
+_(The **Project** concept and **exporting a project** moved to SESSION.md on
+2026-11-02 — planned with the user as one six-phase task.)_
+
+- [ ] Multi-timbral tracks and multi-voice patterns. Pattern defines notes in Voice slots. Track defines specific patches for those slots: **Note (2026-11-02): this assumes a Track that maps several slots to patches, which is not the Track the Project plan agrees on (Track = one slot = one channel, patterns mono). Reword or reconcile before starting — see the Project task in SESSION.md.** 
 
    Pattern 1:
       Voice 1: C3 C3
