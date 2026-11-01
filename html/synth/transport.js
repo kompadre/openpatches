@@ -74,7 +74,7 @@ function loadMode() {
  */
 export function createTransport(opts) {
     const {
-        session, tickWorker, startWorker, stopWorker,
+        session, tickWorker, startWorker, stopWorker, tempoWorker,
         playNote, getSlotData, getEditTarget, getPattern, onStop,
     } = opts;
     const log = opts.log || (() => {});
@@ -113,10 +113,31 @@ export function createTransport(opts) {
         return createSongSequence(session.get(), getPattern);
     }
 
-    /** Rebuild after any edit — the sequencer snapshots patterns on purpose. */
+    /**
+     * Rebuild after any edit — the sequencer snapshots patterns on purpose.
+     *
+     * The tempo rides along, because BPM is one of the things an edit can
+     * change and the worker is told its rate once, at start: without this a
+     * BPM typed mid-playback would be used for note *durations* (they read
+     * the session on every tick) while the columns kept arriving at the old
+     * rate, and the clock we send out would disagree with both.
+     */
     function refresh() {
         sequence = buildSequence();
+        retempo();
         return sequence;
+    }
+
+    /**
+     * Push the song's tempo at a running worker. A no-op when we are not
+     * the one keeping time: stopped, or following an external clock, where
+     * the columns come from the device and the worker is not running.
+     */
+    function retempo() {
+        if (!playing && !recording) return false;
+        if (armed || !tempoWorker) return false;
+        tempoWorker(tickWorker, getBpm());
+        return true;
     }
 
     function getBpm() {

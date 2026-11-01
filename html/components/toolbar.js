@@ -316,6 +316,7 @@ export function createToolbar(opts) {
         tickWorker: opts.tickWorker,
         startWorker: opts.startWorker,
         stopWorker: opts.stopWorker,
+        tempoWorker: opts.tempoWorker,
         getSlotData: (slot) => {
             const entries = voiceBank._getEntries ? voiceBank._getEntries() : [];
             return entries[slot] || null;

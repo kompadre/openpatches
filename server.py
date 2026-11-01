@@ -10,6 +10,6 @@ class H(http.server.SimpleHTTPRequestHandler):
         super().end_headers()
 
 
-port = sys.argv[1] or 8000
+port = 8000 if len(sys.argv) < 2 else sys.argv[1]
 http.server.HTTPServer(('', int(port)), H).serve_forever()
 

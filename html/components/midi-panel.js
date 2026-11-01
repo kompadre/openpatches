@@ -117,11 +117,17 @@ export function openMidiSettings(opts = {}) {
             return row;
         }
 
-        deviceArea.appendChild(labelled('Input', inputSel, 'Used to record notes into the piano roll.'));
-        deviceArea.appendChild(labelled('Input channel', inputChSel,
-            'Notes are recorded to the voice slot selected in the piano roll, whichever channel they arrive on.'));
-        deviceArea.appendChild(labelled('Output', outputSel, 'Used to play the piano roll on external gear.'));
-        deviceArea.appendChild(labelled('Device channel', channelSel, 'Basic channel of the synth, for bulk SysEx dumps.'));
+        // The modal reads top-down as the signal does: what the device *is*,
+        // then everything coming in, then everything going out. Clock lives
+        // with its direction — "sync to external" is an input setting, "send
+        // clock" an output one — which is also what makes them read as the
+        // two halves of one choice that they are.
+        function section(title) {
+            const wrap = el('div', 'midi-section');
+            wrap.appendChild(el('h4', 'midi-section-title', title));
+            deviceArea.appendChild(wrap);
+            return wrap;
+        }
 
         // --- Device type ---
         // Picks the profile that shapes bank transfers (dump request or
@@ -137,6 +143,15 @@ export function openMidiSettings(opts = {}) {
         const typeWrap = labelled('Device type', typeSel);
         typeWrap.appendChild(typeNotes);
         deviceArea.appendChild(typeWrap);
+
+        const inputArea = section('Input');
+        const outputArea = section('Output');
+
+        inputArea.appendChild(labelled('Input', inputSel, 'Used to record notes into the piano roll.'));
+        inputArea.appendChild(labelled('Input channel', inputChSel,
+            'Notes are recorded to the voice slot selected in the piano roll, whichever channel they arrive on.'));
+        outputArea.appendChild(labelled('Output', outputSel, 'Used to play the piano roll on external gear.'));
+        outputArea.appendChild(labelled('Device channel', channelSel, 'Basic channel of the synth, for bulk SysEx dumps.'));
 
         function refreshDeviceType() {
             typeSel.value = midi.getDeviceType();
@@ -169,7 +184,7 @@ export function openMidiSettings(opts = {}) {
         }
         modeSel.value = midi.getOutputMode();
         modeSel.addEventListener('change', () => midi.setOutputMode(modeSel.value));
-        deviceArea.appendChild(labelled('Play notes through', modeSel,
+        outputArea.appendChild(labelled('Play notes through', modeSel,
             'Applies to the piano roll and keyboard. Patch previews always use the ' +
             'internal synth — the external device has no patch loaded to preview with.'));
 
@@ -194,47 +209,71 @@ export function openMidiSettings(opts = {}) {
         mapWrap.appendChild(el('div', 'midi-hint',
             'Defaults to slot N → channel N. A monotimbral synth will only sound the ' +
             'channel it is set to and ignores the rest, which is harmless.'));
-        deviceArea.appendChild(mapWrap);
+        outputArea.appendChild(mapWrap);
 
-        // --- MIDI clock out ---
-        // Not part of "play notes through": clocking a drum machine while
-        // listening to the internal synth is an ordinary thing to want.
-        const clockRow = el('label', 'midi-checkbox');
-        const clockBox = document.createElement('input');
-        clockBox.type = 'checkbox';
-        clockBox.className = 'midi-send-clock';
-        clockBox.checked = midi.getSendClock();
-        clockRow.appendChild(clockBox);
-        clockRow.appendChild(el('span', null, ' Send MIDI clock'));
-        deviceArea.appendChild(clockRow);
-        deviceArea.appendChild(el('div', 'midi-hint',
-            'Drives an external sequencer or drum machine from this app\u2019s transport: ' +
-            'start, stop and 24 ticks to the quarter note, at the song\u2019s tempo. ' +
-            'Starting anywhere but bar 1 sends the position first, so the device picks up ' +
-            'where we are. It goes out with the same output latency as the notes, so the ' +
-            'device stays in step with what you hear.'));
-        clockBox.addEventListener('change', () => {
-            midi.setSendClock(clockBox.checked);
-            appendLog(clockBox.checked ? 'MIDI clock out enabled' : 'MIDI clock out disabled');
-        });
-
+        // --- MIDI clock, both directions ---
+        // One choice in two boxes, one per section: we either keep time for
+        // the device or follow it, never both. midi-manager enforces that \u2014
+        // ticking one unticks the other \u2014 and refreshClockBoxes() is what
+        // keeps the box in the *other* section honest when it happens.
+        //
+        // Clock out is deliberately not part of "play notes through":
+        // clocking a drum machine while listening to the internal synth is
+        // an ordinary thing to want. So it gets a warning for the one thing
+        // that really does stop it \u2014 no output device.
         const syncRow = el('label', 'midi-checkbox');
         const syncBox = document.createElement('input');
         syncBox.type = 'checkbox';
         syncBox.className = 'midi-sync-clock';
-        syncBox.checked = midi.getSyncToClock();
         syncRow.appendChild(syncBox);
         syncRow.appendChild(el('span', null, ' Sync to external clock'));
-        deviceArea.appendChild(syncRow);
-        deviceArea.appendChild(el('div', 'midi-hint',
+        inputArea.appendChild(syncRow);
+        inputArea.appendChild(el('div', 'midi-hint',
             'Follow the clock on the MIDI input instead of running our own: Play and Record ' +
             'then wait for the device\u2019s Start, run at its tempo, and pause when it stops. ' +
             'Song Position is ignored \u2014 Continue picks up where we were. ' +
-            'While this is on, clock is not sent out, so it cannot loop back.'));
+            'Turns off \u201cSend MIDI clock\u201d: we cannot both keep time and follow it.'));
         syncBox.addEventListener('change', () => {
             midi.setSyncToClock(syncBox.checked);
             appendLog(syncBox.checked ? 'Following external MIDI clock' : 'Back on the internal clock');
+            refreshClockBoxes();
         });
+
+        const clockRow = el('label', 'midi-checkbox');
+        const clockBox = document.createElement('input');
+        clockBox.type = 'checkbox';
+        clockBox.className = 'midi-send-clock';
+        clockRow.appendChild(clockBox);
+        clockRow.appendChild(el('span', null, ' Send MIDI clock'));
+        outputArea.appendChild(clockRow);
+        outputArea.appendChild(el('div', 'midi-hint',
+            'Drives an external sequencer or drum machine from this app\u2019s transport: ' +
+            'start, stop and 24 ticks to the quarter note, at the song\u2019s tempo. ' +
+            'Starting anywhere but bar 1 sends the position first, so the device picks up ' +
+            'where we are. It goes out with the same output latency as the notes, so the ' +
+            'device stays in step with what you hear. Independent of \u201cPlay notes ' +
+            'through\u201d \u2014 the clock goes out even with the notes staying internal. ' +
+            'Turns off \u201cSync to external clock\u201d.'));
+
+        // Ticked with Output on None, clock out is simply inert, and there
+        // is nothing on screen to say so \u2014 the one state worth calling out.
+        const clockWarn = el('div', 'midi-warning midi-warning-info midi-clock-warning');
+        clockWarn.textContent = 'No output device is selected, so no clock is being sent. ' +
+            'Pick one under Output above.';
+        outputArea.appendChild(clockWarn);
+
+        clockBox.addEventListener('change', () => {
+            midi.setSendClock(clockBox.checked);
+            appendLog(clockBox.checked ? 'MIDI clock out enabled' : 'MIDI clock out disabled');
+            refreshClockBoxes();
+        });
+
+        /** Both boxes and the warning, from the manager \u2014 never from each other. */
+        function refreshClockBoxes() {
+            clockBox.checked = midi.getSendClock();
+            syncBox.checked = midi.getSyncToClock();
+            clockWarn.style.display = midi.getSendClock() && !midi.getOutputPort() ? '' : 'none';
+        }
 
         // --- Output latency ---
         // Every MIDI note is sent this much later than the internal synth is
@@ -298,7 +337,7 @@ export function openMidiSettings(opts = {}) {
             'the device and the internal synth are then in step. With audition on, ' +
             'the device plays the same test tone, so you can also listen for the two ' +
             'notes fusing into one.'));
-        deviceArea.appendChild(latWrap);
+        outputArea.appendChild(latWrap);
 
         let calTimer = null;
         let flashTimer = null;
@@ -365,13 +404,13 @@ export function openMidiSettings(opts = {}) {
         audBox.checked = midi.getAuditionEnabled();
         audRow.appendChild(audBox);
         audRow.appendChild(el('span', null, ' Audition patches on the device'));
-        deviceArea.appendChild(audRow);
+        outputArea.appendChild(audRow);
 
         const audHint = el('div', 'midi-hint',
             'Previewing a patch loads it into the device’s edit buffer and plays it there. ' +
             'Needs SysEx permission, and overwrites whatever is in the edit buffer — ' +
             'stored patches are untouched.');
-        deviceArea.appendChild(audHint);
+        outputArea.appendChild(audHint);
 
         // Audition is remembered across reloads but the SysEx permission is
         // not, so the box can come back ticked on top of a plain grant — in
@@ -385,7 +424,7 @@ export function openMidiSettings(opts = {}) {
             'Auditioning needs SysEx permission, which this session does not have yet.'));
         const sysexBtn = el('button', 'midi-btn midi-btn-small', 'Grant SysEx');
         sysexRow.appendChild(sysexBtn);
-        deviceArea.appendChild(sysexRow);
+        outputArea.appendChild(sysexRow);
 
         sysexBtn.addEventListener('click', async () => {
             // The click is the user gesture the permission prompt needs.
@@ -422,7 +461,7 @@ export function openMidiSettings(opts = {}) {
             if (midi.panic()) appendLog('MIDI panic sent to ' + portName(midi.getOutputPort()));
             else appendLog('MIDI panic: no output device selected');
         });
-        deviceArea.appendChild(panicBtn);
+        outputArea.appendChild(panicBtn);
 
         for (let ch = 0; ch < CHANNEL_COUNT; ch++) {
             const o = el('option', null, String(ch + 1));
@@ -457,7 +496,12 @@ export function openMidiSettings(opts = {}) {
         }
 
         inputSel.addEventListener('change', () => midi.setSelectedInput(inputSel.value));
-        outputSel.addEventListener('change', () => midi.setSelectedOutput(outputSel.value));
+        // Choosing the output can settle (or raise) the "nothing is being
+        // sent" warning, so the clock row is refreshed with it.
+        outputSel.addEventListener('change', () => {
+            midi.setSelectedOutput(outputSel.value);
+            refreshClockBoxes();
+        });
 
         function refresh() {
             const state = midi.getState();
@@ -480,6 +524,8 @@ export function openMidiSettings(opts = {}) {
                 fillPorts(inputSel, midi.listInputs(), midi.getSelectedInputId(), 'None');
                 fillPorts(outputSel, midi.listOutputs(), midi.getSelectedOutputId(), 'None');
             }
+            // After the ports: the clock warning asks whether one resolves.
+            refreshClockBoxes();
         }
 
         enableBtn.addEventListener('click', async () => {

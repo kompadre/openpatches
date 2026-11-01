@@ -619,6 +619,12 @@ export function setSendClock(on) {
     const next = !!on;
     if (next !== sendClock) {
         sendClock = next;
+        // Master and slave are one choice, not two. They used to be
+        // independent settings, and leaving both on was a silent trap: the
+        // guard below refuses to echo a clock we are following, so "Send
+        // MIDI clock" sat ticked and did nothing, with nothing on screen
+        // saying why. Switching one on now switches the other off.
+        if (sendClock && syncToClock) setSyncToClock(false);
         if (!sendClock) clockStop();     // never leave a device running
         saveState();
     }
@@ -731,7 +737,13 @@ export function setSyncToClock(on) {
     const next = !!on;
     if (next !== syncToClock) {
         syncToClock = next;
-        if (syncToClock) clockStop();     // we cannot be both master and slave
+        // The other half of the pairing in setSendClock(): one choice, so
+        // becoming a slave gives up being a master (and stops whatever
+        // device we were driving).
+        if (syncToClock) {
+            clockStop();                  // we cannot be both master and slave
+            if (sendClock) setSendClock(false);
+        }
         clockIn = { running: false, clocks: 0, lastAt: 0, periods: [] };
         saveState();
         emitClockIn({ type: 'sync', on: syncToClock });
@@ -1082,7 +1094,10 @@ function initFromStorage() {
     if (saved.outputMode === 'midi' || saved.outputMode === 'both') outputMode = saved.outputMode;
     auditionEnabled = !!saved.auditionEnabled;
     sendClock = !!saved.sendClock;
+    // Both can be in storage from a build where they were independent.
+    // Sync wins: it is the one that was doing something.
     syncToClock = !!saved.syncToClock;
+    if (syncToClock) sendClock = false;
     everEnabled = !!saved.enabled;
     deviceType = isDeviceType(saved.deviceType) ? saved.deviceType : DEVICE_TYPE_AUTO;
     outputLatencyMs = DEFAULT_OUTPUT_LATENCY_MS;

@@ -56,11 +56,29 @@ function startTickWorker(tw, bpm, startCol = 0) {
     if (!tw) return;
     if (tickWorkerSab) {
         const ctl = new Int32Array(tickWorkerSab);
+        Atomics.store(ctl, 1, Math.round(bpm * 1000));
         const gen = Atomics.add(ctl, 0, 1) + 1;  // ends any running loop
         Atomics.notify(ctl, 0);
         tw.postMessage({ type: 'start', bpm, startCol, gen });
     } else {
         tw.postMessage({ type: 'start', bpm, startCol });
+    }
+}
+
+// Retempo a loop that is already running. The Atomics path cannot be told by
+// message — it is blocked in Atomics.wait and will not read its inbox until
+// it stops — so the tempo goes in the shared slot, and the notify is what
+// cuts the current sleep short so the new rate is picked up now rather than
+// at the next tick. Generation is deliberately untouched: this is not a
+// restart, and the loop keeps its column count. See tick-worker.js.
+function setTickWorkerTempo(tw, bpm) {
+    if (!tw || !(bpm > 0)) return;
+    if (tickWorkerSab) {
+        const ctl = new Int32Array(tickWorkerSab);
+        Atomics.store(ctl, 1, Math.round(bpm * 1000));
+        Atomics.notify(ctl, 0);
+    } else {
+        tw.postMessage({ type: 'tempo', bpm });
     }
 }
 
@@ -722,6 +740,7 @@ function initToolbar() {
         tickWorker: tickWorker,
         startWorker: startTickWorker,
         stopWorker: stopTickWorker,
+        tempoWorker: setTickWorkerTempo,
         onNoteClick: (midi) => { activeKeyboardNote = midi; },
         onPlaybackStop,
         onEmergencyStop: doEmergencyStop,

@@ -117,14 +117,44 @@ describe('parsing', () => {
         assert.equal(midi.getSyncToClock(), false);
     });
 
-    test('a slave does not send clock: it would loop straight back onto the bus', async () => {
+    // Master and slave are one choice. They used to be two independent
+    // settings, and a slave that was also asked to send clock kept the
+    // setting while isClockOutEnabled() quietly refused to act on it — so
+    // "Send MIDI clock" could sit ticked, sending nothing, with no way to
+    // tell from the panel. Switching either on now switches the other off.
+    test('asking a slave to send clock makes it the master instead', async () => {
         await slaved();
         midi.setSendClock(true);
-        assert.equal(midi.getSendClock(), true, 'the setting is kept');
-        assert.equal(midi.isClockOutEnabled(), false, 'but it is not acted on');
+        assert.equal(midi.getSyncToClock(), false, 'it stopped following');
+        assert.equal(midi.getSendClock(), true);
+        assert.equal(midi.isClockOutEnabled(), true, 'and the clock actually goes out');
+        assert.equal(midi.clockStart(0), true);
+    });
+
+    test('becoming a slave gives up sending clock', async () => {
+        const port = await slaved({ sync: false });
+        midi.setSendClock(true);
+        midi.setSyncToClock(true);
+        assert.equal(midi.getSendClock(), false, 'master was switched off');
+        assert.equal(midi.isClockOutEnabled(), false);
+        assert.ok(port);
+    });
+
+    // The guard inside isClockOutEnabled() is now unreachable through the
+    // setters, and stays as the invariant it always was.
+    test('a slave never emits clock even if both flags are somehow set', async () => {
+        await slaved();
+        assert.equal(midi.isClockOutEnabled(), false);
         assert.equal(midi.clockStart(0), false);
-        midi.setSyncToClock(false);
-        assert.equal(midi.isClockOutEnabled(), true, 'back as master, it goes out again');
+    });
+
+    // Storage written by the build where the two were independent.
+    test('both remembered on: sync wins, because it was the one doing something', () => {
+        localStorage.setItem('openpatches_midi',
+            JSON.stringify({ sendClock: true, syncToClock: true }));
+        midi._reset();
+        assert.equal(midi.getSyncToClock(), true);
+        assert.equal(midi.getSendClock(), false);
     });
 
     test('switching to slave while clocking a device stops that device', async () => {

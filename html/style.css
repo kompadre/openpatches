@@ -3071,6 +3071,24 @@ footer {
 
 .midi-field { margin: 0.75rem 0; }
 
+/* Input and Output, each gathering everything that travels that way. */
+.midi-section {
+    margin-top: 1.25rem;
+    padding-top: 0.25rem;
+    border-top: 1px solid #2a2a3e;
+}
+
+.midi-section-title {
+    margin: 0.5rem 0 0;
+    font-size: 0.78rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #4caf50;
+}
+
+.midi-clock-warning { font-size: 0.75rem; }
+
 .midi-slot-map {
     display: grid;
     grid-template-columns: repeat(4, 1fr);

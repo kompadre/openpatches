@@ -109,6 +109,71 @@ test.describe('transport', () => {
         expect(observed).toBeLessThan(expected * 1.15);
     });
 
+    test('a BPM change mid-playback retempos the running clock', async ({ page }) => {
+        test.slow();   // two tempos, measured one after the other
+        await openApp(page);
+        await openRollTab(page);
+        await seedNote(page);
+
+        // The tick worker used to be told its rate once, at start, with no
+        // way to change it: typing a new BPM while the roll ran moved note
+        // *durations* (read from the session every tick) and the outgoing
+        // MIDI clock, but not the columns — so everything disagreed and an
+        // external device saw an erratic clock. Measure the column rate
+        // either side of the change; the second half must actually be faster.
+        const run = await page.evaluate(async () => {
+            const roll = window.__opDock._pianoroll;
+            const transport = roll.getTransport();
+            const cols = [];
+            const unsubscribe = transport.subscribe((pos) => {
+                if (pos.rawCol >= 0) cols.push({ rawCol: pos.rawCol, at: performance.now() });
+            });
+            const before = transport.getBpm();
+
+            roll.startPlayback();
+            await new Promise((r) => setTimeout(r, 1200));
+
+            // Through the input the user actually types in, change event and all.
+            const input = document.querySelector('.pianoroll-bpm');
+            input.value = String(before * 2);
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+            const changedAt = performance.now();
+
+            await new Promise((r) => setTimeout(r, 1200));
+            roll.stopPlayback();
+            unsubscribe();
+            return { cols, before, after: transport.getBpm(), changedAt };
+        });
+
+        expect(run.after, 'the song should have taken the new tempo').toBe(run.before * 2);
+
+        // Columns per second each side of the change. The tick straddling it
+        // is dropped from both: it is half at one tempo and half at the other.
+        const rate = (ticks) => {
+            const span = ticks.at(-1).at - ticks[0].at;
+            return ((ticks.at(-1).rawCol - ticks[0].rawCol) / span) * 1000;
+        };
+        const first = run.cols.filter((c) => c.at < run.changedAt);
+        const second = run.cols.filter((c) => c.at > run.changedAt).slice(1);
+        expect(first.length, 'no columns before the tempo change').toBeGreaterThan(4);
+        expect(second.length, 'no columns after the tempo change').toBeGreaterThan(4);
+
+        // rawCol must stay monotonic across the change: a retempo re-anchors
+        // the grid, it does not restart the count.
+        const raw = run.cols.map((c) => c.rawCol);
+        for (let i = 1; i < raw.length; i++) {
+            expect(raw[i], `rawCol went backwards at tick ${i}`).toBeGreaterThan(raw[i - 1]);
+        }
+
+        // Each half against the tempo it was played at, at the same 15% the
+        // steady-tempo test allows for headless scheduling.
+        const perSec = (bpm) => (bpm * 4) / 60;
+        expect(rate(first)).toBeGreaterThan(perSec(run.before) * 0.85);
+        expect(rate(first)).toBeLessThan(perSec(run.before) * 1.15);
+        expect(rate(second)).toBeGreaterThan(perSec(run.after) * 0.85);
+        expect(rate(second)).toBeLessThan(perSec(run.after) * 1.15);
+    });
+
     test('stopping releases held notes', async ({ page }) => {
         await openApp(page);
         await seedNote(page);

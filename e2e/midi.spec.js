@@ -140,6 +140,75 @@ test.describe('MIDI panel', () => {
         expect(msPerTick).toBeLessThan(24);
     });
 
+    test('send clock and sync to external are one choice, not two', async ({ page }) => {
+        await openMidiPanel(page);
+        await enableMidi(page);
+        await portSelect(page, 'Output').selectOption('out0');
+
+        const sendBox = page.locator('.midi-send-clock');
+        const syncBox = page.locator('.midi-sync-clock');
+
+        // They used to be independent, and both ticked was a dead end: the
+        // manager will not echo a clock it is following, so "Send MIDI
+        // clock" sat on with nothing going out and nothing saying why.
+        await sendBox.check();
+        await expect(syncBox).not.toBeChecked();
+
+        await syncBox.check();
+        await expect(sendBox).not.toBeChecked();
+        await expect(syncBox).toBeChecked();
+
+        // Both ways round, and what is stored agrees with the boxes.
+        await sendBox.check();
+        await expect(syncBox).not.toBeChecked();
+        const stored = await page.evaluate((key) =>
+            JSON.parse(localStorage.getItem(key) || '{}'), MIDI_KEY);
+        expect(stored.sendClock).toBe(true);
+        expect(stored.syncToClock).toBe(false);
+    });
+
+    test('send clock warns when there is no output device to send it to', async ({ page }) => {
+        await openMidiPanel(page);
+        await enableMidi(page);
+
+        const warn = page.locator('.midi-clock-warning');
+        await expect(warn).toBeHidden();
+
+        // Output still on None: ticking the box does nothing at all, which
+        // is the state that needs saying out loud.
+        await page.locator('.midi-send-clock').check();
+        await expect(warn).toBeVisible();
+
+        await portSelect(page, 'Output').selectOption('out0');
+        await expect(warn).toBeHidden();
+    });
+
+    test('the clock goes out with the notes staying on the internal synth', async ({ page }) => {
+        await openMidiPanel(page);
+        await enableMidi(page);
+        await portSelect(page, 'Output').selectOption('out0');
+        // The default, set explicitly: clock out is not part of this choice.
+        await portSelect(page, 'Play notes through').selectOption('internal');
+        await page.locator('.midi-send-clock').check();
+        await page.locator('.modal-close:visible').click();
+
+        await openRollTab(page);
+        await page.evaluate(() => {
+            window.__opDock._pianoroll.addNote({ midi: 60, start: 0, dur: 2 });
+        });
+        await page.locator('.pianoroll-play').click();
+        await page.waitForTimeout(600);
+        await page.locator('.pianoroll-stop').click();
+
+        const bytes = await page.evaluate(() =>
+            window.__midiFake.outputs[0].sent.map((m) => m.data[0]));
+
+        expect(bytes[0], 'no Start went out').toBe(0xFA);
+        expect(bytes.filter((b) => b === 0xF8).length).toBeGreaterThan(10);
+        // ...and the notes really did stay at home.
+        expect(bytes.filter((b) => (b & 0xF0) === 0x90)).toHaveLength(0);
+    });
+
     test('a note from the input device presses the on-screen key', async ({ page }) => {
         await openMidiPanel(page);
         await enableMidi(page);

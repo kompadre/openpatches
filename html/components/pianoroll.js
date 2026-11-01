@@ -102,6 +102,7 @@ export function createPianoroll(opts) {
         tickWorker: opts.tickWorker,
         startWorker: opts.startWorker,
         stopWorker: opts.stopWorker,
+        tempoWorker: opts.tempoWorker,
         playNote: (midi, durMs, voiceData, slot) => playNoteFn(midi, durMs, voiceData, slot),
         getSlotData: (slot) => getSlotData(slot),
         getPattern: (id) => livePattern(id),
