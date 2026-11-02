@@ -21,6 +21,10 @@ export function makeProjectSession(partial = {}) {
     // flight would make the first play() in a test defer behind it — which
     // is correct behaviour, and exactly what a test does not want to fight.
     session.adoptNow({ name: 'Test project', ...partial }, 'test', { write: false });
+    // ...and make that true, synchronously, by seeding the backend
+    // directly. Claiming "already saved" without the body actually being
+    // there breaks any test that switches away and back.
+    backend._raw.set(session.getId(), JSON.parse(JSON.stringify(session.get())));
     session.backend = backend;      // for tests that want to look at "disk"
     session.store = store;
     return session;

@@ -284,6 +284,38 @@ export function createProjectSession(store) {
         },
 
         /**
+         * Copy a project and open the copy. Works on one that is not open:
+         * its body is read straight from the store. The copy gets a fresh
+         * id and a free name, like any other arrival.
+         */
+        async duplicate(id, source) {
+            const body = await store.read(id);
+            if (!body) return null;
+            return api.createFrom({ ...body, name: `${body.name} copy` }, source);
+        },
+
+        /** Rename the open project. */
+        rename(name, source) {
+            const project = store.get();
+            if (!project) return null;
+            const wanted = String(name == null ? '' : name).trim();
+            if (!wanted || wanted === project.name) return project;
+            project.name = profileStore.uniqueName(wanted, { ignoreId: project.id });
+            return changed('project', source);
+        },
+
+        /** Rename the section being edited. */
+        renameSection(name, source) {
+            const target = section();
+            if (!target) return null;
+            const wanted = String(name == null ? '' : name).trim();
+            if (!wanted || wanted === target.name) return target;
+            target.name = wanted;
+            changed('section', source);
+            return target;
+        },
+
+        /**
          * Delete a project. The profile picks what becomes current (the most
          * recent of what is left); if that was the last one, a new empty
          * project is made, because the app is never without one.

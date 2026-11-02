@@ -439,8 +439,37 @@ CHANGELOG.md and the TODO.md reconciliation.
   New `test/track-identity.test.js` (14) is the standing guard on the
   user's invariant: mute, solo, rename, removal and slot changes performed
   through any one of the three UIs, observed through the others.
-- [ ] **4. Project management + the wipe fix.** Project list/switcher,
-  new/rename/delete/duplicate, and the Clear History rewrite above.
+- [x] **4. Project management in the File menu — done 2026-11-02, 813
+  unit / 66 e2e passing.** (The wipe rewrite landed early, in 3d.)
+  - **File menu**: New Project, Projects…, Rename Project…. The open
+    project's name sits in the menu bar (`#menu-status`, previously
+    unused) and is itself the rename button.
+  - **`project-menu.js`** — one Projects dialog doing open / new / rename
+    / duplicate / delete, rather than four menu items each popping their
+    own prompt. Only *open* waits (the body is read back from IndexedDB);
+    everything else is in memory and instant.
+  - **`modal.js`** — `openModal`/`el` lifted out of midi-panel.js so both
+    dialogs share one shell.
+  - Session gains `rename()`, `renameSection()` and `duplicate(id)`;
+    the store gains `read(id)` (a body without opening it), which
+    Duplicate needs and phase 5's export will too.
+  - **The Section editor's toolbar now names the section**, as the user
+    asked. Project select, "+ Song" and the delete button are gone from
+    it — a project is the whole piece, which is more than that panel
+    edits. BPM (the project's) and the loop (the section's) stay.
+  - `test/project-menu.test.js` (17), plus four e2e covering the menu-bar
+    rename, New Project, the dialog's duplicate/delete, and the section
+    name not being the project name.
+
+  **Fixture bug found:** `makeProjectSession` adopted with `write: false`
+  — "this body is already on disk" — but never put it there, so any test
+  that switched project and back got nothing. It now seeds the backend
+  synchronously, making the claim true.
+
+  **Note for next time:** a stale `server.py` left over from an earlier
+  check served an old `index.html` for several minutes and cost real time
+  chasing a phantom. Restart the scratch server after editing
+  `index.html`, and kill your own orphans when done.
 - [ ] **5. Export / Import.** Single JSON file with `schemaVersion`
   (extension TBD — `.opproj`?). Export inlines patches, carries only
   tags **used in the project**, and writes jobs with their `fileName` plus

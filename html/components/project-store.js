@@ -495,6 +495,15 @@ export function createProjectStore(opts = {}) {
         listIds() { return backend.listIds(); },
 
         /**
+         * A stored body, without opening it — what Duplicate and Export
+         * need for a project that is not the one on screen.
+         */
+        read(id) {
+            if (project && project.id === id) return Promise.resolve(clone(project));
+            return backend.load(id);
+        },
+
+        /**
          * Drop every body. The project half of "delete everything" — the
          * profile and the WAV upload store are the other two, and all three
          * have to go together or the next load finds an index pointing at

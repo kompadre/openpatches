@@ -498,13 +498,31 @@ describe('palette', () => {
     });
 });
 
-describe('song toolbar', () => {
-    test('rename, tempo and loop range write through to the song', () => {
-        const h = build({ patterns: [{ name: 'A', measures: 2 }], tracks: [{ slot: 0 }], clips: [{ track: 0, pattern: 0, at: 0, repeats: 2 }] });
+describe('section toolbar', () => {
+    test('the name field renames the SECTION, not the project', () => {
+        // Project naming moved to the File menu: a project is the whole
+        // piece, which is more than this panel edits.
+        const h = build();
+        const projectName = h.song().name;
         const name = h.btn('song-name');
-        name.value = ' My song ';
+        name.value = ' Chorus ';
         name.dispatch('change');
-        assert.equal(h.song().name, 'My song');
+        assert.equal(h.section().name, 'Chorus');
+        assert.equal(h.song().name, projectName, 'the project is untouched');
+    });
+
+    test('an empty name is refused and the field snaps back', () => {
+        const h = build();
+        const before = h.section().name;
+        const name = h.btn('song-name');
+        name.value = '   ';
+        name.dispatch('change');
+        assert.equal(h.section().name, before);
+        assert.equal(name.value, before);
+    });
+
+    test('tempo and loop range write through', () => {
+        const h = build({ patterns: [{ name: 'A', measures: 2 }], tracks: [{ slot: 0 }], clips: [{ track: 0, pattern: 0, at: 0, repeats: 2 }] });
 
         const bpm = h.btn('song-bpm');
         bpm.value = '9999';
@@ -533,28 +551,6 @@ describe('song toolbar', () => {
         assert.match(h.status(), /later/);
     });
 
-    test('new project, switch project, delete project', async () => {
-        const h = build({ tracks: [{ slot: 0 }] });
-        const first = h.song().id;
-        h.btn('song-btn').dispatch('click', ev());                  // the first .song-btn is "+ Song"
-        assert.notEqual(h.song().id, first);
-        assert.deepEqual(h.song().tracks, [], 'empty');
-
-        const sel = h.btn('song-select');
-        assert.equal(sel.children.length, 2);
-        sel.value = first;
-        sel.dispatch('change');
-        // Opening reads the body back out of the store, so it is the one
-        // switch that cannot be synchronous.
-        await new Promise(r => setTimeout(r, 0));
-        assert.equal(h.song().id, first);
-        assert.equal(h.song().tracks.length, 1);
-
-        h.btn('song-delete').dispatch('click', ev());
-        await new Promise(r => setTimeout(r, 0));
-        assert.notEqual(h.song().id, first);
-        assert.equal(h.session.list().length, 1);
-    });
 });
 
 describe('it follows the session', () => {

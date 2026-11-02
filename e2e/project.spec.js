@@ -78,6 +78,63 @@ test.describe('the project store', () => {
     });
 });
 
+test.describe('project management lives in the File menu', () => {
+    const openFileMenu = (page) => page.locator('.menu-item[data-menu="file"] .menu-label').click();
+
+    test('the menu bar shows the open project, and renames it on click', async ({ page }) => {
+        await openApp(page);
+        await expect(page.locator('#menu-status')).toHaveText('Untitled project');
+
+        page.once('dialog', (d) => d.accept('Nocturne'));
+        await page.locator('#menu-status').click();
+        await expect(page.locator('#menu-status')).toHaveText('Nocturne');
+        expect(await page.evaluate(() => window.__opProject.get().name)).toBe('Nocturne');
+    });
+
+    test('New Project switches to an empty one', async ({ page }) => {
+        await openApp(page);
+        await page.evaluate(() => window.__opProject.update((p) => { p.bpm = 96; }, 'e2e'));
+
+        await openFileMenu(page);
+        await page.locator('#menu-new-project').click();
+        await expect.poll(() => bodyIds(page)).toHaveLength(2);
+        expect(await page.evaluate(() => window.__opProject.get().bpm)).toBe(120);
+    });
+
+    test('the Projects dialog opens, duplicates and deletes', async ({ page }) => {
+        await openApp(page);
+        await openFileMenu(page);
+        await page.locator('#menu-projects').click();
+        await expect(page.locator('.project-row')).toHaveCount(1);
+
+        await page.locator('.project-duplicate').first().click();
+        await expect.poll(() => bodyIds(page)).toHaveLength(2);
+        await expect(page.locator('#menu-status')).toHaveText('Untitled project copy');
+
+        await openFileMenu(page);
+        await page.locator('#menu-projects').click();
+        await expect(page.locator('.project-row')).toHaveCount(2);
+
+        page.once('dialog', (d) => d.accept());
+        await page.locator('.project-row', { hasText: 'copy' }).locator('.project-delete').click();
+        await expect(page.locator('.project-row')).toHaveCount(1);
+        await expect.poll(() => bodyIds(page)).toHaveLength(1);
+    });
+
+    test('the Section editor names the section, not the project', async ({ page }) => {
+        await openApp(page);
+        await page.locator('.dock-tab', { hasText: 'Song' }).click();
+        await expect(page.locator('.song-name')).toHaveValue('Section 1');
+        // Project switching left this toolbar: a project is the whole piece.
+        await expect(page.locator('.song-select')).toHaveCount(0);
+
+        await page.locator('.song-name').fill('Chorus');
+        await page.locator('.song-name').dispatchEvent('change');
+        expect(await page.evaluate(() => window.__opProject.getSection().name)).toBe('Chorus');
+        await expect(page.locator('#menu-status')).toHaveText('Untitled project');
+    });
+});
+
 test.describe('Delete All Data', () => {
     // The old "Clear History" removed five of twenty-odd localStorage keys
     // — patterns, songs, patch renames and the tag vocabulary all survived

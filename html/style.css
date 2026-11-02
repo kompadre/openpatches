@@ -179,12 +179,22 @@ body {
     margin: 0.2rem 0;
 }
 
+/* The open project's name. Also the button that renames it. */
 .menu-status {
     margin-left: auto;
-    font-size: 0.7rem;
-    color: #555;
-    padding-right: 0.5rem;
+    font-size: 0.72rem;
+    color: #888;
+    padding: 0 0.5rem;
+    background: none;
+    border: none;
+    max-width: 18rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
 }
+
+.menu-status:hover { color: #ddd; }
 
 /* ============================================================
    Modal
@@ -3296,6 +3306,78 @@ footer {
 }
 
 .midi-btn-small { padding: 0.25rem 0.5rem; font-size: 0.72rem; }
+
+/* --- Projects dialog --- */
+
+.project-intro {
+    font-size: 0.78rem;
+    color: #888;
+    line-height: 1.5;
+    margin: 0 0 0.9rem;
+}
+
+.project-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    max-height: 22rem;
+    overflow-y: auto;
+}
+
+.project-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.3rem 0.4rem;
+    border: 1px solid #2a2a3e;
+    border-radius: 4px;
+    background: #141427;
+}
+
+.project-row.current { border-color: #4caf50; }
+
+.project-open {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    background: none;
+    border: none;
+    color: #ddd;
+    text-align: left;
+    font-size: 0.82rem;
+    padding: 0.25rem;
+    cursor: pointer;
+}
+
+.project-open:hover { color: #fff; }
+.project-row.current .project-open { cursor: default; }
+
+.project-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.project-when { font-size: 0.7rem; color: #777; white-space: nowrap; }
+
+.project-badge {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #4caf50;
+    border: 1px solid #4caf50;
+    border-radius: 3px;
+    padding: 0 0.3rem;
+}
+
+.project-row-tools { display: flex; gap: 0.25rem; }
+.project-actions { justify-content: flex-start; }
+
+
 
 .midi-latency-row {
     display: flex;

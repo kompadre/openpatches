@@ -11,6 +11,7 @@
 import * as midi from '../synth/midi-manager.js';
 import { buildBulkDump, VOICE_COUNT } from './syx-builder.js';
 import { DEVICE_PROFILES, DEVICE_TYPE_AUTO, listDeviceTypes } from '../synth/midi-devices.js';
+import { el, openModal } from './modal.js';
 
 const CHANNEL_COUNT = 16;
 const VOICE_BANK_SLOTS = 8;
@@ -21,45 +22,6 @@ const PROBE_NOTE = 60;
 const PROBE_MS = 150;
 const PROBE_PERIOD_MS = 1000;
 const FLASH_MS = 120;
-
-function el(tag, className, text) {
-    const node = document.createElement(tag);
-    if (className) node.className = className;
-    if (text != null) node.textContent = text;
-    return node;
-}
-
-// --- Generic modal shell, matching the static modals in index.html ---
-
-function openModal(title, buildBody, { onClose } = {}) {
-    const overlay = el('div', 'modal-overlay');
-    overlay.style.zIndex = '620';
-
-    const dialog = el('div', 'modal-dialog');
-    const header = el('div', 'modal-header');
-    header.appendChild(el('h3', null, title));
-    const closeBtn = el('button', 'modal-close', '×');
-    header.appendChild(closeBtn);
-    dialog.appendChild(header);
-
-    const body = el('div', 'modal-body');
-    dialog.appendChild(body);
-    overlay.appendChild(dialog);
-
-    function close() {
-        overlay.remove();
-        if (onClose) onClose();
-    }
-
-    closeBtn.addEventListener('click', close);
-    overlay.addEventListener('click', (e) => {
-        if (e.target === overlay) close();
-    });
-
-    buildBody(body, close, dialog);
-    document.body.appendChild(overlay);
-    return { overlay, close };
-}
 
 // --- Settings modal ---
 

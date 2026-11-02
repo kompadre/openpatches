@@ -13,6 +13,7 @@ import { Job, jobManager } from './components/job.js';
 import { initTutorial, startTutorial, restartTutorial, isTutorialActive } from './components/tutorial.js';
 import * as midiManager from './synth/midi-manager.js';
 import { openMidiSettings, sendBankToDevice } from './components/midi-panel.js';
+import { openProjectsDialog } from './components/project-menu.js';
 import { makeInitVoice } from './components/syx-builder.js';
 import { createProjectStore, takeLostSaveMarker } from './components/project-store.js';
 import { profileStore } from './components/profile-store.js';
@@ -975,6 +976,44 @@ document.querySelectorAll('.menu-dropdown button').forEach(btn => {
     });
 });
 
+// --- Project menu ---
+//
+// A project is the whole workspace, so switching one rebuilds the canvas
+// (its patches came with it) and lets the dock re-read the session.
+function afterProjectChange() {
+    renderProjectName();
+    initCanvas(getCanvasOpts());
+}
+
+function renderProjectName() {
+    const el = document.getElementById('menu-status');
+    if (!el) return;
+    const project = projectSession.get();
+    el.textContent = project ? project.name : '';
+    el.title = project ? `Project “${project.name}” — click to rename` : '';
+}
+
+function renameCurrentProject() {
+    const project = projectSession.get();
+    if (!project) return;
+    const wanted = prompt('Project name', project.name);
+    if (wanted == null) return;
+    projectSession.rename(wanted, 'menu');
+    renderProjectName();
+    appendLog(`Renamed project to ${projectSession.get().name}`);
+}
+
+document.getElementById('menu-new-project').addEventListener('click', () => {
+    const project = projectSession.createNew('Untitled project', 'menu');
+    appendLog(`New project: ${project.name}`);
+    afterProjectChange();
+});
+document.getElementById('menu-projects').addEventListener('click', () => {
+    openProjectsDialog({ session: projectSession, appendLog, onChange: afterProjectChange });
+});
+document.getElementById('menu-rename-project').addEventListener('click', renameCurrentProject);
+document.getElementById('menu-status').addEventListener('click', renameCurrentProject);
+
 document.getElementById('menu-import-wav').addEventListener('click', () => {
     fileInput.accept = '.wav';
     fileInput.click();
@@ -1010,7 +1049,7 @@ document.getElementById('menu-clear-delete-all').addEventListener('click', async
     await projectStore.clear();
     profileStore.clear();
     await projectSession.init();
-    initCanvas(getCanvasOpts());
+    afterProjectChange();
     appendLog('Everything deleted');
 });
 document.getElementById('menu-emergency-stop').addEventListener('click', doEmergencyStop);
@@ -1151,3 +1190,7 @@ try {
 initToolbar();
 initMidiUi();
 restore();
+renderProjectName();
+// The name in the bar follows a rename made anywhere — the Projects
+// dialog, or another editor.
+projectSession.subscribe((ev) => { if (ev.kind === 'project') renderProjectName(); });

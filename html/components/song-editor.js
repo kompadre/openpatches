@@ -164,44 +164,21 @@ export function createSongEditor(opts = {}) {
             });
         }
 
-        const select = document.createElement('select');
-        select.className = 'song-select';
-        select.title = 'Song';
-        for (const s of session.list()) {
-            const opt = document.createElement('option');
-            opt.value = s.id;
-            opt.textContent = s.name;
-            if (s.id === song.id) opt.selected = true;
-            select.appendChild(opt);
-        }
-        select.value = song.id;
-        select.addEventListener('change', () => {
-            selectedClipId = null;
-            session.open(select.value, 'song-editor');
-        });
-        toolbar.appendChild(select);
-
+        // This toolbar edits the **section** on screen. Choosing, creating
+        // and deleting *projects* used to live here too — a project is the
+        // whole piece now, far bigger than this panel, so it moved to the
+        // File menu.
         const name = document.createElement('input');
         name.className = 'song-name';
         name.type = 'text';
-        name.value = song.name;
-        name.title = 'Song name';
+        name.value = sec().name;
+        name.title = 'Section name';
         name.addEventListener('change', () => {
             const v = String(name.value).trim();
-            if (!v) { name.value = song.name; return; }
-            change((s) => { s.name = v; });
+            if (!v) { name.value = sec().name; return; }
+            session.renameSection(v, 'song-editor');
         });
         toolbar.appendChild(name);
-
-        toolbar.appendChild(button('+ Song', 'New empty song', () => {
-            selectedClipId = null;
-            session.createNew(`Untitled song ${session.list().length + 1}`, 'song-editor');
-        }));
-        toolbar.appendChild(button('✕', 'Delete this song', () => {
-            if (!confirm(`Delete song "${song.name}"?`)) return;
-            selectedClipId = null;
-            session.remove(song.id, 'song-editor');
-        }, 'song-btn song-delete'));
 
         const bpmLabel = document.createElement('label');
         bpmLabel.className = 'song-field';
