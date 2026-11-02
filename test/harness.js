@@ -199,6 +199,8 @@ class StubElement {
 
     contains(node) { return node === this || this._walk().includes(node); }
     focus() {}
+    /** Real anchors have this, and it is how a download is triggered. */
+    click() { this.dispatch('click', { target: this }); }
 
     setAttribute(name, value) { (this._attrs = this._attrs || {})[name] = String(value); }
     getAttribute(name) { return this._attrs && name in this._attrs ? this._attrs[name] : null; }

@@ -1,5 +1,9 @@
 {
   "devDependencies": {
     "@playwright/test": "^1.64.1"
+  },
+  "scripts": {
+    "e2e:port": "node -e \"import('./playwright.config.js').then(m=>console.log(new URL(m.default.use.baseURL).port))\"",
+    "e2e": "playwright test"
   }
 }

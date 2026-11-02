@@ -17,23 +17,40 @@ same port fight over it: one process fails to bind, or — worse — a stale
 server from the other pane keeps serving a **different worktree** and the
 tests silently pass against the wrong files. Both have happened.
 
-- **Derive every port you bind from the worktree path and `$TMUX_PANE`.**
-  The path hash separates sibling checkouts even inside one pane; the pane
-  keeps your last-digit convention: **the port's last digit must equal the
-  pane number's last digit** (`TMUX_PANE` is `%N`; `%2` here). The project
-  convention, implemented in `playwright.config.js` (`derivePort()`):
-  `h = djb2(cwd)`; `port = 8100 + (h % 80) * 10 + (N % 10)` — range
-  8100–8899, with `h % 10` standing in for the pane digit when `$TMUX_PANE`
-  is unset. This worktree on pane `%2` → `8572`.
-- **Never kill a process you did not start.** A server on someone else's port
-  is theirs. If your port is busy, that is your own orphan: find it with
-  `pgrep -af "server.py <your-port>"` and kill only that.
-- **Same rule for anything you create outside the project working directory**
-  — a file, a directory, a socket, a lock. Put the pane number in the name
-  (`/tmp/op-smoke-%2.mjs`), so two panes cannot collide or clobber each
-  other's output. This should be rare: prefer a path inside the worktree, and
-  prefer no file at all.
-- If `$TMUX_PANE` is unset, say so; the path hash alone still gives a
+- **Derive every port you bind from the worktree's *git dir* and
+  `$TMUX_PANE`.** The git dir separates sibling checkouts even inside one
+  pane; the pane keeps your last-digit convention: **the port's last digit
+  must equal the pane number's last digit** (`TMUX_PANE` is `%N`). The
+  project convention, implemented in `playwright.config.js`
+  (`derivePort()`): `h = djb2(git rev-parse --git-dir)`;
+  `port = 10000 + (h % 2000) * 10 + (N % 10)` — range **10000–29990**, with
+  `h % 10` standing in for the pane digit when `$TMUX_PANE` is unset.
+  `npm run e2e:port` prints it. This worktree → `29633`.
+- **Key on the git dir, not the path.** A worktree can appear at a
+  *different path* from one session to the next. Hashing the path meant the
+  port moved with it, so a server left running from a previous session sat
+  on a port nothing would ever look for again — and the "your own orphan is
+  on your own port" rule below was unenforceable, because it wasn't.
+  `git rev-parse --git-dir` returns `…/.git/worktrees/<name>`, keyed on the
+  worktree's *name*, which survives the checkout moving.
+- **Five digits, and below 32768.** Linux's ephemeral range here is
+  32768–60999 (`/proc/sys/net/ipv4/ip_local_port_range`); a listener inside
+  it can collide with the source port of an unrelated outgoing connection.
+  8000 remains the hand-run dev server's.
+- **Never kill a process you did not start.** A server on someone else's
+  port is theirs. If your port is busy, that is your own orphan: find it
+  with `pgrep -af "server.py $(npm run -s e2e:port)"` and kill only that.
+- **Restart your scratch server after editing `index.html`** (or anything
+  else served statically), and kill it when you are done. A stale server
+  serving an old snapshot of the page cost real time on 2026-11-02: a
+  change that was definitely on disk appeared not to exist in the browser.
+  Orphans accumulate fast when each check starts its own server.
+- **Same rule for anything you create outside the project working
+  directory** — a file, a directory, a socket, a lock. Put the pane number
+  in the name (`/tmp/op-smoke-%2.mjs`), so two panes cannot collide or
+  clobber each other's output. This should be rare: prefer a path inside
+  the worktree, and prefer no file at all.
+- If `$TMUX_PANE` is unset, say so; the git-dir hash alone still gives a
   worktree-stable port — never fall back to a shared fixed default.
 
 ## Current Tasks & Goals
@@ -470,6 +487,28 @@ CHANGELOG.md and the TODO.md reconciliation.
   check served an old `index.html` for several minutes and cost real time
   chasing a phantom. Restart the scratch server after editing
   `index.html`, and kill your own orphans when done.
+- [x] **Client-side `.syx` export — done 2026-11-02.** Groundwork for
+  phase 5, and the user's standing rule: *anything that can be done on
+  the client happens on the client, without the backend or an external
+  API.* The container's 💾 used to POST its patches to `/api/export-syx`
+  and download the URL that came back — a round trip to build bytes
+  `syx-builder.js` was already holding, which also meant the export
+  silently needed the optional inference server to be up.
+  - New `html/components/download.js`: `downloadBlob` / `downloadBytes` /
+    `downloadJson` / `safeFilename`. Phase 5's project export uses the
+    same path. The object URL is revoked on a timer, not in the click's
+    task — revoking there cancels the download in some browsers.
+  - `test/download.test.js` (10); `test/harness.js` gained `click()` on
+    the element stub (real anchors have it, and it is how a download
+    fires). The e2e that used to *mock* `/api/export-syx` now asserts the
+    opposite: zero `/api/` requests, and the bytes are a real 4104-byte
+    bulk dump (`F0 43` … `F7`).
+
+  **Still on the server, for a later decision:** `/api/play` (app.js:342
+  and :399) renders a patch to WAV server-side, even though
+  `renderOffline()` in audio-manager does it in WASM. Worth folding in
+  under the same rule, but it is a separate change from Project.
+
 - [ ] **5. Export / Import.** Single JSON file with `schemaVersion`
   (extension TBD — `.opproj`?). Export inlines patches, carries only
   tags **used in the project**, and writes jobs with their `fileName` plus

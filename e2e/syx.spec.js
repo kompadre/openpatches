@@ -92,19 +92,14 @@ test.describe('.syx I/O', () => {
         expect(trip.roundTripped).toEqual(trip.imported);
     });
 
-    test('the container export button produces a .syx download', async ({ page }) => {
-        // The real backend builds the file; under the static test server the
-        // API is mocked, so what is under test is the UI flow around it —
-        // the request's payload and the anchor-click download at the end.
-        let exportRequest = null;
-        await page.route('**/api/export-syx', async (route) => {
-            exportRequest = route.request().postDataJSON();
-            await route.fulfill({ json: { syx_url: '/__test__/out.syx', count: exportRequest.patches.length } });
-        });
-        await page.route('**/__test__/out.syx', (route) => route.fulfill({
-            body: Buffer.alloc(4104, 0x11),
-            contentType: 'application/octet-stream',
-        }));
+    test('the container export button builds a .syx here, with no server', async ({ page }) => {
+        // It used to POST the patches to /api/export-syx and download the
+        // URL that came back — a round trip to make bytes syx-builder.js
+        // was already holding, and one that silently needed the optional
+        // inference server to be running. The assertion is now that
+        // nothing leaves the page.
+        const apiCalls = [];
+        page.on('request', (r) => { if (r.url().includes('/api/')) apiCalls.push(r.url()); });
 
         await openApp(page);
         await importDemoBank(page);
@@ -115,7 +110,16 @@ test.describe('.syx I/O', () => {
         const file = await download;
 
         expect(file.suggestedFilename()).toMatch(/\.syx$/);
-        expect(exportRequest.patches.length).toBe(DEMO_VOICES);
-        expect(exportRequest.patches[0]).toHaveProperty('voice_data');
+        expect(apiCalls, 'the export must not need a backend').toEqual([]);
+
+        // And it is a real bulk dump, not an empty file: SysEx start, the
+        // Yamaha id, and the terminator, at the documented length.
+        const stream = await file.createReadStream();
+        const chunks = [];
+        for await (const c of stream) chunks.push(c);
+        const bytes = Buffer.concat(chunks);
+        expect(bytes.length).toBe(4104);
+        expect([bytes[0], bytes[1]]).toEqual([0xF0, 0x43]);
+        expect(bytes[bytes.length - 1]).toBe(0xF7);
     });
 });

@@ -14,7 +14,8 @@ import { initTutorial, startTutorial, restartTutorial, isTutorialActive } from '
 import * as midiManager from './synth/midi-manager.js';
 import { openMidiSettings, sendBankToDevice } from './components/midi-panel.js';
 import { openProjectsDialog } from './components/project-menu.js';
-import { makeInitVoice } from './components/syx-builder.js';
+import { makeInitVoice, buildBulkDump, VOICE_COUNT } from './components/syx-builder.js';
+import { downloadBytes, safeFilename } from './components/download.js';
 import { createProjectStore, takeLostSaveMarker } from './components/project-store.js';
 import { profileStore } from './components/profile-store.js';
 import { createProjectSession } from './components/project-session.js';
@@ -711,30 +712,27 @@ function getCanvasOpts() {
             canvasStore.putContainer(ctr);
             refreshCanvas();
         },
-        onExportContainer: async (patches, name) => {
-            let safeName = (name || 'patches').replace(/\.(?=[^.]*$)|syx$/i, '').trim();
-            safeName = safeName.replace(/[^a-zA-Z0-9 _\-]/g, '').trim() || 'patches';
-
+        // Built here, not fetched. syx-builder.js already produces these
+        // bytes — it is what sendBankToDevice writes to the hardware — so
+        // posting the patches to /api/export-syx and downloading the URL
+        // that came back was a round trip to make something we were
+        // holding. It also meant the export silently needed the optional
+        // inference server to be up.
+        onExportContainer: (patches, name) => {
+            const safeName = safeFilename(name, { fallback: 'patches', strip: 'syx' });
             if (patches.length === 0) {
                 appendLog('No patches with voice data to export');
                 return;
             }
             try {
-                const resp = await fetch(baseUrl + '/api/export-syx', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name: safeName, patches: patches.map(p => ({ name: p.name, voice_data: p.voice_data })) })
-                });
-                const data = await resp.json();
-                if (data.error) {
-                    appendLog('Export error: ' + data.error);
+                const bytes = buildBulkDump(patches, { channel: midiManager.getDeviceChannel() });
+                if (!downloadBytes(safeName + '.syx', bytes)) {
+                    appendLog('This browser cannot download files');
                     return;
                 }
-                const a = document.createElement('a');
-                a.href = baseUrl + data.syx_url;
-                a.download = safeName + '.syx';
-                a.click();
-                appendLog(`Exported ${data.count} patches as ${safeName}.syx`);
+                // A bulk dump is always 32 voices; the rest are INIT.
+                appendLog(`Exported ${patches.length} patches as ${safeName}.syx`
+                    + (patches.length < VOICE_COUNT ? ` (${VOICE_COUNT - patches.length} INIT)` : ''));
             } catch (e) {
                 appendLog('Export failed: ' + e.message);
             }
