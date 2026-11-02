@@ -8,13 +8,13 @@ import { test, before, beforeEach, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { installBrowserEnv } from './harness.js';
 
-let createTransport, createSongSession, M;
+let createTransport, makeProjectSession, M;
 
 before(async () => {
     installBrowserEnv();
     ({ createTransport } = await import('../html/synth/transport.js'));
-    ({ createSongSession } = await import('../html/components/song-session.js'));
-    M = await import('../html/components/song-model.js');
+    ({ makeProjectSession } = await import('./project-fixture.js'));
+    M = await import('../html/components/project-model.js');
 });
 
 beforeEach(() => localStorage.clear());
@@ -32,25 +32,25 @@ function makeTickWorker() {
 const BANK = [{ name: 'A', voiceData: 'a' }, { name: 'B', voiceData: 'b' }, { name: 'C', voiceData: 'c' }];
 
 /**
- * A session with `tracks` (slots) each carrying one clip of a pattern, and
- * a transport over it. `edit` picks which track the roll is "editing".
+ * A project whose `tracks` (slots) each carry one clip of a pattern in the
+ * edited section, and a transport over it. `edit` picks which track the
+ * roll is "editing".
  */
 function build(opts = {}) {
     const { tracks = [], mode = null, edit = 0 } = opts;   // mode: null = whatever was persisted
-    const session = createSongSession();
-    session.init();
+    const session = makeProjectSession();
     const made = [];
-    session.update((song) => {
+    session.update((project, section) => {
         for (const spec of tracks) {
-            const pattern = M.patternStore.create({
+            const pattern = M.addPattern(project, {
                 name: 'p' + spec.slot, measures: spec.measures || 1, notes: spec.notes || [],
             });
             const track = M.createTrack({ slot: spec.slot });
-            song.tracks.push(track);
-            const clip = M.addClip(song, {
+            project.tracks.push(track);
+            const clip = M.addClip(project, section, {
                 trackId: track.id, patternId: pattern.id,
-                startMeasure: spec.at || 0, repeats: spec.repeats || 1,
-            }, (id) => M.patternStore.get(id));
+                startCol: (spec.at || 0) * M.COLS_PER_MEASURE, repeats: spec.repeats || 1,
+            });
             made.push({ pattern, track, clip, slot: spec.slot });
         }
     }, 'test');
@@ -70,7 +70,7 @@ function build(opts = {}) {
             played.push({ midi, durMs, voiceData, slot });
         },
         getSlotData: (slot) => BANK[slot] || null,
-        getPattern: (id) => made.find(m => m.pattern.id === id)?.pattern || M.patternStore.get(id),
+        getPattern: (id) => made.find(m => m.pattern.id === id)?.pattern || session.getPattern(id),
         getEditTarget: () => {
             const m = made[editIdx];
             return m ? { trackId: m.track.id, clipId: m.clip.id, pattern: m.pattern, slot: m.slot } : null;
@@ -177,9 +177,11 @@ describe('pattern mode placements', () => {
     function placeAgain(h, measure, repeats = 1) {
         const m = h.made[0];
         let id = null;
-        h.session.update((song) => {
-            id = M.addClip(song, { trackId: m.track.id, patternId: m.pattern.id, startMeasure: measure, repeats },
-                (pid) => M.patternStore.get(pid)).id;
+        h.session.update((project, section) => {
+            id = M.addClip(project, section, {
+                trackId: m.track.id, patternId: m.pattern.id,
+                startCol: measure * M.COLS_PER_MEASURE, repeats,
+            }).id;
         }, 'test');
         return id;
     }
@@ -236,7 +238,7 @@ describe('pattern mode placements', () => {
 
     test('a pattern placed nowhere loops alone, with no song column', () => {
         const h = build({ tracks: [{ slot: 0, measures: 1, notes: [note(60, 0)] }], mode: 'pattern' });
-        h.session.update((song) => { song.clips = []; }, 'test');
+        h.session.update((project, section) => { section.clips = []; }, 'test');
         h.transport.play();
         assert.equal(h.transport.getSequence().kind, 'pattern');
         assert.equal(h.transport.getPlacement(), null);
@@ -253,7 +255,7 @@ describe('pattern mode placements', () => {
         });
         assert.equal(h.transport.play(), true, 'the backing alone is worth hearing');
         h.transport.stop();
-        h.session.update((song) => { song.clips[1].startCol = 32; }, 'test');
+        h.session.update((project, section) => { section.clips[1].startCol = 32; }, 'test');
         assert.equal(h.transport.play(), false, 'nothing inside the window');
     });
 });
@@ -446,7 +448,7 @@ describe('position reporting', () => {
 
     test('a loop range confines the columns reported', () => {
         const h = build({ tracks: [{ slot: 0, measures: 1, notes: [note(60, 0)], repeats: 4 }] });
-        h.session.update((song) => { song.loop = { start: 1, end: 2 }; }, 'test');
+        h.session.update((project, section) => { section.loop = { start: 1, end: 2 }; }, 'test');
         h.transport.play();
         h.tickWorker.tick(0);
         assert.equal(h.last().col, 16);

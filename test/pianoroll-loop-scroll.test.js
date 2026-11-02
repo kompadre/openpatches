@@ -16,10 +16,12 @@ const COL_W = 30;
 const LABEL_W = 36;
 
 let createPianoroll;
+let makeProjectSession, seedPattern;
 
 before(async () => {
     installBrowserEnv();
     ({ createPianoroll } = await import('../html/components/pianoroll.js'));
+    ({ makeProjectSession, seedPattern } = await import('./project-fixture.js'));
 });
 
 // Stands in for the real Web Worker: lets the test drive ticks by hand.
@@ -34,9 +36,15 @@ function makeTickWorker() {
 }
 
 function build({ measures = 1, notes = [] } = {}) {
-    localStorage.setItem('openpatches_pianoroll', JSON.stringify({ measures, notes, bpm: 120, followPlayhead: true }));
+    // Follow-scroll is a view preference, not part of the project — these
+    // tests are about it, so it has to be on. (It used to arrive inside the
+    // legacy roll blob, which is not read any more.)
+    localStorage.setItem('openpatches_roll_prefs', JSON.stringify({ followPlayhead: true }));
     const tickWorker = makeTickWorker();
+    const session = makeProjectSession();
+    seedPattern(session, { measures, notes: notes || [] });
     const roll = createPianoroll({
+        session,
         playNoteFn: () => {},
         onNotesChange: () => {},
         activeSlot: 0,

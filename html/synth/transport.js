@@ -39,10 +39,10 @@
 // known.
 
 import {
-    createSongSequence, createPatternSequence, msPerColumn,
+    createSectionSequence, createPatternSequence, msPerColumn,
     patternPlacements, nearestPlacement,
-} from './sequencer.js';
-import { COLS_PER_MEASURE, clipCols } from '../components/song-model.js';
+} from './section-sequencer.js';
+import { COLS_PER_MEASURE, clipCols, effectiveBpm as sectionBpm } from '../components/project-model.js';
 import * as midiManager from './midi-manager.js';
 
 const MODE_KEY = 'openpatches_transport_mode';
@@ -90,6 +90,8 @@ export function createTransport(opts) {
     let consecutiveErrors = 0;
     let warnedOutsideClip = false;
     let armed = null;         // 'play' | 'record' while waiting on, or following, an external clock
+    let pendingStart = false; // pressed, but waiting out an autosave — see deferIfSaving()
+    let startGen = 0;         // bumped by every start/stop, so a deferred start can tell it is stale
     const subscribers = new Set();
 
     function editTarget() {
@@ -98,19 +100,21 @@ export function createTransport(opts) {
 
     function buildSequence() {
         placement = null;
+        const project = session.get();
+        const section = project && session.getSection();
+        if (!project || !section) return createPatternSequence(null, 0);
         if (mode === 'pattern') {
             const t = editTarget();
             if (!t || !t.pattern) return createPatternSequence(null, 0);
-            const song = session.get();
-            const places = patternPlacements(song, t.pattern.id, getPattern);
+            const places = patternPlacements(project, section, t.pattern.id);
             if (places.length === 0) return createPatternSequence(t.pattern, t.slot);
             placement = nearestPlacement(places, songPos);
-            return createSongSequence(song, getPattern, {
+            return createSectionSequence(project, section, {
                 onlyTrackId: accompany ? null : t.trackId,
                 range: { startCol: placement.startCol, endCol: placement.endCol },
             });
         }
-        return createSongSequence(session.get(), getPattern);
+        return createSectionSequence(project, section);
     }
 
     /**
@@ -140,12 +144,24 @@ export function createTransport(opts) {
         return true;
     }
 
+    /**
+     * The project's tempo, or the edited section's override. One seam, so
+     * the later rit./accel. automation has one place to grow from.
+     */
     function getBpm() {
-        return session.get().bpm;
+        return sectionBpm(session.get(), session.getSection());
     }
 
-    /** The tempo notes are timed with: the device's when we follow one and it is known, else the song's. */
-    function effectiveBpm() {
+    /**
+     * The tempo notes are timed with: the device's when we follow one and
+     * it is known, else the project's (as overridden by the section).
+     *
+     * Deliberately *not* named `effectiveBpm` — project-model exports one
+     * of that name, imported here as `sectionBpm`, and a local of the same
+     * name would shadow it inside this closure and make `getBpm()` recurse
+     * into itself. It did, briefly.
+     */
+    function playbackBpm() {
         if (armed) {
             const ext = midiManager.getExternalBpm();
             if (ext) return ext;
@@ -178,10 +194,10 @@ export function createTransport(opts) {
         // `songCol` is the position on the song's timeline, for the Song
         // tab's playhead: the same as `col` whenever the sequence is the
         // song (both modes, except a lone pattern), -1 otherwise.
-        const songCol = col >= 0 && sequence && sequence.kind === 'song' ? col : -1;
+        const songCol = col >= 0 && sequence && sequence.kind === 'section' ? col : -1;
         const pos = {
             playing, recording, mode, col, songCol, edit, seam: false, rawCol: -1,
-            waiting: waiting(), bpm: effectiveBpm(),
+            waiting: waiting(), pending: pendingStart, bpm: playbackBpm(),
             ...extra,
         };
         for (const fn of [...subscribers]) {
@@ -202,7 +218,7 @@ export function createTransport(opts) {
 
     /** Sound everything that begins at `col`, each voice on its own slot. */
     function fire(col) {
-        const ms = msPerColumn(effectiveBpm());
+        const ms = msPerColumn(playbackBpm());
         for (const ev of sequence.eventsAt(col)) {
             // A note just played in by the user must not be echoed back at
             // them on the same pass; the flag is cleared at the loop seam.
@@ -233,7 +249,7 @@ export function createTransport(opts) {
         // recorder finalises notes held across it.
         const seam = rawCol > 0 && col === sequence.range.startCol;
         lastCol = col;
-        if (sequence.kind === 'song') songPos = col;
+        if (sequence.kind === 'section') songPos = col;
         if (!fire(col)) return;
         notify({ col, rawCol, seam });
     }
@@ -281,6 +297,12 @@ export function createTransport(opts) {
         }
     });
 
+    /** The edited section's clips — the arrangement the transport plays. */
+    function clipsHere() {
+        const section = session.getSection();
+        return section ? section.clips : [];
+    }
+
     function hasAnythingToPlay() {
         if (!sequence || !sequence.range) return false;
         if (mode === 'pattern' && sequence.kind === 'pattern') {
@@ -295,14 +317,14 @@ export function createTransport(opts) {
             // Anything with notes inside the window counts — the backing
             // alone is worth hearing while the pattern is still empty.
             const { startCol, endCol } = sequence.range;
-            return session.get().clips.some(c => {
+            return clipsHere().some(c => {
                 const p = getPattern(c.patternId);
                 const span = p && clipCols(c, p);
                 return !!span && p.notes.length > 0
                     && span.startCol < endCol && span.endCol > startCol;
             });
         }
-        return session.get().clips.some(c => {
+        return clipsHere().some(c => {
             const p = getPattern(c.patternId);
             return !!p && p.notes.length > 0;
         });
@@ -322,10 +344,42 @@ export function createTransport(opts) {
         lastCol = sequence.range.startCol;
         consecutiveErrors = 0;
         if (slaved()) return arm('play');
-        playing = true;
+        return deferIfSaving(() => {
+            playing = true;
+            notify({ col: lastCol });
+            midiManager.clockStart(lastCol);
+            startWorkerAt(0);
+        });
+    }
+
+    /**
+     * Pressing Play the millisecond an autosave begins must not start the
+     * clock mid-write: the save is a synchronous clone of the whole project
+     * on this thread, and the first columns would be scheduled late.
+     *
+     * So the press is taken — `pending` goes out in the position broadcast,
+     * and the button shows itself held down — and the start runs when the
+     * store goes quiet. `whenIdle()` resolves immediately when nothing is
+     * being written, which is every press but the unlucky one, so the
+     * common path costs a microtask and nothing is visible.
+     *
+     * A Stop (or anything else that moves the transport) while deferred
+     * wins: `startGen` is bumped by every start and stop, so a start that
+     * is no longer the current intent quietly does nothing.
+     */
+    function deferIfSaving(start) {
+        if (!session.whenIdle || !session.isSaving || !session.isSaving()) {
+            start();
+            return true;
+        }
+        const gen = ++startGen;
+        pendingStart = true;
         notify({ col: lastCol });
-        midiManager.clockStart(lastCol);
-        startWorkerAt(0);
+        session.whenIdle().then(() => {
+            pendingStart = false;
+            if (gen !== startGen) return;    // stopped, or restarted, meanwhile
+            start();
+        });
         return true;
     }
 
@@ -341,7 +395,9 @@ export function createTransport(opts) {
     }
 
     function stop() {
-        const wasRunning = playing || recording || !!armed;
+        const wasRunning = playing || recording || !!armed || pendingStart;
+        startGen++;               // a deferred start is no longer wanted
+        pendingStart = false;
         playing = false;
         recording = false;
         armed = null;
@@ -430,7 +486,7 @@ export function createTransport(opts) {
         isWaiting() { return waiting(); },
         /** Playing, recording, or armed and waiting — anything Stop would end. */
         isRunning() { return playing || recording || !!armed; },
-        getEffectiveBpm() { return effectiveBpm(); },
+        getEffectiveBpm() { return playbackBpm(); },
         getSequence() { return sequence; },
         getColumn() { return lastCol; },
         hasAnythingToPlay() { return hasAnythingToPlay(); },
@@ -465,9 +521,10 @@ export function createTransport(opts) {
                     patternId: t.pattern.id,
                 };
             }
-            const song = session.get();
-            const track = song.tracks.find(t => t.slot === slot);
-            const placed = track && song.clips.some(c => c.trackId === track.id);
+            // Tracks are the project's band; clips belong to the section.
+            const project = session.get();
+            const track = project && project.tracks.find(t => t.slot === slot);
+            const placed = track && clipsHere().some(c => c.trackId === track.id);
             if (!placed) return { fresh: true };
             if (!sequence || !sequence.range) return { fresh: true };
             const col = sequence.columnForTick(absCol);

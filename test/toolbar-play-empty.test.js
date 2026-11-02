@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { installBrowserEnv, installMidiStub } from './harness.js';
 
 let createToolbar;
+let makeProjectSession;
 let midi;
 
 before(async () => {
@@ -14,10 +15,12 @@ before(async () => {
     installMidiStub();
     midi = await import('../html/synth/midi-manager.js');
     ({ createToolbar } = await import('../html/components/toolbar.js'));
+    ({ makeProjectSession } = await import('./project-fixture.js'));
 });
 
 function build() {
     const dock = createToolbar({
+        session: makeProjectSession(),
         playNoteFn: () => Promise.resolve(() => {}),
         stopNoteFn: () => {},
         tickWorker: { postMessage() {}, addEventListener() {} },

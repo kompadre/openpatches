@@ -12,6 +12,7 @@ import assert from 'node:assert/strict';
 import { installBrowserEnv, installMidiStub } from './harness.js';
 
 let createToolbar;
+let makeProjectSession;
 let midi;
 let stub;
 
@@ -26,6 +27,7 @@ before(async () => {
     installMidiStub();
     midi = await import('../html/synth/midi-manager.js');
     ({ createToolbar } = await import('../html/components/toolbar.js'));
+    ({ makeProjectSession } = await import('./project-fixture.js'));
 });
 
 // Build a toolbar whose synth hands back a working stop function.
@@ -38,6 +40,7 @@ async function makeToolbar({ asyncStop = true, returnStop = true } = {}) {
     blindOffs = [];
 
     const dock = createToolbar({
+        session: makeProjectSession(),
         playNoteFn: (m, dur, voiceData, slot, noteOpts) => {
             played.push({ midi: m, dur, slot, noteOpts });
             if (!returnStop) return asyncStop ? Promise.resolve(undefined) : undefined;

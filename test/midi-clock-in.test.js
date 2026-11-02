@@ -9,7 +9,7 @@ import { test, before, beforeEach, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { installBrowserEnv, installMidiStub } from './harness.js';
 
-let midi, createTransport, createSongSession, createSongEditor, createToolbar, M;
+let midi, createTransport, makeProjectSession, createSongEditor, createToolbar, M;
 let stub;
 
 const CLOCK = 0xF8, START = 0xFA, CONTINUE = 0xFB, STOP = 0xFC;
@@ -19,10 +19,10 @@ before(async () => {
     installMidiStub();
     midi = await import('../html/synth/midi-manager.js');
     ({ createTransport } = await import('../html/synth/transport.js'));
-    ({ createSongSession } = await import('../html/components/song-session.js'));
+    ({ makeProjectSession } = await import('./project-fixture.js'));
     ({ createSongEditor } = await import('../html/components/song-editor.js'));
     ({ createToolbar } = await import('../html/components/toolbar.js'));
-    M = await import('../html/components/song-model.js');
+    M = await import('../html/components/project-model.js');
 });
 
 let clock = 0;
@@ -169,15 +169,14 @@ describe('parsing', () => {
 
 describe('the transport follows', () => {
     function build({ notes = [{ midi: 60, start: 0, dur: 4 }], empty = false } = {}) {
-        const session = createSongSession();
-        session.init();
+        const session = makeProjectSession();
         let clipId = null;
-        const pattern = M.patternStore.create({ name: 'A', measures: 1, notes });
+        const pattern = session.createPattern({ name: 'A', measures: 1, notes }, 'test');
         if (!empty) {
-            session.update((song) => {
+            session.update((project, section) => {
                 const t = M.createTrack({ slot: 0 });
-                song.tracks.push(t);
-                clipId = M.addClip(song, { trackId: t.id, patternId: pattern.id, startCol: 0 }, (id) => M.patternStore.get(id)).id;
+                project.tracks.push(t);
+                clipId = M.addClip(project, section, { trackId: t.id, patternId: pattern.id, startCol: 0 }).id;
             }, 'test');
         }
         const handlers = [];
@@ -192,7 +191,7 @@ describe('the transport follows', () => {
         const transport = createTransport({
             session, tickWorker, startWorker: () => started.push(1), stopWorker: () => {},
             playNote: (m, durMs) => played.push([m, durMs]), getSlotData: () => null,
-            getPattern: (id) => M.patternStore.get(id),
+            getPattern: (id) => session.getPattern(id),
             getEditTarget: () => (empty ? null : { trackId: session.get().tracks[0].id, clipId, pattern, slot: 0 }),
             onStop: () => stops.push(1),
         });
@@ -311,17 +310,16 @@ describe('the transport follows', () => {
 describe('what the buttons show', () => {
     test('the Song tab\'s Play pulses while waiting, and Stop is live', async () => {
         await slaved();
-        const session = createSongSession();
-        session.init();
-        const pattern = M.patternStore.create({ name: 'A', measures: 1, notes: [{ midi: 60, start: 0, dur: 1 }] });
-        session.update((song) => {
+        const session = makeProjectSession();
+        const pattern = session.createPattern({ name: 'A', measures: 1, notes: [{ midi: 60, start: 0, dur: 1 }] });
+        session.update((project, section) => {
             const t = M.createTrack({ slot: 0 });
-            song.tracks.push(t);
-            M.addClip(song, { trackId: t.id, patternId: pattern.id, startCol: 0 }, (id) => M.patternStore.get(id));
+            project.tracks.push(t);
+            M.addClip(project, section, { trackId: t.id, patternId: pattern.id, startCol: 0 });
         }, 'test');
         const transport = createTransport({
             session, tickWorker: { postMessage() {}, addEventListener() {} }, startWorker: () => {}, stopWorker: () => {},
-            playNote: () => {}, getSlotData: () => null, getPattern: (id) => M.patternStore.get(id), getEditTarget: () => null,
+            playNote: () => {}, getSlotData: () => null, getPattern: (id) => session.getPattern(id), getEditTarget: () => null,
         });
         const editor = createSongEditor({ session, transport, getSlotData: () => null });
         const play = () => editor.element.querySelector('.song-play');
@@ -355,6 +353,7 @@ describe('recording under an external clock', () => {
     test('a key is placed relative to the device\'s Start, at its tempo — not relative to pressing Rec', async () => {
         const port = await slaved();
         const dock = createToolbar({
+            session: makeProjectSession(),
             playNoteFn: () => Promise.resolve(() => {}), stopNoteFn: () => {},
             tickWorker: { postMessage() {}, addEventListener() {} }, startWorker: () => {}, stopWorker: () => {},
         });

@@ -1,25 +1,27 @@
-// The voice bank follows the song (phase 6).
+// The voice bank follows the project.
 //
 // Loading a song used to restore the voices it was written for — that was
 // the song bar's job, and the bar is gone. The toolbar now does it when the
-// session switches song, and keeps the current song's copy of the bank up
-// to date so new songs remember their sounds too.
+// session switches project, and keeps the open project's copy of the bank
+// up to date so a new project remembers its sounds too.
 //
-// (Project, in TODO.md, takes ownership of the voice bank and this goes
-// with it.)
+// Still the flat `voiceBank` array inherited from the Song era. Phase 3c
+// moves it onto the project's tracks, where the patch and the mixer strip
+// already live, and this file goes with it.
 
 import { test, before, beforeEach, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { installBrowserEnv, installMidiStub } from './harness.js';
 
-let createToolbar, M, midi;
+let createToolbar, makeProjectSession, M, midi;
 
 before(async () => {
     installBrowserEnv();
     installMidiStub();
     midi = await import('../html/synth/midi-manager.js');
-    M = await import('../html/components/song-model.js');
+    M = await import('../html/components/project-model.js');
     ({ createToolbar } = await import('../html/components/toolbar.js'));
+    ({ makeProjectSession } = await import('./project-fixture.js'));
 });
 
 beforeEach(() => {
@@ -29,6 +31,7 @@ beforeEach(() => {
 
 function build() {
     const dock = createToolbar({
+        session: makeProjectSession(),
         playNoteFn: () => Promise.resolve(() => {}),
         stopNoteFn: () => {},
         tickWorker: { postMessage() {}, addEventListener() {} },
@@ -70,7 +73,7 @@ describe('the current song keeps its voices current', () => {
         // track. The bank must be left exactly as it is — reapplying the
         // song's snapshot here would throw away whatever the user just did
         // to the voices (and _setEntries mints fresh entry ids).
-        h.session.update((song) => { song.tracks.push(M.createTrack({ slot: 4 })); }, 'song-editor');
+        h.session.update((project) => { project.tracks.push(M.createTrack({ slot: 4 })); }, 'song-editor');
 
         const after = bank._getEntries().filter(Boolean);
         assert.deepEqual(after.map(e => e.name), ['Piano']);
@@ -99,26 +102,26 @@ describe('the current song keeps its voices current', () => {
     });
 });
 
-describe('switching song restores its voices', () => {
-    test('the bank is replaced by the song it was written for', () => {
+describe('switching project restores its voices', () => {
+    test('the bank is replaced by the project it was written for', async () => {
         const h = build();
         const bank = h.dock._voiceBank;
         bank._addEntry('Piano', 'piano-data', 'p1');
-        const first = h.session.get().id;
+        const first = h.session.getId();
 
-        // A second song with its own voices.
-        const other = M.songStore.create({
+        // A second project with its own voices.
+        h.session.createFrom({
             name: 'Other',
             voiceBank: [{ name: 'Strings', patchId: 'p9', volume: 80, voiceData: 'str-data' }],
-        });
-        h.session.open(other.id, 'song-editor');
+        }, 'song-editor');
 
         assert.deepEqual(bank._getEntries().filter(Boolean).map(e => e.name), ['Strings']);
-        h.session.open(first, 'song-editor');
+        // Reading a body back is the one switch that has to be async.
+        await h.session.open(first, 'song-editor');
         assert.deepEqual(bank._getEntries().filter(Boolean).map(e => e.name), ['Piano']);
     });
 
-    test('a new song has no voices of its own, so the bank carries on', () => {
+    test('a new project has no voices of its own, so the bank carries on', () => {
         const h = build();
         const bank = h.dock._voiceBank;
         bank._addEntry('Piano', 'piano-data', 'p1');

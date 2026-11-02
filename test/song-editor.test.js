@@ -7,13 +7,18 @@ import { test, before, beforeEach, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { installBrowserEnv } from './harness.js';
 
-let createSongEditor, createSongSession, M, MEASURE_W, env;
+let createSongEditor, makeProjectSession, M, MEASURE_W, env;
+
+// The open project the editor under test is bound to. build() sets it, and
+// the pattern assertions read the library through it — patterns belong to
+// the project now, not to a global store.
+let session = null;
 
 before(async () => {
     env = installBrowserEnv();
     ({ createSongEditor, MEASURE_W } = await import('../html/components/song-editor.js'));
-    ({ createSongSession } = await import('../html/components/song-session.js'));
-    M = await import('../html/components/song-model.js');
+    ({ makeProjectSession } = await import('./project-fixture.js'));
+    M = await import('../html/components/project-model.js');
 });
 
 beforeEach(() => {
@@ -25,22 +30,21 @@ const BANK = [
     { name: 'Piano', color: '#aaa001', voiceData: 'p' },
     { name: 'Bass', color: '#bbb002', voiceData: 'b' },
 ];
-const getPattern = (id) => M.patternStore.get(id);
+const getPattern = (id) => session.getPattern(id);
 const COLS = 16;              // COLS_PER_MEASURE — a bar, in columns
 
 function build({ patterns = [], tracks = [], clips = [] } = {}) {
-    const session = createSongSession();
-    session.init();
-    const made = patterns.map(p => M.patternStore.create(p));
+    session = makeProjectSession();
+    const made = patterns.map(p => session.createPattern(p, 'test'));
     if (tracks.length || clips.length) {
-        session.update((song) => {
-            song.tracks.push(...tracks.map(t => M.createTrack(t)));
+        session.update((project, section) => {
+            project.tracks.push(...tracks.map(t => M.createTrack(t)));
             for (const c of clips) {
-                M.addClip(song, {
-                    trackId: song.tracks[c.track].id,
+                M.addClip(project, section, {
+                    trackId: project.tracks[c.track].id,
                     patternId: made[c.pattern].id,
-                    startMeasure: c.at, repeats: c.repeats || 1,
-                }, getPattern);
+                    startCol: c.at * COLS, repeats: c.repeats || 1,
+                });
             }
         }, 'test');
     }
@@ -55,6 +59,7 @@ function build({ patterns = [], tracks = [], clips = [] } = {}) {
     const h = {
         editor, session, logs, opened, root, patterns: made,
         song: () => session.get(),
+        section: () => session.getSection(),
         status: () => root.querySelector('.song-status').textContent,
         lanes: () => root.querySelectorAll('.song-lane'),
         clips: () => root.querySelectorAll('.song-clip'),
@@ -95,7 +100,7 @@ describe('rendering', () => {
 
     test('a clip whose pattern is gone is skipped, not fatal', () => {
         const h = build({ patterns: [{ name: 'A' }], tracks: [{ slot: 0 }], clips: [{ track: 0, pattern: 0, at: 0 }] });
-        M.patternStore.remove(h.patterns[0].id);
+        session.removePattern(h.patterns[0].id, 'test');
         h.editor.render();
         assert.equal(h.clips().length, 0);
         assert.equal(h.lanes().length, 1);
@@ -116,17 +121,18 @@ describe('placing clips', () => {
         assert.equal(h.editor.getSelectedPatternId(), h.patterns[0].id);
         h.click(h.lanes()[0], 3 * MEASURE_W + 5);
         const song = h.song();
-        assert.equal(song.clips.length, 1);
-        assert.equal(song.clips[0].startCol, 3 * COLS, 'bars are the default snap');
-        assert.equal(song.clips[0].patternId, h.patterns[0].id);
-        assert.equal(M.songStore.get(song.id).clips.length, 1, 'autosaved');
-        assert.equal(h.editor.getSelectedClipId(), song.clips[0].id, 'the new clip is selected');
+        const section = h.section();
+        assert.equal(section.clips.length, 1);
+        assert.equal(section.clips[0].startCol, 3 * COLS, 'bars are the default snap');
+        assert.equal(section.clips[0].patternId, h.patterns[0].id);
+        assert.equal(session.isDirty(), true, 'the edit reached the store, to be written');
+        assert.equal(h.editor.getSelectedClipId(), section.clips[0].id, 'the new clip is selected');
     });
 
     test('without a selected pattern the click explains itself', () => {
         const h = build({ patterns: [{ name: 'A' }], tracks: [{ slot: 0 }] });
         h.click(h.lanes()[0], 10);
-        assert.equal(h.song().clips.length, 0);
+        assert.equal(h.section().clips.length, 0);
         assert.match(h.status(), /Select a pattern/);
     });
 
@@ -137,7 +143,7 @@ describe('placing clips', () => {
         });
         h.click(h.items()[0]);
         h.click(h.lanes()[0], 2 * MEASURE_W + 5);
-        assert.equal(h.song().clips.length, 1);
+        assert.equal(h.section().clips.length, 1);
         assert.equal(h.status(), 'Clip overlaps');
         assert.ok(h.logs.some(l => /Clip overlaps/.test(l)));
     });
@@ -147,7 +153,7 @@ describe('placing clips', () => {
         h.click(h.items()[0]);
         h.click(h.lanes()[0], 5);
         h.click(h.lanes()[1], 5);
-        assert.equal(h.song().clips.length, 2);
+        assert.equal(h.section().clips.length, 2);
     });
 });
 
@@ -165,7 +171,7 @@ describe('moving and lengthening clips', () => {
         clip.dispatch('mousedown', ev({ clientX: 10 }));
         h.doc('mousemove', ev({ clientX: 10 + 3 * MEASURE_W }));
         h.doc('mouseup', ev({ clientX: 10 + 3 * MEASURE_W }));
-        assert.equal(h.song().clips[0].startCol, 3 * COLS);
+        assert.equal(h.section().clips[0].startCol, 3 * COLS);
     });
 
     test('a jitter under the threshold is a click, not a move', () => {
@@ -174,12 +180,12 @@ describe('moving and lengthening clips', () => {
         clip.dispatch('mousedown', ev({ clientX: 10 }));
         h.doc('mousemove', ev({ clientX: 12 }));
         h.doc('mouseup', ev({ clientX: 12 }));
-        assert.equal(h.song().clips[0].startCol, 0);
+        assert.equal(h.section().clips[0].startCol, 0);
         // Nothing happened, so nothing was redrawn: the same element is
         // still there, and the click that follows selects it as usual.
         assert.equal(h.clips()[0], clip, 'no re-render for a wobble');
         h.click(clip);
-        assert.equal(h.editor.getSelectedClipId(), h.song().clips[0].id);
+        assert.equal(h.editor.getSelectedClipId(), h.section().clips[0].id);
     });
 
     test('a move onto a neighbour snaps back and says why', () => {
@@ -188,7 +194,7 @@ describe('moving and lengthening clips', () => {
         clip.dispatch('mousedown', ev({ clientX: 0 }));
         h.doc('mousemove', ev({ clientX: 2 * MEASURE_W }));
         h.doc('mouseup', ev({ clientX: 2 * MEASURE_W }));             // → [2,4) overlaps
-        assert.equal(h.song().clips[0].startCol, 0);
+        assert.equal(h.section().clips[0].startCol, 0);
         assert.equal(h.status(), 'Clip overlaps');
         assert.equal(h.clips()[0].style.left, '0px', 're-rendered in place');
     });
@@ -199,7 +205,7 @@ describe('moving and lengthening clips', () => {
         clip.dispatch('mousedown', ev({ clientX: 200 }));
         h.doc('mousemove', ev({ clientX: 0 }));
         h.doc('mouseup', ev({ clientX: 0 }));
-        assert.equal(h.song().clips[0].startCol, 0);
+        assert.equal(h.section().clips[0].startCol, 0);
     });
 
     test('dragging the handle gives the clip a length of its own', () => {
@@ -208,8 +214,8 @@ describe('moving and lengthening clips', () => {
         handle.dispatch('mousedown', ev({ clientX: 2 * MEASURE_W }));
         h.doc('mousemove', ev({ clientX: 2 * MEASURE_W + 4 * MEASURE_W }));
         h.doc('mouseup', ev({ clientX: 2 * MEASURE_W + 4 * MEASURE_W }));
-        assert.equal(h.song().clips[0].lengthCols, 6 * COLS, '2 bars + 4 bars');
-        assert.equal(h.song().clips[0].repeats, undefined, 'it no longer follows its pattern');
+        assert.equal(h.section().clips[0].lengthCols, 6 * COLS, '2 bars + 4 bars');
+        assert.equal(h.section().clips[0].repeats, undefined, 'it no longer follows its pattern');
         assert.equal(h.clips()[0].querySelector('.song-clip-label').textContent, 'A ×3');
     });
 
@@ -219,7 +225,7 @@ describe('moving and lengthening clips', () => {
         handle.dispatch('mousedown', ev({ clientX: 0 }));
         h.doc('mousemove', ev({ clientX: MEASURE_W }));                 // 2 bars + 1 = 1.5 repeats
         h.doc('mouseup', ev({ clientX: MEASURE_W }));
-        assert.equal(h.song().clips[0].lengthCols, 3 * COLS);
+        assert.equal(h.section().clips[0].lengthCols, 3 * COLS);
         assert.equal(h.clips()[0].querySelector('.song-clip-label').textContent, 'A ×1.5');
     });
 
@@ -229,7 +235,7 @@ describe('moving and lengthening clips', () => {
         handle.dispatch('mousedown', ev({ clientX: 100 }));
         h.doc('mousemove', ev({ clientX: -500 }));
         h.doc('mouseup', ev({ clientX: -500 }));
-        assert.equal(h.song().clips[0].lengthCols, COLS, 'one bar, the default snap');
+        assert.equal(h.section().clips[0].lengthCols, COLS, 'one bar, the default snap');
     });
 
     test('touchcancel abandons the drag', () => {
@@ -238,7 +244,7 @@ describe('moving and lengthening clips', () => {
         clip.dispatch('touchstart', ev({ touches: [{ clientX: 0, clientY: 0 }] }));
         h.doc('touchmove', ev({ touches: [{ clientX: 3 * MEASURE_W, clientY: 0 }] }));
         h.doc('touchcancel', ev({}));
-        assert.equal(h.song().clips[0].startCol, 0);
+        assert.equal(h.section().clips[0].startCol, 0);
         assert.equal(h.clips()[0].style.left, '0px');
     });
 });
@@ -251,12 +257,12 @@ describe('selecting, opening and removing clips', () => {
     test('click selects the clip and its pattern; Delete removes it', () => {
         const h = one();
         h.click(h.clips()[0]);
-        const id = h.song().clips[0].id;
+        const id = h.section().clips[0].id;
         assert.equal(h.editor.getSelectedClipId(), id);
         assert.equal(h.editor.getSelectedPatternId(), h.patterns[0].id);
         assert.ok(h.clips()[0].classList.contains('selected'));
         h.doc('keydown', { key: 'Delete', target: { tagName: 'DIV' }, preventDefault() {} });
-        assert.equal(h.song().clips.length, 0);
+        assert.equal(h.section().clips.length, 0);
         assert.equal(h.editor.getSelectedClipId(), null);
     });
 
@@ -264,21 +270,21 @@ describe('selecting, opening and removing clips', () => {
         const h = one();
         h.click(h.clips()[0]);
         h.doc('keydown', { key: 'Backspace', target: { tagName: 'INPUT' }, preventDefault() {} });
-        assert.equal(h.song().clips.length, 1);
+        assert.equal(h.section().clips.length, 1);
     });
 
     test('the Remove button does it without a keyboard', () => {
         const h = one();
         h.click(h.clips()[0]);
         h.btn('song-clip-remove').dispatch('click', ev());
-        assert.equal(h.song().clips.length, 0);
+        assert.equal(h.section().clips.length, 0);
     });
 
     test('the Open button hands the clip to the piano roll', () => {
         const h = one();
         h.click(h.clips()[0]);
         h.btn('song-clip-open').dispatch('click', ev());
-        const c = h.song().clips[0];
+        const c = h.section().clips[0];
         assert.deepEqual(h.opened, [{ clipId: c.id, trackId: h.song().tracks[0].id, patternId: h.patterns[0].id }]);
     });
 });
@@ -308,10 +314,10 @@ describe('clip gestures', () => {
         t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
         const h = one();
         tap(h);
-        assert.equal(h.song().clips.length, 1, 'one tap selects, nothing more');
+        assert.equal(h.section().clips.length, 1, 'one tap selects, nothing more');
         t.mock.timers.tick(150);
         tap(h);
-        assert.equal(h.song().clips.length, 0);
+        assert.equal(h.section().clips.length, 0);
         assert.equal(h.editor.getSelectedClipId(), null);
         assert.deepEqual(h.opened, [], 'and the hold timer was cancelled, not left to open a dead clip');
         t.mock.timers.tick(1000);
@@ -324,7 +330,7 @@ describe('clip gestures', () => {
         tap(h, 'touch');
         t.mock.timers.tick(150);
         tap(h, 'touch');
-        assert.equal(h.song().clips.length, 0);
+        assert.equal(h.section().clips.length, 0);
     });
 
     test('two slow taps do not', (t) => {
@@ -333,7 +339,7 @@ describe('clip gestures', () => {
         tap(h);
         t.mock.timers.tick(450);
         tap(h);
-        assert.equal(h.song().clips.length, 1);
+        assert.equal(h.section().clips.length, 1);
     });
 
     test('re-grabbing a clip right after dragging it is not a double tap', (t) => {
@@ -342,11 +348,11 @@ describe('clip gestures', () => {
         h.clips()[0].dispatch('mousedown', ev({ clientX: 0 }));
         h.doc('mousemove', ev({ clientX: MEASURE_W }));
         h.doc('mouseup', ev({ clientX: MEASURE_W }));
-        assert.equal(h.song().clips[0].startCol, COLS);
+        assert.equal(h.section().clips[0].startCol, COLS);
         t.mock.timers.tick(50);
         h.clips()[0].dispatch('mousedown', ev({ clientX: MEASURE_W }));
         h.doc('mouseup', ev({ clientX: MEASURE_W }));
-        assert.equal(h.song().clips.length, 1);
+        assert.equal(h.section().clips.length, 1);
     });
 
     test('a still press of 600 ms opens the clip in the roll', (t) => {
@@ -356,14 +362,14 @@ describe('clip gestures', () => {
         t.mock.timers.tick(599);
         assert.deepEqual(h.opened, []);
         t.mock.timers.tick(1);
-        const c = h.song().clips[0];
+        const c = h.section().clips[0];
         assert.deepEqual(h.opened, [{ clipId: c.id, trackId: h.song().tracks[0].id, patternId: h.patterns[0].id }]);
         // The release that follows a hold is not a tap: another press soon
         // after must not read as a double tap and remove what was just opened.
         h.doc('mouseup', ev({ clientX: 5, clientY: 5 }));
         h.clips()[0].dispatch('mousedown', ev({ clientX: 5, clientY: 5 }));
         h.doc('mouseup', ev({ clientX: 5, clientY: 5 }));
-        assert.equal(h.song().clips.length, 1);
+        assert.equal(h.section().clips.length, 1);
     });
 
     test('a touch hold opens too', (t) => {
@@ -383,7 +389,7 @@ describe('clip gestures', () => {
         t.mock.timers.tick(600);
         assert.deepEqual(h.opened, []);
         h.doc('mouseup', ev({ clientX: MEASURE_W }));
-        assert.equal(h.song().clips[0].startCol, COLS);
+        assert.equal(h.section().clips[0].startCol, COLS);
     });
 
     test('releasing before 600 ms cancels the hold', (t) => {
@@ -406,7 +412,7 @@ describe('clip gestures', () => {
         h.doc('mouseup', ev({ clientX: 40 }));
         handle().dispatch('mousedown', ev({ clientX: 40 }));
         h.doc('mouseup', ev({ clientX: 40 }));
-        assert.equal(h.song().clips.length, 1);
+        assert.equal(h.section().clips.length, 1);
     });
 });
 
@@ -449,7 +455,7 @@ describe('tracks', () => {
         globalThis.confirm = () => true;
         h.btn('song-track-remove').dispatch('click', ev());
         assert.deepEqual(h.song().tracks, []);
-        assert.deepEqual(h.song().clips, []);
+        assert.deepEqual(h.section().clips, []);
     });
 });
 
@@ -457,14 +463,14 @@ describe('palette', () => {
     test('+ creates a pattern and selects it', () => {
         const h = build();
         h.btn('song-pattern-new').dispatch('click', ev());
-        assert.equal(M.patternStore.list().length, 1);
-        assert.equal(h.editor.getSelectedPatternId(), M.patternStore.list()[0].id);
+        assert.equal(session.listPatterns().length, 1);
+        assert.equal(h.editor.getSelectedPatternId(), session.listPatterns()[0].id);
     });
 
     test('duplicate copies the notes under a new id', () => {
         const h = build({ patterns: [{ name: 'A', notes: [{ midi: 60, start: 0, dur: 1 }] }] });
         h.btn('song-pattern-dup').dispatch('click', ev());
-        const all = M.patternStore.list();
+        const all = session.listPatterns();
         assert.equal(all.length, 2);
         const copy = all.find(p => p.name === 'A copy');
         assert.deepEqual(copy.notes, [{ midi: 60, start: 0, dur: 1 }]);
@@ -477,18 +483,18 @@ describe('palette', () => {
         nameEl.dispatch('dblclick', ev());
         nameEl.textContent = 'Bassline';
         nameEl.dispatch('blur');
-        assert.equal(M.patternStore.get(h.patterns[0].id).name, 'Bassline');
+        assert.equal(session.getPattern(h.patterns[0].id).name, 'Bassline');
     });
 
     test('delete is refused while the pattern is placed anywhere', () => {
         const h = build({ patterns: [{ name: 'A' }], tracks: [{ slot: 0 }], clips: [{ track: 0, pattern: 0, at: 0 }] });
         h.btn('song-pattern-del').dispatch('click', ev());
-        assert.ok(M.patternStore.get(h.patterns[0].id), 'still there');
+        assert.ok(session.getPattern(h.patterns[0].id), 'still there');
         assert.match(h.status(), /placed in 1 song/);
         h.click(h.clips()[0]);
         h.btn('song-clip-remove').dispatch('click', ev());
         h.btn('song-pattern-del').dispatch('click', ev());
-        assert.equal(M.patternStore.get(h.patterns[0].id), null);
+        assert.equal(session.getPattern(h.patterns[0].id), null);
     });
 });
 
@@ -509,12 +515,12 @@ describe('song toolbar', () => {
         h.btn('song-loop-start').value = '2';
         h.btn('song-loop-end').value = '3';
         h.btn('song-loop-end').dispatch('change');
-        assert.deepEqual(h.song().loop, { start: 1, end: 3 }, '1-based inclusive bars → 0-based half-open');
+        assert.deepEqual(h.section().loop, { start: 1, end: 3 }, '1-based inclusive bars → 0-based half-open');
         assert.ok(h.root.querySelector('.song-loop-band'), 'shown on the ruler');
 
         h.btn('song-loop-on').checked = false;
         h.btn('song-loop-on').dispatch('change');
-        assert.equal(h.song().loop, null);
+        assert.equal(h.section().loop, null);
     });
 
     test('a backwards loop range is refused with a message', () => {
@@ -523,11 +529,11 @@ describe('song toolbar', () => {
         h.btn('song-loop-start').value = '4';
         h.btn('song-loop-end').value = '2';
         h.btn('song-loop-end').dispatch('change');
-        assert.equal(h.song().loop, null);
+        assert.equal(h.section().loop, null);
         assert.match(h.status(), /later/);
     });
 
-    test('new song, switch song, delete song', () => {
+    test('new project, switch project, delete project', async () => {
         const h = build({ tracks: [{ slot: 0 }] });
         const first = h.song().id;
         h.btn('song-btn').dispatch('click', ev());                  // the first .song-btn is "+ Song"
@@ -538,10 +544,14 @@ describe('song toolbar', () => {
         assert.equal(sel.children.length, 2);
         sel.value = first;
         sel.dispatch('change');
+        // Opening reads the body back out of the store, so it is the one
+        // switch that cannot be synchronous.
+        await new Promise(r => setTimeout(r, 0));
         assert.equal(h.song().id, first);
         assert.equal(h.song().tracks.length, 1);
 
         h.btn('song-delete').dispatch('click', ev());
+        await new Promise(r => setTimeout(r, 0));
         assert.notEqual(h.song().id, first);
         assert.equal(h.session.list().length, 1);
     });
@@ -551,14 +561,14 @@ describe('it follows the session', () => {
     test('a track added elsewhere (the roll drawing a note) appears', () => {
         const h = build();
         assert.equal(h.lanes().length, 0);
-        h.session.update((song) => { song.tracks.push(M.createTrack({ slot: 3 })); }, 'roll');
+        h.session.update((project) => { project.tracks.push(M.createTrack({ slot: 3 })); }, 'roll');
         assert.equal(h.lanes().length, 1);
     });
 
     test('a pattern lengthened elsewhere widens its clips', () => {
         const h = build({ patterns: [{ name: 'A', measures: 1 }], tracks: [{ slot: 0 }], clips: [{ track: 0, pattern: 0, at: 0 }] });
         assert.equal(h.clips()[0].style.width, (MEASURE_W - 2) + 'px');
-        M.patternStore.put({ ...h.patterns[0], measures: 3 });
+        session.updatePattern(h.patterns[0].id, { measures: 3 }, 'test');
         h.session.notifyPattern(h.patterns[0].id, 'roll');
         assert.equal(h.clips()[0].style.width, (3 * MEASURE_W - 2) + 'px');
     });
@@ -568,21 +578,22 @@ describe('it follows the session', () => {
         h.click(h.clips()[0]);
         h.editor.destroy();
         h.doc('keydown', { key: 'Delete', target: { tagName: 'DIV' }, preventDefault() {} });
-        assert.equal(h.song().clips.length, 1);
+        assert.equal(h.section().clips.length, 1);
     });
 });
 
 describe('playhead (phase 5)', () => {
     async function withTransport() {
         const { createTransport } = await import('../html/synth/transport.js');
-        const session = createSongSession();
-        session.init();
-        const pattern = M.patternStore.create({ name: 'A', measures: 2, notes: [{ midi: 60, start: 0, dur: 1 }] });
+        session = makeProjectSession();
+        const pattern = session.createPattern({ name: 'A', measures: 2, notes: [{ midi: 60, start: 0, dur: 1 }] }, 'test');
         let clipId = null;
-        session.update((song) => {
+        session.update((project, section) => {
             const t = M.createTrack({ slot: 0 });
-            song.tracks.push(t);
-            clipId = M.addClip(song, { trackId: t.id, patternId: pattern.id, startMeasure: 0, repeats: 2 }, getPattern).id;
+            project.tracks.push(t);
+            clipId = M.addClip(project, section, {
+                trackId: t.id, patternId: pattern.id, startCol: 0, repeats: 2,
+            }).id;
         }, 'test');
         const handlers = [];
         const tickWorker = {
@@ -592,7 +603,7 @@ describe('playhead (phase 5)', () => {
         const transport = createTransport({
             session, tickWorker, startWorker: () => {}, stopWorker: () => {},
             playNote: () => {}, getSlotData: () => null,
-            getPattern: (id) => M.patternStore.get(id),
+            getPattern: (id) => session.getPattern(id),
             getEditTarget: () => ({ trackId: session.get().tracks[0].id, clipId, pattern, slot: 0 }),
         });
         const editor = createSongEditor({ session, transport, getSlotData: (s) => BANK[s] || null });
@@ -651,8 +662,11 @@ describe('playhead (phase 5)', () => {
     test('opening a clip parks the song position on it, so that placement is what loops', async () => {
         const h = await withTransport();
         // A second clip of the same pattern at bar 5.
-        h.session.update((song) => {
-            M.addClip(song, { trackId: song.tracks[0].id, patternId: song.clips[0].patternId, startMeasure: 4 }, getPattern);
+        h.session.update((project, section) => {
+            M.addClip(project, section, {
+                trackId: project.tracks[0].id, patternId: section.clips[0].patternId,
+                startCol: 4 * COLS,
+            });
         }, 'test');
         const second = h.root.querySelectorAll('.song-clip')[1];
         second.dispatch('click', ev());
@@ -683,7 +697,7 @@ describe('pattern rename without a double-click', () => {
         assert.equal(nameEl.contentEditable, 'true');
         nameEl.textContent = 'Lead line';
         nameEl.dispatch('blur');
-        assert.equal(M.patternStore.get(h.patterns[0].id).name, 'Lead line');
+        assert.equal(session.getPattern(h.patterns[0].id).name, 'Lead line');
         assert.equal(h.items()[0].querySelector('.song-pattern-name').textContent, 'Lead line');
     });
 
@@ -693,7 +707,7 @@ describe('pattern rename without a double-click', () => {
         h.items()[0].querySelector('.song-pattern-rename').dispatch('click', ev());
         nameEl.textContent = '   ';
         nameEl.dispatch('blur');
-        assert.equal(M.patternStore.get(h.patterns[0].id).name, 'A');
+        assert.equal(session.getPattern(h.patterns[0].id).name, 'A');
     });
 });
 
@@ -721,9 +735,9 @@ describe('moving clips between tracks', () => {
 
     test('a vertical drag moves the clip to the lane under the pointer, same bar', () => {
         const h = two();
-        const before = h.song().clips[0];
+        const before = h.section().clips[0];
         drag(h, h.clips()[0], { clientX: 10, clientY: 5 }, { clientX: 10, clientY: LANE_H + 5 });
-        const after = h.song().clips[0];
+        const after = h.section().clips[0];
         assert.equal(after.trackId, h.song().tracks[1].id);
         assert.equal(after.startCol, 0);
         assert.equal(after.patternId, before.patternId, 'the same pattern — only the notes moved');
@@ -732,17 +746,17 @@ describe('moving clips between tracks', () => {
     });
 
     test('it then sounds on the new track\'s voice', async () => {
-        const { createSongSequence } = await import('../html/synth/sequencer.js');
+        const { createSectionSequence } = await import('../html/synth/section-sequencer.js');
         const h = two();
         drag(h, h.clips()[0], { clientX: 10, clientY: 5 }, { clientX: 10, clientY: LANE_H + 5 });
-        const ev0 = createSongSequence(h.song(), getPattern).eventsAt(0);
+        const ev0 = createSectionSequence(h.song(), h.section()).eventsAt(0);
         assert.deepEqual(ev0.map(e => [e.midi, e.slot]), [[60, 1]]);
     });
 
     test('diagonal: bars and track change together', () => {
         const h = two();
         drag(h, h.clips()[0], { clientX: 0, clientY: 5 }, { clientX: 3 * MEASURE_W, clientY: LANE_H + 5 });
-        const c = h.song().clips[0];
+        const c = h.section().clips[0];
         assert.equal(c.trackId, h.song().tracks[1].id);
         assert.equal(c.startCol, 3 * COLS);
     });
@@ -757,13 +771,13 @@ describe('moving clips between tracks', () => {
         h.doc('mousemove', ev({ clientX: 10, clientY: 5 }));
         assert.equal(clip.parentNode, h.lanes()[0], 'and back');
         h.doc('mouseup', ev({ clientX: 10, clientY: 5 }));
-        assert.equal(h.song().clips[0].trackId, h.song().tracks[0].id, 'returned home: nothing changed');
+        assert.equal(h.section().clips[0].trackId, h.song().tracks[0].id, 'returned home: nothing changed');
     });
 
     test('landing on a clip in the other lane is refused and snaps back', () => {
         const h = two([{ track: 1, pattern: 0, at: 1 }]);          // [1,3) on track 1
         drag(h, h.clips()[0], { clientX: 0, clientY: 5 }, { clientX: 0, clientY: LANE_H + 5 });  // [0,2) → overlaps
-        assert.equal(h.song().clips[0].trackId, h.song().tracks[0].id);
+        assert.equal(h.section().clips[0].trackId, h.song().tracks[0].id);
         assert.equal(h.status(), 'Clip overlaps');
         assert.equal(h.lanes()[0].querySelectorAll('.song-clip').length, 1, 're-rendered where it was');
     });
@@ -771,7 +785,7 @@ describe('moving clips between tracks', () => {
     test('a pointer outside every lane keeps the last lane it was over', () => {
         const h = two();
         drag(h, h.clips()[0], { clientX: 10, clientY: 5 }, { clientX: 10, clientY: 10 * LANE_H });
-        assert.equal(h.song().clips[0].trackId, h.song().tracks[0].id);
+        assert.equal(h.section().clips[0].trackId, h.song().tracks[0].id);
     });
 
     test('touch: the same, with touches', () => {
@@ -780,7 +794,7 @@ describe('moving clips between tracks', () => {
         clip.dispatch('touchstart', ev({ touches: [{ clientX: 10, clientY: 5 }] }));
         h.doc('touchmove', ev({ touches: [{ clientX: 10, clientY: LANE_H + 5 }] }));
         h.doc('touchend', ev({ changedTouches: [{ clientX: 10, clientY: LANE_H + 5 }] }));
-        assert.equal(h.song().clips[0].trackId, h.song().tracks[1].id);
+        assert.equal(h.section().clips[0].trackId, h.song().tracks[1].id);
     });
 });
 
@@ -793,7 +807,7 @@ describe('pattern colours', () => {
         assert.match(a.color, /^#[0-9a-f]{6}$/);
         assert.equal(a.color, M.defaultPatternColor(a.id));
         assert.equal(b.color, '#abcdef', 'a given colour is kept, lower-cased');
-        assert.equal(M.patternStore.get(a.id).color, a.color, 'read back the same');
+        assert.equal(session.getPattern(a.id).color, a.color, 'read back the same');
         assert.equal(M.createPattern({ id: 'legacy_x' }).color, M.createPattern({ id: 'legacy_x' }).color,
             'a stored record without a colour gets the same default every load');
         assert.equal(M.createPattern({ color: 'red', id: 'q' }).color, M.defaultPatternColor('q'), 'junk is replaced');
@@ -806,7 +820,7 @@ describe('pattern colours', () => {
         assert.equal(swatch.value, h.patterns[0].color);
         swatch.value = '#123456';
         swatch.dispatch('change');
-        assert.equal(M.patternStore.get(h.patterns[0].id).color, '#123456');
+        assert.equal(session.getPattern(h.patterns[0].id).color, '#123456');
         assert.equal(h.clips()[0].style.background, '#123456');
         assert.equal(h.items()[0].style.borderLeftColor, '#123456');
     });
@@ -822,7 +836,7 @@ describe('pattern colours', () => {
     test('moving a clip to another track keeps its colour — the pattern did not change', () => {
         const h = build({ patterns: [{ name: 'A', color: '#102030' }], tracks: [{ slot: 0 }, { slot: 1 }],
             clips: [{ track: 0, pattern: 0, at: 0 }] });
-        h.session.update((s) => { s.clips[0].trackId = s.tracks[1].id; }, 'test');
+        h.session.update((project, section) => { section.clips[0].trackId = project.tracks[1].id; }, 'test');
         assert.equal(h.clips()[0].style.background, '#102030');
         assert.equal(h.lanes()[1].style.backgroundColor, 'rgba(187,176,2,0.16)');
     });
@@ -861,7 +875,7 @@ describe('sub-bar placement and length', () => {
         pick(h, 'song-snap', 4);                             // quarter notes
         h.click(h.items()[0]);
         h.click(h.lanes()[0], MEASURE_W + 7 * colW());       // bar 2, a shade past beat 2
-        assert.equal(h.song().clips[0].startCol, COLS + 4, 'floored to the quarter it fell in');
+        assert.equal(h.section().clips[0].startCol, COLS + 4, 'floored to the quarter it fell in');
     });
 
     test('the snap is remembered, and is what a drag moves by', () => {
@@ -871,17 +885,17 @@ describe('sub-bar placement and length', () => {
         clip.dispatch('mousedown', ev({ clientX: 0 }));
         h.doc('mousemove', ev({ clientX: 11 * colW() })); // 11 columns → nearest half is 8
         h.doc('mouseup', ev({ clientX: 11 * colW() }));
-        assert.equal(h.song().clips[0].startCol, 8);
+        assert.equal(h.section().clips[0].startCol, 8);
     });
 
     test('a drag snaps the distance, not the position: an off-grid clip stays off it', () => {
         const h = one({ snap: COLS, clips: [{ track: 0, pattern: 0, at: 0 }] });
-        h.session.update((s) => { s.clips[0].startCol = 3; }, 'test');
+        h.session.update((project, section) => { section.clips[0].startCol = 3; }, 'test');
         const clip = h.clips()[0];
         clip.dispatch('mousedown', ev({ clientX: 0 }));
         h.doc('mousemove', ev({ clientX: MEASURE_W }));
         h.doc('mouseup', ev({ clientX: MEASURE_W }));
-        assert.equal(h.song().clips[0].startCol, 3 + COLS, 'moved a bar, kept its offset');
+        assert.equal(h.section().clips[0].startCol, 3 + COLS, 'moved a bar, kept its offset');
     });
 
     test('the edge handle lengthens by sub-bar steps', () => {
@@ -890,20 +904,25 @@ describe('sub-bar placement and length', () => {
         handle.dispatch('mousedown', ev({ clientX: 0 }));
         h.doc('mousemove', ev({ clientX: 5 * colW() }));  // 5 columns → nearest quarter is 4
         h.doc('mouseup', ev({ clientX: 5 * colW() }));
-        assert.equal(h.song().clips[0].lengthCols, 2 * COLS + 4);
+        assert.equal(h.section().clips[0].lengthCols, 2 * COLS + 4);
     });
 
     test('a clip is drawn, and overlaps, at its column position', () => {
         const h = one({ clips: [] });
-        h.session.update((s) => {
-            M.addClip(s, { trackId: s.tracks[0].id, patternId: h.patterns[0].id, startCol: 8, lengthCols: 20 }, getPattern);
+        h.session.update((project, section) => {
+            M.addClip(project, section, {
+                trackId: project.tracks[0].id, patternId: h.patterns[0].id,
+                startCol: 8, lengthCols: 20,
+            });
         }, 'test');
         const el = h.clips()[0];
         assert.equal(el.style.left, (8 * colW()) + 'px');
         assert.equal(el.style.width, (20 * colW() - 2) + 'px');
         // [8,28) is taken, so a clip at bar 1 ([0,32)) cannot go in beside it.
-        assert.throws(() => h.session.update((s) => {
-            M.addClip(s, { trackId: s.tracks[0].id, patternId: h.patterns[0].id, startCol: 0 }, getPattern);
+        assert.throws(() => h.session.update((project, section) => {
+            M.addClip(project, section, {
+                trackId: project.tracks[0].id, patternId: h.patterns[0].id, startCol: 0,
+            });
         }, 'test'), /overlaps/);
     });
 
@@ -931,7 +950,7 @@ describe('sub-bar placement and length', () => {
         clip.dispatch('mousedown', ev({ clientX: 0 }));
         h.doc('mousemove', ev({ clientX: colW(2) }));    // → [1,33) runs into [32,64)
         h.doc('mouseup', ev({ clientX: colW(2) }));
-        assert.equal(h.song().clips[0].startCol, 0);
+        assert.equal(h.section().clips[0].startCol, 0);
         assert.equal(h.status(), 'Clip overlaps');
     });
 });

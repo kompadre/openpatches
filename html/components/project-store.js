@@ -54,6 +54,26 @@ import { createProject, normalizeProject } from './project-model.js';
 /** Autosave period. Only ticks that find the body dirty cost anything. */
 export const DEFAULT_INTERVAL_MS = 30_000;
 
+/**
+ * The crash journal: the open body, written **synchronously** to
+ * localStorage when the page goes away with unsaved edits.
+ *
+ * This exists because the obvious design does not work, and it was
+ * measured rather than assumed. On `pagehide` the handlers *do* run — both
+ * `visibilitychange: hidden` and `pagehide` fire on an ordinary reload —
+ * and the IndexedDB transaction *is* opened inside the handler, and the
+ * write still does **not** commit: the page is torn down first, and the
+ * edits are gone. Reloading five seconds after typing a note lost the note.
+ *
+ * localStorage is the only store that survives, because it is synchronous.
+ * So the last-gasp path writes the whole body there, and the next boot
+ * prefers the journal over the IndexedDB body when it is newer, re-writing
+ * it properly. IndexedDB stays the real home — the journal is a scratch
+ * copy that exists for at most one page load, and is dropped the moment a
+ * real write lands.
+ */
+const JOURNAL_KEY = 'openpatches_project_journal';
+
 // --- Backends ---
 //
 // A backend is four async methods over opaque JSON bodies keyed by project
@@ -186,6 +206,34 @@ export function createProjectStore(opts = {}) {
         }
     }
 
+    // --- The crash journal (see JOURNAL_KEY) ---
+
+    function readJournal() {
+        try {
+            const raw = localStorage.getItem(JOURNAL_KEY);
+            if (!raw) return null;
+            const body = JSON.parse(raw);
+            return body && body.id ? body : null;
+        } catch { return null; }
+    }
+
+    /** Synchronous, and called from an unload handler. Must not throw. */
+    function writeJournal(body) {
+        try { localStorage.setItem(JOURNAL_KEY, JSON.stringify(body)); } catch (e) { onError(e); }
+    }
+
+    /**
+     * Drop the journal once a real write has carried it. Guarded on id and
+     * time: a journal newer than what was written is still the only copy
+     * of those edits, and one for another project is not ours to throw away.
+     */
+    function clearJournal(id, modified) {
+        const journal = readJournal();
+        if (!journal || journal.id !== id) return;
+        if ((journal.modified || 0) > (modified || 0)) return;
+        try { localStorage.removeItem(JOURNAL_KEY); } catch { /* ignore */ }
+    }
+
     /** The last enqueued write has settled: let go of everyone waiting. */
     function settle() {
         pending--;
@@ -211,8 +259,21 @@ export function createProjectStore(opts = {}) {
         dirty = false;
         pending++;
         if (!saving) { saving = true; notify('save-start'); }
-        inFlight = inFlight
-            .then(() => backend.save(body.id, body))
+        // With nothing already in flight, the write **starts in this task**
+        // rather than a microtask later. That is invisible almost always
+        // and decisive once: during `pagehide`, whether the IndexedDB
+        // transaction was opened inside the event handler or just after it
+        // is the difference between the last edits being committed and
+        // being lost. Only chain when ordering actually requires it.
+        let write;
+        if (pending === 1) {
+            try { write = Promise.resolve(backend.save(body.id, body)); }
+            catch (e) { write = Promise.reject(e); }
+        } else {
+            write = inFlight.then(() => backend.save(body.id, body));
+        }
+        inFlight = write
+            .then(() => clearJournal(body.id, body.modified))
             .catch((e) => {
                 // Put the flag back: the body on disk is still stale, and the
                 // next tick (or flush) should try again rather than assume it
@@ -281,11 +342,21 @@ export function createProjectStore(opts = {}) {
          */
         async open(id) {
             await flush({ force: true });
-            const body = await backend.load(id);
+            const stored = await backend.load(id);
+            // Edits the page died holding. Newer than the stored body means
+            // the last IndexedDB write never landed, so the journal is the
+            // only copy — take it and write it out properly.
+            const journal = readJournal();
+            const recovered = journal && journal.id === id
+                && (journal.modified || 0) > (stored ? stored.modified || 0 : -1)
+                ? journal
+                : null;
+            const body = recovered || stored;
             if (!body) return null;
             project = createProject(body);
-            dirty = false;
+            dirty = !!recovered;
             notify('open');
+            if (recovered) flush({ force: true });
             return project;
         },
 
@@ -295,13 +366,38 @@ export function createProjectStore(opts = {}) {
          * in memory would not survive the tab being closed before the first
          * edit, and it is already in the index by then.
          */
-        async adopt(partial) {
-            await flush({ force: true });
+        /**
+         * Adopt a body that is already in hand — a new project, or one just
+         * imported — **synchronously**, writing it out behind us.
+         *
+         * Safe to swap the body out from under the outgoing flush because
+         * `flush()` takes its clone synchronously: by the time this returns,
+         * the old project's bytes are already captured and only the write
+         * itself is still pending.
+         *
+         * Sync because the editors read `get()` straight after: making the
+         * UI wait a microtask for IndexedDB to acknowledge a project it
+         * already has in memory buys nothing.
+         */
+        adoptNow(partial, { write = true } = {}) {
+            flush({ force: true });              // clones the outgoing body now
             project = createProject(partial);
-            dirty = true;
+            dirty = write;
             notify('open');
-            await flush({ force: true });
+            // `write: false` means "this body is already what is on disk" —
+            // for a project just read back, or a test fixture standing in
+            // for one. Skipping the write also leaves the store *idle*,
+            // which matters: an adopt that leaves a write in flight makes
+            // the very next play() defer behind it.
+            if (write) flush({ force: true });
             return project;
+        },
+
+        /** `adoptNow`, awaited to the point the body is actually written. */
+        async adopt(partial) {
+            const adopted = api.adoptNow(partial);
+            await inFlight;
+            return adopted;
         },
 
         /**
@@ -350,6 +446,7 @@ export function createProjectStore(opts = {}) {
             stopTicker();
             project = null;
             dirty = false;
+            try { localStorage.removeItem(JOURNAL_KEY); } catch { /* ignore */ }
             await backend.clear();
             notify('close');
         },
@@ -369,12 +466,23 @@ export function createProjectStore(opts = {}) {
     const bind = opts.bindLifecycle == null
         ? typeof document !== 'undefined'
         : opts.bindLifecycle;
+    //
+    // The journal goes first and synchronously: the IndexedDB write started
+    // just below is the one that usually wins, but it is also the one that
+    // is not guaranteed to commit, and on a plain reload it measurably does
+    // not. Writing both costs a few milliseconds once, at the very moment
+    // nobody is waiting.
+    function lastGasp() {
+        if (dirty && project) writeJournal(project);
+        flush({ force: true });
+    }
+
     if (bind && typeof document !== 'undefined') {
         document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'hidden') flush({ force: true });
+            if (document.visibilityState === 'hidden') lastGasp();
         });
         if (typeof window !== 'undefined') {
-            window.addEventListener('pagehide', () => flush({ force: true }));
+            window.addEventListener('pagehide', lastGasp);
         }
     }
 

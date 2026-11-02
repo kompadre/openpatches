@@ -8,10 +8,12 @@ import assert from 'node:assert/strict';
 import { installBrowserEnv } from './harness.js';
 
 let createPianoroll;
+let makeProjectSession, seedPattern;
 
 before(async () => {
     installBrowserEnv();
     ({ createPianoroll } = await import('../html/components/pianoroll.js'));
+    ({ makeProjectSession, seedPattern } = await import('./project-fixture.js'));
 });
 
 function makeTickWorker() {
@@ -25,13 +27,11 @@ function makeTickWorker() {
 }
 
 function build() {
-    localStorage.setItem('openpatches_pianoroll', JSON.stringify({
-        measures: 1,
-        notes: [{ midi: 60, start: 0, dur: 4, slot: 0 }],
-        bpm: 120,
-    }));
     const released = [];
+    const session = makeProjectSession();
+    seedPattern(session, { measures: 1, notes: [{ midi: 60, start: 0, dur: 4 }] });
     const roll = createPianoroll({
+        session,
         playNoteFn: () => {},
         onNotesChange: () => {},
         activeSlot: 0,
@@ -54,8 +54,10 @@ describe('stopPlayback releases sounding notes', () => {
     });
 
     test('the hook is optional', () => {
-        localStorage.setItem('openpatches_pianoroll', JSON.stringify({ measures: 1, notes: [], bpm: 120 }));
+        const session = makeProjectSession();
+        seedPattern(session, { measures: 1, notes: [{ midi: 60, start: 0, dur: 4 }] });
         const roll = createPianoroll({
+            session,
             playNoteFn: () => {},
             onNotesChange: () => {},
             activeSlot: 0,

@@ -15,16 +15,15 @@ import { test, expect, openApp } from './fixtures.js';
 /** A song with a clip far out at bar 200 — ~10 000 px of grid. */
 async function seedLongSong(page) {
     await page.evaluate(async () => {
-        const sm = await import('/html/components/song-model.js');
+        const pm = await import('/html/components/project-model.js');
         const dock = window.__opDock;
-        const pattern = sm.createPattern({ name: 'P', measures: 1 });
-        sm.patternStore.put(pattern);
-        dock._session.update((song) => {
-            const track = sm.createTrack({ name: 'T', slot: 0 });
-            song.tracks.push(track);
-            sm.addClip(song, {
+        const pattern = dock._session.createPattern({ name: 'P', measures: 1 }, 'e2e');
+        dock._session.update((project, section) => {
+            const track = pm.createTrack({ name: 'T', slot: 0 });
+            project.tracks.push(track);
+            pm.addClip(project, section, {
                 patternId: pattern.id, trackId: track.id, startCol: 200 * 16, repeats: 1,
-            }, (id) => sm.patternStore.get(id));
+            });
         }, 'e2e');
         dock._songEditor.render();
     });
@@ -97,8 +96,8 @@ test.describe('layout invariants', () => {
     test('pattern palette rows stay on one line', async ({ page }) => {
         await openApp(page);
         await page.evaluate(async () => {
-            const sm = await import('/html/components/song-model.js');
-            sm.patternStore.put(sm.createPattern({ name: 'A long pattern name', measures: 16 }));
+            const pm = await import('/html/components/project-model.js');
+            window.__opDock._session.createPattern({ name: 'A long pattern name', measures: 16 }, 'e2e');
             window.__opDock._songEditor.render();
         });
         await openSongTab(page);

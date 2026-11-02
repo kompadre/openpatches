@@ -27,7 +27,10 @@
 // The profile index is upserted on every touch, so the switcher's names
 // and timestamps cannot drift from the bodies they describe.
 
-import { createProject, getSection, effectiveBpm } from './project-model.js';
+import {
+    createProject, createPattern, getSection, effectiveBpm,
+    addPattern, removePattern, patternUsage,
+} from './project-model.js';
 import { profileStore } from './profile-store.js';
 
 export function createProjectSession(store) {
@@ -81,12 +84,20 @@ export function createProjectSession(store) {
          */
         async init() {
             if (store.get()) return store.get();
+            // A backend that cannot be read at all — IndexedDB blocked in a
+            // locked-down profile, a corrupt database — must not take the
+            // app with it. Every read is allowed to fail; the last step
+            // needs no backend to succeed, so there is always a project.
             const wanted = profileStore.current;
-            if (wanted && await store.open(wanted)) return adopted('init');
+            if (wanted && await tryOpen(wanted)) return adopted('init');
             for (const entry of profileStore.list()) {
-                if (await store.open(entry.id)) return adopted('init');
+                if (await tryOpen(entry.id)) return adopted('init');
             }
-            await store.adopt(createProject({ name: 'Untitled project' }));
+            try {
+                await store.adopt(createProject({ name: 'Untitled project' }));
+            } catch (e) {
+                console.warn('[project-session] starting without persistence:', e);
+            }
             return adopted('init');
         },
 
@@ -113,10 +124,92 @@ export function createProjectSession(store) {
         /** The tempo the edited section actually plays at. */
         getBpm() { return effectiveBpm(store.get(), section()); },
 
+        // --- Patterns ---
+        //
+        // The library is the project's, so these replace what used to be a
+        // global `patternStore`. Going through the session rather than
+        // letting editors reach into `project.patterns` directly is what
+        // keeps the notification (and so the other editor's redraw, and the
+        // autosave) from being forgotten at a call site.
+
         /** A pattern by id, from the open project's library. */
         getPattern(id) {
             const project = store.get();
             return project ? project.patterns[id] || null : null;
+        },
+
+        /** Every pattern, by name — the order the palette shows them in. */
+        listPatterns() {
+            const project = store.get();
+            if (!project) return [];
+            return Object.values(project.patterns)
+                .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+        },
+
+        createPattern(partial, source) {
+            const project = store.get();
+            if (!project) return null;
+            const pattern = addPattern(project, partial);
+            changed('pattern', source, { patternId: pattern.id });
+            return pattern;
+        },
+
+        /**
+         * Merge changes into a pattern. Re-runs the factory, so a shortened
+         * `measures` drops the notes that fall outside — the same rule the
+         * editor's own resize enforces.
+         */
+        updatePattern(id, changes, source) {
+            const project = store.get();
+            const existing = project && project.patterns[id];
+            if (!existing) return null;
+            const next = createPattern({ ...existing, ...changes, id });
+            // Written back **into** the existing record rather than
+            // replacing it. The pattern editor holds a reference to this
+            // object *and* to its notes array (that binding is what lets
+            // its drawing code be unaware of patterns at all), so swapping
+            // the record would leave the roll editing an orphan that is no
+            // longer in the project — the edits would keep showing on
+            // screen and never reach the body.
+            const notes = existing.notes;
+            if (changes && changes.notes !== undefined) {
+                notes.length = 0;
+                for (const n of next.notes) notes.push(n);
+            }
+            // ...and when the caller did not touch the notes, the note
+            // objects themselves are left exactly as they were. Undo finds
+            // a note by identity, so re-making them through the factory
+            // would quietly break it from the next save onward.
+            Object.assign(existing, next, { notes });
+            changed('pattern', source, { patternId: id });
+            return existing;
+        },
+
+        /**
+         * "I mutated this pattern in place; persist and announce it." What
+         * the roll's own edits use — it owns the object already, so putting
+         * it back through the factory would only risk replacing the very
+         * objects it is holding references to.
+         */
+        touchPattern(id, source) {
+            const project = store.get();
+            if (!project || !project.patterns[id]) return null;
+            changed('pattern', source, { patternId: id });
+            return project.patterns[id];
+        },
+
+        /** Removes the pattern and every clip placing it, in every section. */
+        removePattern(id, source) {
+            const project = store.get();
+            if (!project || !removePattern(project, id)) return false;
+            changed('pattern', source, { patternId: id });
+            return true;
+        },
+
+        /** Section ids that place this pattern — the delete confirmation. */
+        patternUsage(id) {
+            const project = store.get();
+            return project ? patternUsage(project, id) : [];
         },
 
         list() { return profileStore.list(); },
@@ -149,8 +242,24 @@ export function createProjectSession(store) {
             return adopted(source);
         },
 
-        async createNew(name, source) {
-            await store.adopt(createProject({
+        /**
+         * Open a project synchronously, writing it out behind us. The
+         * editors read `get()` immediately after being built, so this is
+         * what lets a switch (or an import) land without a frame of nothing.
+         */
+        adoptNow(body, source, opts) {
+            store.adoptNow(createProject(body || { name: 'Untitled project' }), opts);
+            return adopted(source);
+        },
+
+        /**
+         * A new, empty project, open immediately. Synchronous on purpose:
+         * the switch is a UI action, and making the editors wait on
+         * IndexedDB to acknowledge a project that is already in memory
+         * would show a frame of the old one. The write follows behind.
+         */
+        createNew(name, source) {
+            store.adoptNow(createProject({
                 name: profileStore.uniqueName(name || 'Untitled project'),
             }));
             return adopted(source);
@@ -163,8 +272,8 @@ export function createProjectSession(store) {
          * independent projects, and the one already on disk is never
          * touched; it is the incoming name that moves out of the way.
          */
-        async createFrom(body, source) {
-            await store.adopt(createProject({
+        createFrom(body, source) {
+            store.adoptNow(createProject({
                 ...body,
                 id: undefined,
                 name: profileStore.uniqueName(body && body.name),
@@ -201,8 +310,23 @@ export function createProjectSession(store) {
         },
     };
 
-    /** Shared tail of every "a different project is now open" path. */
+    /** open(), but a backend that throws counts as "not there". */
+    async function tryOpen(id) {
+        try {
+            return await store.open(id);
+        } catch (e) {
+            console.warn('[project-session] could not read project ' + id + ':', e);
+            return null;
+        }
+    }
+
+    /**
+     * Shared tail of every "a different project is now open" path. Falls
+     * back to a detached in-memory project if even `adopt` failed, so the
+     * editors always have something to render.
+     */
     function adopted(source) {
+        if (!store.get()) return createProject({ name: 'Untitled project' });
         const project = store.get();
         sectionId = project.sections[0].id;
         profileStore.upsert(project);

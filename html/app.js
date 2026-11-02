@@ -771,6 +771,7 @@ function initToolbar() {
     };
 
     const dock = createToolbar({
+        session: projectSession,
         matchedMidi: activeKeyboardNote,
         appendLog,
         playNoteFn: playFn,
@@ -1098,16 +1099,21 @@ document.getElementById('menu-restart-tutorial').addEventListener('click', () =>
 
 // --- Init ---
 
-initToolbar();
-initMidiUi();
-restore();
-
-// The project the editors will be moved onto in the rest of phase 3. It is
-// opened now so the autosave loop and the footer's save light are running
-// from the first paint; nothing consumes the project itself yet.
 attachSaveIndicator({ session: projectSession });
 // The e2e seam, as window.__opDock is for the dock.
 window.__opProject = projectSession;
-projectSession.init().catch((e) => {
-    appendLog('Could not open the project store: ' + e.message);
-});
+
+// The editors read the open project synchronously, so it has to be open
+// before they are built — hence the top-level await. A store that cannot
+// start (IndexedDB blocked in a locked-down profile) must not take the
+// whole app with it: the session falls back to an in-memory project and
+// everything works for the session, just without persistence.
+try {
+    await projectSession.init();
+} catch (e) {
+    console.warn('[project] could not open the project store:', e);
+}
+
+initToolbar();
+initMidiUi();
+restore();

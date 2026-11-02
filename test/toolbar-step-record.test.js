@@ -13,15 +13,17 @@ import { test, before, beforeEach, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { installBrowserEnv, installMidiStub } from './harness.js';
 
-let createToolbar, M;
+let createToolbar, makeProjectSession, M;
 let midi;
+let session = null;
 
 before(async () => {
     installBrowserEnv();
     installMidiStub();
     midi = await import('../html/synth/midi-manager.js');
     ({ createToolbar } = await import('../html/components/toolbar.js'));
-    M = await import('../html/components/song-model.js');
+    ({ makeProjectSession } = await import('./project-fixture.js'));
+    M = await import('../html/components/project-model.js');
 });
 
 function makeTickWorker() {
@@ -49,7 +51,9 @@ let started;
 function build() {
     started = [];
     const tickWorker = makeTickWorker();
+    session = makeProjectSession();
     const dock = createToolbar({
+        session,
         playNoteFn: () => Promise.resolve(() => {}),
         stopNoteFn: () => {},
         tickWorker,
@@ -328,21 +332,21 @@ describe('where the notes go', () => {
         // Two tracks. The roll is opened on slot 1's clip (the Song tab's
         // "open" on a track whose voice slot holds no patch does exactly
         // this), while the record slot stays at 0.
-        const lead = M.patternStore.create({ name: 'Lead', measures: 2, notes: [] });
-        const bass = M.patternStore.create({ name: 'Bass', measures: 2, notes: [{ midi: 40, start: 0, dur: 4 }] });
+        const lead = session.createPattern({ name: 'Lead', measures: 2, notes: [] }, 'test');
+        const bass = session.createPattern({ name: 'Bass', measures: 2, notes: [{ midi: 40, start: 0, dur: 4 }] }, 'test');
         let leadClip;
-        h.session.update(song => {
+        h.session.update((project, section) => {
             const t0 = M.createTrack({ slot: 0 }); const t1 = M.createTrack({ slot: 1 });
-            song.tracks.push(t0, t1);
-            M.addClip(song, { trackId: t0.id, patternId: bass.id, startMeasure: 0, repeats: 4 }, id => M.patternStore.get(id));
-            leadClip = M.addClip(song, { trackId: t1.id, patternId: lead.id, startMeasure: 4 }, id => M.patternStore.get(id)).id;
+            project.tracks.push(t0, t1);
+            M.addClip(project, section, { trackId: t0.id, patternId: bass.id, startCol: 0, repeats: 4 });
+            leadClip = M.addClip(project, section, { trackId: t1.id, patternId: lead.id, startCol: 4 * 16 }).id;
         }, 'test');
         h.roll.openClip(leadClip);
         assert.equal(h.roll.getEditTarget().slot, 1);
         h.rec.dispatch('click');
         await h.hold(64, 1000);
-        assert.deepEqual(M.patternStore.get(lead.id).notes.map(n => [n.midi, n.start, n.dur]), [[64, 0, 1]], 'in the pattern on screen');
-        assert.equal(M.patternStore.get(bass.id).notes.length, 1, 'and not in the record slot\'s');
+        assert.deepEqual(session.getPattern(lead.id).notes.map(n => [n.midi, n.start, n.dur]), [[64, 0, 1]], 'in the pattern on screen');
+        assert.equal(session.getPattern(bass.id).notes.length, 1, 'and not in the record slot\'s');
     });
 
     test('with nothing on screen, the note starts a track on the record slot', async () => {

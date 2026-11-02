@@ -312,16 +312,49 @@ CHANGELOG.md and the TODO.md reconciliation.
   *Reduced-motion honoured: the blink is dropped, the colour still carries
   the state.*
 
-- [ ] **3b. Transport + editors rewired.** `transport.js` onto
-  `project-session` + `section-sequencer` (one atomic switch with the
-  editors, see above); the song editor becomes the **Section** editor;
-  VoiceBank/Mixer binds to project tracks; pianoroll takes patterns from
-  the project; canvas and patches scoped to the project. Also here: the
-  **Play deferral** (`session.whenIdle()`), `canSave: () => !transport
-  .isRunning()`, a forced flush when a take ends, and the **"Now saving"
-  indicator** — the first point at which any of it can actually be seen or
-  e2e-tested. `song.voiceBank`, `openpatches_voicebank`, `song-model.js`,
-  `song-session.js` and `sequencer.js` all retire here.
+- [x] **3b. Transport + editors rewired — done 2026-11-02, 906 unit / 61
+  e2e passing.** The atomic switch: `transport.js`, `pianoroll.js`,
+  `song-editor.js` and `toolbar.js` all moved onto `project-session` +
+  `section-sequencer` in one commit, because the transport is built *by*
+  the roll and reads the session's record — there was no smaller step.
+  - Tracks come from the project, clips and the loop from the edited
+    section; `patternStore` is gone from both editors in favour of the
+    session's pattern API. `app.js` opens the project (top-level `await`)
+    before building the dock, and passes the session in.
+  - `getBpm()` is `effectiveBpm(project, section)` — the per-section
+    Allegro override is live.
+  - **The Play deferral** (`deferIfSaving`): pressing Play while a write is
+    in flight parks the transport, broadcasts `pos.pending`, and starts
+    when the store goes quiet. A `startGen` counter means a Stop (or a
+    second Play) while deferred makes the pending start a no-op.
+
+  **Three bugs found while doing it, all worth remembering:**
+  1. **`effectiveBpm` shadowing.** Importing project-model's
+     `effectiveBpm` into transport.js, which already had a local function
+     of that name *nested inside* `createTransport`, made `getBpm()` call
+     the local one, which calls `getBpm()` — **infinite recursion**. Not a
+     redeclaration, so no syntax error anywhere. The import is aliased
+     `sectionBpm` and the local renamed `playbackBpm`, with a comment.
+  2. **`node --check` does not catch this class of thing**, and more
+     generally checks a `.js` file as a script. A duplicate-binding error
+     that `node --check file.js` passes is caught by copying to `.mjs`
+     first — worth doing for module-level mistakes.
+  3. **Object identity matters to the roll.** `updatePattern()` first
+     replaced the stored pattern record; the roll holds a reference to it
+     *and to its notes array*, so after the first save it was editing an
+     orphan. Then re-making the note objects through the factory broke
+     `removeNote`, which finds a note by identity. Now: the record is
+     written into in place, notes are only rebuilt when the caller
+     actually passed notes, and the roll's own saves use `touchPattern()`
+     (persist + announce, touch nothing).
+
+- [ ] **3c. The voice bank onto project tracks.** `song.voiceBank` and
+  `openpatches_voicebank` retire; the Mixer binds to `project.tracks`,
+  where the patch, volume, mute and solo already live. Kills the
+  two-mute-systems bug for real. (`voiceBank` is carried verbatim through
+  `createProject` until then, so the bank still follows a project switch.)
+- [ ] **3d. Canvas and patches scoped to the project**; `song-model.js`,
+  `song-session.js` and `sequencer.js` deleted.
 - [ ] **4. Project management + the wipe fix.** Project list/switcher,
   new/rename/delete/duplicate, and the Clear History rewrite above.
 - [ ] **5. Export / Import.** Single JSON file with `schemaVersion`

@@ -15,10 +15,12 @@ const LABEL_W = 36;
 const PLAYHEAD_COLOR = '#ff3b3b';
 
 let createPianoroll;
+let makeProjectSession, seedPattern;
 
 before(async () => {
     installBrowserEnv();
     ({ createPianoroll } = await import('../html/components/pianoroll.js'));
+    ({ makeProjectSession, seedPattern } = await import('./project-fixture.js'));
 });
 
 function makeTickWorker() {
@@ -31,9 +33,11 @@ function makeTickWorker() {
 }
 
 function build({ measures = 1, notes = [{ midi: 60, start: 0, dur: 1, slot: 0 }], saved = {} } = {}) {
-    localStorage.setItem('openpatches_pianoroll', JSON.stringify({ measures, notes, bpm: 120, ...saved }));
     const tickWorker = makeTickWorker();
+    const session = makeProjectSession();
+    seedPattern(session, { measures, notes: notes || [] });
     const roll = createPianoroll({
+        session,
         playNoteFn: () => {},
         onNotesChange: () => {},
         activeSlot: 0,

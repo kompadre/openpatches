@@ -9,7 +9,7 @@ import { test, before, beforeEach, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { installBrowserEnv, installMidiStub } from './harness.js';
 
-let midi, createTransport, createSongSession, M;
+let midi, createTransport, makeProjectSession, M;
 let stub;
 
 const CLOCK = 0xF8, START = 0xFA, CONTINUE = 0xFB, STOP = 0xFC, SPP = 0xF2;
@@ -19,8 +19,8 @@ before(async () => {
     installMidiStub();
     midi = await import('../html/synth/midi-manager.js');
     ({ createTransport } = await import('../html/synth/transport.js'));
-    ({ createSongSession } = await import('../html/components/song-session.js'));
-    M = await import('../html/components/song-model.js');
+    ({ makeProjectSession } = await import('./project-fixture.js'));
+    M = await import('../html/components/project-model.js');
 });
 
 // performance.now() is pinned so the stamps are exact arithmetic.
@@ -229,14 +229,13 @@ describe('the settings control', () => {
 
 describe('driven by the transport', () => {
     function build({ sendClock = true } = {}) {
-        const session = createSongSession();
-        session.init();
-        const pattern = M.patternStore.create({ name: 'A', measures: 2, notes: [{ midi: 60, start: 0, dur: 1 }] });
+        const session = makeProjectSession();
+        const pattern = session.createPattern({ name: 'A', measures: 2, notes: [{ midi: 60, start: 0, dur: 1 }] });
         let clipId = null;
-        session.update((song) => {
+        session.update((project, section) => {
             const t = M.createTrack({ slot: 0 });
-            song.tracks.push(t);
-            clipId = M.addClip(song, { trackId: t.id, patternId: pattern.id, startCol: 0 }, (id) => M.patternStore.get(id)).id;
+            project.tracks.push(t);
+            clipId = M.addClip(project, section, { trackId: t.id, patternId: pattern.id, startCol: 0 }).id;
         }, 'test');
         const handlers = [];
         const tickWorker = {
@@ -246,7 +245,7 @@ describe('driven by the transport', () => {
         const transport = createTransport({
             session, tickWorker, startWorker: () => {}, stopWorker: () => {},
             playNote: () => {}, getSlotData: () => null,
-            getPattern: (id) => M.patternStore.get(id),
+            getPattern: (id) => session.getPattern(id),
             getEditTarget: () => ({ trackId: session.get().tracks[0].id, clipId, pattern, slot: 0 }),
         });
         return { transport, tickWorker, session };
@@ -300,7 +299,7 @@ describe('driven by the transport', () => {
     test('playing from a loop start tells the device where that is', async () => {
         const port = await wired();
         const h = build();
-        h.session.update((s) => { s.loop = { start: 1, end: 2 }; }, 'test');
+        h.session.update((project, section) => { section.loop = { start: 1, end: 2 }; }, 'test');
         h.transport.play({ mode: 'song' });
         assert.deepEqual(sent(port)[0], [SPP, 16, 0, clock + LATENCY], 'bar 2 is column 16');
         assert.equal(statuses(port)[1], CONTINUE);

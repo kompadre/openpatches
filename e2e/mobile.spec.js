@@ -26,15 +26,15 @@ async function openMobile(page) {
 /** One pattern, one track, one clip at the top of the song. */
 async function seedSong(page) {
     await page.evaluate(async () => {
-        const sm = await import('/html/components/song-model.js');
+        const pm = await import('/html/components/project-model.js');
         const dock = window.__opDock;
-        const pattern = sm.createPattern({ name: 'Pat', measures: 1 });
-        sm.patternStore.put(pattern);
-        dock._session.update((song) => {
-            const track = sm.createTrack({ name: 'T', slot: 0 });
-            song.tracks.push(track);
-            sm.addClip(song, { patternId: pattern.id, trackId: track.id, startCol: 0, repeats: 1 },
-                (id) => sm.patternStore.get(id));
+        const pattern = dock._session.createPattern({ name: 'Pat', measures: 1 }, 'e2e');
+        dock._session.update((project, section) => {
+            const track = pm.createTrack({ name: 'T', slot: 0 });
+            project.tracks.push(track);
+            pm.addClip(project, section, {
+                patternId: pattern.id, trackId: track.id, startCol: 0, repeats: 1,
+            });
         }, 'e2e');
         dock._songEditor.render();
     });
@@ -57,7 +57,7 @@ async function touchSwipe(page, from, to, steps = 12) {
 
 function clips(page) {
     return page.evaluate(() =>
-        window.__opDock._session.get().clips.map((c) => ({ start: c.startCol, repeats: c.repeats })));
+        window.__opDock._session.getSection().clips.map((c) => ({ start: c.startCol, repeats: c.repeats })));
 }
 
 test.describe('mobile', () => {
@@ -65,14 +65,14 @@ test.describe('mobile', () => {
         await openMobile(page);
         await seedSong(page);
         await page.evaluate(async () => {
-            const sm = await import('/html/components/song-model.js');
+            const pm = await import('/html/components/project-model.js');
             const dock = window.__opDock;
-            const pattern = sm.createPattern({ name: 'Far', measures: 1 });
-            sm.patternStore.put(pattern);
-            dock._session.update((song) => {
-                sm.addClip(song, {
-                    patternId: pattern.id, trackId: song.tracks[0].id, startCol: 200 * 16, repeats: 1,
-                }, (id) => sm.patternStore.get(id));
+            const pattern = dock._session.createPattern({ name: 'Far', measures: 1 }, 'e2e');
+            dock._session.update((project, section) => {
+                pm.addClip(project, section, {
+                    patternId: pattern.id, trackId: project.tracks[0].id,
+                    startCol: 200 * 16, repeats: 1,
+                });
             }, 'e2e');
             dock._songEditor.render();
         });

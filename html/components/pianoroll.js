@@ -61,11 +61,10 @@ const NOTES = [
 ];
 
 import {
-    COLS_PER_MEASURE, createPattern, createTrack, addClip, patternStore,
+    COLS_PER_MEASURE, createTrack, addClip,
     MIN_BPM, MAX_BPM,
-} from './song-model.js';
-import { createSongSession } from './song-session.js';
-import { msPerColumn } from '../synth/sequencer.js';
+} from './project-model.js';
+import { msPerColumn } from '../synth/section-sequencer.js';
 import { createTransport } from '../synth/transport.js';
 
 const ROW_H = 20;
@@ -86,7 +85,7 @@ export function createPianoroll(opts) {
     // one entry per song track (sorted by slot) with the clip and pattern
     // being edited on it. `notes` is always the active entry's note array,
     // so the editing code below goes on working against a single list.
-    const session = opts.session || createSongSession();
+    const session = opts.session;
     let tracks = [];
     let activeTrackIdx = -1;
     let notes = [];
@@ -175,7 +174,7 @@ export function createPianoroll(opts) {
     function livePattern(id) {
         if (!id) return null;
         if (!liveCache.has(id)) {
-            const p = patternStore.get(id);
+            const p = session.getPattern(id);
             if (!p) return null;
             liveCache.set(id, p);
         }
@@ -195,13 +194,17 @@ export function createPianoroll(opts) {
     }
 
     /**
-     * Rebuild the roll's view of the session song. Each track edits the
-     * clip opened from the song editor, else its first clip; a track with
-     * no clips has nothing to edit until a note is drawn on it.
+     * Rebuild the roll's view of the project. The band is the project's
+     * tracks; the clips are the edited section's. Each track edits the clip
+     * opened from the Section editor, else its first; a track with no clips
+     * here has nothing to edit until a note is drawn on it.
      */
-    function adoptSong(song) {
-        tracks = song.tracks.map(t => {
-            const clips = song.clips
+    function adoptSong(project) {
+        if (!project) return;
+        const section = session.getSection();
+        const clipsHere = section ? section.clips : [];
+        tracks = project.tracks.map(t => {
+            const clips = clipsHere
                 .filter(c => c.trackId === t.id)
                 .sort((a, b) => a.startCol - b.startCol);
             const clip = clips.find(c => c.id === openClipId) || clips[0] || null;
@@ -211,7 +214,7 @@ export function createPianoroll(opts) {
                 pattern: clip ? livePattern(clip.patternId) : null,
             };
         }).sort((a, b) => a.slot - b.slot);
-        bpmInput.value = String(song.bpm);
+        bpmInput.value = String(project.bpm);
         selectSlot(currentSlot());
         // Nothing to edit on this voice: size the grid to the song's longest
         // pattern so a freshly loaded song looks its length straight away.
@@ -229,15 +232,16 @@ export function createPianoroll(opts) {
     function ensureTrackForSlot(slot) {
         let entry = tracks.find(t => t.slot === slot);
         if (entry && entry.pattern) return entry;
-        const pattern = patternStore.put(createPattern({ name: slotName(slot), measures }));
+        const pattern = session.createPattern({ name: slotName(slot), measures }, 'roll');
         liveCache.set(pattern.id, pattern);
-        session.update((song) => {
-            let track = entry ? song.tracks.find(t => t.id === entry.id) : null;
+        // Tracks are the project's band; the clip goes in the edited section.
+        session.update((project, section) => {
+            let track = entry ? project.tracks.find(t => t.id === entry.id) : null;
             if (!track) {
                 track = createTrack({ name: slotName(slot), slot });
-                song.tracks.push(track);
+                project.tracks.push(track);
             }
-            addClip(song, { trackId: track.id, patternId: pattern.id, startCol: 0 }, (id) => livePattern(id));
+            addClip(project, section, { trackId: track.id, patternId: pattern.id, startCol: 0 });
         }, 'roll');
         adoptSong(session.get());
         return tracks.find(t => t.slot === slot);
@@ -549,11 +553,10 @@ export function createPianoroll(opts) {
     function saveState(patterns) {
         const list = patterns || (activePattern() ? [activePattern()] : []);
         try {
-            for (const p of list) patternStore.put(p);
+            for (const p of list) session.touchPattern(p.id, 'roll');
             localStorage.setItem(PREFS_KEY, JSON.stringify({ followPlayhead }));
         } catch (e) { /* ignore */ }
         refreshSequence();
-        for (const p of list) session.notifyPattern(p.id, 'roll');
     }
 
     function loadState() {
@@ -573,9 +576,8 @@ export function createPianoroll(opts) {
                 followBtnMobile.classList.add('active');
             }
 
-            // The session runs the migration and picks the current song;
-            // init() is idempotent, so a prepared session is not disturbed.
-            session.init();
+            // app.js has already opened the project — the store is async,
+            // so the session cannot be initialised from here any more.
             adoptSong(session.get());
             refreshSequence();
             updateMeasureButtons();
@@ -1421,26 +1423,29 @@ export function createPianoroll(opts) {
     playBtn.addEventListener('click', startPlayback);
     stopBtn.addEventListener('click', stopPlayback);
     clearBtn.addEventListener('click', () => {
-        session.update((song) => { song.tracks = []; song.clips = []; }, 'roll');
-        adoptSong(session.get());
-        draw();
-        renderLegend();
-        onNotesChange();
-        saveState();
-        if (onClear) onClear();
+        clearEverything();
     });
     clearBtnDesktop.addEventListener('click', () => {
-        session.update((song) => { song.tracks = []; song.clips = []; }, 'roll');
+        clearEverything();
+    });
+
+    function clearEverything() {
+        session.update((project, section) => {
+            project.tracks = [];
+            section.clips = [];
+        }, 'roll');
         adoptSong(session.get());
         draw();
         renderLegend();
         onNotesChange();
         saveState();
         if (onClear) onClear();
-    });
+    }
 
     bpmInput.addEventListener('change', () => {
-        session.update((song) => { song.bpm = getBpm(); }, 'roll');
+        // The project's tempo. A section can override it, but the roll's
+        // box is the project's — the Section editor owns the override.
+        session.update((project) => { project.bpm = getBpm(); }, 'roll');
         refreshSequence();
     });
 
@@ -1687,13 +1692,14 @@ export function createPianoroll(opts) {
          * Selects the clip's track and voice; returns false for a stale id.
          */
         openClip(clipId) {
-            const song = session.get();
-            const clip = song.clips.find(c => c.id === clipId);
-            const track = clip && song.tracks.find(t => t.id === clip.trackId);
+            const project = session.get();
+            const section = session.getSection();
+            const clip = section && section.clips.find(c => c.id === clipId);
+            const track = clip && project.tracks.find(t => t.id === clip.trackId);
             if (!track) return false;
             openClipId = clipId;
             opts.activeSlot = track.slot;
-            adoptSong(song);
+            adoptSong(project);
             updateMeasureButtons();
             scroll.scrollLeft = 0;
             draw();

@@ -382,6 +382,101 @@ describe('subscribers', () => {
     });
 });
 
+describe('the crash journal', () => {
+    // Measured, not assumed: on a real reload both `visibilitychange:
+    // hidden` and `pagehide` fire, the IndexedDB transaction *is* opened
+    // inside the handler, and it still does not commit — the page is torn
+    // down first and the edits are gone. localStorage is synchronous, so
+    // it is the only thing that survives there.
+
+    const JOURNAL = 'openpatches_project_journal';
+    const journal = () => JSON.parse(localStorage.getItem(JOURNAL) || 'null');
+
+    function hide() {
+        document.visibilityState = 'hidden';
+        for (const fn of document._listeners.visibilitychange || []) fn();
+    }
+
+    test('unsaved edits are written to localStorage as the page goes', async () => {
+        const store = createProjectStore({ backend, intervalMs: 10_000, bindLifecycle: true });
+        await store.adopt({ name: 'Piece' });
+        store.get().bpm = 140;
+        store.touch();
+
+        hide();
+        assert.equal(journal().bpm, 140, 'the only copy that reliably survives');
+    });
+
+    test('nothing pending, nothing journalled', async () => {
+        const store = createProjectStore({ backend, intervalMs: 10_000, bindLifecycle: true });
+        await store.adopt({ name: 'Piece' });
+        hide();
+        assert.equal(journal(), null);
+    });
+
+    test('the journal is dropped once a real write carries it', async () => {
+        const store = createProjectStore({ backend, intervalMs: 10_000, bindLifecycle: true });
+        await store.adopt({ name: 'Piece' });
+        store.get().bpm = 140;
+        store.touch();
+        hide();
+        assert.ok(journal());
+
+        await store.flush({ force: true });
+        await tick(5);
+        assert.equal(journal(), null, 'IndexedDB has it now');
+    });
+
+    test('a journal newer than the stored body wins on open, and is written out', async () => {
+        const store = createProjectStore({ backend, intervalMs: 0, bindLifecycle: false });
+        await store.adopt({ name: 'Piece', bpm: 120 });
+        const id = store.getId();
+
+        // What a page that died mid-edit leaves behind.
+        localStorage.setItem(JOURNAL, JSON.stringify({
+            ...await backend.load(id), bpm: 155, modified: Date.now() + 1000,
+        }));
+
+        const reopened = await store.open(id);
+        assert.equal(reopened.bpm, 155, 'recovered');
+        await store.flush({ force: true });
+        await tick(5);
+        assert.equal((await backend.load(id)).bpm, 155, 'and written out properly');
+        assert.equal(journal(), null, 'so the journal is spent');
+    });
+
+    test('a journal older than the stored body is ignored', async () => {
+        const store = createProjectStore({ backend, intervalMs: 0, bindLifecycle: false });
+        await store.adopt({ name: 'Piece', bpm: 120 });
+        const id = store.getId();
+        localStorage.setItem(JOURNAL, JSON.stringify({
+            ...await backend.load(id), bpm: 99, modified: 1,
+        }));
+        assert.equal((await store.open(id)).bpm, 120, 'the stored body is newer');
+    });
+
+    test("a journal for another project is left alone", async () => {
+        const store = createProjectStore({ backend, intervalMs: 0, bindLifecycle: false });
+        await store.adopt({ name: 'Piece' });
+        const id = store.getId();
+        localStorage.setItem(JOURNAL, JSON.stringify({
+            id: 'prj_other', name: 'Other', bpm: 155, modified: Date.now() + 1000,
+        }));
+        assert.equal((await store.open(id)).name, 'Piece');
+        assert.ok(journal(), 'still there for when that project is opened');
+    });
+
+    test('clear takes the journal, or a deleted project would come back', async () => {
+        const store = createProjectStore({ backend, intervalMs: 10_000, bindLifecycle: true });
+        await store.adopt({ name: 'Piece' });
+        store.touch();
+        hide();
+        assert.ok(journal());
+        await store.clear();
+        assert.equal(journal(), null);
+    });
+});
+
 describe('the page going away', () => {
     // No confirm() on the way out: a page cannot show one during unload, and
     // an IndexedDB write started there is not guaranteed to commit. The

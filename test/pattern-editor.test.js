@@ -16,14 +16,20 @@ const COL_W = 30;
 const LABEL_W = 36;
 const HEADER_H = 14;
 const TOP_MIDI = 84;
-const LEGACY_KEY = 'openpatches_pianoroll';
 
-let createPianoroll, patternStore, songStore;
+let createPianoroll, makeProjectSession, addClip, createTrack;
+
+// The roll's view of the shared project. build() replaces it, and the
+// pattern assertions read the library through it — the patterns are the
+// project's now, not a global store's.
+let session = null;
+const storedPattern = (id) => session.getPattern(id);
 
 before(async () => {
     installBrowserEnv();
     ({ createPianoroll } = await import('../html/components/pianoroll.js'));
-    ({ patternStore, songStore } = await import('../html/components/song-model.js'));
+    ({ makeProjectSession } = await import('./project-fixture.js'));
+    ({ addClip, createTrack } = await import('../html/components/project-model.js'));
 });
 
 beforeEach(() => localStorage.clear());
@@ -46,11 +52,12 @@ const BANK = [
     { name: 'Lead', color: '#ccc003', voiceData: 'lead-data' },
 ];
 
-function build({ activeSlot = 0, legacy = null } = {}) {
-    if (legacy) localStorage.setItem(LEGACY_KEY, JSON.stringify(legacy));
+function build({ activeSlot = 0, session: existing = null } = {}) {
+    session = existing || makeProjectSession();
     const played = [];
     const tickWorker = makeTickWorker();
     const roll = createPianoroll({
+        session,
         playNoteFn: (midi, durMs, voiceData, slot) => played.push({ midi, durMs, voiceData, slot }),
         onNotesChange: () => {},
         activeSlot,
@@ -113,8 +120,8 @@ describe('notes belong to a track, not a slot', () => {
 
         const ids = h.roll.getTracks().map(t => t.patternId);
         assert.equal(new Set(ids).size, 2, 'two distinct patterns');
-        for (const id of ids) assert.ok(patternStore.get(id), 'each is persisted');
-        const stored = patternStore.get(h.roll.getTracks().find(t => t.slot === 2).patternId);
+        for (const id of ids) assert.ok(storedPattern(id), 'each is persisted');
+        const stored = storedPattern(h.roll.getTracks().find(t => t.slot === 2).patternId);
         assert.deepEqual(stored.notes, [{ midi: 72, start: 8, dur: 1 }]);
     });
 });
@@ -219,8 +226,8 @@ describe('measure buttons act on the edited pattern', () => {
         h.btn('+ Msr').dispatch('click');
         assert.equal(h.roll.totalCols(), 2 * COLS_PER_MEASURE);
         const [t0, t1] = h.roll.getTracks();
-        assert.equal(patternStore.get(t1.patternId).measures, 2);
-        assert.equal(patternStore.get(t0.patternId).measures, 1, 'the other pattern keeps its length');
+        assert.equal(storedPattern(t1.patternId).measures, 2);
+        assert.equal(storedPattern(t0.patternId).measures, 1, 'the other pattern keeps its length');
         h.roll.setActiveSlot(0);
         assert.equal(h.roll.totalCols(), COLS_PER_MEASURE, 'the grid follows the edited pattern');
     });
@@ -249,58 +256,27 @@ describe('measure buttons act on the edited pattern', () => {
         assert.equal(h.roll.totalCols(), 32);
         assert.deepEqual(h.roll.getTracks(), [], 'no track was invented');
         drawNote(h, 60, 20);
-        assert.equal(patternStore.get(h.roll.getTracks()[0].patternId).measures, 2, 'the new pattern takes the grid length');
+        assert.equal(storedPattern(h.roll.getTracks()[0].patternId).measures, 2, 'the new pattern takes the grid length');
     });
 });
 
-describe('persistence and migration', () => {
-    test('the roll restores its song on the next load', () => {
+describe('persistence', () => {
+    test('the roll restores its project on the next load', () => {
         const h = build();
         drawNote(h, 60, 0, 1);
         h.roll.setActiveSlot(2);
         drawNote(h, 72, 8);
         h.btn('+ Msr').dispatch('click');
 
-        const again = build({ activeSlot: 2 });
+        // The same project, read again — a second roll over one session is
+        // what a reload amounts to now that the project is the unit.
+        const again = build({ activeSlot: 2, session });
         assert.equal(again.roll.totalCols(), 32, 'slot 2\'s pattern was lengthened');
         assert.deepEqual(again.roll.getTracks().map(t => t.slot), [0, 2]);
         again.roll.setActiveSlot(0);
         assert.equal(again.roll.totalCols(), 16, 'slot 0\'s pattern was not');
         assert.deepEqual(again.roll.getSong().notes.sort((a, b) => a.midi - b.midi),
             [{ midi: 60, start: 0, dur: 2, slot: 0 }, { midi: 72, start: 8, dur: 1, slot: 2 }]);
-    });
-
-    test('a legacy roll blob is migrated into tracks on first load', () => {
-        const h = build({
-            legacy: {
-                measures: 2, bpm: 96, followPlayhead: true,
-                notes: [
-                    { midi: 60, start: 0, dur: 4, slot: 0 },
-                    { midi: 36, start: 8, dur: 2, slot: 1 },
-                ],
-            },
-        });
-        assert.deepEqual(h.roll.getTracks().map(t => t.slot), [0, 1]);
-        assert.equal(h.roll.getBpm(), 96);
-        assert.equal(h.roll.totalCols(), 32);
-        assert.equal(h.roll.isFollowing(), true, 'the view preference survives too');
-        assert.deepEqual(h.roll.getNotes(), [{ midi: 60, start: 0, dur: 4 }], 'slot 0 is being edited');
-        assert.equal(songStore.list().length, 1);
-    });
-
-    test('migration runs once — a second load does not duplicate the song', () => {
-        build({ legacy: { measures: 1, bpm: 120, notes: [{ midi: 60, start: 0, dur: 1, slot: 0 }] } });
-        const again = build();
-        assert.equal(songStore.list().length, 1);
-        assert.equal(patternStore.list().length, 1);
-        assert.deepEqual(again.roll.getSong().notes, [{ midi: 60, start: 0, dur: 1, slot: 0 }]);
-    });
-
-    test('the legacy blob is left alone (this release can be rolled back)', () => {
-        const legacy = { measures: 1, bpm: 120, notes: [{ midi: 60, start: 0, dur: 1, slot: 0 }] };
-        const h = build({ legacy });
-        drawNote(h, 67, 4);
-        assert.deepEqual(JSON.parse(localStorage.getItem(LEGACY_KEY)), legacy);
     });
 
     test('Clear wipes every track, not just the edited one', () => {
@@ -335,11 +311,8 @@ describe('the recorder writes into the right track', () => {
 
 
 describe('the roll follows the shared session', () => {
-    test('a clip placed by the song editor shows up as a ghost, and opens on request', async () => {
-        const { createSongSession } = await import('../html/components/song-session.js');
-        const { addClip, createTrack } = await import('../html/components/song-model.js');
-        const session = createSongSession();
-        session.init();
+    test('a clip placed by the Section editor shows up as a ghost, and opens on request', () => {
+        session = makeProjectSession();
         const played = [];
         const roll = createPianoroll({
             session,
@@ -348,12 +321,12 @@ describe('the roll follows the shared session', () => {
             tickWorker: makeTickWorker(), startWorker: () => {}, stopWorker: () => {},
             getSlotData: (slot) => BANK[slot] || null,
         });
-        // Another editor adds a track on slot 1 with a pattern at measure 0.
-        const p = patternStore.create({ name: 'Riff', notes: [{ midi: 40, start: 2, dur: 1 }] });
-        session.update((song) => {
+        // Another editor adds a track on slot 1 with a pattern at bar 0.
+        const p = session.createPattern({ name: 'Riff', notes: [{ midi: 40, start: 2, dur: 1 }] }, 'song-editor');
+        session.update((project, sec) => {
             const t = createTrack({ name: 'T', slot: 1 });
-            song.tracks.push(t);
-            addClip(song, { trackId: t.id, patternId: p.id, startMeasure: 0 }, (id) => patternStore.get(id));
+            project.tracks.push(t);
+            addClip(project, sec, { trackId: t.id, patternId: p.id, startCol: 0 });
         }, 'song-editor');
 
         assert.deepEqual(roll.getTracks().map(t => t.slot), [1], 'the roll picked it up');
@@ -365,10 +338,8 @@ describe('the roll follows the shared session', () => {
         assert.equal(roll.openClip('clip_nope'), false);
     });
 
-    test('a pattern renamed elsewhere is not overwritten by the roll\'s next save', async () => {
-        const { createSongSession } = await import('../html/components/song-session.js');
-        const session = createSongSession();
-        session.init();
+    test('a pattern renamed elsewhere is not overwritten by the roll\'s next save', () => {
+        session = makeProjectSession();
         const h = { roll: null };
         h.roll = createPianoroll({
             session, playNoteFn: () => {}, onNotesChange: () => {}, activeSlot: 0,
@@ -380,11 +351,10 @@ describe('the roll follows the shared session', () => {
         mouse('mousedown', colX(0) + 5, rowY(60)); mouse('mouseup', colX(0) + 5, rowY(60));
         const id = h.roll.getTracks()[0].patternId;
 
-        patternStore.put({ ...patternStore.get(id), name: 'Renamed' });
-        session.notifyPattern(id, 'song-editor');
+        session.updatePattern(id, { name: 'Renamed' }, 'song-editor');
         mouse('mousedown', colX(4) + 5, rowY(62)); mouse('mouseup', colX(4) + 5, rowY(62));
 
-        const stored = patternStore.get(id);
+        const stored = storedPattern(id);
         assert.equal(stored.name, 'Renamed');
         assert.equal(stored.notes.length, 2, 'and the new note was saved');
     });
@@ -420,7 +390,7 @@ describe('transport integration (phase 5)', () => {
         h.roll.stopPlayback();
 
         // Move slot 0's clip out of the window: now only the edited voice.
-        h.roll.getSession().update((s) => { s.clips[0].startCol = 48; }, 'test');
+        h.roll.getSession().update((project, sec) => { sec.clips[0].startCol = 48; }, 'test');
         h.roll.startPlayback();
         h.played.length = 0;
         h.tickWorker.tick(0);
@@ -468,7 +438,7 @@ describe('transport integration (phase 5)', () => {
     test('the loop is the clip\'s own window, so the playhead is there from the first tick', () => {
         const h = build();
         drawNote(h, 60, 0);                       // slot 0, bar 1
-        h.roll.getSession().update((s) => { s.clips[0].startCol = 16; }, 'test');   // now bar 2
+        h.roll.getSession().update((project, sec) => { sec.clips[0].startCol = 16; }, 'test');   // now bar 2
         h.roll.startPlayback();
         assert.deepEqual(h.roll.getTransport().getSequence().range, { startCol: 16, endCol: 32 });
         h.ctx._calls.length = 0;
@@ -480,7 +450,9 @@ describe('transport integration (phase 5)', () => {
     test('Stop releases sounding notes exactly once', () => {
         const released = [];
         localStorage.clear();
+        session = makeProjectSession();
         const roll = createPianoroll({
+            session,
             playNoteFn: () => {}, onNotesChange: () => {}, activeSlot: 0,
             tickWorker: makeTickWorker(), startWorker: () => {}, stopWorker: () => {},
             getSlotData: (slot) => BANK[slot] || null,
@@ -506,7 +478,7 @@ describe('renaming the edited pattern from the roll', () => {
         drawNote(h, 48, 0);
         const items = h.legend();
         assert.equal(items[0].querySelector('.pianoroll-legend-pattern'), null, 'ghost track: no field');
-        assert.equal(field(h).textContent, patternStore.list().find(p => p.name === 'Bass').name);
+        assert.equal(field(h).textContent, session.listPatterns().find(p => p.name === 'Bass').name);
     });
 
     test('click, type, blur → the store and the legend both have the new name', () => {
@@ -517,7 +489,7 @@ describe('renaming the edited pattern from the roll', () => {
         assert.equal(f.contentEditable, 'true');
         f.textContent = 'Intro riff';
         f.dispatch('blur');
-        const stored = patternStore.list();
+        const stored = session.listPatterns();
         assert.equal(stored.length, 1);
         assert.equal(stored[0].name, 'Intro riff');
         assert.equal(field(h).textContent, 'Intro riff', 'legend re-rendered from the renamed pattern');
@@ -533,6 +505,6 @@ describe('renaming the edited pattern from the roll', () => {
         assert.equal(f.textContent, 'Piano');
         assert.equal(f.contentEditable, 'false');
         f.dispatch('blur');
-        assert.equal(patternStore.list()[0].name, 'Piano');
+        assert.equal(session.listPatterns()[0].name, 'Piano');
     });
 });

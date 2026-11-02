@@ -18,10 +18,12 @@ const HEADER_H = 14;
 const TOP_MIDI = 84;
 
 let createPianoroll;
+let makeProjectSession, seedPattern;
 
 before(async () => {
     installBrowserEnv();
     ({ createPianoroll } = await import('../html/components/pianoroll.js'));
+    ({ makeProjectSession, seedPattern } = await import('./project-fixture.js'));
 });
 
 const rowY = (midi) => HEADER_H + (TOP_MIDI - midi) * ROW_H + ROW_H / 2;
@@ -29,9 +31,14 @@ const colX = (col) => LABEL_W + col * COL_W;
 const gridW = (measures) => measures * COLS_PER_MEASURE * COL_W;
 
 function build({ measures = 1, notes, followPlayhead = false } = {}) {
-    localStorage.setItem('openpatches_pianoroll', JSON.stringify({ measures, notes, bpm: 120, followPlayhead }));
+    // A view preference, not part of the project; it used to ride in on the
+    // legacy roll blob, which is not read any more.
+    localStorage.setItem('openpatches_roll_prefs', JSON.stringify({ followPlayhead }));
     const played = [];
+    const session = makeProjectSession();
+    seedPattern(session, { measures, notes: notes || [] });
     const roll = createPianoroll({
+        session,
         playNoteFn: (midi) => played.push(midi),
         onNotesChange: () => {},
         activeSlot: 0,

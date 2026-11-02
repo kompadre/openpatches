@@ -292,6 +292,14 @@ export function createProject(partial = {}) {
         // profile's; an export carries only what it uses, and an import
         // unions them back in.
         tags: normalizeTags(p.tags),
+        // **Transitional.** The voice bank as the flat array the Song era
+        // used. Carried verbatim so the bank still follows a project switch
+        // while phase 3c is pending; that phase moves it onto `tracks`
+        // (where the patch and the mixer strip already belong) and this
+        // field goes away. Kept here rather than dropped because the
+        // factory runs on every load, and silently losing the user's voices
+        // between two phases is worse than one field of churn.
+        voiceBank: Array.isArray(p.voiceBank) ? p.voiceBank : null,
         created: p.created || Date.now(),
         modified: p.modified || Date.now(),
     });

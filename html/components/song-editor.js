@@ -17,11 +17,10 @@
 // pattern to the piano roll via opts.onOpenPattern.
 
 import {
-    addClip, updateClip, removeClip, removeTrack, clipCols, clipRepeats, songLength,
-    createPattern, createTrack, patternStore, patternUsage, patternCols,
+    addClip, updateClip, removeClip, removeTrack, clipCols, clipRepeats,
+    sectionLength, createTrack, patternCols,
     COLS_PER_MEASURE, MAX_SLOTS, MIN_BPM, MAX_BPM,
-} from './song-model.js';
-import { createSongSession } from './song-session.js';
+} from './project-model.js';
 
 export const MEASURE_W = 48;      // px per measure in the grid, at zoom ×1
 const MIN_GRID_MEASURES = 16;     // never show an empty, zero-width song
@@ -50,11 +49,13 @@ function loadNum(key, allowed, fallback) {
 }
 
 export function createSongEditor(opts = {}) {
-    const session = opts.session || createSongSession();
+    const session = opts.session;
     const transport = opts.transport || null;
     const log = opts.log || (() => {});
     const getSlotData = opts.getSlotData || (() => null);
     const getPattern = (id) => session.getPattern(id);
+    /** The section being edited — where this editor's clips and loop live. */
+    const sec = () => session.getSection();
 
     let selectedPatternId = null;
     let selectedClipId = null;
@@ -128,7 +129,7 @@ export function createSongEditor(opts = {}) {
     }
 
     function gridMeasures(song) {
-        return Math.max(MIN_GRID_MEASURES, songLength(song, getPattern) + 4);
+        return Math.max(MIN_GRID_MEASURES, sectionLength(song, sec()) + 4);
     }
 
     // --- Toolbar: which song, its name, tempo, loop ---
@@ -226,30 +227,30 @@ export function createSongEditor(opts = {}) {
         const loopOn = document.createElement('input');
         loopOn.type = 'checkbox';
         loopOn.className = 'song-loop-on';
-        loopOn.checked = !!song.loop;
+        loopOn.checked = !!sec().loop;
         loopLabel.appendChild(loopOn);
         loopLabel.appendChild(document.createTextNode(' Loop bars '));
         const loopStart = document.createElement('input');
         loopStart.type = 'number';
         loopStart.className = 'song-loop-start';
         loopStart.min = '1';
-        loopStart.value = String(song.loop ? song.loop.start + 1 : 1);
+        loopStart.value = String(sec().loop ? sec().loop.start + 1 : 1);
         const loopEnd = document.createElement('input');
         loopEnd.type = 'number';
         loopEnd.className = 'song-loop-end';
         loopEnd.min = '1';
-        loopEnd.value = String(song.loop ? song.loop.end : Math.max(1, songLength(song, getPattern)));
+        loopEnd.value = String(sec().loop ? sec().loop.end : Math.max(1, sectionLength(song, sec())));
         loopLabel.appendChild(loopStart);
         loopLabel.appendChild(document.createTextNode(' to '));
         loopLabel.appendChild(loopEnd);
         const applyLoop = () => {
-            if (!loopOn.checked) { change((s) => { s.loop = null; }); return; }
+            if (!loopOn.checked) { change((project, section) => { section.loop = null; }); return; }
             const a = parseInt(loopStart.value), b = parseInt(loopEnd.value);
             if (!Number.isFinite(a) || !Number.isFinite(b) || a < 1 || b < a) {
                 say('Loop range must be from a bar to a later (or the same) bar');
                 return;
             }
-            change((s) => { s.loop = { start: a - 1, end: b }; });
+            change((project, section) => { section.loop = { start: a - 1, end: b }; });
         };
         loopOn.addEventListener('change', applyLoop);
         loopStart.addEventListener('change', applyLoop);
@@ -301,7 +302,7 @@ export function createSongEditor(opts = {}) {
         head.className = 'song-palette-head';
         head.textContent = 'Patterns';
         head.appendChild(button('+', 'New pattern', () => {
-            const p = patternStore.create({ name: `Pattern ${patternStore.list().length + 1}` });
+            const p = session.createPattern({ name: `Pattern ${session.listPatterns().length + 1}` }, 'song-editor');
             selectedPatternId = p.id;
             session.notifyPattern(p.id, 'song-editor');
             render();
@@ -310,7 +311,7 @@ export function createSongEditor(opts = {}) {
 
         const list = document.createElement('div');
         list.className = 'song-pattern-list';
-        const patterns = patternStore.list();
+        const patterns = session.listPatterns();
         if (patterns.length === 0) {
             const empty = document.createElement('div');
             empty.className = 'song-empty';
@@ -335,8 +336,7 @@ export function createSongEditor(opts = {}) {
             swatch.addEventListener('click', (e) => e.stopPropagation());
             swatch.addEventListener('input', () => { item.style.borderLeftColor = swatch.value; });
             swatch.addEventListener('change', () => {
-                patternStore.put({ ...patternStore.get(p.id), color: swatch.value });
-                session.notifyPattern(p.id, 'song-editor');
+                session.updatePattern(p.id, { color: swatch.value }, 'song-editor');
                 render();
             });
             item.appendChild(swatch);
@@ -360,19 +360,19 @@ export function createSongEditor(opts = {}) {
             };
             item.appendChild(button('✎', 'Rename pattern', beginRename, 'song-btn song-pattern-rename'));
             item.appendChild(button('⧉', 'Duplicate', () => {
-                const copy = patternStore.create({ ...p, id: undefined, name: p.name + ' copy', created: undefined });
+                const copy = session.createPattern({ ...p, id: undefined, name: p.name + ' copy', created: undefined }, 'song-editor');
                 selectedPatternId = copy.id;
                 session.notifyPattern(copy.id, 'song-editor');
                 render();
             }, 'song-btn song-pattern-dup'));
             item.appendChild(button('✕', 'Delete pattern', () => {
-                const used = patternUsage(p.id);
+                const used = session.patternUsage(p.id);
                 if (used.length > 0) {
                     say(`"${p.name}" is placed in ${used.length} song${used.length > 1 ? 's' : ''} — remove its clips first`);
                     return;
                 }
                 if (!confirm(`Delete pattern "${p.name}"?`)) return;
-                patternStore.remove(p.id);
+                session.removePattern(p.id, 'song-editor');
                 if (selectedPatternId === p.id) selectedPatternId = null;
                 session.notifyPattern(p.id, 'song-editor');
                 render();
@@ -391,8 +391,7 @@ export function createSongEditor(opts = {}) {
                 nameEl.contentEditable = 'false';
                 const v = String(nameEl.textContent).trim();
                 if (v && v !== p.name) {
-                    patternStore.put({ ...patternStore.get(p.id), name: v });
-                    session.notifyPattern(p.id, 'song-editor');
+                    session.updatePattern(p.id, { name: v }, 'song-editor');
                 }
                 render();
             });
@@ -462,11 +461,11 @@ export function createSongEditor(opts = {}) {
             tick.textContent = String(m + 1);
             rulerLane.appendChild(tick);
         }
-        if (song.loop) {
+        if (sec().loop) {
             const band = document.createElement('div');
             band.className = 'song-loop-band';
-            band.style.left = (song.loop.start * measureW()) + 'px';
-            band.style.width = ((song.loop.end - song.loop.start) * measureW()) + 'px';
+            band.style.left = (sec().loop.start * measureW()) + 'px';
+            band.style.width = ((sec().loop.end - sec().loop.start) * measureW()) + 'px';
             rulerLane.appendChild(band);
         }
         ruler.appendChild(rulerLane);
@@ -502,7 +501,7 @@ export function createSongEditor(opts = {}) {
 
         // Selected-clip actions live here rather than on the clip so they
         // are reachable by touch, where there is no hover and no Delete key.
-        if (selectedClipId && song.clips.some(c => c.id === selectedClipId)) {
+        if (selectedClipId && sec().clips.some(c => c.id === selectedClipId)) {
             const bar = document.createElement('div');
             bar.className = 'song-clip-actions';
             bar.appendChild(button('✎ Open in piano roll', 'Edit this clip\'s pattern', () => openClip(selectedClipId), 'song-btn song-clip-open'));
@@ -544,10 +543,10 @@ export function createSongEditor(opts = {}) {
             change((s) => { const t = s.tracks.find(x => x.id === track.id); t.solo = !t.solo; });
         }, 'song-btn song-track-solo' + (track.solo ? ' active' : '')));
         head.appendChild(button('✕', 'Remove track', () => {
-            const n = song.clips.filter(c => c.trackId === track.id).length;
+            const n = sec().clips.filter(c => c.trackId === track.id).length;
             if (n > 0 && !confirm(`Remove this track and its ${n} clip${n > 1 ? 's' : ''}?`)) return;
-            if (selectedClipId && song.clips.some(c => c.id === selectedClipId && c.trackId === track.id)) selectedClipId = null;
-            change((s) => { removeTrack(s, track.id); });
+            if (selectedClipId && sec().clips.some(c => c.id === selectedClipId && c.trackId === track.id)) selectedClipId = null;
+            change((project) => { removeTrack(project, track.id); });
         }, 'song-btn song-track-remove'));
         row.appendChild(head);
 
@@ -568,13 +567,13 @@ export function createSongEditor(opts = {}) {
                 return;
             }
             const startCol = colAt(lane, e.clientX);
-            change((s) => {
-                const clip = addClip(s, { trackId: track.id, patternId: selectedPatternId, startCol }, getPattern);
+            change((project, section) => {
+                const clip = addClip(project, section, { trackId: track.id, patternId: selectedPatternId, startCol });
                 selectedClipId = clip.id;
             });
         });
 
-        for (const clip of song.clips) {
+        for (const clip of sec().clips) {
             if (clip.trackId !== track.id) continue;
             const pattern = getPattern(clip.patternId);
             const span = clipCols(clip, pattern);
@@ -616,7 +615,7 @@ export function createSongEditor(opts = {}) {
             e.stopPropagation();
             // The click after a double-tap's second press arrives for a clip
             // that press just removed; it must not re-select a ghost.
-            if (!session.get().clips.some(c => c.id === clip.id)) return;
+            if (!sec().clips.some(c => c.id === clip.id)) return;
             selectedClipId = clip.id;
             selectedPatternId = clip.patternId;
             render();
@@ -701,13 +700,13 @@ export function createSongEditor(opts = {}) {
                     const startCol = Math.max(0, span.startCol + dCols);
                     const trackId = targetLane.dataset.trackId || clip.trackId;
                     if (startCol === clip.startCol && trackId === clip.trackId) { render(); return; }
-                    change((s) => { updateClip(s, clip.id, { startCol, trackId }, getPattern); });
+                    change((project, section) => { updateClip(project, section, clip.id, { startCol, trackId }); });
                 } else {
                     // Dragging the edge gives the clip a length of its own;
                     // it stops following its pattern's (see createClip).
                     const lengthCols = resizedLength(span, dCols);
                     if (lengthCols === span.endCol - span.startCol) { render(); return; }
-                    change((s) => { updateClip(s, clip.id, { lengthCols }, getPattern); });
+                    change((project, section) => { updateClip(project, section, clip.id, { lengthCols }); });
                 }
             };
             const cancel = () => {
@@ -759,7 +758,7 @@ export function createSongEditor(opts = {}) {
     }
 
     function deleteClip(clipId) {
-        change((s) => { removeClip(s, clipId); });
+        change((project, section) => { removeClip(section, clipId); });
         if (selectedClipId === clipId) selectedClipId = null;
     }
 
@@ -775,7 +774,7 @@ export function createSongEditor(opts = {}) {
 
     function openClip(clipId) {
         const song = session.get();
-        const clip = song.clips.find(c => c.id === clipId);
+        const clip = sec().clips.find(c => c.id === clipId);
         if (!clip) return;
         selectedClipId = clipId;
         selectedPatternId = clip.patternId;
@@ -806,7 +805,6 @@ export function createSongEditor(opts = {}) {
         renderGrid(song);
     }
 
-    session.init();
     unsubscribe = session.subscribe(() => render());
     if (transport) {
         unsubscribeTransport = transport.subscribe((pos) => {

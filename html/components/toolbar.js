@@ -3,7 +3,6 @@
 // Replaces piano-dock.js. Pianoroll/Log logic moved here; Edit tab delegates to edit-panel.js.
 
 import { createPianoroll } from './pianoroll.js';
-import { createSongSession } from './song-session.js';
 import { createSongEditor } from './song-editor.js';
 import { createVoiceBank } from './voicebank.js';
 import { createEditPanel } from './edit-panel.js';
@@ -275,7 +274,7 @@ export function createToolbar(opts) {
             // Keep the current song's copy of the voices current. Marked
             // 'voicebank' so the roll knows the arrangement did not change.
             if (sessionRef) {
-                sessionRef.update((song) => { song.voiceBank = serializeBank(entries); }, 'voicebank');
+                sessionRef.update((project) => { project.voiceBank = serializeBank(entries); }, 'voicebank');
             }
             if (pianorollRef && pianorollRef.renderLegend) pianorollRef.renderLegend();
             if (wrapper._songEditor) wrapper._songEditor.render();
@@ -288,19 +287,20 @@ export function createToolbar(opts) {
     // pattern editor reaches it through the kb-voice-select and the legend.
     mixerPanel.appendChild(voiceBank);
 
-    // One current song, shared by the piano roll (which edits a pattern in
-    // it) and the song editor (which arranges it). Runs the migration.
-    const session = createSongSession();
-    session.init();
+    // The open project, shared by the piano roll (which edits a pattern in
+    // it) and the Section editor (which arranges one of its sections).
+    // app.js owns it and has already opened it — the store is async, so it
+    // cannot be initialised from here.
+    const session = opts.session;
     sessionRef = session;
 
-    // Switching song restores the voices it was written for — what loading
-    // from the old song bar used to do. (Project, in TODO.md, takes over
-    // ownership of the voice bank and this goes with it.)
-    let lastSongId = session.get().id;
+    // Switching project restores the voices it was written for. Still the
+    // per-project `voiceBank` array for now; phase 3c moves the bank onto
+    // the project's tracks and this goes with it.
+    let lastProjectId = session.get() ? session.get().id : null;
     session.subscribe((ev) => {
-        if (ev.kind !== 'song' || ev.songId === lastSongId) return;
-        lastSongId = ev.songId;
+        if (ev.kind !== 'project' || ev.projectId === lastProjectId) return;
+        lastProjectId = ev.projectId;
         const bank = session.get().voiceBank;
         if (Array.isArray(bank) && bank.length > 0 && voiceBank._setEntries) {
             stopAll();

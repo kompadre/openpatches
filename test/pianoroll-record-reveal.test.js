@@ -12,10 +12,12 @@ const HEADER_H = 14;
 const TOP_MIDI = 84;   // C6, row 0
 
 let createPianoroll;
+let makeProjectSession;
 
 before(async () => {
     installBrowserEnv();
     ({ createPianoroll } = await import('../html/components/pianoroll.js'));
+    ({ makeProjectSession } = await import('./project-fixture.js'));
 });
 
 function makeTickWorker() {
@@ -24,6 +26,7 @@ function makeTickWorker() {
 
 function build() {
     const roll = createPianoroll({
+        session: makeProjectSession(),
         playNoteFn: () => {},
         onNotesChange: () => {},
         activeSlot: 0,
