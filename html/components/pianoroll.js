@@ -80,9 +80,9 @@ const DEFAULT_COLORS = ['#e94560', '#4caf50', '#2196f3', '#ff9800', '#9c27b0', '
 
 export function createPianoroll(opts) {
     const { playNoteFn, onNotesChange, onClear } = opts;
-    // The current song is shared with the song editor through the session;
+    // The open project is shared with the Section editor through the session;
     // the roll edits one pattern placed in it. `tracks` is the roll's view:
-    // one entry per song track (sorted by slot) with the clip and pattern
+    // one entry per project track (sorted by slot) with the clip and pattern
     // being edited on it. `notes` is always the active entry's note array,
     // so the editing code below goes on working against a single list.
     const session = opts.session;
@@ -199,7 +199,7 @@ export function createPianoroll(opts) {
      * opened from the Section editor, else its first; a track with no clips
      * here has nothing to edit until a note is drawn on it.
      */
-    function adoptSong(project) {
+    function adoptProject(project) {
         if (!project) return;
         const section = session.getSection();
         const clipsHere = section ? section.clips : [];
@@ -216,8 +216,8 @@ export function createPianoroll(opts) {
         }).sort((a, b) => a.slot - b.slot);
         bpmInput.value = String(project.bpm);
         selectSlot(currentSlot());
-        // Nothing to edit on this voice: size the grid to the song's longest
-        // pattern so a freshly loaded song looks its length straight away.
+        // Nothing to edit on this voice: size the grid to the project's longest
+        // pattern so a freshly loaded project looks its length straight away.
         if (!activePattern()) {
             measures = Math.max(1, ...tracks.map(t => (t.pattern ? t.pattern.measures : 1)));
         }
@@ -243,7 +243,7 @@ export function createPianoroll(opts) {
             }
             addClip(project, section, { trackId: track.id, patternId: pattern.id, startCol: 0 });
         }, 'roll');
-        adoptSong(session.get());
+        adoptProject(session.get());
         return tracks.find(t => t.slot === slot);
     }
 
@@ -269,7 +269,7 @@ export function createPianoroll(opts) {
 
     // Rebuilt on every edit rather than per tick: the sequencer snapshots
     // patterns on purpose, and editing while the loop runs must still be
-    // heard on the next pass. Mute/solo it reads live off the session song.
+    // heard on the next pass. Mute/solo it reads live off the session's project.
     function refreshSequence() {
         transport.refresh();
     }
@@ -292,7 +292,7 @@ export function createPianoroll(opts) {
         // dragging one fires on every pointer move.
         if (ev.kind === 'patches') return;
         if (ev.source !== 'voicebank') liveCache.clear();
-        adoptSong(session.get());
+        adoptProject(session.get());
         updateMeasureButtons();
         refreshSequence();
         draw();
@@ -343,7 +343,7 @@ export function createPianoroll(opts) {
 
     // Everything the roll starts — Play and Record — loops this pattern's
     // placement and is never longer than the pattern. This button does not
-    // touch that: it decides whether the rest of the song is heard inside
+    // touch that: it decides whether the rest of the section is heard inside
     // the window, or only the pattern being written.
     const accompanyBtn = document.createElement('button');
     accompanyBtn.className = 'pianoroll-btn pianoroll-accompany';
@@ -351,10 +351,10 @@ export function createPianoroll(opts) {
 
     function updateAccompanyButton() {
         const on = transport.getAccompany();
-        accompanyBtn.textContent = on ? '\u266B With song' : '\u25AD Pattern only';
+        accompanyBtn.textContent = on ? '\u266B With section' : '\u25AD Pattern only';
         accompanyBtn.title = on
             ? 'The other tracks play along inside this pattern — click to hear this pattern alone'
-            : 'Only this pattern sounds — click to hear the rest of the song along with it';
+            : 'Only this pattern sounds — click to hear the rest of the section along with it';
         accompanyBtn.classList.toggle('active', !on);
     }
     accompanyBtn.addEventListener('click', () => {
@@ -558,7 +558,7 @@ export function createPianoroll(opts) {
     const TOUCH_RESIZE_MARGIN = 20;
     /**
      * Write the edited pattern(s) back and refresh playback. Only patterns
-     * the roll changed are written — a pattern renamed in the song editor
+     * the roll changed are written — a pattern renamed in the Section editor
      * must not be clobbered by a stale copy from here. Called on every
      * edit, so it also rebuilds the sequence (the sequencer snapshots
      * patterns; an edit must be audible on the next pass).
@@ -574,7 +574,7 @@ export function createPianoroll(opts) {
 
     function loadState() {
         try {
-            // Follow-scroll is a view preference, not part of a song. Read
+            // Follow-scroll is a view preference, not part of a project. Read
             // the legacy blob as a fallback so the user's toggle survives.
             let follow = false;
             try {
@@ -591,7 +591,7 @@ export function createPianoroll(opts) {
 
             // app.js has already opened the project — the store is async,
             // so the session cannot be initialised from here any more.
-            adoptSong(session.get());
+            adoptProject(session.get());
             refreshSequence();
             updateMeasureButtons();
         } catch (e) { /* ignore */ }
@@ -1381,10 +1381,10 @@ export function createPianoroll(opts) {
     // --- Transport (the clock is the transport's; this is the view) ---
 
     function startPlayback() {
-        // Play from the roll loops the pattern being edited — the song,
+        // Play from the roll loops the pattern being edited — the section,
         // confined to this pattern's nearest placement, so the other
-        // tracks play along. Record does the same; the Song tab's Play
-        // is the whole-song one.
+        // tracks play along. Record does the same; the Section tab's Play
+        // is the whole-section one.
         // Rewind the view only when it is following; otherwise the user
         // owns the scroll position and yanking it would undo whatever
         // they were looking at.
@@ -1401,7 +1401,7 @@ export function createPianoroll(opts) {
     /**
      * Every tick, and every start/stop: the transport says where it is and
      * the roll is purely a view of that. `edit` is the position inside the
-     * pattern on screen — absent when the song's playhead is somewhere this
+     * pattern on screen — absent when the section's playhead is somewhere this
      * pattern is not placed, and then there is no playhead to draw.
      */
     transport.subscribe((pos) => {
@@ -1447,7 +1447,7 @@ export function createPianoroll(opts) {
             project.tracks = [];
             section.clips = [];
         }, 'roll');
-        adoptSong(session.get());
+        adoptProject(session.get());
         draw();
         renderLegend();
         onNotesChange();
@@ -1484,7 +1484,7 @@ export function createPianoroll(opts) {
             item.appendChild(name);
             // The edited pattern's name, renamable in place: the roll is
             // where a pattern is made, so it should not take a trip to the
-            // Song tab to call it something.
+            // Section tab to call it something.
             if (i === activeTrackIdx && track.pattern) item.appendChild(patternNameField(track));
             legend.appendChild(item);
         }
@@ -1513,7 +1513,7 @@ export function createPianoroll(opts) {
             renderLegend();
         });
         field.addEventListener('keydown', (e) => {
-            e.stopPropagation();   // document-level shortcuts (Delete on the Song tab) must not see typing
+            e.stopPropagation();   // document-level shortcuts (Delete on the Section tab) must not see typing
             if (e.key === 'Enter') { e.preventDefault(); if (field.blur) field.blur(); }
             if (e.key === 'Escape') { field.textContent = pattern.name; field.contentEditable = 'false'; }
         });
@@ -1555,7 +1555,7 @@ export function createPianoroll(opts) {
          */
         addNote({ midi, start, dur, slot, clipId, reveal }) {
             const target = slot != null ? slot : currentSlot();
-            // The recorder names the clip when the song's playhead is over
+            // The recorder names the clip when the section's playhead is over
             // one; otherwise the voice's own track takes the note.
             let track = clipId ? tracks.find(t => t.clipId === clipId) : null;
             if (!track || !track.pattern) track = ensureTrackForSlot(target);
@@ -1695,13 +1695,13 @@ export function createPianoroll(opts) {
         },
         /** The edited pattern's notes (no slot — the track carries it). */
         getNotes() { return notes; },
-        /** The pattern under the cursor, for the song editor in phase 4. */
+        /** The pattern under the cursor, for the Section editor in phase 4. */
         getPattern() { return activeTrackIdx >= 0 ? tracks[activeTrackIdx].pattern : null; },
         getTracks() {
             return tracks.map(t => ({ id: t.id, slot: t.slot, clipId: t.clipId, patternId: t.pattern ? t.pattern.id : null }));
         },
         /**
-         * Edit the pattern of a specific clip (the song editor's "open").
+         * Edit the pattern of a specific clip (the Section editor's "open").
          * Selects the clip's track and voice; returns false for a stale id.
          */
         openClip(clipId) {
@@ -1712,7 +1712,7 @@ export function createPianoroll(opts) {
             if (!track) return false;
             openClipId = clipId;
             opts.activeSlot = track.slot;
-            adoptSong(project);
+            adoptProject(project);
             updateMeasureButtons();
             scroll.scrollLeft = 0;
             draw();
@@ -1727,11 +1727,12 @@ export function createPianoroll(opts) {
         setAccompany(on) { transport.setAccompany(on); updateAccompanyButton(); },
         getBpm() { return parseInt(bpmInput.value) || DEFAULT_BPM; },
         /**
-         * Sequencer state in the flat shape the song bar still speaks:
-         * notes carrying the slot of the track they sit on. Phase 6 removes
-         * the song bar and this with it.
+         * Every note across every track, flattened and slot-tagged.
+         * Nothing in the app needs this — the tests do, for assertions
+         * that span tracks, which is otherwise a nested walk at every
+         * call site. (It is the shape the long-gone song bar spoke.)
          */
-        getSong() {
+        getAllNotes() {
             const flat = [];
             for (const t of tracks) {
                 if (!t.pattern) continue;

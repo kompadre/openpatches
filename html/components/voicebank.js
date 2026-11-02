@@ -403,7 +403,7 @@ export function createVoiceBank(opts) {
      * A track and a mixer strip are one thing: the slot is the channel, and
      * the name, patch, volume, mute and solo all describe the same voice.
      * They used to be two records with two mute flags that could disagree —
-     * the song's track gated whether notes were *scheduled* while the bank
+     * the arrangement's track gated whether notes were *scheduled* while the bank
      * entry gated the channel's *volume*, and nothing kept them in step.
      *
      * Tracks with no voice are left alone: the roll makes one the moment a

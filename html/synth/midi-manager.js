@@ -642,7 +642,7 @@ export function isClockOutEnabled() {
 export function isClockRunning() { return clockRunning; }
 
 /**
- * Tell the device the transport has started. `startCol` is the song column
+ * Tell the device the transport has started. `startCol` is the section column
  * being started from, in sixteenths — which is exactly what a Song Position
  * counts, so anywhere but the top is a position followed by Continue rather
  * than a bare Start.
@@ -720,7 +720,7 @@ export function clockStop(when = performance.now()) {
 // until the device sends Start (the user's call, as is ignoring Song
 // Position — Continue resumes from wherever we were).
 //
-// The tempo is measured, not taken from the song: the mean of the last
+// The tempo is measured, not taken from the project: the mean of the last
 // quarter note's worth of clock periods, for note durations. Devices send
 // clock while stopped too, so the estimate runs whenever clock arrives and
 // columns are counted only between Start/Continue and Stop.

@@ -2,7 +2,7 @@
 //
 // One owner of the record, so no
 // editor can overwrite another's saves — but a project is bigger than a
-// song, so the session also owns **which section is being edited**. The UI
+// project, so it also owns **which section is being edited**. The UI
 // edits exactly one at a time; the model carries many.
 //
 // Notifications carry a `source` so an editor can ignore its own echoes

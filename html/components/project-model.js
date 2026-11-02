@@ -29,7 +29,7 @@
 // In the pre-Project model these were two records that behaved as one: every
 // lookup in the app was `tracks.find(t => t.slot === slot)`, so one track per
 // slot was assumed everywhere while nothing enforced it. They had drifted
-// into **two independent mute/solo systems for one strip** — the song's
+// into **two independent mute/solo systems for one strip** — the
 // track gated whether notes were *scheduled*, the voice bank entry gated the
 // channel's *volume*, neither showed the other, and they could disagree.
 //

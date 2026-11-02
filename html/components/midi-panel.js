@@ -85,8 +85,8 @@ export function openMidiSettings(opts = {}) {
         // clock" an output one — which is also what makes them read as the
         // two halves of one choice that they are.
         function section(title) {
-            const wrap = el('div', 'midi-section');
-            wrap.appendChild(el('h4', 'midi-section-title', title));
+            const wrap = el('div', 'midi-group');
+            wrap.appendChild(el('h4', 'midi-group-title', title));
             deviceArea.appendChild(wrap);
             return wrap;
         }
@@ -210,7 +210,7 @@ export function openMidiSettings(opts = {}) {
         outputArea.appendChild(clockRow);
         outputArea.appendChild(el('div', 'midi-hint',
             'Drives an external sequencer or drum machine from this app\u2019s transport: ' +
-            'start, stop and 24 ticks to the quarter note, at the song\u2019s tempo. ' +
+            'start, stop and 24 ticks to the quarter note, at the project\u2019s tempo. ' +
             'Starting anywhere but bar 1 sends the position first, so the device picks up ' +
             'where we are. It goes out with the same output latency as the notes, so the ' +
             'device stays in step with what you hear. Independent of \u201cPlay notes ' +

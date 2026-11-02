@@ -197,7 +197,7 @@ describe('one voice, one slot', () => {
     });
 
     test('reading the tracks keeps slot positions and drops duplicate voices', () => {
-        // `_setEntries` used to do this for a song's saved bank array.
+        // `_setEntries` used to do this for a section's saved bank array.
         // The tracks *are* the bank now, so the same guarantees belong on
         // the load path: a hole is a slot with no voice, and a track whose
         // voice already sits in a lower slot does not get a second strip.

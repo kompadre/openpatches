@@ -9,7 +9,7 @@ import { test, before, beforeEach, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { installBrowserEnv, installMidiStub } from './harness.js';
 
-let midi, createTransport, makeProjectSession, createSongEditor, createToolbar, M;
+let midi, createTransport, makeProjectSession, createSectionEditor, createToolbar, M;
 let stub;
 
 const CLOCK = 0xF8, START = 0xFA, CONTINUE = 0xFB, STOP = 0xFC;
@@ -20,7 +20,7 @@ before(async () => {
     midi = await import('../html/synth/midi-manager.js');
     ({ createTransport } = await import('../html/synth/transport.js'));
     ({ makeProjectSession } = await import('./project-fixture.js'));
-    ({ createSongEditor } = await import('../html/components/song-editor.js'));
+    ({ createSectionEditor } = await import('../html/components/section-editor.js'));
     ({ createToolbar } = await import('../html/components/toolbar.js'));
     M = await import('../html/components/project-model.js');
 });
@@ -202,7 +202,7 @@ describe('the transport follows', () => {
     test('Play arms: no worker, nothing sounds, the position says waiting', async () => {
         await slaved();
         const h = build();
-        assert.equal(h.transport.play({ mode: 'song' }), true);
+        assert.equal(h.transport.play({ mode: 'section' }), true);
         assert.deepEqual(h.started, [], 'the worker is not started');
         assert.equal(h.transport.isPlaying(), false);
         assert.equal(h.transport.isWaiting(), true);
@@ -216,7 +216,7 @@ describe('the transport follows', () => {
     test('the device\'s Start runs us; its clocks are our columns', async () => {
         const port = await slaved();
         const h = build();
-        h.transport.play({ mode: 'song' });
+        h.transport.play({ mode: 'section' });
         send(port, START);
         assert.equal(h.transport.isPlaying(), true);
         assert.equal(h.transport.isWaiting(), false);
@@ -230,10 +230,10 @@ describe('the transport follows', () => {
     test('note lengths use the device\'s tempo once it is known', async () => {
         const port = await slaved();
         const h = build();
-        h.transport.play({ mode: 'song' });
+        h.transport.play({ mode: 'section' });
         send(port, START);
         clocks(port, 1);
-        assert.equal(h.played[0][1], 4 * 125, 'first column: tempo unknown, so the song\'s 120');
+        assert.equal(h.played[0][1], 4 * 125, 'first column: tempo unknown, so the section\'s 120');
         clocks(port, 16 * 6, 60000 / 60 / 24);  // a bar at 60 BPM, back to column 0
         const lastDur = h.played[h.played.length - 1][1];
         assert.ok(Math.abs(lastDur - 4 * 250) < 1, `at 60 BPM a column is 250 ms, got ${lastDur}`);
@@ -243,7 +243,7 @@ describe('the transport follows', () => {
     test('the device\'s Stop pauses us but leaves us armed; Continue resumes, Start restarts', async () => {
         const port = await slaved();
         const h = build();
-        h.transport.play({ mode: 'song' });
+        h.transport.play({ mode: 'section' });
         send(port, START); clocks(port, 13);    // columns 0, 1, 2
         send(port, STOP);
         assert.equal(h.transport.isPlaying(), false);
@@ -259,7 +259,7 @@ describe('the transport follows', () => {
     test('our Stop disarms', async () => {
         const port = await slaved();
         const h = build();
-        h.transport.play({ mode: 'song' });
+        h.transport.play({ mode: 'section' });
         assert.equal(h.transport.stop(), true, 'there was something to stop');
         assert.equal(h.transport.isRunning(), false);
         send(port, START); clocks(port, 6);
@@ -269,16 +269,16 @@ describe('the transport follows', () => {
     test('switching sync off while armed stops us; switching it on mid-play ends the take', async () => {
         await slaved();
         const h = build();
-        h.transport.play({ mode: 'song' });
+        h.transport.play({ mode: 'section' });
         midi.setSyncToClock(false);
         assert.equal(h.transport.isRunning(), false);
-        h.transport.play({ mode: 'song' });
+        h.transport.play({ mode: 'section' });
         assert.equal(h.started.length, 1, 'master again: the worker runs');
         midi.setSyncToClock(true);
         assert.equal(h.transport.isRunning(), false);
     });
 
-    test('Record arms as a take, and runs on Start even into an empty song', async () => {
+    test('Record arms as a take, and runs on Start even into an empty section', async () => {
         const port = await slaved();
         const h = build({ empty: true });
         assert.equal(h.transport.startRecording({ mode: 'pattern' }), true);
@@ -292,7 +292,7 @@ describe('the transport follows', () => {
         const port = await slaved();
         midi.setSendClock(true);
         const h = build();
-        h.transport.play({ mode: 'song' });
+        h.transport.play({ mode: 'section' });
         send(port, START); clocks(port, 12);
         assert.deepEqual(stub.outputs[0].sent.filter(([d]) => d[0] === CLOCK), []);
     });
@@ -300,15 +300,15 @@ describe('the transport follows', () => {
     test('Play while already armed re-arms rather than stacking', async () => {
         const port = await slaved();
         const h = build();
-        h.transport.play({ mode: 'song' });
-        h.transport.play({ mode: 'song' });
+        h.transport.play({ mode: 'section' });
+        h.transport.play({ mode: 'section' });
         send(port, START); clocks(port, 1);
         assert.equal(h.played.length, 1);
     });
 });
 
 describe('what the buttons show', () => {
-    test('the Song tab\'s Play pulses while waiting, and Stop is live', async () => {
+    test('the Section tab\'s Play pulses while waiting, and Stop is live', async () => {
         await slaved();
         const session = makeProjectSession();
         const pattern = session.createPattern({ name: 'A', measures: 1, notes: [{ midi: 60, start: 0, dur: 1 }] });
@@ -321,9 +321,9 @@ describe('what the buttons show', () => {
             session, tickWorker: { postMessage() {}, addEventListener() {} }, startWorker: () => {}, stopWorker: () => {},
             playNote: () => {}, getSlotData: () => null, getPattern: (id) => session.getPattern(id), getEditTarget: () => null,
         });
-        const editor = createSongEditor({ session, transport, getSlotData: () => null });
-        const play = () => editor.element.querySelector('.song-play');
-        const stop = () => editor.element.querySelector('.song-stop');
+        const editor = createSectionEditor({ session, transport, getSlotData: () => null });
+        const play = () => editor.element.querySelector('.section-play');
+        const stop = () => editor.element.querySelector('.section-stop');
         const click = (el) => el.dispatch('click', { stopPropagation() {} });
         click(play());
         assert.equal(play().classList.contains('waiting'), true);
@@ -378,6 +378,6 @@ describe('recording under an external clock', () => {
         const n = roll.getNotes().find(x => x.midi === 60);
         assert.ok(n, 'recorded');
         assert.equal(n.start, 0, 'at the column the device started, not three seconds in');
-        assert.equal(n.dur, 1, 'a column at the device\'s 60 BPM, not two at the song\'s 120');
+        assert.equal(n.dur, 1, 'a column at the device\'s 60 BPM, not two at the section\'s 120');
     });
 });

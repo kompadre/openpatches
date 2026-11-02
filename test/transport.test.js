@@ -90,9 +90,9 @@ function build(opts = {}) {
 const note = (midi, start, dur = 1) => ({ midi, start, dur });
 
 describe('modes', () => {
-    test('song is the default — the arrangement, as the roll always did', () => {
+    test('section is the default — the arrangement, as the roll always did', () => {
         const h = build({ tracks: [{ slot: 0, notes: [note(60, 0)] }] });
-        assert.equal(h.transport.getMode(), 'song');
+        assert.equal(h.transport.getMode(), 'section');
     });
 
     test('the choice is remembered', () => {
@@ -101,12 +101,12 @@ describe('modes', () => {
         assert.equal(build({ tracks: [{ slot: 0, notes: [note(60, 0)] }] }).transport.getMode(), 'pattern');
     });
 
-    test('song mode sounds every track; pattern mode the window of the edited one, with company', () => {
+    test('section mode sounds every track; pattern mode the window of the edited one, with company', () => {
         const h = build({
             tracks: [
                 { slot: 0, notes: [note(60, 0)] },
                 { slot: 1, notes: [note(48, 0)] },          // alongside the edited pattern
-                { slot: 2, notes: [note(52, 0)], at: 3 },   // elsewhere in the song
+                { slot: 2, notes: [note(52, 0)], at: 3 },   // elsewhere in the section
             ],
             edit: 0,
         });
@@ -116,11 +116,11 @@ describe('modes', () => {
         assert.deepEqual(h.played.map(p => [p.midi, p.slot]).sort(), [[48, 1], [60, 0]]);
         h.played.length = 0;
         h.tickWorker.tick(48);
-        assert.deepEqual(h.played.map(p => p.midi), [52], 'song mode reaches bar 4');
+        assert.deepEqual(h.played.map(p => p.midi), [52], 'section mode reaches bar 4');
 
         h.transport.setMode('pattern');
         h.transport.play();
-        assert.deepEqual(h.transport.getSequence().range, { startCol: 0, endCol: 16 }, 'the placement, not the song');
+        assert.deepEqual(h.transport.getSequence().range, { startCol: 0, endCol: 16 }, 'the placement, not the section');
         h.played.length = 0;
         h.tickWorker.tick(0);
         assert.deepEqual(h.played.map(p => [p.midi, p.slot]).sort(), [[48, 1], [60, 0]],
@@ -131,7 +131,7 @@ describe('modes', () => {
             'raw tick 48 wraps into the window: bar 4 is never reached');
     });
 
-    test('pattern mode loops the pattern, not the song', () => {
+    test('pattern mode loops the pattern, not the section', () => {
         const h = build({
             tracks: [{ slot: 0, measures: 1, notes: [note(60, 0)] }, { slot: 1, measures: 1, notes: [note(48, 0)], at: 3 }],
             edit: 0, mode: 'pattern',
@@ -155,7 +155,7 @@ describe('modes', () => {
 
     test('an unknown mode is ignored', () => {
         const h = build();
-        assert.equal(h.transport.setMode('nonsense'), 'song');
+        assert.equal(h.transport.setMode('nonsense'), 'section');
     });
 
     test('play({mode}) is how the buttons name their scope — switched to and remembered', () => {
@@ -163,15 +163,15 @@ describe('modes', () => {
         assert.equal(h.transport.play({ mode: 'pattern' }), true);
         assert.equal(h.transport.getMode(), 'pattern');
         assert.equal(localStorage.getItem('openpatches_transport_mode'), 'pattern');
-        h.transport.play({ mode: 'song' });
-        assert.equal(h.transport.getMode(), 'song');
+        h.transport.play({ mode: 'section' });
+        assert.equal(h.transport.getMode(), 'section');
         assert.equal(h.transport.isPlaying(), true);
     });
 });
 
 // Pattern mode loops one *placement* of the edited pattern: a window of the
-// song, so the other tracks accompany it. A pattern placed several times
-// (several clips, or repeats) loops the placement nearest the song position.
+// section, so the other tracks accompany it. A pattern placed several times
+// (several clips, or repeats) loops the placement nearest the section position.
 describe('pattern mode placements', () => {
     // A second clip of track 0's pattern at `measure`, on the same track.
     function placeAgain(h, measure, repeats = 1) {
@@ -189,12 +189,12 @@ describe('pattern mode placements', () => {
     test('the placement nearest the parked song position is the one looped', () => {
         const h = build({ tracks: [{ slot: 0, measures: 1, notes: [note(60, 0)] }], mode: 'pattern' });
         const second = placeAgain(h, 4);
-        h.transport.setSongPosition(4 * 16 + 3);
+        h.transport.setSectionPosition(4 * 16 + 3);
         h.transport.play();
         assert.deepEqual(h.transport.getSequence().range, { startCol: 64, endCol: 80 });
         assert.equal(h.transport.getPlacement().clipId, second);
         h.transport.stop();
-        h.transport.setSongPosition(10);
+        h.transport.setSectionPosition(10);
         h.transport.play();
         assert.deepEqual(h.transport.getSequence().range, { startCol: 0, endCol: 16 });
         assert.equal(h.transport.getPlacement().clipId, h.made[0].clip.id);
@@ -203,18 +203,18 @@ describe('pattern mode placements', () => {
     test('between two placements the closer edge wins; a tie goes to the earlier', () => {
         const h = build({ tracks: [{ slot: 0, measures: 1, notes: [note(60, 0)] }], mode: 'pattern' });
         placeAgain(h, 4);                       // 0..16 and 64..80
-        h.transport.setSongPosition(50);        // 35 past the first's end, 14 before the second
+        h.transport.setSectionPosition(50);        // 35 past the first's end, 14 before the second
         h.transport.play();
         assert.equal(h.transport.getSequence().range.startCol, 64);
         h.transport.stop();
-        h.transport.setSongPosition(39);        // 24 past the first (15 is its last col), 25 before the second
+        h.transport.setSectionPosition(39);        // 24 past the first (15 is its last col), 25 before the second
         h.transport.play();
         assert.equal(h.transport.getSequence().range.startCol, 0);
     });
 
     test('each repeat is its own placement, one pattern long', () => {
         const h = build({ tracks: [{ slot: 0, measures: 1, notes: [note(60, 0)], repeats: 3 }], mode: 'pattern' });
-        h.transport.setSongPosition(20);
+        h.transport.setSectionPosition(20);
         h.transport.play();
         assert.deepEqual(h.transport.getSequence().range, { startCol: 16, endCol: 32 });
         h.played.length = 0;
@@ -223,20 +223,20 @@ describe('pattern mode placements', () => {
         assert.deepEqual(h.last().edit, { clipId: h.made[0].clip.id, patternCol: 0 }, 'placement-relative');
         h.tickWorker.tick(21);
         assert.deepEqual(h.last().edit, { clipId: h.made[0].clip.id, patternCol: 5 });
-        assert.equal(h.last().songCol, 21, 'the Song tab still has a column to draw');
+        assert.equal(h.last().sectionCol, 21, 'the Section tab still has a column to draw');
     });
 
-    test('the last song column played is the anchor once the song is stopped', () => {
+    test('the last section column played is the anchor once the section is stopped', () => {
         const h = build({ tracks: [{ slot: 0, measures: 1, notes: [note(60, 0)], repeats: 6 }] });
         h.transport.play();
         h.tickWorker.tick(70);
         h.transport.stop();
-        assert.equal(h.transport.getSongPosition(), 70);
+        assert.equal(h.transport.getSectionPosition(), 70);
         h.transport.play({ mode: 'pattern' });
         assert.deepEqual(h.transport.getSequence().range, { startCol: 64, endCol: 80 });
     });
 
-    test('a pattern placed nowhere loops alone, with no song column', () => {
+    test('a pattern placed nowhere loops alone, with no section column', () => {
         const h = build({ tracks: [{ slot: 0, measures: 1, notes: [note(60, 0)] }], mode: 'pattern' });
         h.session.update((project, section) => { section.clips = []; }, 'test');
         h.transport.play();
@@ -244,7 +244,7 @@ describe('pattern mode placements', () => {
         assert.equal(h.transport.getPlacement(), null);
         h.tickWorker.tick(3);
         assert.equal(h.last().col, 3);
-        assert.equal(h.last().songCol, -1);
+        assert.equal(h.last().sectionCol, -1);
         assert.deepEqual(h.last().edit, { clipId: h.made[0].clip.id, patternCol: 3 });
     });
 
@@ -260,7 +260,7 @@ describe('pattern mode placements', () => {
     });
 });
 
-// Whether the rest of the song is heard inside the pattern window. It never
+// Whether the rest of the section is heard inside the pattern window. It never
 // changes the window: a take is one pattern long either way. (The user's
 // report that sent this back: the two had been conflated into one toggle.)
 describe('accompaniment', () => {
@@ -300,7 +300,7 @@ describe('accompaniment', () => {
         assert.deepEqual(h.transport.getSequence().range, { startCol: 0, endCol: 16 });
     });
 
-    test('a take is one pattern long whether or not the song plays along', () => {
+    test('a take is one pattern long whether or not the section plays along', () => {
         for (const on of [true, false]) {
             localStorage.clear();
             const h = two('pattern');
@@ -324,8 +324,8 @@ describe('accompaniment', () => {
         assert.equal(h.transport.play(), true);
     });
 
-    test('song mode ignores it — the Song tab plays the arrangement', () => {
-        const h = two('song');
+    test('section mode ignores it — the Section tab plays the arrangement', () => {
+        const h = two('section');
         h.transport.setAccompany(false);
         h.transport.play();
         h.played.length = 0;
@@ -333,18 +333,18 @@ describe('accompaniment', () => {
         assert.deepEqual(h.played.map(p => [p.midi, p.slot]).sort(), [[48, 1], [60, 0]]);
     });
 
-    test('the song position cannot be moved under a running transport', () => {
+    test('the section position cannot be moved under a running transport', () => {
         const h = build({ tracks: [{ slot: 0, measures: 1, notes: [note(60, 0)] }] });
         h.transport.play();
-        assert.equal(h.transport.setSongPosition(40), false);
+        assert.equal(h.transport.setSectionPosition(40), false);
         h.transport.stop();
-        assert.equal(h.transport.setSongPosition(40), true);
-        assert.equal(h.transport.getSongPosition(), 40);
+        assert.equal(h.transport.setSectionPosition(40), true);
+        assert.equal(h.transport.getSectionPosition(), 40);
     });
 });
 
 describe('play / stop', () => {
-    test('play starts the worker and refuses an empty song', () => {
+    test('play starts the worker and refuses an empty section', () => {
         const empty = build();
         assert.equal(empty.transport.play(), false);
         assert.equal(empty.tickWorker.started.length, 0);
@@ -354,7 +354,7 @@ describe('play / stop', () => {
         assert.deepEqual(h.tickWorker.started, [{ bpm: 120, col: 0 }]);
     });
 
-    test('a song of empty patterns is still nothing to play', () => {
+    test('a section of empty patterns is still nothing to play', () => {
         const h = build({ tracks: [{ slot: 0, notes: [] }] });
         assert.equal(h.transport.play(), false);
     });
@@ -391,9 +391,9 @@ describe('play / stop', () => {
         assert.equal(h.transport.isRecording(), true);
     });
 
-    test('durations come from the song tempo', () => {
+    test('durations come from the section tempo', () => {
         const h = build({ tracks: [{ slot: 0, notes: [note(60, 0, 4)] }] });
-        h.session.update((song) => { song.bpm = 60; }, 'test');
+        h.session.update((project) => { project.bpm = 60; }, 'test');
         h.transport.play();
         h.played.length = 0;
         h.tickWorker.tick(0);
@@ -414,7 +414,7 @@ describe('play / stop', () => {
 });
 
 describe('position reporting', () => {
-    test('every tick reports the song column and the pattern-local one', () => {
+    test('every tick reports the section column and the pattern-local one', () => {
         const h = build({ tracks: [{ slot: 0, measures: 2, notes: [note(60, 0)], at: 1 }], edit: 0 });
         h.transport.play();
         h.positions.length = 0;
@@ -509,9 +509,9 @@ describe('recording', () => {
         assert.equal(h.transport.stopRecording(), false, 'already stopped');
     });
 
-    test('startRecording({mode}) names the scope like play — a roll take loops the placement, not the song', () => {
+    test('startRecording({mode}) names the scope like play — a roll take loops the placement, not the section', () => {
         const h = build({ tracks: [{ slot: 0, measures: 1, notes: [note(60, 0)], repeats: 4 }] });
-        assert.equal(h.transport.getMode(), 'song');
+        assert.equal(h.transport.getMode(), 'section');
         h.transport.startRecording({ mode: 'pattern' });
         assert.equal(h.transport.getMode(), 'pattern');
         assert.deepEqual(h.transport.getSequence().range, { startCol: 0, endCol: 16 });
@@ -520,7 +520,7 @@ describe('recording', () => {
         assert.equal(h.last().seam, true);
     });
 
-    test('recording into an empty song still works — it is the first-use flow', () => {
+    test('recording into an empty section still works — it is the first-use flow', () => {
         const h = build();
         h.transport.startRecording();
         assert.equal(h.transport.isRecording(), true);
@@ -537,7 +537,7 @@ describe('mapRecordColumn', () => {
         assert.equal(h.transport.mapRecordColumn(-1, 0).patternCol, 15);
     });
 
-    test('pattern mode with a placement maps through the song path — the take starts at the window', () => {
+    test('pattern mode with a placement maps through the section path — the take starts at the window', () => {
         const h = build({ tracks: [{ slot: 0, measures: 1, notes: [note(60, 0)], at: 2 }], mode: 'pattern' });
         h.transport.startRecording();
         assert.deepEqual(h.transport.getSequence().range, { startCol: 32, endCol: 48 });
@@ -547,7 +547,7 @@ describe('mapRecordColumn', () => {
         assert.equal(h.transport.mapRecordColumn(19, 0).patternCol, 3, 'second pass');
     });
 
-    test('song mode maps through the clip under the playhead', () => {
+    test('section mode maps through the clip under the playhead', () => {
         const h = build({ tracks: [{ slot: 0, measures: 2, notes: [note(60, 0)], at: 1 }] });
         h.transport.play();
         const m = h.transport.mapRecordColumn(20, 0);

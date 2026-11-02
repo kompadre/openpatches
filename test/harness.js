@@ -37,7 +37,7 @@ class StubElement {
         this.tagName = String(tagName).toUpperCase();
         this.children = [];
         this.parentNode = null;
-        // Plain properties, plus the custom-property API the song grid uses
+        // Plain properties, plus the custom-property API the section grid uses
         // for its CSS variables; both read back through `style`.
         this.style = {
             setProperty(name, value) { this[name] = String(value); },

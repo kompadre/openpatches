@@ -1,4 +1,4 @@
-// The song editor: tracks × measures, clips placed from a pattern palette,
+// The Section editor: tracks × measures, clips placed from a pattern palette,
 // everything autosaved through the session. The model (project-model.js)
 // decides what is legal; this is about the UI reaching it correctly and
 // reporting refusals instead of swallowing them.
@@ -7,7 +7,7 @@ import { test, before, beforeEach, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { installBrowserEnv } from './harness.js';
 
-let createSongEditor, makeProjectSession, M, MEASURE_W, env;
+let createSectionEditor, makeProjectSession, M, MEASURE_W, env;
 
 // The open project the editor under test is bound to. build() sets it, and
 // the pattern assertions read the library through it — patterns belong to
@@ -16,7 +16,7 @@ let session = null;
 
 before(async () => {
     env = installBrowserEnv();
-    ({ createSongEditor, MEASURE_W } = await import('../html/components/song-editor.js'));
+    ({ createSectionEditor, MEASURE_W } = await import('../html/components/section-editor.js'));
     ({ makeProjectSession } = await import('./project-fixture.js'));
     M = await import('../html/components/project-model.js');
 });
@@ -50,7 +50,7 @@ function build({ patterns = [], tracks = [], clips = [] } = {}) {
     }
     const logs = [];
     const opened = [];
-    const editor = createSongEditor({
+    const editor = createSectionEditor({
         session, log: (m) => logs.push(m),
         getSlotData: (slot) => BANK[slot] || null,
         onOpenPattern: (clipId, trackId, patternId) => opened.push({ clipId, trackId, patternId }),
@@ -58,12 +58,12 @@ function build({ patterns = [], tracks = [], clips = [] } = {}) {
     const root = editor.element;
     const h = {
         editor, session, logs, opened, root, patterns: made,
-        song: () => session.get(),
+        project: () => session.get(),
         section: () => session.getSection(),
-        status: () => root.querySelector('.song-status').textContent,
-        lanes: () => root.querySelectorAll('.song-lane'),
-        clips: () => root.querySelectorAll('.song-clip'),
-        items: () => root.querySelectorAll('.song-pattern-item'),
+        status: () => root.querySelector('.section-status').textContent,
+        lanes: () => root.querySelectorAll('.section-lane'),
+        clips: () => root.querySelectorAll('.section-clip'),
+        items: () => root.querySelectorAll('.section-pattern-item'),
         btn: (cls) => root.querySelector('.' + cls),
         click: (el, x = 0) => el.dispatch('click', { target: el, clientX: x, clientY: 0, stopPropagation() {} }),
         doc: (type, e) => (env.document._listeners[type] || []).slice().forEach(fn => fn(e)),
@@ -85,8 +85,8 @@ describe('rendering', () => {
         assert.equal(clips.length, 2);
         assert.equal(clips[0].style.left, (1 * MEASURE_W) + 'px');
         assert.equal(clips[0].style.width, (4 * MEASURE_W - 2) + 'px');
-        assert.equal(clips[0].querySelector('.song-clip-label').textContent, 'A ×2');
-        assert.equal(clips[1].querySelector('.song-clip-label').textContent, 'A');
+        assert.equal(clips[0].querySelector('.section-clip-label').textContent, 'A ×2');
+        assert.equal(clips[1].querySelector('.section-clip-label').textContent, 'A');
         assert.equal(clips[1].style.background, h.patterns[0].color, 'painted with its pattern\'s colour');
         assert.equal(h.lanes()[1].style.backgroundColor, 'rgba(187,176,2,0.16)', 'the lane is tinted with the voice');
     });
@@ -94,8 +94,8 @@ describe('rendering', () => {
     test('the palette lists every stored pattern with its length', () => {
         const h = build({ patterns: [{ name: 'Zed', measures: 1 }, { name: 'Alpha', measures: 3 }] });
         const items = h.items();
-        assert.deepEqual(items.map(i => i.querySelector('.song-pattern-name').textContent), ['Alpha', 'Zed']);
-        assert.deepEqual(items.map(i => i.querySelector('.song-pattern-len').textContent), ['3 bars', '1 bar']);
+        assert.deepEqual(items.map(i => i.querySelector('.section-pattern-name').textContent), ['Alpha', 'Zed']);
+        assert.deepEqual(items.map(i => i.querySelector('.section-pattern-len').textContent), ['3 bars', '1 bar']);
     });
 
     test('a clip whose pattern is gone is skipped, not fatal', () => {
@@ -108,7 +108,7 @@ describe('rendering', () => {
 
     test('track heads show the voice names and the bound slot', () => {
         const h = build({ tracks: [{ slot: 1 }] });
-        const sel = h.root.querySelector('.song-track-slot');
+        const sel = h.root.querySelector('.section-track-slot');
         assert.equal(sel.value, '1');
         assert.deepEqual(sel.children.slice(0, 2).map(o => o.textContent), ['1. Piano', '2. Bass']);
     });
@@ -120,7 +120,7 @@ describe('placing clips', () => {
         h.click(h.items()[0]);
         assert.equal(h.editor.getSelectedPatternId(), h.patterns[0].id);
         h.click(h.lanes()[0], 3 * MEASURE_W + 5);
-        const song = h.song();
+        const project = h.project();
         const section = h.section();
         assert.equal(section.clips.length, 1);
         assert.equal(section.clips[0].startCol, 3 * COLS, 'bars are the default snap');
@@ -199,7 +199,7 @@ describe('moving and lengthening clips', () => {
         assert.equal(h.clips()[0].style.left, '0px', 're-rendered in place');
     });
 
-    test('cannot be dragged before the start of the song', () => {
+    test('cannot be dragged before the start of the section', () => {
         const h = one();
         const clip = h.clips()[0];
         clip.dispatch('mousedown', ev({ clientX: 200 }));
@@ -210,28 +210,28 @@ describe('moving and lengthening clips', () => {
 
     test('dragging the handle gives the clip a length of its own', () => {
         const h = one();
-        const handle = h.clips()[0].querySelector('.song-clip-handle');
+        const handle = h.clips()[0].querySelector('.section-clip-handle');
         handle.dispatch('mousedown', ev({ clientX: 2 * MEASURE_W }));
         h.doc('mousemove', ev({ clientX: 2 * MEASURE_W + 4 * MEASURE_W }));
         h.doc('mouseup', ev({ clientX: 2 * MEASURE_W + 4 * MEASURE_W }));
         assert.equal(h.section().clips[0].lengthCols, 6 * COLS, '2 bars + 4 bars');
         assert.equal(h.section().clips[0].repeats, undefined, 'it no longer follows its pattern');
-        assert.equal(h.clips()[0].querySelector('.song-clip-label').textContent, 'A ×3');
+        assert.equal(h.clips()[0].querySelector('.section-clip-label').textContent, 'A ×3');
     });
 
     test('a length that is not whole repeats is shown as a fraction', () => {
         const h = one();
-        const handle = h.clips()[0].querySelector('.song-clip-handle');
+        const handle = h.clips()[0].querySelector('.section-clip-handle');
         handle.dispatch('mousedown', ev({ clientX: 0 }));
         h.doc('mousemove', ev({ clientX: MEASURE_W }));                 // 2 bars + 1 = 1.5 repeats
         h.doc('mouseup', ev({ clientX: MEASURE_W }));
         assert.equal(h.section().clips[0].lengthCols, 3 * COLS);
-        assert.equal(h.clips()[0].querySelector('.song-clip-label').textContent, 'A ×1.5');
+        assert.equal(h.clips()[0].querySelector('.section-clip-label').textContent, 'A ×1.5');
     });
 
     test('shrinking stops at one snap cell', () => {
         const h = one();
-        const handle = h.clips()[0].querySelector('.song-clip-handle');
+        const handle = h.clips()[0].querySelector('.section-clip-handle');
         handle.dispatch('mousedown', ev({ clientX: 100 }));
         h.doc('mousemove', ev({ clientX: -500 }));
         h.doc('mouseup', ev({ clientX: -500 }));
@@ -276,16 +276,16 @@ describe('selecting, opening and removing clips', () => {
     test('the Remove button does it without a keyboard', () => {
         const h = one();
         h.click(h.clips()[0]);
-        h.btn('song-clip-remove').dispatch('click', ev());
+        h.btn('section-clip-remove').dispatch('click', ev());
         assert.equal(h.section().clips.length, 0);
     });
 
     test('the Open button hands the clip to the piano roll', () => {
         const h = one();
         h.click(h.clips()[0]);
-        h.btn('song-clip-open').dispatch('click', ev());
+        h.btn('section-clip-open').dispatch('click', ev());
         const c = h.section().clips[0];
-        assert.deepEqual(h.opened, [{ clipId: c.id, trackId: h.song().tracks[0].id, patternId: h.patterns[0].id }]);
+        assert.deepEqual(h.opened, [{ clipId: c.id, trackId: h.project().tracks[0].id, patternId: h.patterns[0].id }]);
     });
 });
 
@@ -363,7 +363,7 @@ describe('clip gestures', () => {
         assert.deepEqual(h.opened, []);
         t.mock.timers.tick(1);
         const c = h.section().clips[0];
-        assert.deepEqual(h.opened, [{ clipId: c.id, trackId: h.song().tracks[0].id, patternId: h.patterns[0].id }]);
+        assert.deepEqual(h.opened, [{ clipId: c.id, trackId: h.project().tracks[0].id, patternId: h.patterns[0].id }]);
         // The release that follows a hold is not a tap: another press soon
         // after must not read as a double tap and remove what was just opened.
         h.doc('mouseup', ev({ clientX: 5, clientY: 5 }));
@@ -405,7 +405,7 @@ describe('clip gestures', () => {
     test('the repeat handle has neither gesture', (t) => {
         t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
         const h = one();
-        const handle = () => h.root.querySelector('.song-clip-handle');
+        const handle = () => h.root.querySelector('.section-clip-handle');
         handle().dispatch('mousedown', ev({ clientX: 40 }));
         t.mock.timers.tick(700);
         assert.deepEqual(h.opened, []);
@@ -419,42 +419,42 @@ describe('clip gestures', () => {
 describe('tracks', () => {
     test('+ Track binds the first free voice; all eight used is refused', () => {
         const h = build({ tracks: [{ slot: 0 }, { slot: 1 }] });
-        h.btn('song-add-track').dispatch('click', ev());
-        assert.deepEqual(h.song().tracks.map(t => t.slot), [0, 1, 2]);
-        for (let i = 0; i < 6; i++) h.btn('song-add-track').dispatch('click', ev());
-        assert.equal(h.song().tracks.length, 8);
+        h.btn('section-add-track').dispatch('click', ev());
+        assert.deepEqual(h.project().tracks.map(t => t.slot), [0, 1, 2]);
+        for (let i = 0; i < 6; i++) h.btn('section-add-track').dispatch('click', ev());
+        assert.equal(h.project().tracks.length, 8);
         assert.match(h.status(), /All 8 voices/);
     });
 
     test('changing the slot rebinds the track', () => {
         const h = build({ tracks: [{ slot: 0 }] });
-        const sel = h.root.querySelector('.song-track-slot');
+        const sel = h.root.querySelector('.section-track-slot');
         sel.value = '5';
         sel.dispatch('change');
-        assert.equal(h.song().tracks[0].slot, 5);
+        assert.equal(h.project().tracks[0].slot, 5);
     });
 
     test('mute and solo toggle and are what the sequencer reads', async () => {
         const { audibleTrackIds } = await import('../html/synth/section-sequencer.js');
         const h = build({ tracks: [{ slot: 0 }, { slot: 1 }] });
-        h.root.querySelectorAll('.song-track-mute')[0].dispatch('click', ev());
-        assert.equal(h.song().tracks[0].mute, true);
-        assert.ok(h.root.querySelectorAll('.song-track-mute')[0].classList.contains('active'));
-        assert.deepEqual([...audibleTrackIds(h.song().tracks)], [h.song().tracks[1].id]);
-        h.root.querySelectorAll('.song-track-solo')[0].dispatch('click', ev());
-        assert.deepEqual([...audibleTrackIds(h.song().tracks)], [h.song().tracks[0].id], 'solo beats mute');
+        h.root.querySelectorAll('.section-track-mute')[0].dispatch('click', ev());
+        assert.equal(h.project().tracks[0].mute, true);
+        assert.ok(h.root.querySelectorAll('.section-track-mute')[0].classList.contains('active'));
+        assert.deepEqual([...audibleTrackIds(h.project().tracks)], [h.project().tracks[1].id]);
+        h.root.querySelectorAll('.section-track-solo')[0].dispatch('click', ev());
+        assert.deepEqual([...audibleTrackIds(h.project().tracks)], [h.project().tracks[0].id], 'solo beats mute');
     });
 
     test('removing a track takes its clips, after a confirm when it has any', () => {
         const h = build({ patterns: [{ name: 'A' }], tracks: [{ slot: 0 }], clips: [{ track: 0, pattern: 0, at: 0 }] });
         let asked = 0;
         globalThis.confirm = () => { asked++; return false; };
-        h.btn('song-track-remove').dispatch('click', ev());
+        h.btn('section-track-remove').dispatch('click', ev());
         assert.equal(asked, 1);
-        assert.equal(h.song().tracks.length, 1, 'declined');
+        assert.equal(h.project().tracks.length, 1, 'declined');
         globalThis.confirm = () => true;
-        h.btn('song-track-remove').dispatch('click', ev());
-        assert.deepEqual(h.song().tracks, []);
+        h.btn('section-track-remove').dispatch('click', ev());
+        assert.deepEqual(h.project().tracks, []);
         assert.deepEqual(h.section().clips, []);
     });
 });
@@ -462,14 +462,14 @@ describe('tracks', () => {
 describe('palette', () => {
     test('+ creates a pattern and selects it', () => {
         const h = build();
-        h.btn('song-pattern-new').dispatch('click', ev());
+        h.btn('section-pattern-new').dispatch('click', ev());
         assert.equal(session.listPatterns().length, 1);
         assert.equal(h.editor.getSelectedPatternId(), session.listPatterns()[0].id);
     });
 
     test('duplicate copies the notes under a new id', () => {
         const h = build({ patterns: [{ name: 'A', notes: [{ midi: 60, start: 0, dur: 1 }] }] });
-        h.btn('song-pattern-dup').dispatch('click', ev());
+        h.btn('section-pattern-dup').dispatch('click', ev());
         const all = session.listPatterns();
         assert.equal(all.length, 2);
         const copy = all.find(p => p.name === 'A copy');
@@ -479,7 +479,7 @@ describe('palette', () => {
 
     test('rename in place', () => {
         const h = build({ patterns: [{ name: 'A' }] });
-        const nameEl = h.items()[0].querySelector('.song-pattern-name');
+        const nameEl = h.items()[0].querySelector('.section-pattern-name');
         nameEl.dispatch('dblclick', ev());
         nameEl.textContent = 'Bassline';
         nameEl.dispatch('blur');
@@ -488,12 +488,12 @@ describe('palette', () => {
 
     test('delete is refused while the pattern is placed anywhere', () => {
         const h = build({ patterns: [{ name: 'A' }], tracks: [{ slot: 0 }], clips: [{ track: 0, pattern: 0, at: 0 }] });
-        h.btn('song-pattern-del').dispatch('click', ev());
+        h.btn('section-pattern-del').dispatch('click', ev());
         assert.ok(session.getPattern(h.patterns[0].id), 'still there');
-        assert.match(h.status(), /placed in 1 song/);
+        assert.match(h.status(), /placed in 1 section/);
         h.click(h.clips()[0]);
-        h.btn('song-clip-remove').dispatch('click', ev());
-        h.btn('song-pattern-del').dispatch('click', ev());
+        h.btn('section-clip-remove').dispatch('click', ev());
+        h.btn('section-pattern-del').dispatch('click', ev());
         assert.equal(session.getPattern(h.patterns[0].id), null);
     });
 });
@@ -503,18 +503,18 @@ describe('section toolbar', () => {
         // Project naming moved to the File menu: a project is the whole
         // piece, which is more than this panel edits.
         const h = build();
-        const projectName = h.song().name;
-        const name = h.btn('song-name');
+        const projectName = h.project().name;
+        const name = h.btn('section-name');
         name.value = ' Chorus ';
         name.dispatch('change');
         assert.equal(h.section().name, 'Chorus');
-        assert.equal(h.song().name, projectName, 'the project is untouched');
+        assert.equal(h.project().name, projectName, 'the project is untouched');
     });
 
     test('an empty name is refused and the field snaps back', () => {
         const h = build();
         const before = h.section().name;
-        const name = h.btn('song-name');
+        const name = h.btn('section-name');
         name.value = '   ';
         name.dispatch('change');
         assert.equal(h.section().name, before);
@@ -524,29 +524,29 @@ describe('section toolbar', () => {
     test('tempo and loop range write through', () => {
         const h = build({ patterns: [{ name: 'A', measures: 2 }], tracks: [{ slot: 0 }], clips: [{ track: 0, pattern: 0, at: 0, repeats: 2 }] });
 
-        const bpm = h.btn('song-bpm');
+        const bpm = h.btn('section-bpm');
         bpm.value = '9999';
         bpm.dispatch('change');
-        assert.equal(h.song().bpm, M.MAX_BPM, 'clamped');
+        assert.equal(h.project().bpm, M.MAX_BPM, 'clamped');
 
-        h.btn('song-loop-on').checked = true;
-        h.btn('song-loop-start').value = '2';
-        h.btn('song-loop-end').value = '3';
-        h.btn('song-loop-end').dispatch('change');
+        h.btn('section-loop-on').checked = true;
+        h.btn('section-loop-start').value = '2';
+        h.btn('section-loop-end').value = '3';
+        h.btn('section-loop-end').dispatch('change');
         assert.deepEqual(h.section().loop, { start: 1, end: 3 }, '1-based inclusive bars → 0-based half-open');
-        assert.ok(h.root.querySelector('.song-loop-band'), 'shown on the ruler');
+        assert.ok(h.root.querySelector('.section-loop-band'), 'shown on the ruler');
 
-        h.btn('song-loop-on').checked = false;
-        h.btn('song-loop-on').dispatch('change');
+        h.btn('section-loop-on').checked = false;
+        h.btn('section-loop-on').dispatch('change');
         assert.equal(h.section().loop, null);
     });
 
     test('a backwards loop range is refused with a message', () => {
         const h = build();
-        h.btn('song-loop-on').checked = true;
-        h.btn('song-loop-start').value = '4';
-        h.btn('song-loop-end').value = '2';
-        h.btn('song-loop-end').dispatch('change');
+        h.btn('section-loop-on').checked = true;
+        h.btn('section-loop-start').value = '4';
+        h.btn('section-loop-end').value = '2';
+        h.btn('section-loop-end').dispatch('change');
         assert.equal(h.section().loop, null);
         assert.match(h.status(), /later/);
     });
@@ -602,13 +602,13 @@ describe('playhead (phase 5)', () => {
             getPattern: (id) => session.getPattern(id),
             getEditTarget: () => ({ trackId: session.get().tracks[0].id, clipId, pattern, slot: 0 }),
         });
-        const editor = createSongEditor({ session, transport, getSlotData: (s) => BANK[s] || null });
+        const editor = createSectionEditor({ session, transport, getSlotData: (s) => BANK[s] || null });
         return { editor, transport, tickWorker, session, root: editor.element };
     }
 
-    test('hidden at rest, follows the song column while playing', async () => {
+    test('hidden at rest, follows the section column while playing', async () => {
         const h = await withTransport();
-        const head = () => h.root.querySelector('.song-playhead');
+        const head = () => h.root.querySelector('.section-playhead');
         assert.equal(head().style.display, 'none');
 
         h.transport.play();
@@ -622,9 +622,9 @@ describe('playhead (phase 5)', () => {
         assert.equal(head().style.display, 'none');
     });
 
-    test('shown in pattern mode too — that loop is a window of the song', async () => {
+    test('shown in pattern mode too — that loop is a window of the section', async () => {
         const h = await withTransport();
-        const head = () => h.root.querySelector('.song-playhead');
+        const head = () => h.root.querySelector('.section-playhead');
         h.transport.setMode('pattern');
         h.transport.play();
         h.tickWorker.tick(0);
@@ -634,17 +634,17 @@ describe('playhead (phase 5)', () => {
         assert.equal(parseFloat(head().style.left) - left0, MEASURE_W);
     });
 
-    test('Play and Stop in the toolbar drive the transport, in song mode', async () => {
+    test('Play and Stop in the toolbar drive the transport, in section mode', async () => {
         const h = await withTransport();
         h.transport.setMode('pattern');
-        const play = () => h.root.querySelector('.song-play');
-        const stop = () => h.root.querySelector('.song-stop');
+        const play = () => h.root.querySelector('.section-play');
+        const stop = () => h.root.querySelector('.section-stop');
         assert.equal(play().disabled, false);
         assert.equal(stop().disabled, true);
 
         play().dispatch('click', ev());
         assert.equal(h.transport.isPlaying(), true);
-        assert.equal(h.transport.getMode(), 'song', 'Play here is the whole song');
+        assert.equal(h.transport.getMode(), 'section', 'Play here is the whole section');
         assert.equal(play().disabled, true);
         assert.ok(play().classList.contains('active'));
         assert.equal(stop().disabled, false);
@@ -655,7 +655,7 @@ describe('playhead (phase 5)', () => {
         assert.equal(stop().disabled, true);
     });
 
-    test('opening a clip parks the song position on it, so that placement is what loops', async () => {
+    test('opening a clip parks the section position on it, so that placement is what loops', async () => {
         const h = await withTransport();
         // A second clip of the same pattern at bar 5.
         h.session.update((project, section) => {
@@ -664,10 +664,10 @@ describe('playhead (phase 5)', () => {
                 startCol: 4 * COLS,
             });
         }, 'test');
-        const second = h.root.querySelectorAll('.song-clip')[1];
+        const second = h.root.querySelectorAll('.section-clip')[1];
         second.dispatch('click', ev());
-        h.root.querySelector('.song-clip-open').dispatch('click', ev());
-        assert.equal(h.transport.getSongPosition(), 4 * 16);
+        h.root.querySelector('.section-clip-open').dispatch('click', ev());
+        assert.equal(h.transport.getSectionPosition(), 4 * 16);
         h.transport.play({ mode: 'pattern' });
         assert.deepEqual(h.transport.getSequence().range, { startCol: 64, endCol: 96 });
     });
@@ -676,11 +676,11 @@ describe('playhead (phase 5)', () => {
         const h = await withTransport();
         h.transport.play();
         h.tickWorker.tick(0);
-        const clipEl = h.root.querySelectorAll('.song-clip')[0];
+        const clipEl = h.root.querySelectorAll('.section-clip')[0];
         h.tickWorker.tick(4);
-        assert.equal(h.root.querySelectorAll('.song-clip')[0], clipEl, 'a tick moves the line, nothing else');
+        assert.equal(h.root.querySelectorAll('.section-clip')[0], clipEl, 'a tick moves the line, nothing else');
         h.editor.render();
-        assert.ok(h.root.querySelector('.song-playhead'), 'still there after a render');
+        assert.ok(h.root.querySelector('.section-playhead'), 'still there after a render');
     });
 });
 
@@ -688,19 +688,19 @@ describe('pattern rename without a double-click', () => {
     test('the ✎ button opens the same in-place editor (touch has no dblclick)', () => {
         const h = build({ patterns: [{ name: 'A' }] });
         const item = h.items()[0];
-        const nameEl = item.querySelector('.song-pattern-name');
-        item.querySelector('.song-pattern-rename').dispatch('click', ev());
+        const nameEl = item.querySelector('.section-pattern-name');
+        item.querySelector('.section-pattern-rename').dispatch('click', ev());
         assert.equal(nameEl.contentEditable, 'true');
         nameEl.textContent = 'Lead line';
         nameEl.dispatch('blur');
         assert.equal(session.getPattern(h.patterns[0].id).name, 'Lead line');
-        assert.equal(h.items()[0].querySelector('.song-pattern-name').textContent, 'Lead line');
+        assert.equal(h.items()[0].querySelector('.section-pattern-name').textContent, 'Lead line');
     });
 
     test('an empty name is discarded, not saved', () => {
         const h = build({ patterns: [{ name: 'A' }] });
-        const nameEl = h.items()[0].querySelector('.song-pattern-name');
-        h.items()[0].querySelector('.song-pattern-rename').dispatch('click', ev());
+        const nameEl = h.items()[0].querySelector('.section-pattern-name');
+        h.items()[0].querySelector('.section-pattern-rename').dispatch('click', ev());
         nameEl.textContent = '   ';
         nameEl.dispatch('blur');
         assert.equal(session.getPattern(h.patterns[0].id).name, 'A');
@@ -734,18 +734,18 @@ describe('moving clips between tracks', () => {
         const before = h.section().clips[0];
         drag(h, h.clips()[0], { clientX: 10, clientY: 5 }, { clientX: 10, clientY: LANE_H + 5 });
         const after = h.section().clips[0];
-        assert.equal(after.trackId, h.song().tracks[1].id);
+        assert.equal(after.trackId, h.project().tracks[1].id);
         assert.equal(after.startCol, 0);
         assert.equal(after.patternId, before.patternId, 'the same pattern — only the notes moved');
-        assert.equal(h.lanes()[1].querySelectorAll('.song-clip').length, 1, 'drawn in the new lane');
-        assert.equal(h.lanes()[0].querySelectorAll('.song-clip').length, 0);
+        assert.equal(h.lanes()[1].querySelectorAll('.section-clip').length, 1, 'drawn in the new lane');
+        assert.equal(h.lanes()[0].querySelectorAll('.section-clip').length, 0);
     });
 
     test('it then sounds on the new track\'s voice', async () => {
         const { createSectionSequence } = await import('../html/synth/section-sequencer.js');
         const h = two();
         drag(h, h.clips()[0], { clientX: 10, clientY: 5 }, { clientX: 10, clientY: LANE_H + 5 });
-        const ev0 = createSectionSequence(h.song(), h.section()).eventsAt(0);
+        const ev0 = createSectionSequence(h.project(), h.section()).eventsAt(0);
         assert.deepEqual(ev0.map(e => [e.midi, e.slot]), [[60, 1]]);
     });
 
@@ -753,7 +753,7 @@ describe('moving clips between tracks', () => {
         const h = two();
         drag(h, h.clips()[0], { clientX: 0, clientY: 5 }, { clientX: 3 * MEASURE_W, clientY: LANE_H + 5 });
         const c = h.section().clips[0];
-        assert.equal(c.trackId, h.song().tracks[1].id);
+        assert.equal(c.trackId, h.project().tracks[1].id);
         assert.equal(c.startCol, 3 * COLS);
     });
 
@@ -767,21 +767,21 @@ describe('moving clips between tracks', () => {
         h.doc('mousemove', ev({ clientX: 10, clientY: 5 }));
         assert.equal(clip.parentNode, h.lanes()[0], 'and back');
         h.doc('mouseup', ev({ clientX: 10, clientY: 5 }));
-        assert.equal(h.section().clips[0].trackId, h.song().tracks[0].id, 'returned home: nothing changed');
+        assert.equal(h.section().clips[0].trackId, h.project().tracks[0].id, 'returned home: nothing changed');
     });
 
     test('landing on a clip in the other lane is refused and snaps back', () => {
         const h = two([{ track: 1, pattern: 0, at: 1 }]);          // [1,3) on track 1
         drag(h, h.clips()[0], { clientX: 0, clientY: 5 }, { clientX: 0, clientY: LANE_H + 5 });  // [0,2) → overlaps
-        assert.equal(h.section().clips[0].trackId, h.song().tracks[0].id);
+        assert.equal(h.section().clips[0].trackId, h.project().tracks[0].id);
         assert.equal(h.status(), 'Clip overlaps');
-        assert.equal(h.lanes()[0].querySelectorAll('.song-clip').length, 1, 're-rendered where it was');
+        assert.equal(h.lanes()[0].querySelectorAll('.section-clip').length, 1, 're-rendered where it was');
     });
 
     test('a pointer outside every lane keeps the last lane it was over', () => {
         const h = two();
         drag(h, h.clips()[0], { clientX: 10, clientY: 5 }, { clientX: 10, clientY: 10 * LANE_H });
-        assert.equal(h.section().clips[0].trackId, h.song().tracks[0].id);
+        assert.equal(h.section().clips[0].trackId, h.project().tracks[0].id);
     });
 
     test('touch: the same, with touches', () => {
@@ -790,7 +790,7 @@ describe('moving clips between tracks', () => {
         clip.dispatch('touchstart', ev({ touches: [{ clientX: 10, clientY: 5 }] }));
         h.doc('touchmove', ev({ touches: [{ clientX: 10, clientY: LANE_H + 5 }] }));
         h.doc('touchend', ev({ changedTouches: [{ clientX: 10, clientY: LANE_H + 5 }] }));
-        assert.equal(h.section().clips[0].trackId, h.song().tracks[1].id);
+        assert.equal(h.section().clips[0].trackId, h.project().tracks[1].id);
     });
 });
 
@@ -811,7 +811,7 @@ describe('pattern colours', () => {
 
     test('the palette swatch recolours the pattern and its clips', () => {
         const h = build({ patterns: [{ name: 'A' }], tracks: [{ slot: 0 }], clips: [{ track: 0, pattern: 0, at: 0 }] });
-        const swatch = h.items()[0].querySelector('.song-pattern-swatch');
+        const swatch = h.items()[0].querySelector('.section-pattern-swatch');
         assert.equal(swatch.type, 'color');
         assert.equal(swatch.value, h.patterns[0].color);
         swatch.value = '#123456';
@@ -824,7 +824,7 @@ describe('pattern colours', () => {
     test('clicking the swatch does not toggle the pattern selection', () => {
         const h = build({ patterns: [{ name: 'A' }] });
         let stopped = 0;
-        h.items()[0].querySelector('.song-pattern-swatch').dispatch('click', { stopPropagation() { stopped++; } });
+        h.items()[0].querySelector('.section-pattern-swatch').dispatch('click', { stopPropagation() { stopped++; } });
         assert.equal(stopped, 1);
         assert.equal(h.editor.getSelectedPatternId(), null);
     });
@@ -859,16 +859,16 @@ describe('sub-bar placement and length', () => {
 
     test('the toolbar offers a snap and a zoom, defaulting to bars at ×1', () => {
         const h = one({ clips: [] });
-        assert.equal(h.btn('song-snap').value, String(COLS));
-        assert.equal(h.btn('song-zoom').value, '1');
+        assert.equal(h.btn('section-snap').value, String(COLS));
+        assert.equal(h.btn('section-zoom').value, '1');
         assert.deepEqual(
-            Array.from(h.btn('song-snap').children).map(o => o.textContent),
+            Array.from(h.btn('section-snap').children).map(o => o.textContent),
             ['Bar', '1/2', '1/4', '1/8', '1/16']);
     });
 
     test('a finer snap places a clip part-way through a bar', () => {
         const h = one({ clips: [] });
-        pick(h, 'song-snap', 4);                             // quarter notes
+        pick(h, 'section-snap', 4);                             // quarter notes
         h.click(h.items()[0]);
         h.click(h.lanes()[0], MEASURE_W + 7 * colW());       // bar 2, a shade past beat 2
         assert.equal(h.section().clips[0].startCol, COLS + 4, 'floored to the quarter it fell in');
@@ -876,7 +876,7 @@ describe('sub-bar placement and length', () => {
 
     test('the snap is remembered, and is what a drag moves by', () => {
         const h = one({ snap: 8 });                      // halves
-        assert.equal(h.btn('song-snap').value, '8');
+        assert.equal(h.btn('section-snap').value, '8');
         const clip = h.clips()[0];
         clip.dispatch('mousedown', ev({ clientX: 0 }));
         h.doc('mousemove', ev({ clientX: 11 * colW() })); // 11 columns → nearest half is 8
@@ -896,7 +896,7 @@ describe('sub-bar placement and length', () => {
 
     test('the edge handle lengthens by sub-bar steps', () => {
         const h = one({ snap: 4 });
-        const handle = h.clips()[0].querySelector('.song-clip-handle');
+        const handle = h.clips()[0].querySelector('.section-clip-handle');
         handle.dispatch('mousedown', ev({ clientX: 0 }));
         h.doc('mousemove', ev({ clientX: 5 * colW() }));  // 5 columns → nearest quarter is 4
         h.doc('mouseup', ev({ clientX: 5 * colW() }));
@@ -925,17 +925,17 @@ describe('sub-bar placement and length', () => {
     test('zoom widens the bar; everything on the grid follows', () => {
         const h = one();
         assert.equal(h.clips()[0].style.width, (2 * MEASURE_W - 2) + 'px');
-        pick(h, 'song-zoom', 4);
+        pick(h, 'section-zoom', 4);
         assert.equal(h.clips()[0].style.width, (2 * 4 * MEASURE_W - 2) + 'px');
-        assert.ok(parseFloat(h.root.querySelector('.song-ruler-lane').style.width) >= 16 * 4 * MEASURE_W);
+        assert.ok(parseFloat(h.root.querySelector('.section-ruler-lane').style.width) >= 16 * 4 * MEASURE_W);
         assert.equal(localStorage.getItem('openpatches_song_zoom'), '4', 'remembered');
     });
 
     test('the grid draws a snap line under every bar line', () => {
         const h = one({ snap: 4, zoom: 2 });
-        const g = h.root.querySelector('.song-grid');
-        assert.equal(g.style.getPropertyValue('--song-measure-w'), (2 * MEASURE_W) + 'px');
-        assert.equal(g.style.getPropertyValue('--song-snap-w'), (4 * colW(2)) + 'px');
+        const g = h.root.querySelector('.section-grid');
+        assert.equal(g.style.getPropertyValue('--section-measure-w'), (2 * MEASURE_W) + 'px');
+        assert.equal(g.style.getPropertyValue('--section-snap-w'), (4 * colW(2)) + 'px');
     });
 
     test('a drag at a fine snap still cannot cross a neighbour', () => {

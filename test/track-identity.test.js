@@ -7,9 +7,9 @@
 // immediately, because there is only one record to change.
 //
 // It exists because the opposite was true until phase 3c, and the symptom
-// was subtle: the song's track carried a `mute` that gated whether notes
+// was subtle: the section's track carried a `mute` that gated whether notes
 // were *scheduled*, the voice bank entry carried a `muted` that gated the
-// channel's *volume*, and neither surfaced the other. Muting in the Song
+// channel's *volume*, and neither surfaced the other. Muting in the Section
 // tab left the Mixer looking unmuted, and vice versa.
 
 import { test, before, beforeEach, describe } from 'node:test';
@@ -49,11 +49,11 @@ function build() {
     bank._addEntry('Bass', 'bass-data', 'p2');
     return {
         session, dock, bank,
-        editor: dock._songEditor,
+        editor: dock._sectionEditor,
         roll: dock._pianoroll,
         tracks: () => session.get().tracks,
         /** The Section editor's lane controls for the nth track. */
-        lane: (n) => dock._songEditor.element.querySelectorAll('.song-track-head')[n],
+        lane: (n) => dock._sectionEditor.element.querySelectorAll('.section-track-head')[n],
     };
 }
 
@@ -74,7 +74,7 @@ describe('mute and solo are one flag', () => {
         const h = build();
         h.session.update((project) => {
             project.tracks.find(t => t.slot === 0).mute = true;
-        }, 'song-editor');
+        }, 'section-editor');
 
         const strip = h.bank._getEntries()[0];
         assert.equal(strip.muted, true, 'the strip is a view of the same record');
@@ -127,7 +127,7 @@ describe('a lane, a strip and a voice are the same track', () => {
         h.roll.addNote({ midi: 60, start: 0, dur: 1, slot: 0 });
         const id = h.tracks().find(t => t.slot === 0).id;
 
-        h.session.update((project) => { M.removeTrack(project, id); }, 'song-editor');
+        h.session.update((project) => { M.removeTrack(project, id); }, 'section-editor');
         assert.equal(h.bank._getEntries()[0], null, 'the strip went with it');
         assert.equal(h.session.getSection().clips.some(c => c.trackId === id), false);
     });
@@ -142,7 +142,7 @@ describe('changing a lane\'s slot', () => {
         const [a, b] = h.tracks();
         assert.deepEqual([a.name, b.name], ['Piano', 'Bass']);
 
-        h.session.update((project) => { M.setTrackSlot(project, a.id, 1); }, 'song-editor');
+        h.session.update((project) => { M.setTrackSlot(project, a.id, 1); }, 'section-editor');
 
         const bySlot = Object.fromEntries(h.tracks().map(t => [t.slot, t.name]));
         assert.deepEqual(bySlot, { 0: 'Bass', 1: 'Piano' }, 'they traded instruments');
@@ -152,14 +152,14 @@ describe('changing a lane\'s slot', () => {
     test('a free slot just moves', () => {
         const h = build();
         const a = h.tracks()[0];
-        h.session.update((project) => { M.setTrackSlot(project, a.id, 5); }, 'song-editor');
+        h.session.update((project) => { M.setTrackSlot(project, a.id, 5); }, 'section-editor');
         assert.deepEqual(h.tracks().map(t => t.slot), [1, 5]);
     });
 
     test('the swap is visible on the Mixer, because the strips follow the slots', () => {
         const h = build();
         const a = h.tracks()[0];
-        h.session.update((project) => { M.setTrackSlot(project, a.id, 1); }, 'song-editor');
+        h.session.update((project) => { M.setTrackSlot(project, a.id, 1); }, 'section-editor');
         assert.deepEqual(
             h.bank._getEntries().slice(0, 2).map(e => e && e.name),
             ['Bass', 'Piano'],
@@ -172,7 +172,7 @@ describe('changing a lane\'s slot', () => {
         const [a] = h.tracks();
         h.session.update((project) => {
             project.tracks.find(t => t.id === a.id).slot = 1;   // the old, unguarded way
-        }, 'song-editor');
+        }, 'section-editor');
         assert.equal(h.tracks().filter(t => t.slot === 1).length, 2, 'two voices on one channel');
 
         // …and the next load silently resolves it by dropping one.

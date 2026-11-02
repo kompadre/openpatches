@@ -78,25 +78,26 @@ const STEPS = [
             '5. <strong>Drag</strong> a note to move it<br>' +
             '6. Press <strong>▶ Play</strong> to hear it<br><br>' +
             'The other voices\' patterns show dimmed behind, so you can see how the parts fit; only the selected one can be edited. ' +
-            'The <strong>♫ Song / ▭ Pattern</strong> button switches between playing the whole arrangement and looping just this pattern.',
+            'The <strong>♫ With section / ▭ Pattern only</strong> button decides whether the rest of the section is heard while you loop this pattern.',
     },
     {
-        id: 'song',
-        title: 'Song',
+        id: 'section',
+        title: 'Section',
         highlight: '#piano-dock .dock-tab:nth-child(3)',
         selectTab: '#piano-dock .dock-tab:nth-child(3)',
         noBlur: true,
         illustration: null,
         description:
-            'The <strong>Song</strong> tab arranges your patterns into a piece.<br><br>' +
+            'The <strong>Section</strong> tab arranges your patterns into a piece of the project.<br><br>' +
             'Tracks are rows, bars are columns. Every pattern you have made is listed on the left.<br><br>' +
             '1. <strong>Click a pattern</strong> in the list to select it<br>' +
             '2. <strong>Click a lane</strong> where you want it — that places a <strong>clip</strong><br>' +
             '3. <strong>Drag</strong> a clip to move it, drag its <strong>right edge</strong> to repeat it<br>' +
             '4. <strong>Double-click</strong> a clip to open its pattern in the Piano Roll<br>' +
             '5. Each row picks the <strong>voice</strong> it plays, with <strong>M</strong>ute and <strong>S</strong>olo<br><br>' +
-            'The same pattern can be placed as many times as you like — that is the point of patterns. ' +
-            'Everything saves as you go; use <strong>+ Song</strong> for a new arrangement.',
+            'The same pattern can be placed as many times as you like — that is the point of patterns.<br><br>' +
+            'Everything saves as you go. A whole <strong>project</strong> — its sections, patterns, tracks and patches — '
+            + 'is made, opened and exported from the <strong>File</strong> menu.',
     },
     {
         id: 'edit',

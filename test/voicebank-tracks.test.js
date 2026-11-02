@@ -60,7 +60,7 @@ describe('a strip is a track', () => {
     });
 
     test('there is one mute, and the scheduler reads it', () => {
-        // The bug this merge exists to make unrepeatable: the song's track
+        // The bug this merge exists to make unrepeatable: the section's track
         // and the bank entry each kept their own mute, neither showed the
         // other, and they could disagree.
         const h = build();
@@ -94,11 +94,11 @@ describe('a strip is a track', () => {
         bank._addEntry('Piano', 'piano-data', 'p1');
         const idBefore = bank._getEntries().filter(Boolean)[0].id;
 
-        // Something structural, on the same song: placing a clip, adding a
+        // Something structural, on the same project: placing a clip, adding a
         // track. The bank must be left exactly as it is — reapplying the
-        // song's snapshot here would throw away whatever the user just did
+        // section's snapshot here would throw away whatever the user just did
         // to the voices (and _setEntries mints fresh entry ids).
-        h.session.update((project) => { project.tracks.push(M.createTrack({ slot: 4 })); }, 'song-editor');
+        h.session.update((project) => { project.tracks.push(M.createTrack({ slot: 4 })); }, 'section-editor');
 
         const after = bank._getEntries().filter(Boolean);
         assert.deepEqual(after.map(e => e.name), ['Piano']);
@@ -120,7 +120,7 @@ describe('a strip is a track', () => {
         h.roll.addNote({ midi: 60, start: 0, dur: 1, slot: 0 });
         const patternId = h.roll.getTracks()[0].patternId;
         h.dock._voiceBank._addEntry('Piano', 'piano-data', 'p1');
-        // Re-adopting the song on a voice-bank write would drop the roll's
+        // Re-adopting the section on a voice-bank write would drop the roll's
         // working copies; the notes must still be there and still be its own.
         assert.deepEqual(h.roll.getNotes(), [{ midi: 60, start: 0, dur: 1 }]);
         assert.equal(h.roll.getTracks()[0].patternId, patternId);
@@ -137,22 +137,22 @@ describe('switching project brings its own band', () => {
         h.session.createFrom({
             name: 'Other',
             tracks: [{ name: 'Strings', slot: 0, patchId: 'p9', volume: 80, voiceData: 'str-data' }],
-        }, 'song-editor');
+        }, 'section-editor');
         assert.deepEqual(bank._getEntries().filter(Boolean).map(e => e.name), ['Strings']);
 
         // Reading a body back is the one switch that has to be async.
-        await h.session.open(first, 'song-editor');
+        await h.session.open(first, 'section-editor');
         assert.deepEqual(bank._getEntries().filter(Boolean).map(e => e.name), ['Piano']);
     });
 
     test('a new project starts with no band at all', () => {
-        // The old behaviour — carrying the previous song's voices over
+        // The old behaviour — carrying the previous section's voices over
         // because the new one had none — went with the separate bank. A
         // project owns its tracks, and an empty project has none.
         const h = build();
         h.dock._voiceBank._addEntry('Piano', 'piano-data', 'p1');
 
-        h.session.createNew('Fresh', 'song-editor');
+        h.session.createNew('Fresh', 'section-editor');
         assert.deepEqual(h.dock._voiceBank._getEntries().filter(Boolean), []);
         assert.deepEqual(h.session.get().tracks, []);
 

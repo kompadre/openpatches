@@ -77,576 +77,41 @@ run `node --check` + `node --test` and tick this file only. (Open: AGENTS.md
 "Keep it current ... in the same commit/change" reads per-change; awaiting
 the user's wording if SESSION.md should be deferred too.)
 
-### Project + Export (2026-11-02) — PLANNED with the user, not started
+### Project + Export — DONE 2026-11-02, all six phases
 
-From TODO.md (both "Project" and "exporting a project" bullets, now cut).
-**A major version change: no retro-compatibility, existing data is wiped.**
+Delivered and written up in CHANGELOG.md (2026-11-02). 845 unit / 69 e2e.
+The architecture map below is current; what follows is only what a future
+change could trip over, which does not belong in a changelog.
 
-#### The model, as decided with the user
+- **A track is a Mixer strip is a piano-roll voice is a Section lane** —
+  one record. Any UI that mutes, renames, re-patches or re-slots a "lane"
+  is mutating `project.tracks`. `test/track-identity.test.js` is the
+  standing guard; extend it rather than writing a parallel assertion.
+- **Never assign `track.slot` directly** — use `setTrackSlot()`, which
+  swaps. Two tracks on one slot is resolved by `normalizeProject()`
+  *dropping* one, with its clips, in every section.
+- **An IndexedDB write started during `pagehide` does not commit.**
+  Measured, not assumed: the handlers do run, the transaction does open,
+  and the page dies first. The synchronous localStorage crash journal is
+  the only reason a reload does not lose the last edits. Do not simplify
+  it away.
+- **`clampInt(null, …)` returns the fallback by an explicit guard**,
+  because `Number(null)` is 0 and finite. Any new numeric field inherits
+  that; any new clamp helper must repeat it.
+- **`normalizeVoiceData` accepts base64 strings** — which is how patches
+  actually store `voice_data` — and the `{"0":1,"1":2}` shape
+  `JSON.stringify` makes of a typed array.
+- **`node --check file.js` parses as a script**, so it misses
+  module-level mistakes: a nested function shadowing an import caused
+  infinite recursion and passed. Copy to `.mjs` and check that too.
+- Deferred by decision, with the user: a **section list** (the model
+  carries N sections, the UI edits one), **whole-piece playback**,
+  **tempo automation** (`effectiveBpm` is the seam), **dedup across
+  projects**, and **re-uploading a missing WAV**. All are in TODO.md.
 
-**Profile** — localStorage, never exported. The layer above projects: the
-project index, the current-project pointer, MIDI *machine* settings (port
-selection, the 317 ms output latency — port ids are not stable across
-sessions and the latency was measured against this user's hardware, so
-importing someone else's would be actively wrong), UI prefs
-(`_roll_prefs`, `_kb_collapsed`, `_song_zoom`, `_song_snap`, `_step_len`,
-`_transport_mode`, `_transport_accompany`), lifecycle flags (`_tutorial`,
-`_demo_offered`) and the **global tag vocabulary**.
-
-**Project** — one piece of music, body in IndexedDB. Two dimensions:
-- **Tracks** — the vertical axis, project-level. See the merge below.
-- **Sections** — an ordered sequence of smaller pieces (the user's word,
-  chosen over "movement" as ambiguous and "part" as actively misleading —
-  a Cubase Part is a per-track event container, i.e. our *clip*). Each
-  section is a sequence of **Patterns** placed on the project's tracks.
-- Also project-owned: patches, canvas layout, jobs, tempo, tags-in-use.
-
-**Tempo**: project-level, with a **nullable per-section override that wins
-when set** — announced per section the way a movement announces Allegro.
-Song-level automation (gradual rit./accel.) is a later feature.
-
-**Patterns belong to the project**, referenced by sections.
-
-#### The structural merge: Track *is* the voice bank slot
-
-The user's "Tracks are the other dimension of the Project" collapses a
-duality the code already strains against: every lookup is
-`tracks.find(t => t.slot === slot)`, so one-track-per-slot is assumed
-everywhere while the model never enforced it.
-
-**They have already drifted into a live bug — two independent mute/solo
-systems for one strip:** `song.tracks[].mute/.solo`, written by the Song
-tab's track-header M/S (song-editor.js:540) and read by `sequencer.js:25`
-to decide which notes are **scheduled**; and the bank entry's
-`.muted/.solo`, written by the Mixer strip's M/S, feeding `effectiveVolume`
-to decide channel **volume**. Neither shows the other; they can disagree.
-
-A Track becomes one object — `{id, name, slot/channel, patch, volume,
-mute, solo}` — and that whole class of bug goes. `song.voiceBank` and the
-global `openpatches_voicebank` both die, as song-model.js:175's own comment
-already predicted.
-
-#### Persistence: sync callers, async backend
-
-Decided: project bodies in IndexedDB, loaded on open, dumped back on save.
-**The trap:** every store today is synchronous `localStorage.setItem`, and
-there are **31 synchronous save call sites**; the test harness stubs
-localStorage and has no IndexedDB at all (test/harness.js:248).
-
-So `projectStore` keeps the loaded body **in memory as the source of
-truth** — which is exactly what "load on open, dump on save" means — with
-all existing synchronous mutators writing to it unchanged, and a
-**debounced async flush** of the whole body behind an **injectable
-backend** (in-memory in tests, IndexedDB in the browser). No call site
-becomes async and the harness needs no IndexedDB stub.
-
-#### Clear History is broken — fold the fix in
-
-`menu-clear-history` (app.js:935) removes 5 of 23 keys. **Survivors
-include `_patterns` and `_arrangements`** (every pattern and song),
-`_patch_names` and `_all_tags` (so a re-imported patch silently picks up
-its old rename), plus every pref and both legacy keys.
-
-**And the WAV blobs leak permanently.** IndexedDB `uploads` is pruned only
-when a container is deleted from the canvas (canvas.js:253);
-`canvasStore.clear()` drops the container records *without iterating them
-first*, orphaning every imported WAV with no remaining reference and no UI
-that can reach it. "Clear History" is itself the cause.
-
-The refactor fixes this structurally rather than by chasing a key list:
-clear the profile, drop the project store, clear the upload store. Pin it
-with a test asserting storage is **empty**, not that five keys were
-removed. Menu item renamed to say what it does ("Delete all projects and
-patches"); the demo-offered flag and MIDI machine settings are kept —
-they are profile-level and not "history".
-
-#### Phases
-
-Per the working convention: phases 1–5 run `node --check` + `node --test`
-and tick this file only; phase 6 does the full Playwright run, HEARME.tts,
-CHANGELOG.md and the TODO.md reconciliation.
-
-- [x] **1. Model + stores — done 2026-11-02, 824 unit passing (+90).**
-  Three new files, nothing existing touched; nothing is wired up yet.
-  - `html/components/project-model.js` — pure data, no DOM/audio/MIDI/
-    storage. Project, Section, Track (merged with the voice bank slot),
-    Pattern, Clip; geometry (`clipCols`, `sectionLengthCols`); mutators
-    (`addClip`/`updateClip`, `addTrack`/`removeTrack`,
-    `addPattern`/`removePattern`, `addSection`/`removeSection`).
-    `SCHEMA_VERSION = 1` is written into every body, for phase 5's import.
-  - **`effectiveBpm(project, section)`** is the only place tempo is
-    decided — `section.bpm` is **nullable**, null defers to the project,
-    a number overrides. That nullability is the whole Allegro feature, and
-    it is also the seam the later rit./accel. automation grows from.
-  - **`normalizeProject()`** holds the invariants no single factory can
-    see: one track per slot (a later duplicate is **dropped, not
-    renumbered** — renumbering would silently move a part to another
-    instrument), at most `MAX_SLOTS` tracks, always ≥1 section, and no
-    orphan clips. `removeTrack`/`removePattern` sweep **every** section,
-    which is the point of project-level tracks.
-  - **One mute/solo per strip**, with `audibleTracks()` and
-    `effectiveVolume()` kept side by side so the scheduler's view and the
-    mixer's view cannot drift apart again.
-  - `html/components/project-store.js` — in-memory body + debounced flush
-    + pluggable backend (`createMemoryBackend` for tests,
-    `createIdbBackend`, `createDefaultBackend` picking by capability).
-    Writes are serialised through an `inFlight` chain so a slow save
-    cannot be overtaken by a later one; a failed write **stays dirty** and
-    is retried rather than assumed written.
-  - `html/components/profile-store.js` — `openpatches_profile`: project
-    index (upserted from each body, so it cannot drift), current pointer
-    (falls to the most recent on removal), tag vocabulary, and
-    `uniqueName()` for phase 5's collision rule.
-  - Tests: `test/project-model.test.js` (43), `test/project-store.test.js`
-    (23), `test/profile-store.test.js` (24).
-
-  **Gotcha found while testing, worth remembering:** `JSON.stringify` turns
-  a `Uint8Array` into `{"0":1,"1":2}` — an *object*. A caller assigning
-  `track.voiceData = someUint8Array` directly (past the factory) would get
-  a body that works perfectly in memory and loses its patch on the next
-  load. `normalizeVoiceData()` therefore accepts that object shape too, and
-  a test pins it.
-
-  **Decided while building (the user asked about `window.onleave`):** there
-  is **no "Save your changes?" on the way out**, and there cannot be. A
-  page cannot show its own `confirm()` during `beforeunload` — browsers
-  offer only their own generic dialog — and an IndexedDB transaction opened
-  during unload is **not guaranteed to commit**. So the store autosaves,
-  with an immediate flush on `visibilitychange -> hidden`, which fires
-  while the page is still alive and is the only one a mobile tab-kill
-  honours (`beforeunload` is skipped there and in bfcache). `pagehide` is
-  wired as belt-and-braces.
-  *(If an explicit Save/discard is ever wanted, that is a separate feature
-  — a dirty indicator and "revert to last saved" layered on top of
-  autosave, not an unload handler.)*
-
-- [x] **1b. Autosave policy, to the user's spec — done 2026-11-02, 832
-  unit passing.** Replaces phase 1's 500 ms debounce.
-  - **Every 30 s (`DEFAULT_INTERVAL_MS`), and only when dirty.** One
-    repeating ticker, not a timer per edit: a tick that finds the body
-    clean costs nothing and a burst cannot stack timers up.
-  - **`canSave()` is injected** — "is the transport idle?" A tick that
-    finds it busy is skipped and retried on the next one.
-  - **`flush({force:true})` bypasses `canSave()`**: open, adopt, close,
-    remove, the end of a take, and the lifecycle flush. `force` is the
-    difference between "autosave, if now is a good moment" and "write this
-    out now, the moment may not come again".
-  - **The lifecycle flush is forced on purpose.** A tab killed mid-playback
-    must not lose the session: "do not save while playing" is a latency
-    preference and it loses to not losing work.
-  - **`isSaving()` / `whenIdle()`** are the Play deferral: pressing Play
-    the millisecond a write starts parks the transport until the store is
-    quiet. `whenIdle()` resolves immediately when idle, so the common case
-    costs one microtask.
-  - Subscribers get `save-start` / `save-end`, which is what the "Now
-    saving" indicator will render from.
-
-  **Measured, because it decides the policy:** a realistically-large body
-  (8 tracks, 24 patterns × 64 notes, 6 sections × 48 clips, 1000 patches)
-  is 364 KB and the synchronous JSON clone costs **4.3 ms**; a small one
-  (32 patches, 85 KB) costs 1.6 ms. The IndexedDB commit itself is
-  off-thread. So the don't-save-while-playing rule is avoiding a few ms of
-  main-thread stall — not an audio dropout (audio is on its own thread) but
-  note-scheduling jitter, since the main thread is what handles tick
-  messages. Cheap to avoid, so avoided.
-
-  **Bug this turn's tests caught:** idle was originally signalled by "the
-  write settled *and* the body is no longer dirty". A **failed** write sets
-  dirty back, so `saving` stuck on forever and **Play would have hung
-  permanently**. Now a pending-write *counter* decides, so the last write
-  settling releases the waiters however it settled. A dirty body only means
-  a future tick will write, never that one is running.
-
-  **Open with the user — the "Now saving" modal.** Asked for as
-  "impossible to miss". A save is ~2–4 ms of main-thread work plus an
-  off-thread commit, so a modal bracketing the real duration would flash
-  for single-digit milliseconds — invisible, or a strobe. Making it
-  perceptible means an artificial minimum display time, i.e. deliberately
-  blocking the user for ~0.5 s every 30 s. Recommended instead: a
-  prominent but non-blocking status line, with the **modal reserved for a
-  save that actually takes a while** (> ~250 ms — quota pressure, a
-  stalled DB), which is exactly when interrupting is warranted. **Awaiting
-  the user's call; the store already emits what either needs.** Built in
-  phase 3, where it can be rendered and e2e-tested — nothing is wired into
-  app.js yet, so a modal built now would have nothing to show.
-- [x] **2. Session + sequencer — done 2026-11-02, 885 unit passing (+53).**
-  Both new files, both pure/testable; the old `song-session.js` and
-  `sequencer.js` still run the UI untouched until phase 3 flips over.
-  - `html/synth/section-sequencer.js` — supersedes `sequencer.js`.
-    `createSectionSequence(project, section, opts)`: the **project** owns
-    the tracks and the pattern library, the **section** owns the clips and
-    the loop, so a clip needs both in hand to resolve. Keeps the two
-    properties a tick depends on — patterns **snapshotted** (a tick never
-    reads a store), mute/solo read **live** (toggling lands next column,
-    no rebuild) — and `audibleTrackIds()` now just wraps project-model's
-    `audibleTracks()`, so the scheduler's view and the mixer's view are
-    the same function.
-  - `html/components/project-session.js` — one owner of the open project
-    *and* of which section is edited. Never leaves a state the UI cannot
-    render: `init()` falls through remembered → most recent → new, a stale
-    `sectionId` falls back to the first, and removing the last project
-    mints a fresh one. `update(mutator)` hands the mutator both the body
-    and the edited section. Every change upserts the profile index, so
-    names and timestamps cannot drift from the bodies. `createFrom()` is
-    the import path: always a fresh id and a `uniqueName()`, so the same
-    file twice gives two projects and the **incoming** one is renamed.
-    Re-emits the store's `save-start`/`save-end` as `kind:'saving'`, so an
-    indicator can subscribe to the session alone.
-
-  **Phase boundary moved, deliberately.** The plan had the transport in
-  phase 2. It cannot go there: `transport.js` is constructed by
-  `pianoroll.js` and reads `session.get()` as a *song*, so changing what
-  it consumes breaks the editors in the same commit — the switch is
-  atomic whether we like it or not. Transport therefore moves to phase 3,
-  which keeps every commit green. Phase 2 is the pure core that phase 3
-  plugs in.
-
-- [x] **3a. The store goes live + the save indicator — done 2026-11-02,
-  901 unit / 60 e2e passing.** The first slice of phase 3: `app.js` now
-  creates the project store and session at boot, so the autosave loop and
-  the footer light are running from the first paint. Nothing consumes the
-  *project* yet — the editors are still on the song session until 3b.
-  - `html/components/save-indicator.js` — **a square**, after the circle
-    (audio) and the rhombus (MIDI): the floppy, and with it a drive light
-    that **blinks green while writing** and sits dark otherwise. Beside it
-    the thing a light cannot say: "Saving…" / "Saved 2 minutes ago",
-    counting up on its own `REFRESH_MS` timer because nothing else ticks
-    while the user reads.
-  - `describeSave()` is pure and separately tested — the wording is the
-    part with rules in it (the 45 s "just now" window, singular/plural,
-    what to say before the first write). **Dirty-after-saving is said in
-    the `title`, never the text**: the text must not claim a save that did
-    not happen.
-  - The DOM half watches the **edge** where a write finishes. The store
-    reports *that* it is saving, never when it last did, so true→false is
-    the only place "last saved" can be learned; treating every event as an
-    end would reset the clock mid-write.
-  - `canSave: () => !transportIsBusy()` is wired (through the dock,
-    lazily — the dock is built after the store), and `onPlaybackStop`
-    forces a flush, so a finished take is written at once rather than
-    waiting out the next 30 s tick.
-  - `window.__opProject` is the e2e seam, as `window.__opDock` is for the
-    dock. New `e2e/project.spec.js` (6): a body really lands in IndexedDB,
-    an edit (including a section bpm override) survives a reload, a second
-    project is a separate body, and the light agrees with all of it.
-
-  **Found while wiring:** the footer is `display:flex; justify-content:
-  space-between`, so the `float: right` on `.audio-status` has been inert
-  since the footer became flex. Left alone rather than given a fourth
-  caller; the new light and its text are wrapped in one `.save-indicator`
-  flex item, because as two items space-between pushed them to opposite
-  ends of the bar. An e2e case pins that they stay adjacent.
-
-  *Reduced-motion honoured: the blink is dropped, the colour still carries
-  the state.*
-
-- [x] **3a-bis. When even the last gasp cannot be written — done
-  2026-11-02.** Raised by the user: localStorage has a quota, so a large
-  project can fail to journal. **The failure happens at `pagehide`, when
-  nothing can be shown** — so the warning cannot come from there. It comes
-  from the two moments the page is alive instead:
-  - **A write fails** → a red banner above the footer: "Do not close this
-    tab until the save goes through", with a **Save now** button. The
-    square goes red and reads "Not saved". `hasFailed()` on the store,
-    announced as `save-failed`.
-  - **The next boot after a lost last gasp** → the same banner, saying the
-    work is gone, with no retry (there is nothing left to retry). On a
-    journal quota failure `writeJournal` drops the stale journal — older
-    than what failed, so restoring it would quietly resurrect the wrong
-    state and look like success — and leaves a few bytes under
-    `openpatches_project_lost`, taken and reported exactly once.
-  - **The square is a button**: clicking it forces a save. Which is also
-    the answer to "I am about to close this tab".
-  - The banner sits above the footer rather than over the page: the action
-    is wait-or-save, and trapping the user behind an overlay would stop
-    them freeing the space that might let the save through.
-
-- [x] **3b. Transport + editors rewired — done 2026-11-02, 906 unit / 61
-  e2e passing.** The atomic switch: `transport.js`, `pianoroll.js`,
-  `song-editor.js` and `toolbar.js` all moved onto `project-session` +
-  `section-sequencer` in one commit, because the transport is built *by*
-  the roll and reads the session's record — there was no smaller step.
-  - Tracks come from the project, clips and the loop from the edited
-    section; `patternStore` is gone from both editors in favour of the
-    session's pattern API. `app.js` opens the project (top-level `await`)
-    before building the dock, and passes the session in.
-  - `getBpm()` is `effectiveBpm(project, section)` — the per-section
-    Allegro override is live.
-  - **The Play deferral** (`deferIfSaving`): pressing Play while a write is
-    in flight parks the transport, broadcasts `pos.pending`, and starts
-    when the store goes quiet. A `startGen` counter means a Stop (or a
-    second Play) while deferred makes the pending start a no-op.
-
-  **Three bugs found while doing it, all worth remembering:**
-  1. **`effectiveBpm` shadowing.** Importing project-model's
-     `effectiveBpm` into transport.js, which already had a local function
-     of that name *nested inside* `createTransport`, made `getBpm()` call
-     the local one, which calls `getBpm()` — **infinite recursion**. Not a
-     redeclaration, so no syntax error anywhere. The import is aliased
-     `sectionBpm` and the local renamed `playbackBpm`, with a comment.
-  2. **`node --check` does not catch this class of thing**, and more
-     generally checks a `.js` file as a script. A duplicate-binding error
-     that `node --check file.js` passes is caught by copying to `.mjs`
-     first — worth doing for module-level mistakes.
-  3. **Object identity matters to the roll.** `updatePattern()` first
-     replaced the stored pattern record; the roll holds a reference to it
-     *and to its notes array*, so after the first save it was editing an
-     orphan. Then re-making the note objects through the factory broke
-     `removeNote`, which finds a note by identity. Now: the record is
-     written into in place, notes are only rebuilt when the caller
-     actually passed notes, and the roll's own saves use `touchPattern()`
-     (persist + announce, touch nothing).
-
-- [x] **3c. The voice bank onto project tracks — done 2026-11-02, 922 unit
-  / 61 e2e passing.** `song.voiceBank`, the transitional `project.voiceBank`
-  passthrough, `openpatches_voicebank`, `serializeBank()` and
-  `_setEntries()` are all gone. **A Mixer strip is a track**: the slot is
-  the channel, and the name, patch, volume, mute and solo describe one
-  voice in one record. The two-mute-systems bug cannot recur.
-  - `voicebank.js` takes the session; `saveState()`/`loadState()` write and
-    read `project.tracks`. A strip's id **is** its track's id, on creation
-    too, so a strip survives a save/reload as the same thing.
-  - A track with no `voiceData` is not a strip — the roll makes bare tracks
-    the moment a note is drawn, and assigning a voice **fills that track
-    in** rather than replacing it, so its clips survive.
-  - Emptying a strip clears the track's patch but keeps the track and its
-    clips.
-  - Dropped behaviour, deliberately: a new project no longer inherits the
-    previous one's voices. That only made sense when the bank was separate
-    from the song; a project owns its tracks, and an empty one has none.
-  - **Track volume is now 0–127 (default 100)**, the scale the worklet and
-    the fader already speak. Converting at a boundary is exactly how the
-    two mute flags drifted apart, so the model speaks the domain's units.
-
-  **Two model bugs found by the port:**
-  1. `normalizeVoiceData` rejected **strings** — but base64 is how
-     patch-model stores `voice_data`, so it is the commonest shape of all.
-     Every assigned voice would have been dropped on save.
-  2. `clampInt(null, …)` returned **0**, not the fallback, because
-     `Number(null)` is 0 and finite. A null volume read as silence and a
-     null bpm as the slowest tempo, both indistinguishable from a
-     deliberate choice. `undefined` already fell through as NaN; null now
-     behaves the same, across every field in the model.
-- [x] **3d. Patches, canvas and jobs scoped to the project — done
-  2026-11-02, 795 unit / 62 e2e passing.** Phase 3 is complete.
-  - `patch-model.js` keeps every store API unchanged; only what is beneath
-    them moved. Its six `loadX`/`saveX` pairs now read and write
-    `project.patches` / `.patchNames` / `.canvas` / `.jobs`. The session is
-    **injected** (`bindProjectSession`) rather than imported, so the file
-    stays free of the project machinery and tests can bind their own.
-  - Patch writes are announced as `kind: 'patches'`, which the roll and the
-    Section editor ignore — dragging a patch across the canvas fires on
-    every pointer move and must not make the roll re-read its arrangement.
-  - **The tag vocabulary stays on the profile**, as decided: it is the
-    user's taxonomy, reused across projects. Only the tags a project uses
-    will travel in an export.
-  - **"Clear History" → "Delete All Data…"**, and it now actually does.
-    Three operations — the upload store, the project bodies, the profile —
-    with the WAVs going **first**, because once the bodies are gone nothing
-    knows which blobs were ever referenced. The e2e asserts storage is
-    *empty* rather than that some list of keys was removed; a list drifts,
-    that cannot.
-  - **Deleted:** `song-model.js`, `song-session.js`, `sequencer.js`, and
-    their four test files.
-
-  **Two bugs found, both from the user's point that a lane, a strip and a
-  voice are one track:**
-  1. **The lane's slot select assigned the slot directly**, so two tracks
-     could land on one channel — and `normalizeProject()` resolves that by
-     *dropping* one, with its clips, in every section. New
-     `setTrackSlot()` **swaps** instead: the slot is the channel, the strip
-     and the patch at once, so this is "play this part on that
-     instrument", and the two parts trade.
-  2. **The roll skipped `voicebank`-sourced notifications.** Correct while
-     the bank kept its own array; wrong the moment it began writing
-     *tracks*. The roll held a stale track list and created a **second
-     track on a slot that already had one**. Now the track list always
-     refreshes and only a non-Mixer change drops the cached patterns —
-     which is what still stops a gesture in progress dying.
-
-  New `test/track-identity.test.js` (14) is the standing guard on the
-  user's invariant: mute, solo, rename, removal and slot changes performed
-  through any one of the three UIs, observed through the others.
-- [x] **4. Project management in the File menu — done 2026-11-02, 813
-  unit / 66 e2e passing.** (The wipe rewrite landed early, in 3d.)
-  - **File menu**: New Project, Projects…, Rename Project…. The open
-    project's name sits in the menu bar (`#menu-status`, previously
-    unused) and is itself the rename button.
-  - **`project-menu.js`** — one Projects dialog doing open / new / rename
-    / duplicate / delete, rather than four menu items each popping their
-    own prompt. Only *open* waits (the body is read back from IndexedDB);
-    everything else is in memory and instant.
-  - **`modal.js`** — `openModal`/`el` lifted out of midi-panel.js so both
-    dialogs share one shell.
-  - Session gains `rename()`, `renameSection()` and `duplicate(id)`;
-    the store gains `read(id)` (a body without opening it), which
-    Duplicate needs and phase 5's export will too.
-  - **The Section editor's toolbar now names the section**, as the user
-    asked. Project select, "+ Song" and the delete button are gone from
-    it — a project is the whole piece, which is more than that panel
-    edits. BPM (the project's) and the loop (the section's) stay.
-  - `test/project-menu.test.js` (17), plus four e2e covering the menu-bar
-    rename, New Project, the dialog's duplicate/delete, and the section
-    name not being the project name.
-
-  **Fixture bug found:** `makeProjectSession` adopted with `write: false`
-  — "this body is already on disk" — but never put it there, so any test
-  that switched project and back got nothing. It now seeds the backend
-  synchronously, making the claim true.
-
-  **Note for next time:** a stale `server.py` left over from an earlier
-  check served an old `index.html` for several minutes and cost real time
-  chasing a phantom. Restart the scratch server after editing
-  `index.html`, and kill your own orphans when done.
-- [x] **Client-side `.syx` export — done 2026-11-02.** Groundwork for
-  phase 5, and the user's standing rule: *anything that can be done on
-  the client happens on the client, without the backend or an external
-  API.* The container's 💾 used to POST its patches to `/api/export-syx`
-  and download the URL that came back — a round trip to build bytes
-  `syx-builder.js` was already holding, which also meant the export
-  silently needed the optional inference server to be up.
-  - New `html/components/download.js`: `downloadBlob` / `downloadBytes` /
-    `downloadJson` / `safeFilename`. Phase 5's project export uses the
-    same path. The object URL is revoked on a timer, not in the click's
-    task — revoking there cancels the download in some browsers.
-  - `test/download.test.js` (10); `test/harness.js` gained `click()` on
-    the element stub (real anchors have it, and it is how a download
-    fires). The e2e that used to *mock* `/api/export-syx` now asserts the
-    opposite: zero `/api/` requests, and the bytes are a real 4104-byte
-    bulk dump (`F0 43` … `F7`).
-
-  **`/api/play` stays**, and the user explained why: it is the fallback
-  that gives minimal functionality to a client **without WASM**, where
-  `renderOffline()` cannot run. Not a leftover — leave it alone.
-
-- [x] **5. Export / Import — done 2026-11-02, 845 unit / 69 e2e passing.**
-  One JSON file (`.opproj`), built and parsed in the page, saved through
-  `download.js`. No server, per the user's standing rule.
-  - `project-io.js`: `exportProject` / `importProject` / `parseProjectFile`
-    / `usedTags`, plus an `ImportError` whose messages are written to be
-    *shown* rather than logged.
-  - **What travels**: sections and clips, patterns, tracks with the patch
-    bytes inlined (so an import sounds even where the patches were never
-    in this workspace), patches, renames, canvas, and only the tags the
-    project actually uses.
-  - **What does not**: the WAVs (decided with the user — source material,
-    and the bulk of the workspace) and the profile (ports and the 317 ms
-    latency are facts about a machine). Jobs still travel, carrying
-    `fileName` and `sourceMissing`; an in-flight one is imported as
-    `missing-source` with its `statusUrl` cleared, so it cannot poll a
-    status URL on someone else's machine. The patches a job produced are
-    ordinary patches and travel normally.
-  - **Import is always a new project**: no id in the file, so the session
-    mints one, and `uniqueName()` renames the *incoming* project. The same
-    file twice gives two.
-  - **A newer `schemaVersion` is refused loudly.** That is the one case
-    worth refusing: this reader would drop what it does not understand and
-    hand back a quietly lesser copy of the user's work. An older one is
-    read — the factories are total and fill the gaps.
-  - File menu: Export Project… / Import Project…. Import reuses the
-    existing hidden file input, routed by extension. Export flushes first,
-    so the file and the stored body agree.
-  - `test/project-io.test.js` (22) and three e2e: a real download with no
-    `/api/` traffic, the file fed back producing an independent
-    "Nocturne 2", and a future-format file refused with the message shown
-    and nothing imported.
-
-- [ ] **6. Rename pass + close-out.** Song→Project/Section across file
-  names (`song-model.js`, `song-editor.js`, `song-session.js`), exports
-  (`createSongSequence`, `songCol`, `songPos`), ~40 `.song-*` CSS classes,
-  tab labels and e2e selectors. Deliberately last and separate, so a
-  rename conflict cannot hide inside a model change. `.midi-section` →
-  `.midi-group` to free the word for the musical meaning.
-
-#### Deferred by decision, recorded so they are not re-litigated
-
-- **No project-level UI beyond one section.** The model carries N sections;
-  the UI edits exactly one. No section list, no whole-piece playback.
-- **A section or pattern overriding a track's config (patch included) at
-  runtime** — wanted, later.
-- **Patch duplication across projects is accepted.** `voiceKey()` already
-  exists when dedup is wanted. The user notes sections and patterns will
-  be the real redundancy once projects are cloned; a shared-reference
-  store is a later concern.
-- **No WAVs in the export, ever**; at most a future "re-upload a missing
-  WAV" path, with nothing done with it for now.
-- Switching projects swaps the whole canvas and patch workspace — there is
-  no global patch library. Accepted consequence of project-owned patches.
-
-### MIDI clock (2026-10-30) — DONE, browser-checked 2026-11-01
-
-From TODO.md: basic internal clock sending / syncing with external. Done
-in two slices; **send** is committed (6d6de69), **receive** is in the tree.
-
-- [x] **Send.** `midi-manager.js` owns the clock-out: `getSendClock` /
-  `setSendClock` (persisted, default off), `isClockOutEnabled`,
-  `clockStart(startCol)`, `clockColumn(rawCol, bpm)`, `clockStop()`.
-  Beat clock is 24 PPQN and a column is a sixteenth, so each column the
-  transport reaches is scheduled as **six timestamped clocks** in one batch
-  — the tick worker only wakes once per column, and the stamps are what
-  give the device an even beat. They are timed off a base anchored at the
-  first column (`clockBase = {at, rawCol, msPerClock}`), **not** off each
-  tick's arrival, so worker jitter cannot read as tempo wobble and a late
-  batch cannot be stamped behind the one before it; the base re-anchors
-  when the tempo changes. `startCol > 0` sends Song Position (which counts
-  sixteenths, exactly our columns) + Continue instead of a bare Start.
-  Everything goes through `sendAt()`, so the clock carries the same output
-  latency as the notes and the device stays with what you hear.
-  Independent of `outputMode` on purpose. `panic()` stops it (pagehide).
-- [x] Transport calls `clockStart` on play/startRecording, `clockColumn`
-  first thing in `onTick`, `clockStop` in `stop()`. It imports
-  midi-manager directly, as toolbar.js does.
-- [x] "Send MIDI clock" checkbox in the MIDI settings modal
-  (`.midi-send-clock`). The audition checkbox gained a `.midi-audition`
-  class — a panel test was finding it as "the first checkbox".
-- [x] `test/midi-clock.test.js` (23). Verified in headless Chrome against a
-  fake output port with the real tick worker: 48 clocks in one second at
-  120 BPM, gaps identically 20.833 ms, Start at +3 ms, Stop at +1003 ms.
-- [x] **Receive.** Decided with the user: **Play waits for the device's
-  Start; Song Position is ignored.** `midi-manager.js`: `getSyncToClock` /
-  `setSyncToClock` (persisted, default off); the input listener routes
-  status ≥ 0xF8 to `handleRealtime` before SysEx/notes (realtime may land
-  mid-SysEx, and toolbar's note handler drops ≥ 0xF0 anyway);
-  `subscribeClockIn(fn)` emits `start` / `continue` / `stop` / `column
-  {rawCol}` (every sixth clock, counted from Start; Continue keeps the
-  count) / `sync {on}`; `getExternalBpm()` is the mean of the last 24 clock
-  periods (one quarter), fed by clocks whether or not the device is
-  running, reset by a 2 s silence. **A slave never sends clock**
-  (`isClockOutEnabled` is false while syncing) — it would loop back onto
-  the bus — and switching to slave stops a running clock-out.
-- [x] Transport: `armed` ('play' | 'record'). With sync on, `play()` /
-  `startRecording()` **arm** instead of starting the worker and broadcast
-  `pos.waiting`; worker ticks are ignored while armed; clock-in `start` /
-  `continue` flips `playing`/`recording` (Start from the range top,
-  Continue from `lastCol`), `column` → `onTick(rawCol)`, the device's
-  `stop` pauses (notes released, **still armed**), our `stop()` disarms;
-  `sync` off/on under us stops. `effectiveBpm()` (device's when known,
-  else the song's) times `fire()` and rides in `pos.bpm`;
-  `isWaiting()`, `isRunning()` includes armed, `getEffectiveBpm()`.
-  A take into an empty song (no range) still starts on Start.
-- [x] UI: "Sync to external clock" checkbox (`.midi-sync-clock`); the Song
-  tab's and the roll's Play get `.waiting` (amber pulse, title) and are
-  disabled while Stop is live; the roll's `isPlaying()` includes waiting so
-  the mobile Play/Stop toggle can disarm. toolbar.js: `recordStartTime`
-  re-bases on the transition into recording (`takeRunning`), and `colAt`
-  uses `transport.getEffectiveBpm()` — under an external clock Rec and the
-  device's Start can be seconds apart and the tempos differ.
-- [x] `test/midi-clock-in.test.js` (20). Headless Chrome, fake input port:
-  armed → Start + 13 clocks → col 2 → device Stop (armed, col kept) →
-  Continue + 6 → col 3 → our Stop disarms → a later Start is ignored.
-
-**Browser-checked against Reaper, 2026-11-01, both directions. Done —
-see CHANGELOG 2026-11-01.** Two bugs came out of it and the second was the
-first: the tick worker could not change tempo mid-run, which made our clock
-out unfollowable after a BPM change (six fast ticks, a long gap) as well as
-leaving the roll's BPM box inert during playback; and the two clock settings
-were independent, so clock out sat ticked and silent whenever sync had been
-left on. Both fixed; "send clock" and "sync to external" are now one choice.
-
-Known limits still standing: the measured tempo is a trailing mean (a ramp
-lags by a quarter note); no Song Position by decision; the loop range is
-still whole bars. Reaper translates an incoming tempo change into note and
-rest lengths, which is the behaviour the user wants.
+_(The MIDI clock entry that sat here is finished and recorded in
+CHANGELOG.md 2026-11-01; its standing limits are in the midi-manager
+architecture entry below.)_
 
 ### Sub-measure clips (2026-10-30) — code complete, awaiting browser check
 
@@ -670,9 +135,9 @@ editor. Clip geometry moved from measures to **columns** (sixteenths).
   and resize snap the *delta* so a deliberately off-grid clip stays off it;
   sub-bar grid lines are a second gradient under the bar lines, driven by
   `--song-snap-w` / `--song-measure-w` on `.song-grid`.
-- [x] Tests: `sub-bar placement and length` in `song-editor.test.js`,
+- [x] Tests: `sub-bar placement and length` in `section-editor.test.js`,
   `clips off the bar line, and cut short` in `sequencer.test.js`, new cases
-  in `song-model.test.js`; the harness's `style` now has `setProperty`.
+  in what is now `project-model.test.js`; the harness's `style` has `setProperty`.
 
 Verified in headless Chrome: the controls, a 1/4-snap placement at bar 2
 beat 2 (zoom ×4), an edge drag to ×1.25, persistence, and a legacy
@@ -935,14 +400,14 @@ yet stable enough to be an AGENTS.md rule.)_
   on *both* sides, and the start side of a centred overflow cannot be scrolled
   to — the left edge is gone for good, not merely off screen. So **every dock
   panel must size itself to the dock and scroll internally; none may take its
-  content width.** `.song-editor` violated this and a clip at bar 200 put the
+  content width.** `.section-editor` violated this and a clip at bar 200 put the
   pattern palette at x=-4432 (fixed: `width: 100%`). `align-items: safe center`
   does **not** rescue this — measured, no effect. `.edit-panel-inner` is still
   vulnerable but unreachable in practice; see TODO.md.
 - 2026-10-30: **`e.touches` is truthy-but-empty on `touchend`** — the lifted
   finger's position is only in `e.changedTouches`. Any handler shared between
   touchmove and touchend must check `length`, not existence, before indexing
-  (song-editor's `pointer()` is the reference). The unit harness has no
+  (section-editor's `pointer()` is the reference). The unit harness has no
   TouchEvent, so this class only ever surfaces in `e2e/mobile.spec.js` or on a
   device. Related: a child sized with `height: 100%` needs a parent with a
   *definite* height — `min-height` alone resolves the percentage as `auto`
@@ -952,7 +417,7 @@ yet stable enough to be an AGENTS.md rule.)_
   wrong files.** Parallel checkouts under `.cache/claude-hfi/.../<name>` all run
   the same `server.py`, so whoever binds the port first wins and the loser's
   `python3 server.py <port>` dies quietly. This cost real debugging time: the
-  song-editor bug looked unreproducible for several runs because port 8111 was
+  Section-editor bug looked unreproducible for several runs because the port was
   held by the `elm` worktree. `playwright.config.js` now uses port 8123 with
   `reuseExistingServer: false` so a clash fails loudly. When probing by hand,
   check `pwdx $(pgrep -f 'server.py <port>')` before trusting a result.
@@ -966,16 +431,23 @@ OpenPatches is a browser-based DX7 patch editor and sequencer. It communicates w
 **Frontend (Vanilla JS, no framework):**
 - `html/app.js`: main orchestrator. Wires file input, menu bar, canvas, toolbar. Creates tick worker, `stopTickWorker` helper. PlayNote/playPatch with multi-channel support. Emergency stop with voice reload.
 - `html/components/canvas.js`: Canvas — patches + PatchContainers on night-sky. Drag-to-reposition, snap-into-container (only after a real move — a tap on a floating patch's header never absorbs it), resize containers. State derived from linked Job. Uses `onDoc()` helper for **every** document-level listener (drag/resize/touchcancel, more-menu close) with cleanup via `clearDocListeners()` on each `renderAll()` to prevent stale closures. `initCanvas()` is re-entrant: the sky drop handlers and the window `touch-drop-patch` handler are kept in module vars and replaced, not stacked. `addPatchToContainer()` on a grouped container files the patch under an `ADDED` group (`ADDED_GROUP_LABEL`) so it renders; `removePatchFromCanvas()` also drops it from its group. All interactive elements in `#night-sky`.
-- `html/components/song-session.js`: the **current song**, shared by the pattern editor and the song editor. Owns persistence (songStore + `openpatches_current_song`), runs the migration in `init()`, notifies subscribers with a `source` so editors can skip their own echoes. `update(mutator, source)` is the only sanctioned way to change the song; `notifyPattern` for pattern-only changes. Always has a current song.
-- `html/components/song-editor.js`: the Song tab. **Play / Stop** first in the toolbar (`.song-play`/`.song-stop`, `transport.play({mode:'song'})`, synced from the position broadcasts), tracks × measures grid, pattern palette, clip place/move/repeat/remove, per-track voice + mute/solo, song select/name/BPM/loop. `openClip` parks the transport's song position on the clip (`setSongPosition`) so that placement is what the roll loops. The playhead draws from `pos.songCol` in both modes. All changes go through the session and autosave; model refusals are shown in `.song-status`. `opts.onOpenPattern(clipId, trackId, patternId)` hands a clip to the roll. **Clip gestures** mirror the roll's notes: a second tap on the same clip within `DOUBLE_TAP_MS` removes it, a press held still for `LONG_PRESS_MS` opens it; both are detected from press/release in `startDrag` (no `dblclick` listener), with the tap memory (`lastPress`) on the editor because the click in between re-renders the clip. Only a *tap* release arms the double-tap, so re-grabbing a just-dragged clip is safe. **A body drag is two-dimensional**: measures sideways, and into another track's lane (`laneAt(clientY)` over the lanes' client rects; the element is re-parented into the target lane as a preview and recoloured to that voice); the drop goes through `updateClip` with `{startMeasure, trackId}`, so the model's overlap check covers the destination. The palette's ✎ button starts the same in-place rename as double-clicking the name; its `<input type=color>` swatch (`.song-pattern-swatch`) recolours the pattern. **Colours:** a lane's `backgroundColor` is the track's voice colour at 0.16 alpha (`tint()`; `backgroundColor` and not `background`, the bar grid is a `background-image` on the same element), a clip's background is its pattern's colour, and a cross-lane drag preview no longer recolours the clip. **Snap and zoom** (`.song-snap` / `.song-zoom`, persisted under `openpatches_song_snap` / `_zoom`, defaults Bar and ×1 so the grid behaves as it always did): snap is the resolution for placing (floored to the cell the click fell in), moving and lengthening (both snap the *delta*, so a clip put deliberately off the grid keeps its offset); zoom scales `measureW()`, needed because a column is 3px at ×1, under `DRAG_THRESHOLD`. The sub-bar grid lines are a second, fainter gradient under the bar lines, with both periods passed to the stylesheet as `--song-snap-w` / `--song-measure-w` on `.song-grid`; at Bar snap they coincide and the fainter layer is invisible. Takes `opts.transport` to draw `.song-playhead`, which is moved per tick rather than re-rendered. `destroy()` unhooks the document keydown and the session.
+- `html/components/project-session.js`: the one owner of the open project **and** of which section is edited. Cannot leave a state the UI has no rendering for: `init()` falls through remembered → most recent → new (every read allowed to fail), a stale `sectionId` falls back to the first, removing the last project mints a fresh one. `update(mutator, source, kind)` hands the mutator `(project, section)`; kinds are `project`/`section`/`pattern`/`tracks`/`patches`/`saving` and editors filter on them (a patch dragged on the canvas must not make the roll re-read its arrangement). Pattern CRUD lives here rather than in a global store: `touchPattern()` for in-place edits (the roll owns the object), `updatePattern()` for partial changes — it writes **into** the record and rebuilds notes only when the caller passed notes, because the roll holds references to both the record and its notes array and `removeNote` finds a note by identity. `createNew`/`createFrom`/`adoptNow` are synchronous; only `open`/`duplicate`/`remove` await. Every change upserts the profile index.
+- `html/components/section-editor.js`: the **Section** tab (`createSectionEditor`, `.section-*` classes). Arranges the edited section's clips on the project's tracks: Play/Stop (`transport.play({mode:'section'})`), tracks × bars grid, pattern palette, clip place/move/repeat/remove, per-lane voice + mute/solo, the **section's** name and loop and the **project's** BPM. A lane *is* a track, so its M/S is the Mixer's and its slot select calls `setTrackSlot()` (swaps). Project switching is **not** here — File menu. `openClip` parks `setSectionPosition` so that placement is what the roll loops; the playhead draws from `pos.sectionCol`. Clip gestures mirror the roll's (double-tap removes, long press opens, a body drag moves in both axes with the lane re-parented as a preview). Snap/zoom persist and feed `--section-snap-w`/`--section-measure-w`. Model refusals show in `.section-status`. `destroy()` unhooks the document keydown and the session.
 - `html/components/toolbar.js`: Unified Piano Roll + Keyboard panel with tabs: Canvas | Piano Roll | Song | Mixer | Edit | Log | Mute. The voice bank lives in the **Mixer** panel (`mixerPanel`, `wrapper._showMixer()`), not in `pianorollRow` — on every viewport. Creates the song session before the roll and hands it to both the roll and the song editor (`wrapper._session`, `wrapper._songEditor`, `wrapper._voiceBank`); applies a song's `voiceBank` when the session switches song and snapshots the live bank back on every bank change (source `'voicebank'`); opening a clip from the Song tab sets the voice bank's active slot, calls `pianorollRef.openClip()` and switches to the Piano Roll tab. Keyboard integrated into Piano Roll panel (recording controls + octave selector + piano keys below pianoroll grid), wrapped in a collapsible `.keyboard-wrapper` under a `.kb-toggle` bar (state in `openpatches_kb_collapsed`). VoiceBank select dropdown. Undo button for recording. Mobile octave selector (0–7). **Record** exists twice: `.kb-btn-record` in the mobile-only `kb-controls` row and `.pianoroll-record` inserted into the piano roll transport row for desktop; both call `toggleRecording()`. Uses tick worker for precise playback/recording timing. **Note dispatch:** every note source goes through `noteOn(midi, velocity, when)` / `noteOff(midi, when)` — on-screen keys, and `handleMidiMessage` for external MIDI. `heldNotes` (a Set) is the authority on what is down; `noteOff` is a no-op for anything not in it. Timing is `performance.now()` so `MIDIMessageEvent.timeStamp` can be passed straight in as `when`. The midi-manager import is namespaced `midiManager` because `midi` is the note-number parameter name throughout the file. The take's time base (`recordStartTime`) is re-based on the transition into recording (`takeRunning`), and `colAt` uses the transport's effective tempo — under an external clock Rec and the device's Start can be seconds apart. **Rec is two things:** over a running clock a live take (`recording`, `startTake`); with the clock stopped a **step record** (`stepping`): a key held a full second puts one **step length** (the stepping-only `.pianoroll-step-len` select, persisted) at `stepCol` **in the pattern on screen** (`addStepNote` uses the roll's `getEditTarget()`, not the take's slot mapping — the record slot and the roll can disagree, see the task entry), grows by one more step length per further second (`syncStepNote`, a 100 ms timer, `pianoroll.setNoteDur`); a tap under a second is a rest that jumps the cursor to the next beat; the last key-up of a step advances the cursor, wrapping at the pattern's end; the cursor is draggable by the roll's header strip (`onStepSeek`). Play while stepping (the roll's `onBeforePlay` hook, or the mobile button through `startPlayback`) converts it into a take; any clock start seen on the transport ends it.
 - `html/components/edit-panel.js`: Morph / Params / Random editing. One shared range slider: `setSliderMode()` swaps min/max/step and restores the mode's own last value from `dataset.<mode>Val` (the browser clamps on a range change, which used to destroy the other mode's setting). Params **Save** takes algorithm/feedback from the edited `currentMutation.globals` and saves offline — audition is local-synth first, `/api/play` as fallback, and neither is required.
 - `html/components/job.js`: Job class — steering object for WAV import lifecycle. Owns: probe → match → poll → complete/fail. `complete()` writes the canvas entries and `ctr.patchIds` itself and saves the container once — it must not go through `addPatchToContainer()`, whose per-patch re-read/re-save would be overwritten by the stale copy.
-- `html/components/song-model.js`: Sequencer data model — **Pattern** (reusable, monotimbral, notes carry no voice; `kind` is the hook for drum patterns later; `color` is a `#rrggbb` the factory defaults from a hash of the id over `PATTERN_COLORS` — a palette deliberately distinct from the voice-bank slot colours — so legacy records get a stable colour on every read), **Track** (bound to a voice-bank slot = synth channel = MIDI channel, unchanged), **Clip** (a pattern placed on a track at `startCol`, in **columns**, so it need not sit on a bar line) and **Song** (tracks + clips + bpm + loop range). A clip's length is either **its own** (`lengthCols`, what dragging its edge sets, free-form so it may stop part-way through a repeat) or **its pattern's** (`repeats` whole pattern lengths, which grow with the pattern); exactly one of the two is stored and `clipCols(clip, pattern)` is the only thing that resolves them — the factory has no pattern, which is why `repeats` cannot be converted on read. `startMeasure`/`repeats` are the pre-column spelling, still read, so there is no migration: a clip converts itself the first time it is moved or resized. `patternStore`/`songStore` are id-keyed; `COLS_PER_MEASURE` lives here and pianoroll.js adopts it in phase 3. One clip per track per column — a track is a monophonic timeline, so two clips in one place would mean two patterns on one voice. Also owns the migration off the piano-roll blob and the old name-keyed song store: versioned (`migratedVersion()`, currently 2), read-only, and it never deletes the legacy keys. Imports patch-model.js only for the legacy song store.
-- `html/components/patch-model.js`: Unified data model + stores (localStorage). `patchStore`, `canvasStore`, `jobStore`, `tagStore`. (The old name-keyed `songStore` is gone — sequencer state lives in song-model.js.) `createPatch()` ids hash `voice_data|name` when a name is given, so one voice under two names (a match in several result groups) is two records; re-importing the same bank still yields the same ids. **`voiceKey(voiceData)`** is the opposite and deliberately so: a *name-independent* hash (name bytes zeroed at 118–127 packed / 145–154 VCED) normalised across base64 / `Uint8Array` / `Array`, so a renamed copy is the **same voice**. Patch id answers “which record”; voiceKey answers “which sound” — the voice bank and the slot badges key on the latter. Carries its own base64 decoder (node:test has no `atob`).
+- `html/components/project-model.js`: the sequencer data model, pure data — no DOM, audio, MIDI or storage. **Project** (one piece of music: tracks on one axis, an ordered sequence of sections on the other, plus patterns, patches, canvas, jobs, tags), **Section** (clips + loop + a **nullable** `bpm` override), **Track** (= Mixer strip = roll voice = Section lane: `{id, name, slot, patchId, voiceData, volume 0–127, mute, solo}`; the slot is the synth and MIDI channel), **Pattern** (reusable, monotimbral, `color` defaulted from a hash of the id over `PATTERN_COLORS`), **Clip** (a pattern on a track at `startCol`, in columns; length is *either* `lengthCols` *or* `repeats`, never both — `clipCols()` is the only resolver). `effectiveBpm(project, section)` is the **one** place tempo is decided and the seam automation grows from. `normalizeProject()` holds what no single factory can see: one track per slot (a duplicate is **dropped, not renumbered**), ≤ `MAX_SLOTS` tracks, ≥1 section, no orphan clips — and `removeTrack`/`removePattern` sweep **every** section. `setTrackSlot()` **swaps** rather than colliding. `audibleTracks()`/`effectiveVolume()` sit together so the scheduler and the mixer cannot disagree. `SCHEMA_VERSION` goes into every body. Traps: `clampInt` guards `null` explicitly (`Number(null)` is 0 and finite); `normalizeVoiceData` accepts base64 strings and the stringified-typed-array object shape.
+- `html/components/project-store.js`: persistence. The **open body is the source of truth in memory**, so all ~30 synchronous mutators stay synchronous; a flush writes it back whole through a pluggable backend (`createIdbBackend` in the browser, `createMemoryBackend` in tests). Autosave is a 30 s ticker, dirty-only, skipped when the injected `canSave()` says the transport is busy; `flush({force:true})` bypasses that and is what open/adopt/close/remove, the end of a take and unload use. `isSaving()`/`whenIdle()` are the Play deferral. A pending-write **counter** decides idle, not the dirty flag — a failed write leaves it dirty, which once wedged `saving` on forever and would have hung Play. **Crash journal:** `pagehide`/`visibilitychange→hidden` write the body to localStorage *synchronously first*, because an IndexedDB transaction opened there does not commit (measured); the next `open()` prefers the journal when it is newer and rewrites it. A quota failure drops the stale journal and leaves a marker `takeLostSaveMarker()` reports once. `adoptNow(partial, {write})` is the synchronous open, `read(id)` a body without opening it.
+- `html/components/profile-store.js`: `openpatches_profile` — the project index (upserted from each body, so it cannot drift), the current pointer (falls to the most recent on removal), and the **global tag vocabulary**. Small and synchronous; the bodies are what needed IndexedDB. `uniqueName(wanted, {ignoreId})` is the import collision rule — the **incoming** name takes the suffix.
+- `html/components/project-io.js`: export/import as one `.opproj` JSON document, built and parsed in the page. Carries sections, patterns, tracks (patch bytes inlined, so an import sounds), patches, renames, canvas, and **only the tags the project uses** (`usedTags`). Deliberately omits the WAVs — jobs travel with `fileName` + `sourceMissing` and a cleared `statusUrl`, so an imported job cannot poll someone else's server — and the profile. No id is written, so every import is a new project. A **newer** `schemaVersion` is refused via `ImportError` rather than half-read; older is fine, the factories are total.
+- `html/components/project-menu.js`: the Projects dialog — open / new / rename / duplicate / delete in one place, reached from the File menu because a project is the whole piece. Only *open* awaits (the body is read back from IndexedDB).
+- `html/components/save-indicator.js`: the footer's **square** (after the circle for audio and the rhombus for MIDI — the floppy, and a drive light): dark idle, green blinking while writing, red on failure, and a click forces a save. `describeSave()` is pure and separately tested — the wording rules live there, and a dirty-after-save state is said in the `title`, never the text, because the text must not claim a save that did not happen. The DOM half watches the **edge** where a write finishes, the only moment “last saved” can be learned. `attachSaveWarning()` raises the banner when a write fails or a previous page load could not journal.
+- `html/components/download.js`: `downloadBlob`/`downloadBytes`/`downloadJson`/`safeFilename`. Everything saveable is built in the page; the object URL is revoked on a timer, not in the click's task, because revoking there cancels the download in some browsers.
+- `html/components/modal.js`: `openModal`/`el`, shared by the MIDI and Projects dialogs.
+- `html/components/patch-model.js`: patches, canvas layout and jobs — all **owned by the open project** and written with its body. The store APIs are unchanged; underneath, six `loadX`/`saveX` pairs read and write `project.patches` / `.patchNames` / `.canvas` / `.jobs`. The session is **injected** (`bindProjectSession`, called once by app.js) rather than imported, so this file stays clear of the project machinery and tests can bind their own; unbound, reads give nothing and writes are dropped. Writes announce `kind:'patches'`, which the sequencer-side editors ignore. The **tag vocabulary is the exception** and lives on the profile — the user's taxonomy, reused across projects. `createPatch()` ids hash `voice_data|name`, so one voice under two names is two records; **`voiceKey(voiceData)`** is the opposite by design — a *name-independent* hash normalised across base64 / `Uint8Array` / `Array`, so a renamed copy is the **same voice**. Patch id answers “which record”, voiceKey “which sound”. Carries its own base64 decoder (node:test has no `atob`).
 - `html/components/patch-row.js`: Unified patch row rendering with star drag handle, mini spectrogram, slot badge, assign/edit/remove buttons. **`attachAssignPopover(btn, anchor, patch, opts)`** is the one way into the voice bank (also used by canvas container headers): ♫ opens `.patch-assign-pop`, eight buttons showing each slot's occupant, `.current` on the patch's own slot, first empty pre-focused, click commits via `opts.onAssignSlot(patch, idx)` and closes. **`updateBankSlots(entries)`** (driven by app.js's `onSnapshot`) rebuilds a module-level `voiceKey → {slot,color}` registry and refreshes every `.patch-slot-badge` **by document query, not subscription** — rows are rebuilt on every canvas render, so a subscriber list would accumulate dead elements. `createSlotBadge(patch)` renders the pill, hidden when the voice is not banked. A click on the row body no longer assigns. Touch drag between containers with floating clone; crossing back into the body cancels the drag-out (clone removed, no clone on drop), `touchcancel` aborts cleanly. `reorderContainerPatch()` applies a touch reorder to the group that holds both rows **and** the flat list (a grouped container renders only its groups; a move across groups is refused). One document `mouseup` disarms the star-armed row instead of one listener per row.
 - `html/components/patch.js`: Waveform helpers only — `decodeWavSamples` (general RIFF chunk walk: `fmt ` and `data` in any order with LIST/fact between, 16-bit PCM or 32-bit float, N channels mixed to mono), `drawMiniWaveform`, `wavSampleCache`, `releaseWavUrl` (revokes the `blob:` URL `playPatch` returns, once the waveform is drawn — the consumer owns it).
-- `html/components/voicebank.js`: the **Mixer** (8 slots), rendered in its own dock tab on every viewport — eight vertical channel strips (slot pill, name, vertical fader, volume, M/S/▶/×). **The bank is a fixed `Array(8)` and the index IS the channel** — removal leaves a `null` hole, entries never shift, colors are `PATCH_COLORS[i]`. **One write path:** `_assignToSlot(idx, {name, voiceData, patchId})` — occupied target + unbanked voice = silent overwrite; voice already elsewhere = **swap** (entries move wholesale). Identity is `voiceKey(voiceData)` from patch-model.js (name bytes zeroed), so one voice occupies at most one slot; dedup also runs in `loadState`/`_setEntries`. No drag-in, no reordering. **Mute/Solo** are volume overrides: `entry.volume` is the fader, `entry.effectiveVolume` is what the engine hears (0 when muted or solo-silenced); `applyMix()` recomputes the whole bank after any change and pushes only moved channels. Persists to localStorage incl. muted/solo. `_setEntries(list)` replaces every slot at once (song load, keeps positions). `_render()`, `_toggleMute(i)`, `_toggleSolo(i)`, `_firstEmptySlot()`.
+- `html/components/voicebank.js`: the **Mixer** (8 strips) — and the strips **are** `project.tracks`. `saveState()`/`loadState()` write and read them; a strip's id *is* its track's id, on creation too. A track with no `voiceData` is not a strip (the roll makes bare tracks the moment a note is drawn), and assigning a voice **fills that track in** rather than replacing it, so its clips survive; emptying a strip clears the patch and keeps the track. The index IS the channel — removal leaves a `null` hole, colours are `PATCH_COLORS[i]`. **One write path:** `_assignToSlot(idx, {name, voiceData, patchId})` — occupied target + unbanked voice = silent overwrite; voice already elsewhere = **swap**. Identity is `voiceKey()`, so one voice occupies at most one slot, enforced on load too. **Mute/Solo** are volume overrides: `entry.volume` is the fader, `entry.effectiveVolume` what the engine hears; `applyMix()` recomputes and pushes only moved channels. There is **one** mute per strip now, on the track, which is the one the sequencer reads.
 - `html/components/pianoroll.js`: **Pattern editor** (still the piano roll on screen). Edits one monotimbral Pattern — the active voice slot's track; other tracks are read-only ghosts behind it. `notes` is a binding repointed to the active pattern's array, which is why the editing code is untouched by the Pattern move; `ensureActiveTrack()` creates a track+pattern on the first note. Measure buttons and Clear span every track. Playback is the transport's (`getTransport()`, `getMode()`, `setMode()`); **Play and Record from the roll are pattern scope** (`transport.play({mode:'pattern'})` / `startRecording({mode:'pattern'})`) — the pattern on screen, looped where it sits in the song and never longer. The `.pianoroll-accompany` button is **not** a scope switch: it toggles `transport.setAccompany()`, i.e. whether the rest of the song is heard inside that window. The roll subscribes to the transport's positions and is purely a view of them — `playCol` is `edit.patternCol`, `-1` where its pattern is not under the song's playhead. `addNote({..., clipId})` lets the recorder name the clip. Reads the current song from the shared session (`opts.session`, or its own); `tracks` is a per-song-track view (opened clip or first clip + its pattern), `liveCache` the copies being edited, cleared on foreign notifications. Patterns have individual lengths; measure buttons act on the edited one. `openClip(clipId)` edits a specific clip's pattern. View prefs in `openpatches_roll_prefs`. `getSong()`/`loadSong()` still speak the legacy flat slot-tagged shape for song-bar.js. Sequencer with looping. Hit-testing folds the second (loop) grid copy onto the first (`foldX`), interactive right-edge resize is clamped to the loop end (`clampDur`), `touchcancel` restores whatever was mid-move. Notes store per-note `voiceData` and `channel`. Touch support: `TOUCH_RESIZE_MARGIN = 20`, visual resize handles, double-tap to delete. Long-press (1s) to create note when stopped, drag to scroll. `revealRow(midi)` scrolls vertically to centre a row only when it is off screen — what `addNote` does while recording (stopped, it centres on both axes). The legend's active entry carries the edited pattern's name (`.pianoroll-legend-pattern`), click to rename in place; saved through `saveState([pattern])` so the Song tab follows. **Follow-scroll is opt-in** (`followPlayhead`, default off, persisted): only then is the canvas double-wide (content drawn twice for a seamless loop) and the view scrolled per tick; otherwise the red 2 px playhead is the only motion. `canvas.width` is assigned only on change. `handlePlaybackTick(col)` driven by tick worker. `setRecordingTickHandler` for recording delegation. `insertControl(el)` lets the toolbar place its Record button after Stop. `setStepCursor(col)` draws the step record's cursor exactly like the playhead (which wins whenever the clock runs) and scrolls sideways if it is out of view; `setNoteDur(note, dur)` is the step record's in-place resize; `addNote({reveal:'row'})` centres the row (`centerRow`) and reveals the column (`revealCol`); `getEditTarget()` is the pattern on screen as the transport sees it; `opts.onBeforePlay()` lets the toolbar claim a Play press. `getSong()`/`loadSong(data)` are the song store's view of the roll.
 - `html/components/syx-parser.js`: `.syx` reader. Rejects anything whose format byte is not `0x09` (32-voice bank); verifies the checksum but only **warns** (`patches.checksumOk === false`, surfaced in the log by `importSyxBank`) because hex-edited banks with stale checksums are common.
 - `html/components/syx-builder.js`: DX7 SysEx **encoder** (syx-parser.js is the reader). Bulk dump `F0 43 0n 09 20 00 <4096 packed> <cksum> F7` = 4104 bytes; edit-buffer voice `F0 43 0n 00 01 1B <155 unpacked> <cksum> F7` = 163; dump request `F0 43 2n 09 F7`. Checksum = `(128 - (sum & 0x7F)) & 0x7F`. `patch.voice_data` is already the packed 128-byte form so a bank is a straight concatenation, padded to 32 with `makeInitVoice()`. `unpackVoice()` expands packed 128 → VCED 155 (17-byte ops become 21, 26 global bytes become 29) using dx7-params' `readOp`/`readGlobal`. **`html/DEMO.syx` is the golden test fixture** — parse → rebuild is asserted byte-identical, and unpack → repack is asserted lossless across all 32 voices.
@@ -986,7 +458,7 @@ OpenPatches is a browser-based DX7 patch editor and sequencer. It communicates w
 - `html/synth/midi-manager.js`: Web MIDI singleton, same shape as audio-manager. **Clock out** (`sendClock`, persisted, default off; `clockStart`/`clockColumn`/`clockStop`): 24 PPQN = six clocks per column, scheduled per column as one timestamped batch off a start-anchored base so worker jitter never reaches the device; Song Position + Continue when starting anywhere but the top; stopped by `panic()`. Independent of `outputMode`. **Clock in** (`syncToClock`, persisted, default off): the input listener hands status ≥ 0xF8 to `handleRealtime` first; `subscribeClockIn` emits start/continue/stop/column(rawCol, every sixth clock from Start)/sync; `getExternalBpm()` is a trailing mean over 24 periods, reset by a 2 s gap. **`sendClock` and `syncToClock` are one choice, not two** — setting either clears the other (and becoming a slave stops a running clock-out), `initFromStorage` repairs a both-on state left by an older build with sync winning, and the `!syncToClock` term in `isClockOutEnabled()` stays as an invariant now unreachable through the setters. They were independent until 2026-11-01, and the result was clock-out ticked and silently inert whenever sync had been left on. Holds the persisted `deviceType` ('auto' or a profile id) and resolves it via `getDeviceProfile()`; `receiveBank`/`sendBank` consult the profile. Access is requested only on demand and never at import time — except `resumeIfEnabled()`, which app.js calls from `initMidiUi()`: once a grant has been held (persisted `enabled` flag, set by any successful `requestMidi`) later loads re-request at the tier `auditionEnabled` needs; the browser remembers the permission so there is no prompt. A silent failure leaves the state `closed`, never `denied`. Two permission tiers: `requestMidi({sysex:false})` for notes, `requestMidi({sysex:true})` for bulk dumps — the upgrade re-prompts and swaps the `MIDIAccess`, so `attachInputListener()` re-binds the input handler by object identity, and a generation counter stops an older in-flight request clobbering a newer grant. Port selection persists to localStorage by id **with a name fallback** (ids are not stable across sessions). `panic()` = CC 120 + CC 123 on all 16 channels; called on emergency stop, output change, `pagehide` and tab-hide. `receiveBank`/`sendBank` are the real SysEx transport (see syx-builder). Test seams: `_reset()`, `_getAccess()`. **Note output:** `outputMode` (internal/midi/both), `slotChannels[8]` (slot → MIDI channel, identity default), `playNoteOut()`/`stopNoteOut()`/`releaseAllOut()` with an `outNotes` map keyed `"channel:midi"`. `isInternalEnabled()` returns true when MIDI-only is selected but no device is reachable — the app must never go silent because a cable was unplugged. **Output latency:** a persisted setting (`getOutputLatency`/`setOutputLatency`, default 317 measured against a Volca FM, max 1000) added to every note-path timestamp by `sendAt()`, the single send helper; SysEx is unstamped. `panic()` sweeps twice, now and at `+latency`. `playLatencyProbe(midi, {durMs, voiceData, onWire})` is the calibration tick for the settings modal.
 - `html/components/midi-panel.js`: MIDI settings modal, laid out **by signal direction**: enable, **device type** (with profile notes), then an `Input` section (input select, input channel, sync to external clock) and an `Output` section (output select, device channel, output mode, slot map, send MIDI clock, **output-latency slider + flashing test-tone calibrator** fed by `opts.playTestNote`/`prepareTestNote`/`testVoiceData` from app.js, audition, panic). `section(title)` builds each; the headings are `h4.midi-section-title`, deliberately not `label`s — e2e finds selects by `.midi-field:has(label:text-is("Output"))`. The two clock boxes are the two halves of one choice and live one per section; `refreshClockBoxes()` reads both back from midi-manager (never from each other) and raises `.midi-clock-warning` when clock out is on with no output port, the one remaining way to tick it and get nothing. Also `sendBankToDevice()` — the guarded confirm → optional backup → send flow. A failed backup aborts the send; it never falls through to "proceed anyway". Transport is real since Phase 4; the backup step uses `receiveBank`.
 - `html/synth/transport.js`: **the clock**. Also drives MIDI clock out when it is switched on — `clockStart` on play/record, `clockColumn` first thing in `onTick`, `clockStop` on stop; it imports midi-manager directly and never asks whether a device is listening. **Or follows one:** with sync on, Play/Record only **arm** (`armed`, `pos.waiting`, worker ticks ignored); the device's Start/Continue runs it (Start from the top, Continue from `lastCol` — Song Position is ignored by decision), its columns are `onTick(rawCol)`, its Stop pauses but leaves it armed, our Stop disarms. `effectiveBpm()` (the device's measured tempo when known) times notes and rides in `pos.bpm`. Sole subscriber to the tick worker; owns mode (`song`/`pattern`, persisted), play/stop/record, sequence rebuilds (`refresh()` after every edit), note firing, and the position broadcast both editors draw from. **`refresh()` also pushes the tempo** (`retempo()` → `opts.tempoWorker`), because BPM is one of the things an edit can change and the worker is told its rate once at start; it is the entry point both BPM inputs already reach (the roll's directly, the Song tab's via the session subscription), and a no-op while stopped or armed. **Pattern mode is the song confined to one placement of the edited pattern** (one pattern length, other tracks audible inside it); the placement is the one nearest `songPos` — the last song column played, or where `setSongPosition()` parked it — via `patternPlacements`/`nearestPlacement`; a pattern placed nowhere falls back to `createPatternSequence`. `play({mode})` and `startRecording({mode})` switch (and persist) the scope first. **Accompaniment** (`getAccompany`/`setAccompany`, persisted under `openpatches_transport_accompany`, default on) is orthogonal: in pattern mode it passes `onlyTrackId` to the song sequence so only the edited track sounds. It changes what sounds, never the loop, so it applies mid-take without stopping. Positions carry `songCol` (-1 only for the lone-pattern loop) and `edit` is placement-relative. Recording in pattern mode goes through the song path of `mapRecordColumn`. `mapRecordColumn(absCol, slot)` maps a recorded column onto a pattern (`{patternCol, clipId}` / `{fresh:true}` / `null`). Created by the roll unless one is passed in.
-- `html/synth/sequencer.js`: pure sequencer core. A clip may start off the bar line and stop part-way through a repeat: `placementsAt` bounds it, note durations are cut at the clip's end, and `patternPlacements` emits a short last placement. The song itself still **plays to the end of the bar** its last clip ends in (`playbackRange` takes columns; the ceil is in `createSongSequence`) — a clip cut to one beat must not loop the song every beat. `createSongSequence(song, getPattern, {range})` (the override is pattern mode's window) / `createPatternSequence` share one interface; `patternPlacements(song, patternId, getPattern)` (one per repeat, sorted) and `nearestPlacement(placements, col)` (inside wins, else the closer edge, ties to the earlier) are what the transport picks the window with; `opts.onlyTrackId` confines what sounds without touching the window (`locate` still reports every track, so playheads are unaffected). They share one interface (`length`, `range`, `columnForTick`, `eventsAt`, `locate`); `audibleTrackIds` (solo set if any, else unmuted), `playbackRange`, `wrapToRange`, `msPerColumn`. Snapshots patterns at creation, reads mute/solo live. Imports song-model for `COLS_PER_MEASURE`/`clipSpan` only.
+- `html/synth/section-sequencer.js`: pure sequencer core — what starts at column N, on which slot. The **project** supplies tracks and the pattern library, the **section** supplies clips and the loop. `createSectionSequence(project, section, {range, onlyTrackId})` and `createPatternSequence(pattern, slot)` share one interface (`length`, `range`, `columnForTick`, `eventsAt`, `locate`). Patterns are **snapshotted** (a tick must never read a store); mute/solo are read **live** via `audibleTrackIds`, which wraps project-model's `audibleTracks` so the scheduler and the mixer are the same function. A section plays to the end of the **bar** its last clip ends in, so a one-beat clip does not loop it every beat. `patternPlacements(project, section, patternId)` (one per repeat) + `nearestPlacement` are how pattern mode picks its window.
 - `html/synth/tick-worker.js`: Web Worker heartbeat for pianoroll. Atomics.wait path (SharedArrayBuffer) for zero-CPU sleeping, setTimeout fallback. Absolute targeting (`anchorAt + (col - anchorCol) * msPer`), spin for sub-ms precision. Start/stop via a generation counter in shared memory (`Int32Array[0]`): app.js `startTickWorker`/`stopTickWorker` bump it + `Atomics.notify`; a loop exits when the counter moves, and a `start` whose `gen` is outdated is ignored. Always start through `opts.startWorker`, never raw `postMessage`. Worker stays alive for reuse. **Live tempo** (`Int32Array[1]`, milli-BPM — formerly the reserved slot): `setTickWorkerTempo` in app.js stores it and notifies; the fallback path takes a `{type:'tempo'}` message instead. It cannot be a message on the Atomics path — that loop blocks in `Atomics.wait` and never returns to its event loop, so a `postMessage` sits unread until the transport stops. A change **re-anchors**, it does not restart: the grid is recomputed from the last tick emitted, so emitted ticks keep their timing, pending ones move, and `rawCol` keeps counting. Gotcha when editing either loop: recompute the target *after* waking and *before* the precision spin, or a tempo drop is spun through at the old, shorter interval and the tick fires early.
 - `html/synth/dx7-synth.js`: Batch waveform rendering only (main thread WASM). No realtime synth code.
 - `html/synth/dx7-processor.js`: AudioWorkletProcessor wrapping MSFA DX7 engine. Ring buffer (~300ms lookahead) for audio stability. Handles `voice-snapshot`, `midi`, `patch`, `play-samples`, `channel-volume`, `reinit` messages. MIDI logging via `logMidi` no-op (override to enable).

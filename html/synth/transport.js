@@ -7,17 +7,17 @@
 // here, exactly once, and everything else listens to this.
 //
 // Two modes:
-//   song    — play the arrangement (what the Song tab's Play does).
+//   section — play the arrangement (what the Section tab's Play does).
 //   pattern — loop the pattern being edited (the roll's Play and Record):
 //             one placement of that pattern, from its start to its end, and
 //             never longer — a take is always one pattern long. A pattern
-//             placed several times loops the placement nearest the song
-//             position (`songPos`: the last song column played, or where
-//             the Song tab parked it by opening a clip). A pattern placed
+//             placed several times loops the placement nearest the
+//             section position (`sectionPos`: the last column played, or
+//             where the Section tab parked it by opening a clip). A pattern
 //             nowhere loops alone.
 //
 // Orthogonal to the mode: **accompaniment** (persisted). It decides whether
-// the rest of the song is heard inside the pattern window, or only the
+// the rest of the section is heard inside the pattern window, or only the
 // pattern being written. It never changes the window — that is the mode's
 // job, and the reason the two are separate settings.
 //
@@ -33,9 +33,9 @@
 // Record) only **arms** — the worker is not started, and the columns come
 // from midi-manager's clock-in events once the device sends Start. The
 // device's Stop pauses us but leaves us armed, so its next Start or
-// Continue is followed too; our own Stop disarms. Song Position is
-// ignored, so Continue resumes from wherever we were. Note durations use
-// the device's measured tempo, falling back to the song's until it is
+// Continue is followed too; our own Stop disarms. Song Position (the MIDI
+// message) is ignored, so Continue resumes from wherever we were. Note
+// durations use the device's measured tempo, falling back to ours until it is
 // known.
 
 import {
@@ -47,7 +47,7 @@ import * as midiManager from './midi-manager.js';
 
 const MODE_KEY = 'openpatches_transport_mode';
 const ACCOMPANY_KEY = 'openpatches_transport_accompany';
-export const MODES = ['song', 'pattern'];
+export const MODES = ['section', 'pattern'];
 const MAX_CONSECUTIVE_ERRORS = 3;
 
 function loadAccompany() {
@@ -59,13 +59,13 @@ function loadAccompany() {
 function loadMode() {
     try {
         const m = localStorage.getItem(MODE_KEY);
-        return MODES.includes(m) ? m : 'song';
-    } catch { return 'song'; }
+        return MODES.includes(m) ? m : 'section';
+    } catch { return 'section'; }
 }
 
 /**
  * @param {object} opts
- * @param {object} opts.session        the shared song session
+ * @param {object} opts.session        the shared project session
  * @param {function} opts.getPattern   id → the live pattern (the roll's copy)
  * @param {function} opts.getEditTarget () → { trackId, clipId, pattern, slot } | null
  * @param {function} opts.playNote     (midi, durMs, voiceData, slot)
@@ -80,12 +80,12 @@ export function createTransport(opts) {
     const log = opts.log || (() => {});
 
     let mode = loadMode();
-    let accompany = loadAccompany();   // hear the rest of the song inside the pattern window
+    let accompany = loadAccompany();   // hear the rest of the section inside the pattern window
     let playing = false;
     let recording = false;
     let sequence = null;
     let lastCol = -1;
-    let songPos = 0;          // song column the pattern loop anchors to (see header)
+    let sectionPos = 0;       // section column the pattern loop anchors to (see header)
     let placement = null;     // the placement pattern mode is looping, null when alone
     let consecutiveErrors = 0;
     let warnedOutsideClip = false;
@@ -108,7 +108,7 @@ export function createTransport(opts) {
             if (!t || !t.pattern) return createPatternSequence(null, 0);
             const places = patternPlacements(project, section, t.pattern.id);
             if (places.length === 0) return createPatternSequence(t.pattern, t.slot);
-            placement = nearestPlacement(places, songPos);
+            placement = nearestPlacement(places, sectionPos);
             return createSectionSequence(project, section, {
                 onlyTrackId: accompany ? null : t.trackId,
                 range: { startCol: placement.startCol, endCol: placement.endCol },
@@ -133,7 +133,7 @@ export function createTransport(opts) {
     }
 
     /**
-     * Push the song's tempo at a running worker. A no-op when we are not
+     * Push the project's tempo at a running worker. A no-op when we are not
      * the one keeping time: stopped, or following an external clock, where
      * the columns come from the device and the worker is not running.
      */
@@ -191,12 +191,12 @@ export function createTransport(opts) {
                 }
             }
         }
-        // `songCol` is the position on the song's timeline, for the Song
-        // tab's playhead: the same as `col` whenever the sequence is the
-        // song (both modes, except a lone pattern), -1 otherwise.
-        const songCol = col >= 0 && sequence && sequence.kind === 'section' ? col : -1;
+        // `sectionCol` is the position on the section's timeline, for the
+        // Section tab's playhead: the same as `col` whenever the sequence
+        // is the section (both modes, except a lone pattern), -1 otherwise.
+        const sectionCol = col >= 0 && sequence && sequence.kind === 'section' ? col : -1;
         const pos = {
-            playing, recording, mode, col, songCol, edit, seam: false, rawCol: -1,
+            playing, recording, mode, col, sectionCol, edit, seam: false, rawCol: -1,
             waiting: waiting(), pending: pendingStart, bpm: playbackBpm(),
             ...extra,
         };
@@ -249,7 +249,7 @@ export function createTransport(opts) {
         // recorder finalises notes held across it.
         const seam = rawCol > 0 && col === sequence.range.startCol;
         lastCol = col;
-        if (sequence.kind === 'section') songPos = col;
+        if (sequence.kind === 'section') sectionPos = col;
         if (!fire(col)) return;
         notify({ col, rawCol, seam });
     }
@@ -275,7 +275,7 @@ export function createTransport(opts) {
         if (ev.type === 'start' || ev.type === 'continue') {
             const fromTop = ev.type === 'start' || lastCol < 0;
             refresh();
-            // A take into an empty song has no range and still runs (the
+            // A take into an empty section has no range and still runs (the
             // recorder keeps its own time); playback with nothing to play
             // was refused at Play, so this guard is for safety.
             if (armed === 'record') recording = true;
@@ -331,8 +331,8 @@ export function createTransport(opts) {
     }
 
     /**
-     * Start. `mode` names the scope the button means — the Song tab's Play
-     * is song, the roll's is pattern — and is switched to (and remembered)
+     * Start. `mode` names the scope the button means — the Section tab's
+     * Play is section, the roll's is pattern — and is switched to (and remembered)
      * first; without it the current mode plays.
      */
     function play({ mode: wanted } = {}) {
@@ -420,7 +420,7 @@ export function createTransport(opts) {
         if (!sequence.range) {
             // Nothing placed yet: a pattern-length loop so the take has a
             // grid to land on.
-            log('[transport] recording into an empty song');
+            log('[transport] recording into an empty section');
         }
         lastCol = sequence.range ? sequence.range.startCol : 0;
         consecutiveErrors = 0;
@@ -441,19 +441,19 @@ export function createTransport(opts) {
     const api = {
         getMode() { return mode; },
         /**
-         * Park the song position while at rest — what pattern mode anchors
-         * its choice of placement to. The Song tab calls it when a clip is
+         * Park the section position while at rest — what pattern mode anchors
+         * its choice of placement to. The Section tab calls it when a clip is
          * opened, so that clip is the one that loops.
          */
-        setSongPosition(col) {
+        setSectionPosition(col) {
             if (playing || recording) return false;
-            songPos = Math.max(0, Math.floor(col) || 0);
+            sectionPos = Math.max(0, Math.floor(col) || 0);
             if (mode === 'pattern') refresh();
             return true;
         },
-        getSongPosition() { return songPos; },
+        getSectionPosition() { return sectionPos; },
         /**
-         * Is the rest of the song heard inside the pattern window? Takes
+         * Is the rest of the section heard inside the pattern window? Takes
          * effect immediately, mid-take included: it changes what sounds,
          * never the loop, so there is no position to lose.
          */
@@ -499,13 +499,13 @@ export function createTransport(opts) {
         /**
          * Where a recorded column lands in the pattern being written to.
          * `absCol` counts sixteenths since the take began, which is also the
-         * song column (both start at the range's first column).
+         * section column (both start at the range's first column).
          *
          * Three answers:
          *   { patternCol, clipId }  — a clip is under the playhead here
          *   { fresh: true }         — this voice has nothing placed at all,
          *                             so the caller should start one (the
-         *                             first-note-on-an-empty-song flow)
+         *                             first-note-on-an-empty-section flow)
          *   null                    — the voice has clips but none here:
          *                             the note was heard, there is nowhere
          *                             to write it

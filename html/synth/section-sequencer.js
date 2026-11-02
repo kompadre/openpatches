@@ -1,7 +1,7 @@
 // Sequencer core — turns a Section of a Project (or a lone Pattern) into
 // "what starts at column N, on which slot".
 //
-// Supersedes sequencer.js, which compiled a Song. The difference is where
+// Supersedes the Song-era sequencer. The difference is where
 // the pieces come from: the **project** owns the tracks and the pattern
 // library, the **section** owns the clips and the loop. A clip therefore
 // needs both in hand to resolve, which is also why the cross-record
@@ -12,7 +12,7 @@
 // count onto the section, then `eventsAt(col)` to get the notes to fire.
 // Both editors use `locate(col)` to draw their playheads.
 //
-// Two deliberate properties, unchanged from the Song era:
+// Two deliberate properties, worth keeping:
 //  - A sequence **snapshots** its patterns when created, so a tick is never
 //    a store read. Editing a pattern or a clip needs a rebuild; the
 //    transport re-creates on every change notification, which is cheap.
@@ -28,8 +28,8 @@ import {
  * The ids of the tracks that may sound. The rule itself lives in
  * project-model beside `effectiveVolume()`, so the scheduler's view of who
  * is audible and the mixer's view of who is at zero gain cannot drift apart
- * — which is exactly what happened when the song's track and the voice bank
- * entry each kept their own mute flag.
+ * — which is exactly what happened when the arrangement's track and the
+ * voice bank entry each kept their own mute flag.
  */
 export function audibleTrackIds(tracks) {
     return new Set(audibleTracks(tracks).map(t => t.id));

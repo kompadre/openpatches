@@ -1081,7 +1081,7 @@ document.getElementById('menu-show-log').addEventListener('click', () => {
     if (pianoDockWrapper && pianoDockWrapper._showLog) pianoDockWrapper._showLog();
 });
 // Delete everything. The old "Clear History" removed five of twenty-odd
-// localStorage keys — patterns, songs, patch renames and the tag
+// localStorage keys — patterns, arrangements, patch renames and the tag
 // vocabulary all survived a "clear all" — and it orphaned every imported
 // WAV, because canvasStore.clear() dropped the container records without
 // deleting the blobs they referenced, leaving them unreachable forever.

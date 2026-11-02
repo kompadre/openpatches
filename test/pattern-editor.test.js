@@ -3,7 +3,7 @@
 // It edits one monotimbral Pattern — the one on the active voice slot's
 // track. Notes carry no slot; the track does. Other tracks are drawn behind
 // as read-only ghosts, and playback still sounds every track, through the
-// phase-2 sequencer. Persistence is the pattern/song stores, and the old
+// phase-2 sequencer. Persistence is the project body.
 // roll blob is migrated on first load.
 
 import { test, before, beforeEach, describe } from 'node:test';
@@ -211,7 +211,7 @@ describe('playback sounds every track', () => {
 
 describe('measure buttons act on the edited pattern', () => {
     // Patterns have their own lengths — the same pattern may sit in several
-    // songs — so + Msr / Clone / − Msr change the one being edited and the
+    // sections — so + Msr / Clone / − Msr change the one being edited and the
     // grid follows whichever pattern is under the cursor.
     function twoTracks() {
         const h = build();
@@ -237,7 +237,7 @@ describe('measure buttons act on the edited pattern', () => {
         h.btn('\u29C9 Clone').dispatch('click');
         assert.equal(h.roll.totalCols(), 32);
         assert.deepEqual(h.roll.getNotes().map(n => n.start), [0, 16]);
-        assert.deepEqual(h.roll.getSong().notes.filter(n => n.slot === 0).map(n => n.start), [0], 'slot 0 untouched');
+        assert.deepEqual(h.roll.getAllNotes().notes.filter(n => n.slot === 0).map(n => n.start), [0], 'slot 0 untouched');
     });
 
     test('− Msr drops the notes past the new end of the edited pattern', () => {
@@ -275,7 +275,7 @@ describe('persistence', () => {
         assert.deepEqual(again.roll.getTracks().map(t => t.slot), [0, 2]);
         again.roll.setActiveSlot(0);
         assert.equal(again.roll.totalCols(), 16, 'slot 0\'s pattern was not');
-        assert.deepEqual(again.roll.getSong().notes.sort((a, b) => a.midi - b.midi),
+        assert.deepEqual(again.roll.getAllNotes().notes.sort((a, b) => a.midi - b.midi),
             [{ midi: 60, start: 0, dur: 2, slot: 0 }, { midi: 72, start: 8, dur: 1, slot: 2 }]);
     });
 
@@ -286,7 +286,7 @@ describe('persistence', () => {
         drawNote(h, 48, 0);
         h.roll.element.querySelector('.pianoroll-clear-desktop').dispatch('click');
         assert.deepEqual(h.roll.getTracks(), []);
-        assert.deepEqual(h.roll.getSong().notes, []);
+        assert.deepEqual(h.roll.getAllNotes().notes, []);
     });
 });
 
@@ -297,7 +297,7 @@ describe('the recorder writes into the right track', () => {
         h.roll.addNote({ midi: 40, start: 2, dur: 1, slot: 1 });
 
         assert.deepEqual(h.roll.getNotes(), [{ midi: 60, start: 0, dur: 1 }], 'still editing slot 0');
-        assert.deepEqual(h.roll.getSong().notes.find(n => n.midi === 40),
+        assert.deepEqual(h.roll.getAllNotes().notes.find(n => n.midi === 40),
             { midi: 40, start: 2, dur: 1, slot: 1 });
     });
 
@@ -305,7 +305,7 @@ describe('the recorder writes into the right track', () => {
         const h = build();
         const note = h.roll.addNote({ midi: 40, start: 2, dur: 1, slot: 1 });
         h.roll.removeNote(note);
-        assert.deepEqual(h.roll.getSong().notes, []);
+        assert.deepEqual(h.roll.getAllNotes().notes, []);
     });
 });
 
@@ -322,12 +322,12 @@ describe('the roll follows the shared session', () => {
             getSlotData: (slot) => BANK[slot] || null,
         });
         // Another editor adds a track on slot 1 with a pattern at bar 0.
-        const p = session.createPattern({ name: 'Riff', notes: [{ midi: 40, start: 2, dur: 1 }] }, 'song-editor');
+        const p = session.createPattern({ name: 'Riff', notes: [{ midi: 40, start: 2, dur: 1 }] }, 'section-editor');
         session.update((project, sec) => {
             const t = createTrack({ name: 'T', slot: 1 });
             project.tracks.push(t);
             addClip(project, sec, { trackId: t.id, patternId: p.id, startCol: 0 });
-        }, 'song-editor');
+        }, 'section-editor');
 
         assert.deepEqual(roll.getTracks().map(t => t.slot), [1], 'the roll picked it up');
         assert.deepEqual(roll.getNotes(), [], 'but slot 0 is still the one being edited');
@@ -351,7 +351,7 @@ describe('the roll follows the shared session', () => {
         mouse('mousedown', colX(0) + 5, rowY(60)); mouse('mouseup', colX(0) + 5, rowY(60));
         const id = h.roll.getTracks()[0].patternId;
 
-        session.updatePattern(id, { name: 'Renamed' }, 'song-editor');
+        session.updatePattern(id, { name: 'Renamed' }, 'section-editor');
         mouse('mousedown', colX(4) + 5, rowY(62)); mouse('mouseup', colX(4) + 5, rowY(62));
 
         const stored = storedPattern(id);
@@ -397,13 +397,13 @@ describe('transport integration (phase 5)', () => {
         assert.deepEqual(h.played.map(p => p.midi), [48]);
         h.roll.stopPlayback();
 
-        // Left in song mode by the Song tab's Play, the roll's Play and
+        // Left in section mode by the Section tab's Play, the roll's Play and
         // Record both bring it back to the pattern window.
-        h.roll.setMode('song');
+        h.roll.setMode('section');
         h.roll.startPlayback();
         assert.equal(h.roll.getMode(), 'pattern');
         h.roll.stopPlayback();
-        h.roll.setMode('song');
+        h.roll.setMode('section');
         h.roll.startRecording();
         assert.equal(h.roll.getMode(), 'pattern', 'a take from the roll is the pattern loop too');
         assert.deepEqual(h.roll.getTransport().getSequence().range, { startCol: 0, endCol: 16 });
@@ -416,7 +416,7 @@ describe('transport integration (phase 5)', () => {
         h.roll.setActiveSlot(1);
         drawNote(h, 48, 0);                       // slot 1 — the edited one
         const btn = h.roll.element.querySelector('.pianoroll-accompany');
-        assert.match(btn.textContent, /With song/);
+        assert.match(btn.textContent, /With section/);
 
         btn.dispatch('click');
         assert.match(btn.textContent, /Pattern only/);

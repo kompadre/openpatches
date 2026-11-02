@@ -20,11 +20,11 @@ test.use({
  */
 async function openMobile(page) {
     await page.goto('/index.html');
-    await expect(page.locator('.dock-tab', { hasText: 'Song' })).toBeVisible();
+    await expect(page.locator('.dock-tab', { hasText: 'Section' })).toBeVisible();
 }
 
-/** One pattern, one track, one clip at the top of the song. */
-async function seedSong(page) {
+/** One pattern, one track, one clip at the top of the section. */
+async function seedSection(page) {
     await page.evaluate(async () => {
         const pm = await import('/html/components/project-model.js');
         const dock = window.__opDock;
@@ -36,7 +36,7 @@ async function seedSong(page) {
                 patternId: pattern.id, trackId: track.id, startCol: 0, repeats: 1,
             });
         }, 'e2e');
-        dock._songEditor.render();
+        dock._sectionEditor.render();
     });
 }
 
@@ -61,9 +61,9 @@ function clips(page) {
 }
 
 test.describe('mobile', () => {
-    test('song editor fits the screen with a long song', async ({ page }) => {
+    test('Section editor fits the screen with a long section', async ({ page }) => {
         await openMobile(page);
-        await seedSong(page);
+        await seedSection(page);
         await page.evaluate(async () => {
             const pm = await import('/html/components/project-model.js');
             const dock = window.__opDock;
@@ -74,19 +74,19 @@ test.describe('mobile', () => {
                     startCol: 200 * 16, repeats: 1,
                 });
             }, 'e2e');
-            dock._songEditor.render();
+            dock._sectionEditor.render();
         });
-        await page.locator('.dock-tab', { hasText: 'Song' }).click();
-        await expect(page.locator('.song-editor')).toBeVisible();
+        await page.locator('.dock-tab', { hasText: 'Section' }).click();
+        await expect(page.locator('.section-editor')).toBeVisible();
 
         // The mobile face of the stranding bug: before the width:100% fix,
         // one small clip was enough to put Play at x=-258 on a 390px screen.
         const l = await page.evaluate(() => {
             const x = (sel) => Math.round(document.querySelector(sel).getBoundingClientRect().x);
             return {
-                toolbar: x('.song-toolbar button'),
-                palette: x('.song-palette'),
-                editorW: Math.round(document.querySelector('.song-editor').getBoundingClientRect().width),
+                toolbar: x('.section-toolbar button'),
+                palette: x('.section-palette'),
+                editorW: Math.round(document.querySelector('.section-editor').getBoundingClientRect().width),
             };
         });
         expect(l.toolbar).toBeGreaterThanOrEqual(0);
@@ -96,16 +96,16 @@ test.describe('mobile', () => {
 
     test('a tap places a clip, a swipe scrolls the grid', async ({ page }) => {
         await openMobile(page);
-        await seedSong(page);
-        await page.locator('.dock-tab', { hasText: 'Song' }).click();
-        await expect(page.locator('.song-clip')).toBeVisible();
+        await seedSection(page);
+        await page.locator('.dock-tab', { hasText: 'Section' }).click();
+        await expect(page.locator('.section-clip')).toBeVisible();
 
-        await page.locator('.song-pattern-item').first().tap();
-        const lane = await page.locator('.song-lane').first().boundingBox();
+        await page.locator('.section-pattern-item').first().tap();
+        const lane = await page.locator('.section-lane').first().boundingBox();
         await page.touchscreen.tap(lane.x + 150, lane.y + lane.height / 2);
         await expect.poll(() => clips(page)).toHaveLength(2);
 
-        const grid = page.locator('.song-grid');
+        const grid = page.locator('.section-grid');
         const before = await grid.evaluate((el) => el.scrollLeft);
         await touchSwipe(page,
             { x: lane.x + 200, y: lane.y + lane.height / 2 },
@@ -118,11 +118,11 @@ test.describe('mobile', () => {
         // empty — every drag crashed at the commit step and the clip snapped
         // back. The fixture's pageerror guard doubles as the crash assertion.
         await openMobile(page);
-        await seedSong(page);
-        await page.locator('.dock-tab', { hasText: 'Song' }).click();
-        await expect(page.locator('.song-clip')).toBeVisible();
+        await seedSection(page);
+        await page.locator('.dock-tab', { hasText: 'Section' }).click();
+        await expect(page.locator('.section-clip')).toBeVisible();
 
-        const clip = await page.locator('.song-clip').first().boundingBox();
+        const clip = await page.locator('.section-clip').first().boundingBox();
         await touchSwipe(page,
             { x: clip.x + clip.width / 2, y: clip.y + clip.height / 2 },
             { x: clip.x + clip.width / 2 + 97, y: clip.y + clip.height / 2 });

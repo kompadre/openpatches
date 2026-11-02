@@ -120,7 +120,7 @@ test.describe('MIDI panel', () => {
         const bytes = sent.map((m) => m.data[0]);
 
         // Start first, Stop last, 0xF8 ticks in between — 24 PPQN at the
-        // song's 120 BPM is 48 per second; allow slack for the stop landing
+        // section's 120 BPM is 48 per second; allow slack for the stop landing
         // mid-column. Each message carries a timestamp (that is the whole
         // scheduling design), and they never go backwards.
         expect(bytes[0]).toBe(0xFA);

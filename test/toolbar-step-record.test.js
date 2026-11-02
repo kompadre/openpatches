@@ -329,7 +329,7 @@ describe('seeking the cursor', () => {
 describe('where the notes go', () => {
     test('into the pattern on screen, even when the record slot points elsewhere', async () => {
         const h = build();
-        // Two tracks. The roll is opened on slot 1's clip (the Song tab's
+        // Two tracks. The roll is opened on slot 1's clip (the Section tab's
         // "open" on a track whose voice slot holds no patch does exactly
         // this), while the record slot stays at 0.
         const lead = session.createPattern({ name: 'Lead', measures: 2, notes: [] }, 'test');
@@ -375,7 +375,7 @@ describe('where the notes go', () => {
 });
 
 describe('handing over to the clock', () => {
-    test('Play while armed starts a live take — even on an empty song', () => {
+    test('Play while armed starts a live take — even on an empty section', () => {
         const { rec, roll, transport } = build();
         rec.dispatch('click');
         roll.startPlayback();
@@ -399,7 +399,7 @@ describe('handing over to the clock', () => {
         const h = build();
         h.rec.dispatch('click');
         await h.hold(60, 1000);
-        assert.equal(h.transport.play({ mode: 'song' }), true);
+        assert.equal(h.transport.play({ mode: 'section' }), true);
         assert.equal(h.rec.classList.contains('active'), false);
         assert.equal(h.roll.getStepCursor(), -1);
     });

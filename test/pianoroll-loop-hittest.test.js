@@ -52,7 +52,7 @@ function build({ measures = 1, notes, followPlayhead = false } = {}) {
     const touch = (type, x, y) => canvas.dispatch(type, {
         touches: [{ clientX: x, clientY: y }], changedTouches: [{ clientX: x, clientY: y }], preventDefault() {},
     });
-    return { roll, canvas, played, mouse, touch, notes: () => roll.getSong().notes };
+    return { roll, canvas, played, mouse, touch, notes: () => roll.getAllNotes().notes };
 }
 
 beforeEach(() => localStorage.clear());

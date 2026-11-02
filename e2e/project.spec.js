@@ -123,13 +123,13 @@ test.describe('project management lives in the File menu', () => {
 
     test('the Section editor names the section, not the project', async ({ page }) => {
         await openApp(page);
-        await page.locator('.dock-tab', { hasText: 'Song' }).click();
-        await expect(page.locator('.song-name')).toHaveValue('Section 1');
+        await page.locator('.dock-tab', { hasText: 'Section' }).click();
+        await expect(page.locator('.section-name')).toHaveValue('Section 1');
         // Project switching left this toolbar: a project is the whole piece.
-        await expect(page.locator('.song-select')).toHaveCount(0);
+        await expect(page.locator('.section-select')).toHaveCount(0);
 
-        await page.locator('.song-name').fill('Chorus');
-        await page.locator('.song-name').dispatchEvent('change');
+        await page.locator('.section-name').fill('Chorus');
+        await page.locator('.section-name').dispatchEvent('change');
         expect(await page.evaluate(() => window.__opProject.getSection().name)).toBe('Chorus');
         await expect(page.locator('#menu-status')).toHaveText('Untitled project');
     });
@@ -221,7 +221,7 @@ test.describe('export and import', () => {
 
 test.describe('Delete All Data', () => {
     // The old "Clear History" removed five of twenty-odd localStorage keys
-    // — patterns, songs, patch renames and the tag vocabulary all survived
+    // — patterns, sections, patch renames and the tag vocabulary all survived
     // a "clear all" — and it orphaned every imported WAV, because the
     // canvas records were dropped without deleting the blobs they pointed
     // at. The assertion is therefore that storage is *empty*, not that

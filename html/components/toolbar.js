@@ -1,9 +1,9 @@
-// Toolbar — bottom panel with tabs: Canvas | Piano Roll | Song | Edit | Log
+// Toolbar — bottom panel with tabs: Canvas | Piano Roll | Section | Mixer | Edit | Log
 // Keyboard is integrated into the Piano Roll panel.
 // Replaces piano-dock.js. Pianoroll/Log logic moved here; Edit tab delegates to edit-panel.js.
 
 import { createPianoroll } from './pianoroll.js';
-import { createSongEditor } from './song-editor.js';
+import { createSectionEditor } from './section-editor.js';
 import { createVoiceBank } from './voicebank.js';
 import { createEditPanel } from './edit-panel.js';
 // Namespaced as midiManager, not midi: `midi` is the note-number parameter
@@ -85,10 +85,10 @@ export function createToolbar(opts) {
     tabPianoroll.className = 'dock-tab' + (effectiveInitialTab === 'pianoroll' ? ' active' : '');
     tabPianoroll.innerHTML = '<span>🎹</span><span>Piano Roll</span>';
 
-    const tabSong = document.createElement('button');
-    tabSong.className = 'dock-tab dock-tab-song' + (effectiveInitialTab === 'song' ? ' active' : '');
-    tabSong.innerHTML = '<span>🎼</span><span>Song</span>';
-    tabSong.title = 'Song';
+    const tabSection = document.createElement('button');
+    tabSection.className = 'dock-tab dock-tab-section' + (effectiveInitialTab === 'section' ? ' active' : '');
+    tabSection.innerHTML = '<span>🎼</span><span>Section</span>';
+    tabSection.title = 'Section';
 
     const tabMixer = document.createElement('button');
     tabMixer.className = 'dock-tab dock-tab-mixer' + (effectiveInitialTab === 'mixer' ? ' active' : '');
@@ -116,7 +116,7 @@ export function createToolbar(opts) {
 
     tabBar.appendChild(tabCanvas);
     tabBar.appendChild(tabPianoroll);
-    tabBar.appendChild(tabSong);
+    tabBar.appendChild(tabSection);
     tabBar.appendChild(tabMixer);
     tabBar.appendChild(tabEdit);
     tabBar.appendChild(tabLog);
@@ -133,8 +133,8 @@ export function createToolbar(opts) {
     const pianorollPanel = document.createElement('div');
     pianorollPanel.className = 'dock-panel dock-panel-pianoroll' + (effectiveInitialTab === 'pianoroll' ? ' active' : '');
 
-    const songPanel = document.createElement('div');
-    songPanel.className = 'dock-panel dock-panel-song' + (effectiveInitialTab === 'song' ? ' active' : '');
+    const sectionPanel = document.createElement('div');
+    sectionPanel.className = 'dock-panel dock-panel-section' + (effectiveInitialTab === 'section' ? ' active' : '');
 
     const mixerPanel = document.createElement('div');
     mixerPanel.className = 'dock-panel dock-panel-mixer' + (effectiveInitialTab === 'mixer' ? ' active' : '');
@@ -147,14 +147,14 @@ export function createToolbar(opts) {
 
     wrapper.appendChild(canvasPanel);
     wrapper.appendChild(pianorollPanel);
-    wrapper.appendChild(songPanel);
+    wrapper.appendChild(sectionPanel);
     wrapper.appendChild(mixerPanel);
     wrapper.appendChild(editPanel);
     wrapper.appendChild(logPanel);
 
     function activateTab(tab, panel) {
-        [tabCanvas, tabPianoroll, tabSong, tabMixer, tabEdit, tabLog].forEach(t => t.classList.remove('active'));
-        [canvasPanel, pianorollPanel, songPanel, mixerPanel, editPanel, logPanel].forEach(p => p.classList.remove('active'));
+        [tabCanvas, tabPianoroll, tabSection, tabMixer, tabEdit, tabLog].forEach(t => t.classList.remove('active'));
+        [canvasPanel, pianorollPanel, sectionPanel, mixerPanel, editPanel, logPanel].forEach(p => p.classList.remove('active'));
         tab.classList.add('active');
         panel.classList.add('active');
     }
@@ -187,7 +187,7 @@ export function createToolbar(opts) {
         handleTabClick(tabPianoroll, pianorollPanel);
         requestAnimationFrame(positionBlackKeys);
     });
-    tabSong.addEventListener('click', () => handleTabClick(tabSong, songPanel));
+    tabSection.addEventListener('click', () => handleTabClick(tabSection, sectionPanel));
     tabMixer.addEventListener('click', () => handleTabClick(tabMixer, mixerPanel));
     tabEdit.addEventListener('click', () => handleTabClick(tabEdit, editPanel));
     tabLog.addEventListener('click', () => handleTabClick(tabLog, logPanel));
@@ -260,7 +260,7 @@ export function createToolbar(opts) {
         onSnapshot: (entries) => {
             if (opts.onSnapshot) opts.onSnapshot(entries);
             if (pianorollRef && pianorollRef.renderLegend) pianorollRef.renderLegend();
-            if (wrapper._songEditor) wrapper._songEditor.render();
+            if (wrapper._sectionEditor) wrapper._sectionEditor.render();
             refreshVoiceSelect();
         },
     });
@@ -296,7 +296,7 @@ export function createToolbar(opts) {
         onClear: () => { if (voiceBank._clear) voiceBank._clear(); },
         onStopPlayback: opts.onPlaybackStop || null,
         // Play during a step record becomes a live take (the one way to
-        // start a take on an empty song, which Play alone refuses).
+        // start a take on an empty section, which Play alone refuses).
         onBeforePlay: () => {
             if (!stepping) return false;
             startTake();
@@ -311,13 +311,13 @@ export function createToolbar(opts) {
     pianorollRow.appendChild(pianorollRef.element);
 
     // The clock. The roll made it (or was handed one); the toolbar drives
-    // takes with it and the song editor draws its playhead from it.
+    // takes with it and the Section editor draws its playhead from it.
     const transport = pianorollRef.getTransport();
 
     // Recording: the transport runs the clock and sounds the arrangement;
     // the toolbar only has to finalise notes held across the loop seam.
     transport.subscribe((pos) => {
-        // The clock starting under a step record (the Song tab's Play,
+        // The clock starting under a step record (the Section tab's Play,
         // say) ends it: the playhead takes the cursor's place.
         if (stepping && (pos.playing || pos.recording)) endStepRecord();
         // The take's time base is the moment the transport actually began
@@ -347,8 +347,8 @@ export function createToolbar(opts) {
         const initSlot = entries.indexOf(initActive);
         if (initSlot >= 0) pianorollRef.setActiveSlot(initSlot);
     }
-    // --- Song editor (Song tab) ---
-    const songEditor = createSongEditor({
+    // --- Section editor (Section tab) ---
+    const sectionEditor = createSectionEditor({
         session,
         transport,
         log: opts.appendLog || (() => {}),
@@ -366,11 +366,11 @@ export function createToolbar(opts) {
             requestAnimationFrame(positionBlackKeys);
         },
     });
-    songPanel.appendChild(songEditor.element);
+    sectionPanel.appendChild(sectionEditor.element);
     // The voice bank's names and colours are read at render time; re-render
     // when they change so track heads and clips keep up.
     wrapper._session = session;
-    wrapper._songEditor = songEditor;
+    wrapper._sectionEditor = sectionEditor;
 
     pianorollPanel.appendChild(pianorollRow);
 
@@ -502,7 +502,7 @@ export function createToolbar(opts) {
     const now = () => performance.now();
 
     function colAt(when) {
-        // The transport's tempo, not the song's: under an external clock
+        // The transport's tempo, not the project's: under an external clock
         // they differ, and the columns must match what is being heard.
         const bpm = transport && transport.getEffectiveBpm ? transport.getEffectiveBpm()
             : pianorollRef && pianorollRef.getBpm ? pianorollRef.getBpm() : 120;
@@ -815,7 +815,7 @@ export function createToolbar(opts) {
 
     function addRecordedNote(midi, startCol, endCol, slot) {
         if (!pianorollRef || !pianorollRef.addNote) return;
-        // Where does this column land? In song mode that depends on which
+        // Where does this column land? In section mode that depends on which
         // clip is under the playhead on this voice; with none, the note was
         // heard but there is nothing to write it into.
         const mapped = transport.mapRecordColumn(startCol, slot);

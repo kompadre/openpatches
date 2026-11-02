@@ -254,7 +254,7 @@ describe('driven by the transport', () => {
     test('Play starts the device, each tick clocks it, Stop stops it', async () => {
         const port = await wired();
         const h = build();
-        assert.equal(h.transport.play({ mode: 'song' }), true);
+        assert.equal(h.transport.play({ mode: 'section' }), true);
         assert.deepEqual(statuses(port), [START]);
         h.tickWorker.tick(0);
         h.tickWorker.tick(1);
@@ -275,9 +275,9 @@ describe('driven by the transport', () => {
     test('a loop seam does not disturb the spacing — rawCol keeps counting', async () => {
         const port = await wired();
         const h = build();
-        h.transport.play({ mode: 'song' });
+        h.transport.play({ mode: 'section' });
         port.sent.length = 0;
-        const total = 32;                          // the song is two bars
+        const total = 32;                          // the section is two bars
         for (let c = 0; c < total + 2; c++) { h.tickWorker.tick(c); clock += 125; }
         const ts = clocksOf(port);
         assert.equal(ts.length, (total + 2) * 6);
@@ -290,7 +290,7 @@ describe('driven by the transport', () => {
     test('with the clock off the transport runs exactly as before', async () => {
         const port = await wired({ sendClock: false });
         const h = build();
-        h.transport.play({ mode: 'song' });
+        h.transport.play({ mode: 'section' });
         h.tickWorker.tick(0);
         h.transport.stop();
         assert.deepEqual(port.sent, []);
@@ -300,7 +300,7 @@ describe('driven by the transport', () => {
         const port = await wired();
         const h = build();
         h.session.update((project, section) => { section.loop = { start: 1, end: 2 }; }, 'test');
-        h.transport.play({ mode: 'song' });
+        h.transport.play({ mode: 'section' });
         assert.deepEqual(sent(port)[0], [SPP, 16, 0, clock + LATENCY], 'bar 2 is column 16');
         assert.equal(statuses(port)[1], CONTINUE);
     });

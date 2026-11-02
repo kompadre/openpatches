@@ -19,7 +19,7 @@
 // queued while the worker was busy looping) a no-op, and means a `stop` issued
 // at any moment reliably ends whatever loop is running — with no flag to reset.
 //
-// Tempo can change *while a loop runs* — the song's BPM is editable during
+// Tempo can change *while a loop runs* — the project's BPM is editable during
 // playback. On the Atomics path that cannot be a message: the loop never
 // returns to the event loop (it blocks in Atomics.wait), so a postMessage
 // would not be read until the transport stopped. It goes through the shared

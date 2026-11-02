@@ -2,7 +2,7 @@
 //
 // test/harness.js drives the clock by hand: it has no Worker and no real
 // setTimeout, so "does the tick worker actually produce sixteenths at the
-// song's tempo" has never been checkable there. That is the whole point of
+// section's tempo" has never been checkable there. That is the whole point of
 // this file, and it is the one place the suite deliberately spends wall clock.
 //
 // The clock is reached through window.__opDock (app.js) — see the comment
@@ -77,7 +77,7 @@ test.describe('transport', () => {
         expect(await page.evaluate(() => window.__opDock._pianoroll.isPlaying())).toBe(false);
     });
 
-    test('columns advance at the song tempo', async ({ page }) => {
+    test('columns advance at the section tempo', async ({ page }) => {
         test.slow();   // this one genuinely waits on the clock
         await openApp(page);
         await seedNote(page);
@@ -145,7 +145,7 @@ test.describe('transport', () => {
             return { cols, before, after: transport.getBpm(), changedAt };
         });
 
-        expect(run.after, 'the song should have taken the new tempo').toBe(run.before * 2);
+        expect(run.after, 'the section should have taken the new tempo').toBe(run.before * 2);
 
         // Columns per second each side of the change. The tick straddling it
         // is dropped from both: it is half at one tempo and half at the other.

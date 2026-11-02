@@ -1,17 +1,26 @@
-// Song editor — arrange patterns as clips on tracks.
+// Section editor — arrange patterns as clips on tracks.
 //
-// A grid: tracks are rows, bars are columns. Left of it a palette of
-// every pattern in the library. Pick a pattern, click an empty spot on a
-// lane, and a clip is placed there; drag a clip to move it, drag its right
-// edge to lengthen it, select it and press Delete (or the Remove button) to
-// take it out. Each row binds to a voice-bank slot and has mute/solo.
+// A **section** is one smaller piece of the project; this edits the one
+// the session says is current. A grid: tracks are rows, bars are columns.
+// Left of it a palette of every pattern in the project. Pick a pattern,
+// click an empty spot on a lane, and a clip is placed there; drag a clip
+// to move it, drag its right edge to lengthen it, select it and press
+// Delete (or the Remove button) to take it out.
+//
+// **A lane is a track is a Mixer strip is a voice.** One record: the slot
+// is the synth channel, and the name, patch, volume, mute and solo all
+// describe the same thing. Mute here is the mute the Mixer shows. The
+// slot select *swaps* with whatever holds the slot already, because two
+// tracks on one channel is two voices fighting over one output.
 //
 // Placing, moving and lengthening all happen at the **snap** resolution,
 // a bar by default and down to a sixteenth — clips are not bar-aligned by
 // nature, their geometry is columns (see project-model.js). **Zoom** widens
 // the bar so the finer resolutions are something a pointer can hit.
-// Everything autosaves through the song session — there is no Save button
-// and no "Song exists": songs are id-keyed, names are just labels.
+//
+// Everything autosaves through the project session; there is no Save
+// button. Choosing, creating and deleting *projects* is not here — a
+// project is the whole piece, and that lives in the File menu.
 //
 // Opening a clip (double-click, or the ✎ button when selected) hands its
 // pattern to the piano roll via opts.onOpenPattern.
@@ -23,7 +32,7 @@ import {
 } from './project-model.js';
 
 export const MEASURE_W = 48;      // px per measure in the grid, at zoom ×1
-const MIN_GRID_MEASURES = 16;     // never show an empty, zero-width song
+const MIN_GRID_MEASURES = 16;     // never show an empty, zero-width grid
 const DRAG_THRESHOLD = 4;         // px before a press becomes a drag
 const LONG_PRESS_MS = 600;        // a still press this long opens the clip in the roll
 const DOUBLE_TAP_MS = 400;        // two presses on one clip within this remove it (as in the roll)
@@ -48,7 +57,7 @@ function loadNum(key, allowed, fallback) {
     } catch { return fallback; }
 }
 
-export function createSongEditor(opts = {}) {
+export function createSectionEditor(opts = {}) {
     const session = opts.session;
     const transport = opts.transport || null;
     const log = opts.log || (() => {});
@@ -75,18 +84,18 @@ export function createSongEditor(opts = {}) {
     const snap = (cols) => Math.round(cols / snapCols) * snapCols;
 
     const root = document.createElement('div');
-    root.className = 'song-editor';
+    root.className = 'section-editor';
 
     const toolbar = document.createElement('div');
-    toolbar.className = 'song-toolbar';
+    toolbar.className = 'section-toolbar';
     const body = document.createElement('div');
-    body.className = 'song-body';
+    body.className = 'section-body';
     const palette = document.createElement('div');
-    palette.className = 'song-palette';
+    palette.className = 'section-palette';
     const grid = document.createElement('div');
-    grid.className = 'song-grid';
+    grid.className = 'section-grid';
     const status = document.createElement('div');
-    status.className = 'song-status';
+    status.className = 'section-status';
     body.appendChild(palette);
     body.appendChild(grid);
     root.appendChild(toolbar);
@@ -95,13 +104,13 @@ export function createSongEditor(opts = {}) {
 
     function say(msg) {
         status.textContent = msg || '';
-        if (msg) log(`[song] ${msg}`);
+        if (msg) log(`[section] ${msg}`);
     }
 
     /** Apply a model change; the model's refusals ('Clip overlaps') become status text. */
     function change(mutator) {
         try {
-            session.update(mutator, 'song-editor');
+            session.update(mutator, 'section-editor');
             say('');
             return true;
         } catch (e) {
@@ -128,13 +137,13 @@ export function createSongEditor(opts = {}) {
         return entry && entry.color ? entry.color : '#888';
     }
 
-    function gridMeasures(song) {
-        return Math.max(MIN_GRID_MEASURES, sectionLength(song, sec()) + 4);
+    function gridMeasures(project) {
+        return Math.max(MIN_GRID_MEASURES, sectionLength(project, sec()) + 4);
     }
 
-    // --- Toolbar: which song, its name, tempo, loop ---
+    // --- Toolbar: the section's name, the project's tempo, the section's loop ---
 
-    function button(label, title, onClick, className = 'song-btn') {
+    function button(label, title, onClick, className = 'section-btn') {
         const b = document.createElement('button');
         b.className = className;
         b.textContent = label;
@@ -143,19 +152,19 @@ export function createSongEditor(opts = {}) {
         return b;
     }
 
-    function renderToolbar(song) {
+    function renderToolbar(project) {
         toolbar.innerHTML = '';
 
-        // Play here is the whole song; the roll's Play loops its pattern.
+        // Play here is the whole section; the roll's Play loops one pattern.
         if (transport) {
-            playBtn = button('\u25B6 Play', 'Play the song from the start of its loop', () => {
-                transport.play({ mode: 'song' });
-            }, 'song-btn song-play');
+            playBtn = button('\u25B6 Play', 'Play the section from the start of its loop', () => {
+                transport.play({ mode: 'section' });
+            }, 'section-btn section-play');
             // Armed for an external clock: Play is taken but nothing runs
             // until the device starts us. The pulse says so; Stop disarms.
             const waitTitle = 'Waiting for the external MIDI clock to start';
             playBtn.dataset.waitTitle = waitTitle;
-            stopBtn = button('\u25A0 Stop', 'Stop', () => transport.stop(), 'song-btn song-stop');
+            stopBtn = button('\u25A0 Stop', 'Stop', () => transport.stop(), 'section-btn section-stop');
             toolbar.appendChild(playBtn);
             toolbar.appendChild(stopBtn);
             syncTransportButtons({
@@ -169,29 +178,29 @@ export function createSongEditor(opts = {}) {
         // whole piece now, far bigger than this panel, so it moved to the
         // File menu.
         const name = document.createElement('input');
-        name.className = 'song-name';
+        name.className = 'section-name';
         name.type = 'text';
         name.value = sec().name;
         name.title = 'Section name';
         name.addEventListener('change', () => {
             const v = String(name.value).trim();
             if (!v) { name.value = sec().name; return; }
-            session.renameSection(v, 'song-editor');
+            session.renameSection(v, 'section-editor');
         });
         toolbar.appendChild(name);
 
         const bpmLabel = document.createElement('label');
-        bpmLabel.className = 'song-field';
+        bpmLabel.className = 'section-field';
         bpmLabel.textContent = 'BPM ';
         const bpm = document.createElement('input');
-        bpm.className = 'song-bpm';
+        bpm.className = 'section-bpm';
         bpm.type = 'number';
         bpm.min = String(MIN_BPM);
         bpm.max = String(MAX_BPM);
-        bpm.value = String(song.bpm);
+        bpm.value = String(project.bpm);
         bpm.addEventListener('change', () => {
             const v = parseInt(bpm.value);
-            const clamped = Number.isFinite(v) ? Math.max(MIN_BPM, Math.min(MAX_BPM, v)) : song.bpm;
+            const clamped = Number.isFinite(v) ? Math.max(MIN_BPM, Math.min(MAX_BPM, v)) : project.bpm;
             change((s) => { s.bpm = clamped; });
         });
         bpmLabel.appendChild(bpm);
@@ -200,23 +209,23 @@ export function createSongEditor(opts = {}) {
         // Loop range, shown as inclusive 1-based bars ("bars 1 to 4"),
         // stored as a 0-based half-open range ({start: 0, end: 4}).
         const loopLabel = document.createElement('label');
-        loopLabel.className = 'song-field';
+        loopLabel.className = 'section-field';
         const loopOn = document.createElement('input');
         loopOn.type = 'checkbox';
-        loopOn.className = 'song-loop-on';
+        loopOn.className = 'section-loop-on';
         loopOn.checked = !!sec().loop;
         loopLabel.appendChild(loopOn);
         loopLabel.appendChild(document.createTextNode(' Loop bars '));
         const loopStart = document.createElement('input');
         loopStart.type = 'number';
-        loopStart.className = 'song-loop-start';
+        loopStart.className = 'section-loop-start';
         loopStart.min = '1';
         loopStart.value = String(sec().loop ? sec().loop.start + 1 : 1);
         const loopEnd = document.createElement('input');
         loopEnd.type = 'number';
-        loopEnd.className = 'song-loop-end';
+        loopEnd.className = 'section-loop-end';
         loopEnd.min = '1';
-        loopEnd.value = String(sec().loop ? sec().loop.end : Math.max(1, sectionLength(song, sec())));
+        loopEnd.value = String(sec().loop ? sec().loop.end : Math.max(1, sectionLength(project, sec())));
         loopLabel.appendChild(loopStart);
         loopLabel.appendChild(document.createTextNode(' to '));
         loopLabel.appendChild(loopEnd);
@@ -234,13 +243,13 @@ export function createSongEditor(opts = {}) {
         loopEnd.addEventListener('change', applyLoop);
         toolbar.appendChild(loopLabel);
 
-        // Snap and zoom are view settings, not part of the song: they are
+        // Snap and zoom are view settings, not part of the project: they are
         // persisted on their own and a re-render reads them back.
-        toolbar.appendChild(chooser('Snap ', 'song-snap',
+        toolbar.appendChild(chooser('Snap ', 'section-snap',
             'Grid resolution for placing, moving and lengthening clips',
             SNAPS.map(x => [x.cols, x.label]), snapCols,
             (v) => { snapCols = v; store(SNAP_KEY, v); render(); }));
-        toolbar.appendChild(chooser('Zoom ', 'song-zoom',
+        toolbar.appendChild(chooser('Zoom ', 'section-zoom',
             'Width of a bar — the finer snaps need the room',
             ZOOMS.map(z => [z, '\u00d7' + z]), zoom,
             (v) => { zoom = v; store(ZOOM_KEY, v); render(); }));
@@ -253,7 +262,7 @@ export function createSongEditor(opts = {}) {
     /** A labelled <select> over numeric [value, label] pairs. */
     function chooser(text, className, title, options, value, onPick) {
         const label = document.createElement('label');
-        label.className = 'song-field';
+        label.className = 'section-field';
         label.textContent = text;
         const sel = document.createElement('select');
         sel.className = className;
@@ -273,25 +282,25 @@ export function createSongEditor(opts = {}) {
 
     // --- Palette: the pattern library ---
 
-    function renderPalette(song) {
+    function renderPalette(project) {
         palette.innerHTML = '';
         const head = document.createElement('div');
-        head.className = 'song-palette-head';
+        head.className = 'section-palette-head';
         head.textContent = 'Patterns';
         head.appendChild(button('+', 'New pattern', () => {
-            const p = session.createPattern({ name: `Pattern ${session.listPatterns().length + 1}` }, 'song-editor');
+            const p = session.createPattern({ name: `Pattern ${session.listPatterns().length + 1}` }, 'section-editor');
             selectedPatternId = p.id;
-            session.notifyPattern(p.id, 'song-editor');
+            session.notifyPattern(p.id, 'section-editor');
             render();
-        }, 'song-btn song-pattern-new'));
+        }, 'section-btn section-pattern-new'));
         palette.appendChild(head);
 
         const list = document.createElement('div');
-        list.className = 'song-pattern-list';
+        list.className = 'section-pattern-list';
         const patterns = session.listPatterns();
         if (patterns.length === 0) {
             const empty = document.createElement('div');
-            empty.className = 'song-empty';
+            empty.className = 'section-empty';
             empty.textContent = 'No patterns yet — draw one in the piano roll, or press +.';
             list.appendChild(empty);
         }
@@ -299,7 +308,7 @@ export function createSongEditor(opts = {}) {
 
         for (const p of patterns) {
             const item = document.createElement('div');
-            item.className = 'song-pattern-item' + (p.id === selectedPatternId ? ' selected' : '');
+            item.className = 'section-pattern-item' + (p.id === selectedPatternId ? ' selected' : '');
             item.dataset.patternId = p.id;
             item.title = 'Click to select, then click a lane to place';
 
@@ -307,25 +316,25 @@ export function createSongEditor(opts = {}) {
             // swatch is the picker; a click on it must not toggle selection.
             const swatch = document.createElement('input');
             swatch.type = 'color';
-            swatch.className = 'song-pattern-swatch';
+            swatch.className = 'section-pattern-swatch';
             swatch.value = p.color;
             swatch.title = 'Pattern colour';
             swatch.addEventListener('click', (e) => e.stopPropagation());
             swatch.addEventListener('input', () => { item.style.borderLeftColor = swatch.value; });
             swatch.addEventListener('change', () => {
-                session.updatePattern(p.id, { color: swatch.value }, 'song-editor');
+                session.updatePattern(p.id, { color: swatch.value }, 'section-editor');
                 render();
             });
             item.appendChild(swatch);
             item.style.borderLeftColor = p.color;
 
             const nameEl = document.createElement('span');
-            nameEl.className = 'song-pattern-name';
+            nameEl.className = 'section-pattern-name';
             nameEl.textContent = p.name;
             item.appendChild(nameEl);
 
             const len = document.createElement('span');
-            len.className = 'song-pattern-len';
+            len.className = 'section-pattern-len';
             len.textContent = p.measures + (p.measures === 1 ? ' bar' : ' bars');
             item.appendChild(len);
 
@@ -335,25 +344,25 @@ export function createSongEditor(opts = {}) {
                 nameEl.contentEditable = 'true';
                 nameEl.focus();
             };
-            item.appendChild(button('✎', 'Rename pattern', beginRename, 'song-btn song-pattern-rename'));
+            item.appendChild(button('✎', 'Rename pattern', beginRename, 'section-btn section-pattern-rename'));
             item.appendChild(button('⧉', 'Duplicate', () => {
-                const copy = session.createPattern({ ...p, id: undefined, name: p.name + ' copy', created: undefined }, 'song-editor');
+                const copy = session.createPattern({ ...p, id: undefined, name: p.name + ' copy', created: undefined }, 'section-editor');
                 selectedPatternId = copy.id;
-                session.notifyPattern(copy.id, 'song-editor');
+                session.notifyPattern(copy.id, 'section-editor');
                 render();
-            }, 'song-btn song-pattern-dup'));
+            }, 'section-btn section-pattern-dup'));
             item.appendChild(button('✕', 'Delete pattern', () => {
                 const used = session.patternUsage(p.id);
                 if (used.length > 0) {
-                    say(`"${p.name}" is placed in ${used.length} song${used.length > 1 ? 's' : ''} — remove its clips first`);
+                    say(`"${p.name}" is placed in ${used.length} section${used.length > 1 ? 's' : ''} — remove its clips first`);
                     return;
                 }
                 if (!confirm(`Delete pattern "${p.name}"?`)) return;
-                session.removePattern(p.id, 'song-editor');
+                session.removePattern(p.id, 'section-editor');
                 if (selectedPatternId === p.id) selectedPatternId = null;
-                session.notifyPattern(p.id, 'song-editor');
+                session.notifyPattern(p.id, 'section-editor');
                 render();
-            }, 'song-btn song-pattern-del'));
+            }, 'section-btn section-pattern-del'));
 
             item.addEventListener('click', () => {
                 selectedPatternId = selectedPatternId === p.id ? null : p.id;
@@ -368,7 +377,7 @@ export function createSongEditor(opts = {}) {
                 nameEl.contentEditable = 'false';
                 const v = String(nameEl.textContent).trim();
                 if (v && v !== p.name) {
-                    session.updatePattern(p.id, { name: v }, 'song-editor');
+                    session.updatePattern(p.id, { name: v }, 'section-editor');
                 }
                 render();
             });
@@ -412,35 +421,35 @@ export function createSongEditor(opts = {}) {
         return `bar ${bar} beat ${Math.round((beat + 1) * 100) / 100}`;
     }
 
-    function renderGrid(song) {
+    function renderGrid(project) {
         grid.innerHTML = '';
-        const cols = gridMeasures(song);
+        const cols = gridMeasures(project);
         // The bar lines and the (fainter) snap lines are gradients in the
         // stylesheet; these are their periods. At Bar snap the two coincide
         // and the snap layer is invisible, which is the point.
-        grid.style.setProperty('--song-measure-w', measureW() + 'px');
-        grid.style.setProperty('--song-snap-w', (snapCols * colW()) + 'px');
+        grid.style.setProperty('--section-measure-w', measureW() + 'px');
+        grid.style.setProperty('--section-snap-w', (snapCols * colW()) + 'px');
 
         // Measure ruler
         const ruler = document.createElement('div');
-        ruler.className = 'song-ruler';
+        ruler.className = 'section-ruler';
         const rulerHead = document.createElement('div');
-        rulerHead.className = 'song-track-head song-ruler-head';
+        rulerHead.className = 'section-track-head section-ruler-head';
         rulerHead.textContent = 'Track';
         ruler.appendChild(rulerHead);
         const rulerLane = document.createElement('div');
-        rulerLane.className = 'song-ruler-lane';
+        rulerLane.className = 'section-ruler-lane';
         rulerLane.style.width = (cols * measureW()) + 'px';
         for (let m = 0; m < cols; m++) {
             const tick = document.createElement('span');
-            tick.className = 'song-ruler-tick';
+            tick.className = 'section-ruler-tick';
             tick.style.left = (m * measureW()) + 'px';
             tick.textContent = String(m + 1);
             rulerLane.appendChild(tick);
         }
         if (sec().loop) {
             const band = document.createElement('div');
-            band.className = 'song-loop-band';
+            band.className = 'section-loop-band';
             band.style.left = (sec().loop.start * measureW()) + 'px';
             band.style.width = ((sec().loop.end - sec().loop.start) * measureW()) + 'px';
             rulerLane.appendChild(band);
@@ -451,53 +460,53 @@ export function createSongEditor(opts = {}) {
         // Re-created by each render, then only moved on a tick: rebuilding
         // every clip element sixteen times a bar is not an option.
         playheadEl = document.createElement('div');
-        playheadEl.className = 'song-playhead';
+        playheadEl.className = 'section-playhead';
         playheadEl.style.display = 'none';
         grid.appendChild(playheadEl);
         if (transport) movePlayhead(transport.isRunning() ? transport.getColumn() : -1);
 
-        if (song.tracks.length === 0) {
+        if (project.tracks.length === 0) {
             const empty = document.createElement('div');
-            empty.className = 'song-empty';
+            empty.className = 'section-empty';
             empty.textContent = 'No tracks. Add one, or draw a note in the piano roll.';
             grid.appendChild(empty);
         }
 
-        for (const track of song.tracks) grid.appendChild(renderTrack(song, track, cols));
+        for (const track of project.tracks) grid.appendChild(renderTrack(project, track, cols));
 
         const addRow = document.createElement('div');
-        addRow.className = 'song-add-track-row';
-        const used = new Set(song.tracks.map(t => t.slot));
+        addRow.className = 'section-add-track-row';
+        const used = new Set(project.tracks.map(t => t.slot));
         addRow.appendChild(button('+ Track', 'Add a track on the first free voice', () => {
             let slot = 0;
             while (slot < MAX_SLOTS && used.has(slot)) slot++;
             if (slot >= MAX_SLOTS) { say(`All ${MAX_SLOTS} voices have a track`); return; }
             change((s) => { s.tracks.push(createTrack({ name: slotLabel(slot), slot })); });
-        }, 'song-btn song-add-track'));
+        }, 'section-btn section-add-track'));
         grid.appendChild(addRow);
 
         // Selected-clip actions live here rather than on the clip so they
         // are reachable by touch, where there is no hover and no Delete key.
         if (selectedClipId && sec().clips.some(c => c.id === selectedClipId)) {
             const bar = document.createElement('div');
-            bar.className = 'song-clip-actions';
-            bar.appendChild(button('✎ Open in piano roll', 'Edit this clip\'s pattern', () => openClip(selectedClipId), 'song-btn song-clip-open'));
-            bar.appendChild(button('Remove clip', 'Remove this clip from the song', () => deleteClip(selectedClipId), 'song-btn song-clip-remove'));
+            bar.className = 'section-clip-actions';
+            bar.appendChild(button('✎ Open in piano roll', 'Edit this clip\'s pattern', () => openClip(selectedClipId), 'section-btn section-clip-open'));
+            bar.appendChild(button('Remove clip', 'Remove this clip from the section', () => deleteClip(selectedClipId), 'section-btn section-clip-remove'));
             grid.appendChild(bar);
         }
     }
 
-    function renderTrack(song, track, cols) {
+    function renderTrack(project, track, cols) {
         const row = document.createElement('div');
-        row.className = 'song-track';
+        row.className = 'section-track';
         row.dataset.trackId = track.id;
 
         const head = document.createElement('div');
-        head.className = 'song-track-head';
+        head.className = 'section-track-head';
         head.style.borderLeftColor = slotColor(track.slot);
 
         const slotSel = document.createElement('select');
-        slotSel.className = 'song-track-slot';
+        slotSel.className = 'section-track-slot';
         slotSel.title = 'Voice this track plays';
         for (let i = 0; i < MAX_SLOTS; i++) {
             const opt = document.createElement('option');
@@ -518,20 +527,20 @@ export function createSongEditor(opts = {}) {
 
         head.appendChild(button('M', 'Mute', () => {
             change((s) => { const t = s.tracks.find(x => x.id === track.id); t.mute = !t.mute; });
-        }, 'song-btn song-track-mute' + (track.mute ? ' active' : '')));
+        }, 'section-btn section-track-mute' + (track.mute ? ' active' : '')));
         head.appendChild(button('S', 'Solo', () => {
             change((s) => { const t = s.tracks.find(x => x.id === track.id); t.solo = !t.solo; });
-        }, 'song-btn song-track-solo' + (track.solo ? ' active' : '')));
+        }, 'section-btn section-track-solo' + (track.solo ? ' active' : '')));
         head.appendChild(button('✕', 'Remove track', () => {
             const n = sec().clips.filter(c => c.trackId === track.id).length;
             if (n > 0 && !confirm(`Remove this track and its ${n} clip${n > 1 ? 's' : ''}?`)) return;
             if (selectedClipId && sec().clips.some(c => c.id === selectedClipId && c.trackId === track.id)) selectedClipId = null;
             change((project) => { removeTrack(project, track.id); });
-        }, 'song-btn song-track-remove'));
+        }, 'section-btn section-track-remove'));
         row.appendChild(head);
 
         const lane = document.createElement('div');
-        lane.className = 'song-lane';
+        lane.className = 'section-lane';
         lane.style.width = (cols * measureW()) + 'px';
         // The whole lane carries the voice, quietly; clips carry their
         // pattern's colour on top. (backgroundColor, not background: the
@@ -573,7 +582,7 @@ export function createSongEditor(opts = {}) {
 
     function renderClip(clip, pattern, span, track, lane) {
         const el = document.createElement('div');
-        el.className = 'song-clip' + (clip.id === selectedClipId ? ' selected' : '');
+        el.className = 'section-clip' + (clip.id === selectedClipId ? ' selected' : '');
         el.dataset.clipId = clip.id;
         el.style.left = (span.startCol * colW()) + 'px';
         el.style.width = ((span.endCol - span.startCol) * colW() - 2) + 'px';
@@ -583,12 +592,12 @@ export function createSongEditor(opts = {}) {
             + 'drag the edge to lengthen, hold to open, double-click to remove';
 
         const label = document.createElement('span');
-        label.className = 'song-clip-label';
+        label.className = 'section-clip-label';
         label.textContent = pattern.name + reps;
         el.appendChild(label);
 
         const handle = document.createElement('span');
-        handle.className = 'song-clip-handle';
+        handle.className = 'section-clip-handle';
         el.appendChild(handle);
 
         el.addEventListener('click', (e) => {
@@ -631,7 +640,7 @@ export function createSongEditor(opts = {}) {
             let hold = null;
             let targetLane = lane;     // where the body is being dragged to
             const laneAt = (clientY) => {
-                for (const l of Array.from(grid.querySelectorAll('.song-lane'))) {
+                for (const l of Array.from(grid.querySelectorAll('.section-lane'))) {
                     const r = l.getBoundingClientRect();
                     if (clientY >= r.top && clientY < r.bottom) return l;
                 }
@@ -720,9 +729,9 @@ export function createSongEditor(opts = {}) {
     }
 
     /**
-     * Park the playhead at a song column. Both modes have one — pattern
-     * mode loops a window of the song — except a pattern placed nowhere,
-     * which reports no song column and so hides it.
+     * Park the playhead at a section column. Both modes have one — pattern
+     * mode loops a window of the project — except a pattern placed nowhere,
+     * which reports no project column and so hides it.
      */
     function movePlayhead(col) {
         if (!playheadEl) return;
@@ -747,20 +756,20 @@ export function createSongEditor(opts = {}) {
         const running = pos.playing || pos.recording || !!pos.waiting;
         playBtn.disabled = running;
         stopBtn.disabled = !running;
-        playBtn.classList.toggle('active', !!pos.playing && pos.mode === 'song');
+        playBtn.classList.toggle('active', !!pos.playing && pos.mode === 'section');
         playBtn.classList.toggle('waiting', !!pos.waiting);
-        playBtn.title = pos.waiting ? playBtn.dataset.waitTitle : 'Play the song from the start of its loop';
+        playBtn.title = pos.waiting ? playBtn.dataset.waitTitle : 'Play the section from the start of its loop';
     }
 
     function openClip(clipId) {
-        const song = session.get();
+        const project = session.get();
         const clip = sec().clips.find(c => c.id === clipId);
         if (!clip) return;
         selectedClipId = clipId;
         selectedPatternId = clip.patternId;
-        // Park the song position on this clip so it, and not another
+        // Park the project position on this clip so it, and not another
         // placement of the same pattern, is what the roll's Play loops.
-        if (transport && transport.setSongPosition) transport.setSongPosition(clip.startCol);
+        if (transport && transport.setSectionPosition) transport.setSectionPosition(clip.startCol);
         if (opts.onOpenPattern) opts.onOpenPattern(clipId, clip.trackId, clip.patternId);
         render();
     }
@@ -778,11 +787,11 @@ export function createSongEditor(opts = {}) {
     document.addEventListener('keydown', onKey);
 
     function render() {
-        const song = session.get();
-        if (!song) return;
-        renderToolbar(song);
-        renderPalette(song);
-        renderGrid(song);
+        const project = session.get();
+        if (!project) return;
+        renderToolbar(project);
+        renderPalette(project);
+        renderGrid(project);
     }
 
     unsubscribe = session.subscribe((ev) => {
@@ -792,7 +801,7 @@ export function createSongEditor(opts = {}) {
     });
     if (transport) {
         unsubscribeTransport = transport.subscribe((pos) => {
-            movePlayhead(pos.songCol != null ? pos.songCol : pos.col);
+            movePlayhead(pos.sectionCol != null ? pos.sectionCol : pos.col);
             syncTransportButtons(pos);
         });
     }

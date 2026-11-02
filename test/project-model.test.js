@@ -211,7 +211,7 @@ describe('tracks', () => {
 });
 
 describe('mute and solo — one strip, one pair of flags', () => {
-    // The pre-Project model carried mute/solo twice: on the song's track
+    // The pre-Project model carried mute/solo twice: on the section's track
     // (gating whether notes were *scheduled*) and on the voice bank entry
     // (gating the channel's *volume*). Neither showed the other and they
     // could disagree. There is one of each here, and one function deciding.

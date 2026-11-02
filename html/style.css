@@ -2080,7 +2080,7 @@ h1 {
 /* A step record is armed, not running: lit, but no pulse. */
 .pianoroll-record.step { animation: none; }
 /* Armed for an external MIDI clock: Play is taken, nothing runs yet. */
-.pianoroll-play.waiting, .song-play.waiting {
+.pianoroll-play.waiting, .section-play.waiting {
     opacity: 1;
     border-color: #e9a045;
     color: #e9a045;
@@ -3172,13 +3172,13 @@ footer {
 .midi-field { margin: 0.75rem 0; }
 
 /* Input and Output, each gathering everything that travels that way. */
-.midi-section {
+.midi-group {
     margin-top: 1.25rem;
     padding-top: 0.25rem;
     border-top: 1px solid #2a2a3e;
 }
 
-.midi-section-title {
+.midi-group-title {
     margin: 0.5rem 0 0;
     font-size: 0.78rem;
     font-weight: 600;
@@ -4353,9 +4353,9 @@ footer {
 
 /* ===== Song editor (Song tab) ===== */
 
-.dock-panel-song.active { display: flex; flex-direction: column; min-height: 0; }
+.dock-panel-section.active { display: flex; flex-direction: column; min-height: 0; }
 
-.song-editor {
+.section-editor {
     display: flex;
     flex-direction: column;
     min-height: 0;
@@ -4371,7 +4371,7 @@ footer {
     color: #ccc;
 }
 
-.song-toolbar {
+.section-toolbar {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
@@ -4379,9 +4379,9 @@ footer {
     padding: 0.2rem 0.3rem;
 }
 
-.song-toolbar select,
-.song-toolbar input[type="text"],
-.song-toolbar input[type="number"] {
+.section-toolbar select,
+.section-toolbar input[type="text"],
+.section-toolbar input[type="number"] {
     background: #0f0f23;
     color: #ddd;
     border: 1px solid #333;
@@ -4389,12 +4389,12 @@ footer {
     padding: 0.15rem 0.3rem;
     font-size: 0.75rem;
 }
-.song-name { width: 11rem; }
-.song-bpm { width: 4rem; }
-.song-loop-start, .song-loop-end { width: 3.2rem; }
-.song-field { display: inline-flex; align-items: center; gap: 0.25rem; color: #999; }
+.section-name { width: 11rem; }
+.section-bpm { width: 4rem; }
+.section-loop-start, .section-loop-end { width: 3.2rem; }
+.section-field { display: inline-flex; align-items: center; gap: 0.25rem; color: #999; }
 
-.song-btn {
+.section-btn {
     background: #16213e;
     color: #ccc;
     border: 1px solid #333;
@@ -4404,12 +4404,12 @@ footer {
     cursor: pointer;
     transition: background 0.15s;
 }
-.song-btn:hover { background: #1a2744; color: #fff; }
-.song-btn.active { background: #e94560; color: #fff; border-color: #e94560; }
-.song-delete, .song-track-remove, .song-pattern-del { color: #999; }
-.song-delete:hover, .song-track-remove:hover, .song-pattern-del:hover { color: #ff6b81; }
+.section-btn:hover { background: #1a2744; color: #fff; }
+.section-btn.active { background: #e94560; color: #fff; border-color: #e94560; }
+.section-delete, .section-track-remove, .section-pattern-del { color: #999; }
+.section-delete:hover, .section-track-remove:hover, .section-pattern-del:hover { color: #ff6b81; }
 
-.song-body {
+.section-body {
     display: flex;
     min-height: 0;
     min-width: 0;
@@ -4418,7 +4418,7 @@ footer {
 }
 
 /* Palette */
-.song-palette {
+.section-palette {
     flex: 0 0 11rem;
     display: flex;
     flex-direction: column;
@@ -4427,7 +4427,7 @@ footer {
     border-radius: 4px;
     background: #12122a;
 }
-.song-palette-head {
+.section-palette-head {
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -4438,8 +4438,8 @@ footer {
     letter-spacing: 0.04em;
     font-size: 0.65rem;
 }
-.song-pattern-list { overflow-y: auto; min-height: 0; }
-.song-pattern-item {
+.section-pattern-list { overflow-y: auto; min-height: 0; }
+.section-pattern-item {
     display: flex;
     align-items: center;
     gap: 0.3rem;
@@ -4447,9 +4447,9 @@ footer {
     cursor: pointer;
     border-left: 3px solid transparent;
 }
-.song-pattern-item:hover { background: #1a1a33; }
-.song-pattern-item.selected { background: #1f1f3f; box-shadow: inset 0 0 0 1px #e94560; }  /* the left border is the pattern's colour now */
-.song-pattern-swatch {
+.section-pattern-item:hover { background: #1a1a33; }
+.section-pattern-item.selected { background: #1f1f3f; box-shadow: inset 0 0 0 1px #e94560; }  /* the left border is the pattern's colour now */
+.section-pattern-swatch {
     flex: 0 0 auto;
     width: 1.1rem;
     height: 1.1rem;
@@ -4459,20 +4459,20 @@ footer {
     background: none;
     cursor: pointer;
 }
-.song-pattern-swatch::-webkit-color-swatch-wrapper { padding: 0; }
-.song-pattern-swatch::-webkit-color-swatch { border: none; border-radius: 2px; }
-.song-pattern-swatch::-moz-color-swatch { border: none; border-radius: 2px; }
-.song-pattern-name { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.song-pattern-name[contenteditable="true"] { outline: 1px solid #e94560; background: #0f0f23; }
+.section-pattern-swatch::-webkit-color-swatch-wrapper { padding: 0; }
+.section-pattern-swatch::-webkit-color-swatch { border: none; border-radius: 2px; }
+.section-pattern-swatch::-moz-color-swatch { border: none; border-radius: 2px; }
+.section-pattern-name { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.section-pattern-name[contenteditable="true"] { outline: 1px solid #e94560; background: #0f0f23; }
 /* nowrap: "16 bars" is squeezed by the (flexible) name beside it and would
    otherwise break after the number, doubling the height of every palette row. */
-.song-pattern-len { color: #777; font-size: 0.65rem; white-space: nowrap; }
-.song-pattern-item .song-btn { padding: 0 0.3rem; opacity: 0.6; }
-.song-pattern-item:hover .song-btn { opacity: 1; }
+.section-pattern-len { color: #777; font-size: 0.65rem; white-space: nowrap; }
+.section-pattern-item .section-btn { padding: 0 0.3rem; opacity: 0.6; }
+.section-pattern-item:hover .section-btn { opacity: 1; }
 
 /* Grid */
-.song-grid {
-    --song-head-w: 15rem;  /* the sticky head column; the playhead is offset by it */
+.section-grid {
+    --section-head-w: 15rem;  /* the sticky head column; the playhead is offset by it */
     flex: 1 1 auto;
     min-width: 0;
     min-height: 0;
@@ -4482,10 +4482,10 @@ footer {
     background: #0f0f23;
     position: relative;
 }
-.song-ruler, .song-track { display: flex; align-items: stretch; }
-.song-ruler { position: sticky; top: 0; z-index: 2; background: #12122a; border-bottom: 1px solid #2a2a3e; }
-.song-track-head {
-    flex: 0 0 var(--song-head-w);
+.section-ruler, .section-track { display: flex; align-items: stretch; }
+.section-ruler { position: sticky; top: 0; z-index: 2; background: #12122a; border-bottom: 1px solid #2a2a3e; }
+.section-track-head {
+    flex: 0 0 var(--section-head-w);
     position: sticky;
     left: 0;
     z-index: 1;
@@ -4498,8 +4498,8 @@ footer {
     border-left: 3px solid transparent;
     border-bottom: 1px solid #1f1f33;
 }
-.song-ruler-head { color: #777; font-size: 0.65rem; text-transform: uppercase; }
-.song-track-slot {
+.section-ruler-head { color: #777; font-size: 0.65rem; text-transform: uppercase; }
+.section-track-slot {
     flex: 1 1 auto;
     min-width: 0;
     background: #0f0f23;
@@ -4509,25 +4509,25 @@ footer {
     font-size: 0.7rem;
     padding: 0.1rem 0.2rem;
 }
-.song-track-head .song-btn { padding: 0.05rem 0.35rem; }
+.section-track-head .section-btn { padding: 0.05rem 0.35rem; }
 
-.song-ruler-lane, .song-lane {
+.section-ruler-lane, .section-lane {
     position: relative;
     flex: 0 0 auto;
     height: 1.9rem;
     /* Two grids: bar lines, and fainter snap lines under them. At Bar snap
        the periods are equal and the snap layer hides beneath the bar one. */
     background-image:
-        repeating-linear-gradient(to right, #191930 0, #191930 1px, transparent 1px, transparent var(--song-snap-w, 48px)),
-        repeating-linear-gradient(to right, #1f1f33 0, #1f1f33 1px, transparent 1px, transparent var(--song-measure-w, 48px));
+        repeating-linear-gradient(to right, #191930 0, #191930 1px, transparent 1px, transparent var(--section-snap-w, 48px)),
+        repeating-linear-gradient(to right, #1f1f33 0, #1f1f33 1px, transparent 1px, transparent var(--section-measure-w, 48px));
 }
-.song-ruler-lane { height: 1.2rem; }
-.song-snap, .song-zoom { min-width: 3.5rem; }
-.song-ruler-tick { position: absolute; top: 0; padding-left: 3px; color: #777; font-size: 0.6rem; line-height: 1.2rem; }
-.song-loop-band { position: absolute; bottom: 0; height: 3px; background: #e94560; opacity: 0.8; }
-.song-lane { border-bottom: 1px solid rgba(255,255,255,0.08); cursor: copy; }
+.section-ruler-lane { height: 1.2rem; }
+.section-snap, .section-zoom { min-width: 3.5rem; }
+.section-ruler-tick { position: absolute; top: 0; padding-left: 3px; color: #777; font-size: 0.6rem; line-height: 1.2rem; }
+.section-loop-band { position: absolute; bottom: 0; height: 3px; background: #e94560; opacity: 0.8; }
+.section-lane { border-bottom: 1px solid rgba(255,255,255,0.08); cursor: copy; }
 
-.song-clip {
+.section-clip {
     position: absolute;
     top: 3px;
     bottom: 3px;
@@ -4541,14 +4541,14 @@ footer {
     box-shadow: inset 0 0 0 1px rgba(255,255,255,0.25);
     user-select: none;
 }
-.song-clip:active { cursor: grabbing; }
-.song-clip.selected { opacity: 1; box-shadow: 0 0 0 2px #fff, inset 0 0 0 1px rgba(0,0,0,0.3); z-index: 1; }
-.song-clip-label { padding: 0 0.3rem; font-size: 0.65rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 1px rgba(0,0,0,0.6); }
-.song-clip-handle { position: absolute; right: 0; top: 0; bottom: 0; width: 8px; cursor: ew-resize; background: rgba(255,255,255,0.35); }
+.section-clip:active { cursor: grabbing; }
+.section-clip.selected { opacity: 1; box-shadow: 0 0 0 2px #fff, inset 0 0 0 1px rgba(0,0,0,0.3); z-index: 1; }
+.section-clip-label { padding: 0 0.3rem; font-size: 0.65rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 1px rgba(0,0,0,0.6); }
+.section-clip-handle { position: absolute; right: 0; top: 0; bottom: 0; width: 8px; cursor: ew-resize; background: rgba(255,255,255,0.35); }
 
-.song-playhead {
+.section-playhead {
     position: absolute;
-    margin-left: var(--song-head-w);
+    margin-left: var(--section-head-w);
     top: 0;
     bottom: 0;
     width: 2px;
@@ -4557,15 +4557,15 @@ footer {
     z-index: 3;
 }
 
-.song-add-track-row, .song-clip-actions { display: flex; gap: 0.4rem; padding: 0.3rem; position: sticky; left: 0; }
-.song-empty { padding: 0.5rem; color: #777; font-style: italic; }
-.song-status { min-height: 1em; padding: 0 0.4rem; color: #e9a045; font-size: 0.7rem; }
+.section-add-track-row, .section-clip-actions { display: flex; gap: 0.4rem; padding: 0.3rem; position: sticky; left: 0; }
+.section-empty { padding: 0.5rem; color: #777; font-style: italic; }
+.section-status { min-height: 1em; padding: 0 0.4rem; color: #e9a045; font-size: 0.7rem; }
 
 @media (max-width: 600px) {
     /* Six tabs: icons only, labels in the title attribute. */
     .dock-tab span:last-child { display: none; }
     .dock-tab { padding: 0.25rem 0.6rem; font-size: 0.9rem; }
-    .song-body { flex-direction: column; }
-    .song-palette { flex: 0 0 auto; max-height: 30%; }
-    .song-track-head { flex-basis: 9rem; }
+    .section-body { flex-direction: column; }
+    .section-palette { flex: 0 0 auto; max-height: 30%; }
+    .section-track-head { flex-basis: 9rem; }
 }
