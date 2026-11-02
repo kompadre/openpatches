@@ -15,7 +15,8 @@ import * as midiManager from './synth/midi-manager.js';
 import { openMidiSettings, sendBankToDevice } from './components/midi-panel.js';
 import { openProjectsDialog } from './components/project-menu.js';
 import { makeInitVoice, buildBulkDump, VOICE_COUNT } from './components/syx-builder.js';
-import { downloadBytes, safeFilename } from './components/download.js';
+import { downloadBytes, downloadJson, safeFilename } from './components/download.js';
+import { exportProject, parseProjectFile, ImportError, FILE_EXTENSION } from './components/project-io.js';
 import { createProjectStore, takeLostSaveMarker } from './components/project-store.js';
 import { profileStore } from './components/profile-store.js';
 import { createProjectSession } from './components/project-session.js';
@@ -531,6 +532,12 @@ fileInput.addEventListener('change', async () => {
     const file = fileInput.files[0];
     if (!file) return;
 
+    if (file.name.toLowerCase().endsWith('.' + FILE_EXTENSION)) {
+        fileInput.value = '';
+        await importProjectFile(file);
+        return;
+    }
+
     if (file.name.toLowerCase().endsWith('.syx')) {
         appendLog(`Routing .syx file: ${file.name} (${file.size} bytes)`);
         handleSyxUpload(file);
@@ -1010,6 +1017,53 @@ document.getElementById('menu-projects').addEventListener('click', () => {
     openProjectsDialog({ session: projectSession, appendLog, onChange: afterProjectChange });
 });
 document.getElementById('menu-rename-project').addEventListener('click', renameCurrentProject);
+
+// --- Export / import a project ---
+//
+// One JSON file, built and parsed in the page. See project-io.js for what
+// travels and what deliberately does not.
+
+document.getElementById('menu-export-project').addEventListener('click', async () => {
+    const project = projectSession.get();
+    if (!project) return;
+    // Flush first so the file and the stored body agree — exporting a
+    // project whose last edits are still pending would be a quiet way to
+    // hand someone a stale copy of their own work.
+    await projectSession.flush();
+    try {
+        const doc = exportProject(project);
+        const name = safeFilename(project.name, { fallback: 'project', strip: FILE_EXTENSION });
+        if (!downloadJson(`${name}.${FILE_EXTENSION}`, doc)) {
+            appendLog('This browser cannot download files');
+            return;
+        }
+        appendLog(`Exported project ${project.name}`);
+    } catch (e) {
+        appendLog('Export failed: ' + e.message);
+    }
+});
+
+document.getElementById('menu-import-project').addEventListener('click', () => {
+    fileInput.accept = '.' + FILE_EXTENSION;
+    fileInput.click();
+});
+
+async function importProjectFile(file) {
+    let body;
+    try {
+        body = parseProjectFile(await file.text());
+    } catch (e) {
+        // ImportError messages are written for the user; anything else is
+        // a surprise and says so.
+        showError(e instanceof ImportError ? e.message : 'Could not read that project: ' + e.message);
+        return;
+    }
+    // Always a new project: a fresh id and a free name, so importing the
+    // same file twice gives two and the one on disk is never overwritten.
+    const project = projectSession.createFrom(body, 'import');
+    afterProjectChange();
+    appendLog(`Imported project ${project.name}`);
+}
 document.getElementById('menu-status').addEventListener('click', renameCurrentProject);
 
 document.getElementById('menu-import-wav').addEventListener('click', () => {

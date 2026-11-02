@@ -135,6 +135,90 @@ test.describe('project management lives in the File menu', () => {
     });
 });
 
+test.describe('export and import', () => {
+    const openFileMenu = (page) => page.locator('.menu-item[data-menu="file"] .menu-label').click();
+
+    /** Export the open project and read the file back as JSON. */
+    async function exportAndRead(page) {
+        const pending = page.waitForEvent('download');
+        await openFileMenu(page);
+        await page.locator('#menu-export-project').click();
+        const file = await pending;
+        const stream = await file.createReadStream();
+        const chunks = [];
+        for await (const c of stream) chunks.push(c);
+        return { file, doc: JSON.parse(Buffer.concat(chunks).toString('utf8')) };
+    }
+
+    test('a project exports to one JSON file, with no server', async ({ page }) => {
+        const apiCalls = [];
+        page.on('request', (r) => { if (r.url().includes('/api/')) apiCalls.push(r.url()); });
+
+        await openApp(page);
+        await page.evaluate(() => {
+            window.__opProject.rename('Nocturne', 'e2e');
+            window.__opProject.update((project, section) => {
+                project.bpm = 96;
+                section.bpm = 72;
+                section.name = 'Chorus';
+            }, 'e2e');
+        });
+
+        const { file, doc } = await exportAndRead(page);
+        expect(file.suggestedFilename()).toBe('Nocturne.opproj');
+        expect(doc.kind).toBe('openpatches.project');
+        expect(doc.project.name).toBe('Nocturne');
+        expect(doc.project.bpm).toBe(96);
+        expect(doc.project.sections[0]).toMatchObject({ name: 'Chorus', bpm: 72 });
+        expect(apiCalls, 'the export must not need a backend').toEqual([]);
+    });
+
+    test('importing the file back gives a second, independent project', async ({ page }) => {
+        await openApp(page);
+        await page.evaluate(() => {
+            window.__opProject.rename('Nocturne', 'e2e');
+            window.__opProject.update((p) => { p.bpm = 96; }, 'e2e');
+        });
+        const { doc } = await exportAndRead(page);
+
+        // Feed the file back through the same input the menu item opens.
+        await page.setInputFiles('#wav-input', {
+            name: 'Nocturne.opproj',
+            mimeType: 'application/json',
+            buffer: Buffer.from(JSON.stringify(doc)),
+        });
+
+        await expect.poll(() => bodyIds(page)).toHaveLength(2);
+        // The incoming one is renamed; the one on disk is untouched.
+        await expect(page.locator('#menu-status')).toHaveText('Nocturne 2');
+        expect(await page.evaluate(() => window.__opProject.get().bpm)).toBe(96);
+
+        const names = (await profile(page)).projects.map((p) => p.name).sort();
+        expect(names).toEqual(['Nocturne', 'Nocturne 2']);
+    });
+
+    test('a file from a newer format is refused, not half-read', async ({ page }) => {
+        await openApp(page);
+        const before = await bodyIds(page);
+
+        await page.setInputFiles('#wav-input', {
+            name: 'future.opproj',
+            mimeType: 'application/json',
+            buffer: Buffer.from(JSON.stringify({
+                kind: 'openpatches.project',
+                schemaVersion: 999,
+                project: { name: 'From the future' },
+            })),
+        });
+
+        // Refused with a message the user can act on, rather than a
+        // quietly lesser copy of their work.
+        await expect(page.locator('#error-modal')).toBeVisible();
+        await expect(page.locator('#error-message')).toContainText(/newer version/);
+        expect(await bodyIds(page)).toEqual(before, 'nothing was imported');
+    });
+});
+
 test.describe('Delete All Data', () => {
     // The old "Clear History" removed five of twenty-odd localStorage keys
     // — patterns, songs, patch renames and the tag vocabulary all survived

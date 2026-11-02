@@ -40,11 +40,22 @@ tests silently pass against the wrong files. Both have happened.
 - **Never kill a process you did not start.** A server on someone else's
   port is theirs. If your port is busy, that is your own orphan: find it
   with `pgrep -af "server.py $(npm run -s e2e:port)"` and kill only that.
+- **Check `pwd` and re-derive the port before every use of the e2e or
+  scratch server — even when the conversation plainly records which
+  server you started and on which port.** The worktree can be *swapped
+  underneath you between tool calls*: this session began in
+  `…/-home-alex-Projects-openpatches/**oak**` (branch `…/oak`) and
+  continued in `…/**elm**` (branch `…/elm`). A server you started earlier
+  is then still serving the **other** worktree's files, on a port your
+  current worktree no longer derives — and the symptom is maddening: an
+  edit that is unquestionably on disk appears not to exist in the
+  browser. It cost real time on 2026-11-02 before the user spotted it.
+  So: never reuse a port you remember. Run `pwd`, run
+  `npm run -s e2e:port`, and trust those over the chat log.
 - **Restart your scratch server after editing `index.html`** (or anything
-  else served statically), and kill it when you are done. A stale server
-  serving an old snapshot of the page cost real time on 2026-11-02: a
-  change that was definitely on disk appeared not to exist in the browser.
-  Orphans accumulate fast when each check starts its own server.
+  else served statically), and kill it the moment the check is done.
+  Orphans accumulate fast when every check starts its own server, and
+  each one is a future stale-content trap.
 - **Same rule for anything you create outside the project working
   directory** — a file, a directory, a socket, a lock. Put the pane number
   in the name (`/tmp/op-smoke-%2.mjs`), so two panes cannot collide or
@@ -504,18 +515,42 @@ CHANGELOG.md and the TODO.md reconciliation.
     opposite: zero `/api/` requests, and the bytes are a real 4104-byte
     bulk dump (`F0 43` … `F7`).
 
-  **Still on the server, for a later decision:** `/api/play` (app.js:342
-  and :399) renders a patch to WAV server-side, even though
-  `renderOffline()` in audio-manager does it in WASM. Worth folding in
-  under the same rule, but it is a separate change from Project.
+  **`/api/play` stays**, and the user explained why: it is the fallback
+  that gives minimal functionality to a client **without WASM**, where
+  `renderOffline()` cannot run. Not a leftover — leave it alone.
 
-- [ ] **5. Export / Import.** Single JSON file with `schemaVersion`
-  (extension TBD — `.opproj`?). Export inlines patches, carries only
-  tags **used in the project**, and writes jobs with their `fileName` plus
-  a `sourceMissing` marker and **no WAV bytes** (the containers of patches
-  they produced survive intact). Import always mints fresh ids so the same
-  file twice gives two projects, suffixes the **incoming** name on
-  collision, and unions tags into the profile vocabulary.
+- [x] **5. Export / Import — done 2026-11-02, 845 unit / 69 e2e passing.**
+  One JSON file (`.opproj`), built and parsed in the page, saved through
+  `download.js`. No server, per the user's standing rule.
+  - `project-io.js`: `exportProject` / `importProject` / `parseProjectFile`
+    / `usedTags`, plus an `ImportError` whose messages are written to be
+    *shown* rather than logged.
+  - **What travels**: sections and clips, patterns, tracks with the patch
+    bytes inlined (so an import sounds even where the patches were never
+    in this workspace), patches, renames, canvas, and only the tags the
+    project actually uses.
+  - **What does not**: the WAVs (decided with the user — source material,
+    and the bulk of the workspace) and the profile (ports and the 317 ms
+    latency are facts about a machine). Jobs still travel, carrying
+    `fileName` and `sourceMissing`; an in-flight one is imported as
+    `missing-source` with its `statusUrl` cleared, so it cannot poll a
+    status URL on someone else's machine. The patches a job produced are
+    ordinary patches and travel normally.
+  - **Import is always a new project**: no id in the file, so the session
+    mints one, and `uniqueName()` renames the *incoming* project. The same
+    file twice gives two.
+  - **A newer `schemaVersion` is refused loudly.** That is the one case
+    worth refusing: this reader would drop what it does not understand and
+    hand back a quietly lesser copy of the user's work. An older one is
+    read — the factories are total and fill the gaps.
+  - File menu: Export Project… / Import Project…. Import reuses the
+    existing hidden file input, routed by extension. Export flushes first,
+    so the file and the stored body agree.
+  - `test/project-io.test.js` (22) and three e2e: a real download with no
+    `/api/` traffic, the file fed back producing an independent
+    "Nocturne 2", and a future-format file refused with the message shown
+    and nothing imported.
+
 - [ ] **6. Rename pass + close-out.** Song→Project/Section across file
   names (`song-model.js`, `song-editor.js`, `song-session.js`), exports
   (`createSongSequence`, `songCol`, `songPos`), ~40 `.song-*` CSS classes,
