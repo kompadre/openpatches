@@ -241,14 +241,48 @@ CHANGELOG.md and the TODO.md reconciliation.
   the user's call; the store already emits what either needs.** Built in
   phase 3, where it can be rendered and e2e-tested — nothing is wired into
   app.js yet, so a modal built now would have nothing to show.
-- [ ] **2. Session + clock.** `project-session.js` replaces
-  `song-session.js`; transport and sequencer read tracks from the project
-  and the timeline from the active section; **one** mute/solo path.
-  `song.voiceBank` and `openpatches_voicebank` removed.
-- [ ] **3. Editors rewired.** The song editor becomes the **Section**
-  editor (edits the one active section); VoiceBank/Mixer binds to project
-  tracks; pianoroll takes patterns from the project; canvas and patches
-  scoped to the project.
+- [x] **2. Session + sequencer — done 2026-11-02, 885 unit passing (+53).**
+  Both new files, both pure/testable; the old `song-session.js` and
+  `sequencer.js` still run the UI untouched until phase 3 flips over.
+  - `html/synth/section-sequencer.js` — supersedes `sequencer.js`.
+    `createSectionSequence(project, section, opts)`: the **project** owns
+    the tracks and the pattern library, the **section** owns the clips and
+    the loop, so a clip needs both in hand to resolve. Keeps the two
+    properties a tick depends on — patterns **snapshotted** (a tick never
+    reads a store), mute/solo read **live** (toggling lands next column,
+    no rebuild) — and `audibleTrackIds()` now just wraps project-model's
+    `audibleTracks()`, so the scheduler's view and the mixer's view are
+    the same function.
+  - `html/components/project-session.js` — one owner of the open project
+    *and* of which section is edited. Never leaves a state the UI cannot
+    render: `init()` falls through remembered → most recent → new, a stale
+    `sectionId` falls back to the first, and removing the last project
+    mints a fresh one. `update(mutator)` hands the mutator both the body
+    and the edited section. Every change upserts the profile index, so
+    names and timestamps cannot drift from the bodies. `createFrom()` is
+    the import path: always a fresh id and a `uniqueName()`, so the same
+    file twice gives two projects and the **incoming** one is renamed.
+    Re-emits the store's `save-start`/`save-end` as `kind:'saving'`, so an
+    indicator can subscribe to the session alone.
+
+  **Phase boundary moved, deliberately.** The plan had the transport in
+  phase 2. It cannot go there: `transport.js` is constructed by
+  `pianoroll.js` and reads `session.get()` as a *song*, so changing what
+  it consumes breaks the editors in the same commit — the switch is
+  atomic whether we like it or not. Transport therefore moves to phase 3,
+  which keeps every commit green. Phase 2 is the pure core that phase 3
+  plugs in.
+
+- [ ] **3. Transport + editors rewired.** `transport.js` onto
+  `project-session` + `section-sequencer` (one atomic switch with the
+  editors, see above); the song editor becomes the **Section** editor;
+  VoiceBank/Mixer binds to project tracks; pianoroll takes patterns from
+  the project; canvas and patches scoped to the project. Also here: the
+  **Play deferral** (`session.whenIdle()`), `canSave: () => !transport
+  .isRunning()`, a forced flush when a take ends, and the **"Now saving"
+  indicator** — the first point at which any of it can actually be seen or
+  e2e-tested. `song.voiceBank`, `openpatches_voicebank`, `song-model.js`,
+  `song-session.js` and `sequencer.js` all retire here.
 - [ ] **4. Project management + the wipe fix.** Project list/switcher,
   new/rename/delete/duplicate, and the Clear History rewrite above.
 - [ ] **5. Export / Import.** Single JSON file with `schemaVersion`
