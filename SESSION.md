@@ -273,7 +273,46 @@ CHANGELOG.md and the TODO.md reconciliation.
   which keeps every commit green. Phase 2 is the pure core that phase 3
   plugs in.
 
-- [ ] **3. Transport + editors rewired.** `transport.js` onto
+- [x] **3a. The store goes live + the save indicator — done 2026-11-02,
+  901 unit / 60 e2e passing.** The first slice of phase 3: `app.js` now
+  creates the project store and session at boot, so the autosave loop and
+  the footer light are running from the first paint. Nothing consumes the
+  *project* yet — the editors are still on the song session until 3b.
+  - `html/components/save-indicator.js` — **a square**, after the circle
+    (audio) and the rhombus (MIDI): the floppy, and with it a drive light
+    that **blinks green while writing** and sits dark otherwise. Beside it
+    the thing a light cannot say: "Saving…" / "Saved 2 minutes ago",
+    counting up on its own `REFRESH_MS` timer because nothing else ticks
+    while the user reads.
+  - `describeSave()` is pure and separately tested — the wording is the
+    part with rules in it (the 45 s "just now" window, singular/plural,
+    what to say before the first write). **Dirty-after-saving is said in
+    the `title`, never the text**: the text must not claim a save that did
+    not happen.
+  - The DOM half watches the **edge** where a write finishes. The store
+    reports *that* it is saving, never when it last did, so true→false is
+    the only place "last saved" can be learned; treating every event as an
+    end would reset the clock mid-write.
+  - `canSave: () => !transportIsBusy()` is wired (through the dock,
+    lazily — the dock is built after the store), and `onPlaybackStop`
+    forces a flush, so a finished take is written at once rather than
+    waiting out the next 30 s tick.
+  - `window.__opProject` is the e2e seam, as `window.__opDock` is for the
+    dock. New `e2e/project.spec.js` (6): a body really lands in IndexedDB,
+    an edit (including a section bpm override) survives a reload, a second
+    project is a separate body, and the light agrees with all of it.
+
+  **Found while wiring:** the footer is `display:flex; justify-content:
+  space-between`, so the `float: right` on `.audio-status` has been inert
+  since the footer became flex. Left alone rather than given a fourth
+  caller; the new light and its text are wrapped in one `.save-indicator`
+  flex item, because as two items space-between pushed them to opposite
+  ends of the bar. An e2e case pins that they stay adjacent.
+
+  *Reduced-motion honoured: the blink is dropped, the colour still carries
+  the state.*
+
+- [ ] **3b. Transport + editors rewired.** `transport.js` onto
   `project-session` + `section-sequencer` (one atomic switch with the
   editors, see above); the song editor becomes the **Section** editor;
   VoiceBank/Mixer binds to project tracks; pianoroll takes patterns from

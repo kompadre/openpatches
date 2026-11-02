@@ -14,6 +14,9 @@ import { initTutorial, startTutorial, restartTutorial, isTutorialActive } from '
 import * as midiManager from './synth/midi-manager.js';
 import { openMidiSettings, sendBankToDevice } from './components/midi-panel.js';
 import { makeInitVoice } from './components/syx-builder.js';
+import { createProjectStore } from './components/project-store.js';
+import { createProjectSession } from './components/project-session.js';
+import { attachSaveIndicator } from './components/save-indicator.js';
 
 const fileInput = document.getElementById('wav-input');
 
@@ -179,6 +182,38 @@ function initMidiUi() {
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'hidden') midiManager.panic();
     });
+}
+
+// --- The project store ---
+//
+// Stood up here, at the top, because it owns the autosave timer and the
+// save indicator: both have to be live from the first paint, not from
+// whenever an editor happens to be built.
+//
+// `canSave` is the "not while the transport is busy" rule. The cost being
+// dodged is the synchronous clone of the project body — measured at
+// 1.6 ms small, 4.3 ms for a large one — which would not drop audio (that
+// has its own thread) but would delay the main thread's handling of a tick
+// message, i.e. jitter the note scheduling. The transport is reached
+// lazily through the dock, because the dock is built after this.
+const projectStore = createProjectStore({
+    canSave: () => !transportIsBusy(),
+});
+const projectSession = createProjectSession(projectStore);
+
+function transportIsBusy() {
+    const roll = pianoDockWrapper && pianoDockWrapper._pianoroll;
+    const transport = roll && roll.getTransport && roll.getTransport();
+    return !!(transport && transport.isRunning && transport.isRunning());
+}
+
+/**
+ * A finished take is exactly when the user expects their work written, and
+ * it is also the moment `canSave` stops refusing — so rather than wait up
+ * to another thirty seconds for the next tick, force it.
+ */
+function flushProjectAfterTake() {
+    return projectStore.flush({ force: true });
 }
 
 // --- Emergency stop ---
@@ -729,6 +764,10 @@ function initToolbar() {
     const onPlaybackStop = () => {
         releaseAllNotes();
         midiManager.releaseAllOut();
+        // The transport has just gone idle, which is both when the user
+        // expects a finished take written and the moment `canSave` stops
+        // refusing. Forcing it here beats waiting out the next tick.
+        flushProjectAfterTake();
     };
 
     const dock = createToolbar({
@@ -1062,3 +1101,13 @@ document.getElementById('menu-restart-tutorial').addEventListener('click', () =>
 initToolbar();
 initMidiUi();
 restore();
+
+// The project the editors will be moved onto in the rest of phase 3. It is
+// opened now so the autosave loop and the footer's save light are running
+// from the first paint; nothing consumes the project itself yet.
+attachSaveIndicator({ session: projectSession });
+// The e2e seam, as window.__opDock is for the dock.
+window.__opProject = projectSession;
+projectSession.init().catch((e) => {
+    appendLog('Could not open the project store: ' + e.message);
+});

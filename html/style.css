@@ -3050,6 +3050,48 @@ footer {
 .audio-loading { color: #ff9800; }
 .audio-closed { color: #555; }
 
+/* --- Save (the floppy light) --- */
+/* Dark when there is nothing to do, green and blinking while it writes —
+   a drive light. The text beside it says the part a light cannot: when. */
+
+.save-idle { color: #555; }
+.save-unsaved { color: #ff9800; }
+.save-saved { color: #4caf50; }
+
+.save-saving {
+    color: #4caf50;
+    animation: save-blink 0.6s steps(1, end) infinite;
+}
+
+@keyframes save-blink {
+    50% { opacity: 0.15; }
+}
+
+/* The light and its text, as one footer item. (Note the footer is flex
+   with space-between — the `float: right` on .audio-status is inert and
+   predates that; left alone rather than widened to a fourth caller.) */
+.save-indicator {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.8rem;
+    cursor: default;
+    /* Reserve the widest wording, so the indicators beside it do not
+       shuffle sideways every time the text changes under space-between. */
+    min-width: 9rem;
+}
+
+.save-status-text {
+    font-size: 0.72rem;
+    color: #777;
+}
+
+/* A blink every six-tenths of a second is noise to anyone who has asked
+   not to be moved at. The colour still carries the state. */
+@media (prefers-reduced-motion: reduce) {
+    .save-saving { animation: none; }
+}
+
 /* --- MIDI --- */
 
 .midi-ready { color: #4caf50; }

@@ -247,6 +247,14 @@
         <span id="audio-status" class="audio-status audio-closed" title="Audio: inactive">●</span>
         <span id="midi-status" class="audio-status midi-status midi-closed" title="MIDI: not enabled"
             style="display:none;">◆</span>
+        <!-- A square, after the circle and the rhombus: the floppy, and a
+             drive light that blinks while it writes. The light and its text
+             are one flex item so they stay together — the footer is
+             space-between, and apart they drift to opposite ends. -->
+        <span class="save-indicator">
+            <span id="save-status" class="save-status save-idle" title="No changes to save">■</span>
+            <span id="save-status-text" class="save-status-text"></span>
+        </span>
     </footer>
 
     <script type="module" src="html/app.js"></script>
