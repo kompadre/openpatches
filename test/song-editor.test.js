@@ -1,5 +1,5 @@
 // The song editor: tracks × measures, clips placed from a pattern palette,
-// everything autosaved through the session. The model (song-model.js)
+// everything autosaved through the session. The model (project-model.js)
 // decides what is legal; this is about the UI reaching it correctly and
 // reporting refusals instead of swallowing them.
 
@@ -435,7 +435,7 @@ describe('tracks', () => {
     });
 
     test('mute and solo toggle and are what the sequencer reads', async () => {
-        const { audibleTrackIds } = await import('../html/synth/sequencer.js');
+        const { audibleTrackIds } = await import('../html/synth/section-sequencer.js');
         const h = build({ tracks: [{ slot: 0 }, { slot: 1 }] });
         h.root.querySelectorAll('.song-track-mute')[0].dispatch('click', ev());
         assert.equal(h.song().tracks[0].mute, true);

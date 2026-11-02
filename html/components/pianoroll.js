@@ -274,11 +274,24 @@ export function createPianoroll(opts) {
         transport.refresh();
     }
 
-    // Changes made by other editors: drop the cached patterns (a rename or
-    // a duplicate went to the store, not to our copies) and re-read the song.
+    // Changes made by other editors: re-read the project.
+    //
+    // A write from the **Mixer** is a special case. It used to be skipped
+    // outright, because the bank kept its own array and re-adopting would
+    // only throw away the roll's working copies. The bank writes the
+    // project's *tracks* now — the same records the roll draws its lanes
+    // from — so skipping it left the roll with a stale track list and,
+    // worse, made it create a second track on a slot that already had one.
+    //
+    // So the track list is always refreshed, and only a change that could
+    // have touched the patterns drops the cached copies. Keeping them on a
+    // Mixer write is what stops a gesture in progress dying under the user.
     session.subscribe((ev) => {
-        if (ev.source === 'roll' || ev.source === 'voicebank') return;
-        liveCache.clear();
+        if (ev.source === 'roll') return;
+        // A patch moved on the canvas is not an arrangement change, and
+        // dragging one fires on every pointer move.
+        if (ev.kind === 'patches') return;
+        if (ev.source !== 'voicebank') liveCache.clear();
         adoptSong(session.get());
         updateMeasureButtons();
         refreshSequence();

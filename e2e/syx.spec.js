@@ -7,7 +7,6 @@ import { readFileSync } from 'node:fs';
 import { test, expect, openApp } from './fixtures.js';
 
 const DEMO_SYX = 'html/DEMO.syx';          // the bank the app ships, 4104 bytes
-const PATCHES_KEY = 'openpatches_patches';
 
 // The import skips INIT VOICE and blank slots, so the expected patch count is
 // whatever the bank actually carries — read it from the bytes rather than
@@ -30,9 +29,9 @@ async function importDemoBank(page) {
     await (await picker).setFiles(DEMO_SYX);
 }
 
+/** Patches belong to the open project now, not to a key of their own. */
 function storedPatches(page) {
-    return page.evaluate((key) =>
-        Object.values(JSON.parse(localStorage.getItem(key) || '{}')), PATCHES_KEY);
+    return page.evaluate(() => Object.values(window.__opProject.get().patches || {}));
 }
 
 test.describe('.syx I/O', () => {
@@ -67,10 +66,10 @@ test.describe('.syx I/O', () => {
         // Full round trip inside the browser: store → buildBulkDump →
         // parseSyxFile → the same names and algorithms that were imported.
         // This is the byte-level guarantee the server export relies on.
-        const trip = await page.evaluate(async (key) => {
+        const trip = await page.evaluate(async () => {
             const builder = await import('/html/components/syx-builder.js');
             const parser = await import('/html/components/syx-parser.js');
-            const patches = Object.values(JSON.parse(localStorage.getItem(key) || '{}'));
+            const patches = Object.values(window.__opProject.get().patches || {});
 
             const bytes = builder.buildBulkDump(patches);
             const check = builder.validateBulkDump(bytes);
@@ -86,7 +85,7 @@ test.describe('.syx I/O', () => {
                 imported: strip(patches),
                 roundTripped: strip(reparsed.slice(0, patches.length)),
             };
-        }, PATCHES_KEY);
+        });
 
         expect(trip.size).toBe(4104);
         expect(trip.checksumOk).not.toBe(false);

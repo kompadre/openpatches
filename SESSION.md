@@ -399,8 +399,46 @@ CHANGELOG.md and the TODO.md reconciliation.
      null bpm as the slowest tempo, both indistinguishable from a
      deliberate choice. `undefined` already fell through as NaN; null now
      behaves the same, across every field in the model.
-- [ ] **3d. Canvas and patches scoped to the project**; `song-model.js`,
-  `song-session.js` and `sequencer.js` deleted.
+- [x] **3d. Patches, canvas and jobs scoped to the project — done
+  2026-11-02, 795 unit / 62 e2e passing.** Phase 3 is complete.
+  - `patch-model.js` keeps every store API unchanged; only what is beneath
+    them moved. Its six `loadX`/`saveX` pairs now read and write
+    `project.patches` / `.patchNames` / `.canvas` / `.jobs`. The session is
+    **injected** (`bindProjectSession`) rather than imported, so the file
+    stays free of the project machinery and tests can bind their own.
+  - Patch writes are announced as `kind: 'patches'`, which the roll and the
+    Section editor ignore — dragging a patch across the canvas fires on
+    every pointer move and must not make the roll re-read its arrangement.
+  - **The tag vocabulary stays on the profile**, as decided: it is the
+    user's taxonomy, reused across projects. Only the tags a project uses
+    will travel in an export.
+  - **"Clear History" → "Delete All Data…"**, and it now actually does.
+    Three operations — the upload store, the project bodies, the profile —
+    with the WAVs going **first**, because once the bodies are gone nothing
+    knows which blobs were ever referenced. The e2e asserts storage is
+    *empty* rather than that some list of keys was removed; a list drifts,
+    that cannot.
+  - **Deleted:** `song-model.js`, `song-session.js`, `sequencer.js`, and
+    their four test files.
+
+  **Two bugs found, both from the user's point that a lane, a strip and a
+  voice are one track:**
+  1. **The lane's slot select assigned the slot directly**, so two tracks
+     could land on one channel — and `normalizeProject()` resolves that by
+     *dropping* one, with its clips, in every section. New
+     `setTrackSlot()` **swaps** instead: the slot is the channel, the strip
+     and the patch at once, so this is "play this part on that
+     instrument", and the two parts trade.
+  2. **The roll skipped `voicebank`-sourced notifications.** Correct while
+     the bank kept its own array; wrong the moment it began writing
+     *tracks*. The roll held a stale track list and created a **second
+     track on a slot that already had one**. Now the track list always
+     refreshes and only a non-Mixer change drops the cached patterns —
+     which is what still stops a gesture in progress dying.
+
+  New `test/track-identity.test.js` (14) is the standing guard on the
+  user's invariant: mute, solo, rename, removal and slot changes performed
+  through any one of the three UIs, observed through the others.
 - [ ] **4. Project management + the wipe fix.** Project list/switcher,
   new/rename/delete/duplicate, and the Clear History rewrite above.
 - [ ] **5. Export / Import.** Single JSON file with `schemaVersion`

@@ -1,5 +1,10 @@
-// Unified Patch data model and stores (localStorage-backed).
-// Patches, canvas state, and jobs all live here.
+// Unified Patch data model and stores.
+//
+// Patches, the canvas layout and the inference jobs are all **owned by the
+// open project** and written with its body; see "Storage" below. The tag
+// vocabulary is the one exception and stays on the profile.
+
+import { profileStore } from './profile-store.js';
 
 // --- Hash ---
 
@@ -97,29 +102,52 @@ export function createPatch(partial) {
     };
 }
 
-// --- Storage keys ---
+// --- Storage ---
+//
+// Patches, the canvas layout and the inference jobs all belong to the open
+// **project**, so they live in its body and are written with it. The store
+// APIs below are unchanged; only what sits underneath them moved.
+//
+// The session is injected rather than imported so this file stays free of
+// the project machinery (and so the tests can bind one of their own).
+// Unbound — before boot has opened a project, or in a test that does not
+// care — reads give nothing and writes are dropped, which is right: there
+// is no project for them to belong to.
+//
+// The **tag vocabulary is the exception**: it is the user's own taxonomy,
+// reused across projects, so it stays on the profile. An export carries
+// only the tags a project actually uses.
 
-const PATCHES_KEY = 'openpatches_patches';
-const CANVAS_KEY = 'openpatches_canvas';
-const JOBS_KEY = 'openpatches_jobs';
-const PATCH_NAMES_KEY = 'openpatches_patch_names';
-const TAGS_KEY = 'openpatches_all_tags';
+let session = null;
+
+/** Called once by app.js, after the project is open. */
+export function bindProjectSession(next) {
+    session = next;
+}
+
+/** One of the project's own maps — patches, canvas, jobs. */
+function slice(key) {
+    const project = session && session.get();
+    const value = project && project[key];
+    return value && typeof value === 'object' ? value : {};
+}
+
+/**
+ * Replace one of those maps and mark the project dirty.
+ *
+ * Announced as `kind: 'patches'` so the sequencer-side editors can ignore
+ * it: dragging a patch across the canvas must not make the piano roll
+ * re-read its arrangement on every pointer move.
+ */
+function putSlice(key, value) {
+    if (!session || !session.get()) return;
+    session.update((project) => { project[key] = value; }, 'patches', 'patches');
+}
 
 // --- patchStore ---
 
-function loadPatches() {
-    try {
-        return JSON.parse(localStorage.getItem(PATCHES_KEY) || '{}');
-    } catch { return {}; }
-}
-
-function savePatches(map) {
-    try {
-        localStorage.setItem(PATCHES_KEY, JSON.stringify(map));
-    } catch (e) {
-        console.warn('patchStore save failed:', e);
-    }
-}
+const loadPatches = () => slice('patches');
+const savePatches = (map) => putSlice('patches', map);
 
 export const patchStore = {
     getAll() {
@@ -148,19 +176,8 @@ export const patchStore = {
 
 // --- canvasStore ---
 
-function loadCanvas() {
-    try {
-        return JSON.parse(localStorage.getItem(CANVAS_KEY) || '{}');
-    } catch { return {}; }
-}
-
-function saveCanvas(data) {
-    try {
-        localStorage.setItem(CANVAS_KEY, JSON.stringify(data));
-    } catch (e) {
-        console.warn('canvasStore save failed:', e);
-    }
-}
+const loadCanvas = () => slice('canvas');
+const saveCanvas = (data) => putSlice('canvas', data);
 
 export const canvasStore = {
     getCanvasPatches() {
@@ -206,25 +223,14 @@ export const canvasStore = {
         }
     },
     clear() {
-        localStorage.removeItem(CANVAS_KEY);
+        putSlice('canvas', {});
     },
 };
 
 // --- jobStore ---
 
-function loadJobs() {
-    try {
-        return JSON.parse(localStorage.getItem(JOBS_KEY) || '{}');
-    } catch { return {}; }
-}
-
-function saveJobs(map) {
-    try {
-        localStorage.setItem(JOBS_KEY, JSON.stringify(map));
-    } catch (e) {
-        console.warn('jobStore save failed:', e);
-    }
-}
+const loadJobs = () => slice('jobs');
+const saveJobs = (map) => putSlice('jobs', map);
 
 export const jobStore = {
     getAll() {
@@ -247,32 +253,31 @@ export const jobStore = {
 };
 
 // --- Patch name persistence (renames) ---
+//
+// A rename overlay keyed by patch id. Project-owned like the patches it
+// renames — a name is part of the patch as this project knows it.
 
 export function loadPatchNames() {
-    try {
-        return JSON.parse(localStorage.getItem(PATCH_NAMES_KEY) || '{}');
-    } catch { return {}; }
+    return slice('patchNames');
 }
 
 export function savePatchNames(names) {
-    localStorage.setItem(PATCH_NAMES_KEY, JSON.stringify(names));
+    putSlice('patchNames', names);
 }
 
 // --- tagStore (Global Tag Registry) ---
 
-function loadGlobalTags() {
-    try {
-        return JSON.parse(localStorage.getItem(TAGS_KEY) || '[]');
-    } catch { return []; }
-}
-
-function saveGlobalTags(tags) {
-    try {
-        localStorage.setItem(TAGS_KEY, JSON.stringify(tags));
-    } catch (e) {
-        console.warn('tagStore save failed:', e);
-    }
-}
+// The vocabulary is the user's own taxonomy, reused across projects, so it
+// lives on the profile rather than in any one project body. An export
+// carries only the tags its project actually uses, and an import unions
+// those back in — tags carry no meaning beyond the word, so that is always
+// safe.
+const loadGlobalTags = () => profileStore.tags();
+const saveGlobalTags = (tags) => {
+    const before = new Set(profileStore.tags());
+    profileStore.addTags(tags);
+    for (const gone of [...before].filter(t => !tags.includes(t))) profileStore.removeTag(gone);
+};
 
 export const tagStore = {
     getTags() {

@@ -4,7 +4,7 @@
 import { parseSyxFile, voiceRawToBase64 } from './components/syx-parser.js';
 import { batchRenderWaveforms } from './synth/dx7-synth.js';
 import { acquire, shutdownAll, extendIdle, playNoteRealtime, playNoteOnChannel, releaseAllNotes, sendVoiceSnapshot, setChannelVolume, base64ToUint8Array, renderOffline, isReady, getState, setOnStatusChange, setPianorollStop, emergencyStop } from './synth/audio-manager.js';
-import { patchStore, canvasStore, jobStore, createPatch } from './components/patch-model.js';
+import { patchStore, canvasStore, jobStore, createPatch, bindProjectSession } from './components/patch-model.js';
 import { initCanvas, addContainer, addPatchToContainer, refreshCanvas } from './components/canvas.js';
 import { createToolbar } from './components/toolbar.js';
 import { updateBankSlots } from './components/patch-row.js';
@@ -15,6 +15,7 @@ import * as midiManager from './synth/midi-manager.js';
 import { openMidiSettings, sendBankToDevice } from './components/midi-panel.js';
 import { makeInitVoice } from './components/syx-builder.js';
 import { createProjectStore, takeLostSaveMarker } from './components/project-store.js';
+import { profileStore } from './components/profile-store.js';
 import { createProjectSession } from './components/project-session.js';
 import { attachSaveIndicator, attachSaveWarning } from './components/save-indicator.js';
 
@@ -109,6 +110,22 @@ async function dbGet(key) {
     return new Promise((resolve, reject) => {
         const req = tx.objectStore(STORE_NAME).get(key);
         req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+/**
+ * Empty the whole upload store. The per-container delete is not enough for
+ * a wipe: `canvasStore.clear()` drops the records *without* iterating
+ * them, so every blob they referenced would be left unreachable forever —
+ * which is how "Clear History" used to be the thing that leaked.
+ */
+async function dbClearUploads() {
+    const db = await dbPromise;
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    return new Promise((resolve, reject) => {
+        const req = tx.objectStore(STORE_NAME).clear();
+        req.onsuccess = () => resolve();
         req.onerror = () => reject(req.error);
     });
 }
@@ -972,18 +989,29 @@ document.getElementById('menu-load-demo').addEventListener('click', () => {
 document.getElementById('menu-show-log').addEventListener('click', () => {
     if (pianoDockWrapper && pianoDockWrapper._showLog) pianoDockWrapper._showLog();
 });
-document.getElementById('menu-clear-history').addEventListener('click', async () => {
-    if (!confirm('Clear all session history?')) return;
+// Delete everything. The old "Clear History" removed five of twenty-odd
+// localStorage keys — patterns, songs, patch renames and the tag
+// vocabulary all survived a "clear all" — and it orphaned every imported
+// WAV, because canvasStore.clear() dropped the container records without
+// deleting the blobs they referenced, leaving them unreachable forever.
+//
+// Now the state is a profile plus project bodies plus the upload store, so
+// this is three operations that cannot drift out of step with a growing
+// list of keys. The WAVs go first: once the bodies are gone, nothing knows
+// which blobs were ever referenced.
+document.getElementById('menu-clear-delete-all').addEventListener('click', async () => {
+    if (!confirm('Delete all projects, patches and uploads? This cannot be undone.')) return;
     jobManager.stopAll();
-    localStorage.removeItem('openpatches_patches');
-    localStorage.removeItem('openpatches_canvas');
-    localStorage.removeItem('openpatches_jobs');
-    localStorage.removeItem('openpatches_voicebank');
-    localStorage.removeItem('openpatches_tutorial');
-    // Note: demoWasOffered (openpatches_demo_offered) is intentionally preserved
-    canvasStore.clear();
+    try {
+        await dbClearUploads();
+    } catch (e) {
+        console.warn('[wipe] could not clear the uploads:', e);
+    }
+    await projectStore.clear();
+    profileStore.clear();
+    await projectSession.init();
     initCanvas(getCanvasOpts());
-    appendLog('History cleared');
+    appendLog('Everything deleted');
 });
 document.getElementById('menu-emergency-stop').addEventListener('click', doEmergencyStop);
 
@@ -1111,6 +1139,9 @@ window.__opProject = projectSession;
 // start (IndexedDB blocked in a locked-down profile) must not take the
 // whole app with it: the session falls back to an in-memory project and
 // everything works for the session, just without persistence.
+// Patches, the canvas and the jobs live in the project body, so the store
+// has to know which project before anything reads them.
+bindProjectSession(projectSession);
 try {
     await projectSession.init();
 } catch (e) {

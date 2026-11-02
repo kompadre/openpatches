@@ -11,14 +11,22 @@ import assert from 'node:assert/strict';
 import { installBrowserEnv } from './harness.js';
 
 let Job, canvasStore, patchStore;
+let bindProjectSession, makeProjectSession;
 
 before(async () => {
     installBrowserEnv();
     ({ Job } = await import('../html/components/job.js'));
     ({ canvasStore, patchStore } = await import('../html/components/patch-model.js'));
+    // Patches and the canvas live in the open project now, so the store
+    // needs one to read and write.
+    ({ bindProjectSession } = await import('../html/components/patch-model.js'));
+    ({ makeProjectSession } = await import('./project-fixture.js'));
 });
 
-beforeEach(() => localStorage.clear());
+beforeEach(() => {
+    localStorage.clear();
+    bindProjectSession(makeProjectSession());
+});
 
 const voice = (n) => btoa(String.fromCharCode(n).repeat(128));
 

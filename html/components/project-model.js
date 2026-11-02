@@ -271,10 +271,10 @@ function normalizeLoop(loop) {
 /**
  * A project: the whole piece, and the unit of export.
  *
- * `patches`, `canvas` and `jobs` are the patch side of the workspace. They
- * are carried verbatim here — patch-model.js owns their shapes, and teaching
- * two files one schema is how the two mute flags happened. Phase 3 wires
- * them properly; until then they round-trip untouched.
+ * `patches`, `patchNames`, `canvas` and `jobs` are the patch side of the
+ * workspace: project-owned, so switching project swaps the whole bench.
+ * They are carried **verbatim** — patch-model.js owns their shapes, and
+ * teaching two files one schema is how the two mute flags happened.
  *
  * Always goes through `normalizeProject()`, which is what enforces the
  * cross-record invariants (unique slots, no orphan clips) that no single
@@ -292,6 +292,7 @@ export function createProject(partial = {}) {
         patterns: normalizePatterns(p.patterns),
         // Carried verbatim — see above.
         patches: plainObject(p.patches),
+        patchNames: plainObject(p.patchNames),
         canvas: plainObject(p.canvas),
         jobs: plainObject(p.jobs),
         // The tags actually used in this project. The full vocabulary is the
@@ -501,6 +502,34 @@ export function addTrack(project, partial = {}) {
     project.tracks.push(track);
     project.tracks.sort((a, b) => a.slot - b.slot);
     return track;
+}
+
+/**
+ * Move a track to another slot, **swapping** with whatever is there.
+ *
+ * The slot is the channel, the Mixer strip and the patch all at once, so
+ * this is "play this part on that instrument". If the target is taken,
+ * the two parts trade instruments — which loses nothing and is the same
+ * rule the Mixer already applies when a voice is dropped on an occupied
+ * strip.
+ *
+ * Assigning the slot directly is the trap this exists to close: two
+ * tracks on one slot is two voices fighting over one channel, and
+ * `normalizeProject()` resolves it by **dropping** one — along with its
+ * clips, in every section.
+ *
+ * @returns {boolean} whether anything moved
+ */
+export function setTrackSlot(project, trackId, slot) {
+    const next = clampInt(slot, 0, MAX_SLOTS - 1, NaN);
+    if (!Number.isFinite(next)) return false;
+    const track = getTrack(project, trackId);
+    if (!track || track.slot === next) return false;
+    const occupant = project.tracks.find(t => t.slot === next);
+    if (occupant) occupant.slot = track.slot;
+    track.slot = next;
+    project.tracks.sort((a, b) => a.slot - b.slot);
+    return true;
 }
 
 /**

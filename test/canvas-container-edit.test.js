@@ -15,6 +15,7 @@ import assert from 'node:assert/strict';
 import { installBrowserEnv, StubElement } from './harness.js';
 
 let canvas, canvasStore, patchStore, createPatch, reorderContainerPatch;
+let bindProjectSession, makeProjectSession;
 let sky;
 let env;
 
@@ -23,6 +24,10 @@ before(async () => {
     env.document.getElementById = (id) => (id === 'night-sky' ? sky : null);
     canvas = await import('../html/components/canvas.js');
     ({ canvasStore, patchStore, createPatch } = await import('../html/components/patch-model.js'));
+    // Patches and the canvas live in the open project now, so the store
+    // needs one to read and write.
+    ({ bindProjectSession } = await import('../html/components/patch-model.js'));
+    ({ makeProjectSession } = await import('./project-fixture.js'));
     ({ reorderContainerPatch } = await import('../html/components/patch-row.js'));
 });
 
@@ -51,6 +56,8 @@ function rowIds(containerEl) {
 
 beforeEach(() => {
     localStorage.clear();
+    // Patches and the canvas live in the open project now.
+    bindProjectSession(makeProjectSession());
     sky = new StubElement('div');
     canvas.initCanvas({});
 });

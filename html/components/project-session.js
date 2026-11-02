@@ -1,6 +1,6 @@
 // The open project, shared by every editor.
 //
-// Replaces song-session.js. Same job — one owner of the record, so no
+// One owner of the record, so no
 // editor can overwrite another's saves — but a project is bigger than a
 // song, so the session also owns **which section is being edited**. The UI
 // edits exactly one at a time; the model carries many.

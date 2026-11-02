@@ -8,7 +8,7 @@
 //
 // Placing, moving and lengthening all happen at the **snap** resolution,
 // a bar by default and down to a sixteenth — clips are not bar-aligned by
-// nature, their geometry is columns (see song-model.js). **Zoom** widens
+// nature, their geometry is columns (see project-model.js). **Zoom** widens
 // the bar so the finer resolutions are something a pointer can hit.
 // Everything autosaves through the song session — there is no Save button
 // and no "Song exists": songs are id-keyed, names are just labels.
@@ -17,8 +17,8 @@
 // pattern to the piano roll via opts.onOpenPattern.
 
 import {
-    addClip, updateClip, removeClip, removeTrack, clipCols, clipRepeats,
-    sectionLength, createTrack, patternCols,
+    addClip, updateClip, removeClip, removeTrack, setTrackSlot,
+    clipCols, clipRepeats, sectionLength, createTrack, patternCols,
     COLS_PER_MEASURE, MAX_SLOTS, MIN_BPM, MAX_BPM,
 } from './project-model.js';
 
@@ -532,7 +532,10 @@ export function createSongEditor(opts = {}) {
         slotSel.value = String(track.slot);
         slotSel.addEventListener('change', () => {
             const slot = parseInt(slotSel.value);
-            change((s) => { s.tracks.find(t => t.id === track.id).slot = slot; });
+            // Swaps when the slot is taken. Assigning it directly would put
+            // two tracks on one channel, and the next load resolves that by
+            // dropping one — with its clips, in every section.
+            change((project) => { setTrackSlot(project, track.id, slot); });
         });
         head.appendChild(slotSel);
 
@@ -805,7 +808,11 @@ export function createSongEditor(opts = {}) {
         renderGrid(song);
     }
 
-    unsubscribe = session.subscribe(() => render());
+    unsubscribe = session.subscribe((ev) => {
+        // Patch and canvas edits belong to the other half of the app.
+        if (ev.kind === 'patches') return;
+        render();
+    });
     if (transport) {
         unsubscribeTransport = transport.subscribe((pos) => {
             movePlayhead(pos.songCol != null ? pos.songCol : pos.col);

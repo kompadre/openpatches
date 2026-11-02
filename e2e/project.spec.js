@@ -78,6 +78,59 @@ test.describe('the project store', () => {
     });
 });
 
+test.describe('Delete All Data', () => {
+    // The old "Clear History" removed five of twenty-odd localStorage keys
+    // — patterns, songs, patch renames and the tag vocabulary all survived
+    // a "clear all" — and it orphaned every imported WAV, because the
+    // canvas records were dropped without deleting the blobs they pointed
+    // at. The assertion is therefore that storage is *empty*, not that
+    // some list of keys was removed: a list drifts, this cannot.
+
+    const uploadKeys = (page) => page.evaluate(() => new Promise((resolve) => {
+        const req = indexedDB.open('openpatches');
+        req.onsuccess = (e) => {
+            const db = e.target.result;
+            if (!db.objectStoreNames.contains('uploads')) return resolve([]);
+            const q = db.transaction('uploads', 'readonly').objectStore('uploads').getAllKeys();
+            q.onsuccess = () => resolve(q.result);
+            q.onerror = () => resolve([]);
+        };
+        req.onerror = () => resolve([]);
+    }));
+
+    test('takes the projects, the profile and the uploaded WAVs together', async ({ page }) => {
+        await openApp(page);
+        await expect.poll(() => bodyIds(page)).toHaveLength(1);
+
+        await page.evaluate(async () => {
+            window.__opProject.update((project) => { project.name = 'Doomed'; }, 'e2e');
+            window.__opProject.createNew('Second', 'e2e');
+        });
+        // A WAV blob, as an import would leave behind.
+        await page.evaluate(() => new Promise((resolve) => {
+            const req = indexedDB.open('openpatches');
+            req.onsuccess = (e) => {
+                const db = e.target.result;
+                const tx = db.transaction('uploads', 'readwrite');
+                tx.objectStore('uploads').put(new Uint8Array([1, 2, 3]), 'job_x');
+                tx.oncomplete = () => resolve();
+            };
+        }));
+        await expect.poll(() => bodyIds(page)).toHaveLength(2);
+        expect(await uploadKeys(page)).toContain('job_x');
+
+        page.once('dialog', (d) => d.accept());
+        await page.locator('.menu-item[data-menu="history"] .menu-label').click();
+        await page.locator('#menu-clear-delete-all').click();
+
+        // One fresh, empty project is left — the app is never without one.
+        await expect.poll(() => bodyIds(page)).toHaveLength(1);
+        expect(await page.evaluate(() => window.__opProject.get().name)).toBe('Untitled project');
+        expect((await profile(page)).projects).toHaveLength(1);
+        expect(await uploadKeys(page)).toEqual([]);
+    });
+});
+
 test.describe('the save indicator', () => {
     test('the floppy light reports a written project', async ({ page }) => {
         await openApp(page);
