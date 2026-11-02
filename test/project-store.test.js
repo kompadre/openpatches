@@ -137,6 +137,36 @@ describe('the autosave tick', () => {
         assert.ok(store.get().modified >= before);
     });
 
+    test('a failed write is announced, not just logged', async () => {
+        // The one state where the user can actually act — stay on the
+        // page, retry — and the only one where leaving costs them work.
+        const store = await opened({ onError: () => {} });
+        const seen = [];
+        store.subscribe((e) => { if (e.reason === 'save-failed') seen.push(e.failed); });
+        backend.save = () => Promise.reject(new Error('QuotaExceeded'));
+
+        store.touch();
+        await tick(30);
+        // One per retry — the ticker keeps trying, which is the point.
+        assert.ok(seen.length >= 1);
+        assert.ok(seen.every(Boolean));
+        assert.equal(store.hasFailed(), true);
+    });
+
+    test('a later success clears the failed flag', async () => {
+        const store = await opened({ onError: () => {} });
+        const save = backend.save;
+        let fail = true;
+        backend.save = (...a) => (fail ? Promise.reject(new Error('nope')) : save(...a));
+        store.touch();
+        await tick(30);
+        assert.equal(store.hasFailed(), true);
+
+        fail = false;
+        await store.flush({ force: true });
+        assert.equal(store.hasFailed(), false);
+    });
+
     test('a failed write stays dirty and the next flush retries it', async () => {
         const errors = [];
         const store = await opened({ onError: (e) => errors.push(e) });
@@ -464,6 +494,36 @@ describe('the crash journal', () => {
         }));
         assert.equal((await store.open(id)).name, 'Piece');
         assert.ok(journal(), 'still there for when that project is opened');
+    });
+
+    test('a body too big for localStorage leaves a marker, not a stale journal', async () => {
+        // localStorage has a quota and the journal is the whole body, so a
+        // big project can fail to fit. Nothing can be shown at unload, so
+        // the fallback is a few bytes the next boot can report.
+        const { takeLostSaveMarker } = await import('../html/components/project-store.js');
+        const store = createProjectStore({
+            backend, intervalMs: 10_000, bindLifecycle: true, onError: () => {},
+        });
+        await store.adopt({ name: 'Nocturne' });
+
+        // An older journal, from a session that did fit.
+        localStorage.setItem(JOURNAL, JSON.stringify({ id: store.getId(), bpm: 100, modified: 1 }));
+
+        const realSet = localStorage.setItem.bind(localStorage);
+        localStorage.setItem = (k, v) => {
+            if (k === JOURNAL) throw new Error('QuotaExceededError');
+            return realSet(k, v);
+        };
+        store.get().bpm = 140;
+        store.touch();
+        hide();
+        localStorage.setItem = realSet;
+
+        assert.equal(journal(), null,
+            'the stale copy is dropped — restoring it would quietly resurrect the wrong state');
+        const marker = takeLostSaveMarker();
+        assert.equal(marker.name, 'Nocturne', 'but the loss is recorded');
+        assert.equal(takeLostSaveMarker(), null, 'and reported only once');
     });
 
     test('clear takes the journal, or a deleted project would come back', async () => {

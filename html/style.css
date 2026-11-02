@@ -3086,6 +3086,54 @@ footer {
     color: #777;
 }
 
+/* The light is a button: a failed save, or work you want on disk before
+   walking away, needs somewhere to press. */
+.save-status { cursor: pointer; }
+.save-status:hover { filter: brightness(1.4); }
+
+/* A failed write outranks anything a successful one could say. */
+.save-failed {
+    color: #e94560;
+    animation: save-blink 1.2s steps(1, end) infinite;
+}
+
+.save-warning {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: var(--footer-h);
+    z-index: 500;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.55rem 1rem;
+    background: #3a1420;
+    border-top: 2px solid #e94560;
+    color: #ffd9e0;
+    font-size: 0.78rem;
+    line-height: 1.45;
+}
+
+.save-warning-icon { color: #e94560; }
+.save-warning-text { flex: 1; min-width: 0; }
+
+.save-warning-save {
+    background: #e94560;
+    border: none;
+    border-radius: 4px;
+    color: #fff;
+    padding: 0.3rem 0.8rem;
+    font-size: 0.78rem;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.save-warning-save:hover { background: #ff5c77; }
+
+@media (prefers-reduced-motion: reduce) {
+    .save-failed { animation: none; }
+}
+
 /* A blink every six-tenths of a second is noise to anyone who has asked
    not to be moved at. The colour still carries the state. */
 @media (prefers-reduced-motion: reduce) {

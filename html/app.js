@@ -14,9 +14,9 @@ import { initTutorial, startTutorial, restartTutorial, isTutorialActive } from '
 import * as midiManager from './synth/midi-manager.js';
 import { openMidiSettings, sendBankToDevice } from './components/midi-panel.js';
 import { makeInitVoice } from './components/syx-builder.js';
-import { createProjectStore } from './components/project-store.js';
+import { createProjectStore, takeLostSaveMarker } from './components/project-store.js';
 import { createProjectSession } from './components/project-session.js';
-import { attachSaveIndicator } from './components/save-indicator.js';
+import { attachSaveIndicator, attachSaveWarning } from './components/save-indicator.js';
 
 const fileInput = document.getElementById('wav-input');
 
@@ -1100,6 +1100,9 @@ document.getElementById('menu-restart-tutorial').addEventListener('click', () =>
 // --- Init ---
 
 attachSaveIndicator({ session: projectSession });
+// Read before init(): a marker says the *previous* page load could not
+// even journal its unsaved work, and taking it reports it exactly once.
+attachSaveWarning({ session: projectSession, lost: takeLostSaveMarker() });
 // The e2e seam, as window.__opDock is for the dock.
 window.__opProject = projectSession;
 

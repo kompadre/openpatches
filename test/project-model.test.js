@@ -17,6 +17,7 @@ import {
     findClipOverlap, clipCols, clipRepeats, sectionLengthCols, sectionLength,
     getTrackBySlot, getPattern,
     COLS_PER_MEASURE, MAX_SLOTS, MIN_BPM, MAX_BPM, DEFAULT_BPM, SCHEMA_VERSION,
+    MAX_VOLUME, DEFAULT_VOLUME,
 } from '../html/components/project-model.js';
 
 /** A project with `n` tracks, one pattern, and a clip at column 0. */
@@ -50,6 +51,15 @@ describe('createProject', () => {
         assert.equal(createProject({ bpm: 'allegro' }).bpm, DEFAULT_BPM);
     });
 
+    test('null means absent, not zero', () => {
+        // Number(null) is 0 and perfectly finite, so a null would read as
+        // the slowest tempo and a null volume as silence — both
+        // indistinguishable from a deliberate choice.
+        assert.equal(createProject({ bpm: null }).bpm, DEFAULT_BPM);
+        assert.equal(createTrack({ volume: null }).volume, DEFAULT_VOLUME);
+        assert.equal(createTrack({ slot: null }).slot, 0);
+    });
+
     test('round-trips through JSON unchanged — bodies are stored as JSON', () => {
         const { project } = build();
         project.tracks[0] = createTrack({ ...project.tracks[0], voiceData: new Uint8Array([1, 2, 3]) });
@@ -57,10 +67,12 @@ describe('createProject', () => {
         assert.deepEqual(again, createProject(project));
     });
 
-    test('voice data is normalised to a plain array, so a body stays JSON', () => {
-        const t = createTrack({ voiceData: new Uint8Array([7, 8]) });
-        assert.deepEqual(t.voiceData, [7, 8]);
-        assert.equal(createTrack({ voiceData: 'nonsense' }).voiceData, null);
+    test('voice data keeps whichever JSON-safe shape it arrived in', () => {
+        // base64 is how patch-model stores voice_data, so it is the
+        // commonest shape by far — re-encoding it would only lose fidelity.
+        assert.equal(createTrack({ voiceData: 'SU5JVCBWT0lDRQ==' }).voiceData, 'SU5JVCBWT0lDRQ==');
+        assert.deepEqual(createTrack({ voiceData: new Uint8Array([7, 8]) }).voiceData, [7, 8]);
+        assert.equal(createTrack({ voiceData: '' }).voiceData, null);
         assert.equal(createTrack({ voiceData: [1, 999] }).voiceData, null, 'out of byte range');
     });
 
@@ -228,24 +240,27 @@ describe('mute and solo — one strip, one pair of flags', () => {
     });
 
     test('effectiveVolume agrees with audibleTracks by construction', () => {
-        const a = createTrack({ slot: 0, volume: 0.8 });
-        const b = createTrack({ slot: 1, volume: 0.5, mute: true });
-        const c = createTrack({ slot: 2, volume: 0.9 });
+        const a = createTrack({ slot: 0, volume: 110 });
+        const b = createTrack({ slot: 1, volume: 60, mute: true });
+        const c = createTrack({ slot: 2, volume: 90 });
         const tracks = [a, b, c];
-        assert.equal(effectiveVolume(tracks, a), 0.8, 'the fader value is what is heard');
+        assert.equal(effectiveVolume(tracks, a), 110, 'the fader value is what is heard');
         assert.equal(effectiveVolume(tracks, b), 0, 'muted');
 
         c.solo = true;
         assert.equal(effectiveVolume(tracks, a), 0, 'another track is soloed');
-        assert.equal(effectiveVolume(tracks, c), 0.9);
+        assert.equal(effectiveVolume(tracks, c), 90);
         // The fader never moved — mute and solo are overrides, not edits.
-        assert.equal(a.volume, 0.8);
+        assert.equal(a.volume, 110);
     });
 
-    test('volume is clamped to 0..1', () => {
-        assert.equal(createTrack({ volume: 5 }).volume, 1);
+    test('volume is on the engine\'s 0..127 scale, not a normalised one', () => {
+        // The model speaks the domain's units: the worklet and the fader
+        // both use 0–127, and converting at a boundary is how the two
+        // mute systems drifted apart in the first place.
+        assert.equal(createTrack({ volume: 500 }).volume, MAX_VOLUME);
         assert.equal(createTrack({ volume: -1 }).volume, 0);
-        assert.equal(createTrack({ volume: undefined }).volume, 1);
+        assert.equal(createTrack({ volume: undefined }).volume, DEFAULT_VOLUME);
     });
 });
 

@@ -312,6 +312,27 @@ CHANGELOG.md and the TODO.md reconciliation.
   *Reduced-motion honoured: the blink is dropped, the colour still carries
   the state.*
 
+- [x] **3a-bis. When even the last gasp cannot be written — done
+  2026-11-02.** Raised by the user: localStorage has a quota, so a large
+  project can fail to journal. **The failure happens at `pagehide`, when
+  nothing can be shown** — so the warning cannot come from there. It comes
+  from the two moments the page is alive instead:
+  - **A write fails** → a red banner above the footer: "Do not close this
+    tab until the save goes through", with a **Save now** button. The
+    square goes red and reads "Not saved". `hasFailed()` on the store,
+    announced as `save-failed`.
+  - **The next boot after a lost last gasp** → the same banner, saying the
+    work is gone, with no retry (there is nothing left to retry). On a
+    journal quota failure `writeJournal` drops the stale journal — older
+    than what failed, so restoring it would quietly resurrect the wrong
+    state and look like success — and leaves a few bytes under
+    `openpatches_project_lost`, taken and reported exactly once.
+  - **The square is a button**: clicking it forces a save. Which is also
+    the answer to "I am about to close this tab".
+  - The banner sits above the footer rather than over the page: the action
+    is wait-or-save, and trapping the user behind an overlay would stop
+    them freeing the space that might let the save through.
+
 - [x] **3b. Transport + editors rewired — done 2026-11-02, 906 unit / 61
   e2e passing.** The atomic switch: `transport.js`, `pianoroll.js`,
   `song-editor.js` and `toolbar.js` all moved onto `project-session` +
@@ -348,11 +369,36 @@ CHANGELOG.md and the TODO.md reconciliation.
      actually passed notes, and the roll's own saves use `touchPattern()`
      (persist + announce, touch nothing).
 
-- [ ] **3c. The voice bank onto project tracks.** `song.voiceBank` and
-  `openpatches_voicebank` retire; the Mixer binds to `project.tracks`,
-  where the patch, volume, mute and solo already live. Kills the
-  two-mute-systems bug for real. (`voiceBank` is carried verbatim through
-  `createProject` until then, so the bank still follows a project switch.)
+- [x] **3c. The voice bank onto project tracks — done 2026-11-02, 922 unit
+  / 61 e2e passing.** `song.voiceBank`, the transitional `project.voiceBank`
+  passthrough, `openpatches_voicebank`, `serializeBank()` and
+  `_setEntries()` are all gone. **A Mixer strip is a track**: the slot is
+  the channel, and the name, patch, volume, mute and solo describe one
+  voice in one record. The two-mute-systems bug cannot recur.
+  - `voicebank.js` takes the session; `saveState()`/`loadState()` write and
+    read `project.tracks`. A strip's id **is** its track's id, on creation
+    too, so a strip survives a save/reload as the same thing.
+  - A track with no `voiceData` is not a strip — the roll makes bare tracks
+    the moment a note is drawn, and assigning a voice **fills that track
+    in** rather than replacing it, so its clips survive.
+  - Emptying a strip clears the track's patch but keeps the track and its
+    clips.
+  - Dropped behaviour, deliberately: a new project no longer inherits the
+    previous one's voices. That only made sense when the bank was separate
+    from the song; a project owns its tracks, and an empty one has none.
+  - **Track volume is now 0–127 (default 100)**, the scale the worklet and
+    the fader already speak. Converting at a boundary is exactly how the
+    two mute flags drifted apart, so the model speaks the domain's units.
+
+  **Two model bugs found by the port:**
+  1. `normalizeVoiceData` rejected **strings** — but base64 is how
+     patch-model stores `voice_data`, so it is the commonest shape of all.
+     Every assigned voice would have been dropped on save.
+  2. `clampInt(null, …)` returned **0**, not the fallback, because
+     `Number(null)` is 0 and finite. A null volume read as silence and a
+     null bpm as the slowest tempo, both indistinguishable from a
+     deliberate choice. `undefined` already fell through as NaN; null now
+     behaves the same, across every field in the model.
 - [ ] **3d. Canvas and patches scoped to the project**; `song-model.js`,
   `song-session.js` and `sequencer.js` deleted.
 - [ ] **4. Project management + the wipe fix.** Project list/switcher,

@@ -1,3 +1,6 @@
+// The Mixer strips are a view of the project's **tracks** — one record per
+// voice, so the strip's mute and the scheduler's mute cannot disagree.
+//
 // Regressions in voicebank.js:
 //  - `entry.volume || DEFAULT_VOLUME` treated a muted slot (0) as unset, so a
 //    silenced voice displayed 100 and its overlay was drawn full.
@@ -11,18 +14,34 @@ import { test, before, beforeEach, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { installBrowserEnv } from './harness.js';
 
-const STORAGE_KEY = 'openpatches_voicebank';
 const PATCH_COLORS = ['#e94560', '#4caf50', '#2196f3', '#ff9800', '#9c27b0', '#00bcd4', '#ff5722', '#607d8b'];
 
-let createVoiceBank;
+let createVoiceBank, makeProjectSession, createTrack;
+let session = null;
 
 before(async () => {
     installBrowserEnv();
     ({ createVoiceBank } = await import('../html/components/voicebank.js'));
+    ({ makeProjectSession } = await import('./project-fixture.js'));
+    ({ createTrack } = await import('../html/components/project-model.js'));
 });
 
+/** Strips are tracks: seed the project's band, not a bank blob. */
 function seed(entries) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ entries, activeId: entries[0]?.id || null }));
+    session = makeProjectSession();
+    session.update((project) => {
+        (entries || []).forEach((e, i) => {
+            if (!e) return;
+            project.tracks.push(createTrack({
+                // The strip's id *is* the track's: selecting a strip and
+                // selecting a track are the same act now.
+                id: e.id, name: e.name, slot: i, patchId: e.patchId,
+                voiceData: e.voiceData, volume: e.volume,
+                mute: !!e.muted, solo: !!e.solo,
+            }));
+        });
+    }, 'test');
+    return session;
 }
 
 function entry(id, volume, color) {
@@ -38,25 +57,25 @@ function volumeLabels(bank) {
     return bank.querySelectorAll('.voicebank-vol').map(el => String(el.textContent));
 }
 
-beforeEach(() => localStorage.clear());
+beforeEach(() => { localStorage.clear(); session = null; });
 
 describe('voicebank volume', () => {
     test('volume 0 displays as 0, not the default', () => {
         seed([entry('a', 0), entry('b', 70)]);
-        const bank = createVoiceBank({});
+        const bank = createVoiceBank({ session: session || makeProjectSession() });
         assert.deepEqual(volumeLabels(bank), ['0', '70']);
     });
 
     test('a missing volume is still backfilled to the default', () => {
         seed([{ id: 'a', name: 'a', voiceData: 'a-data' }]);
-        const bank = createVoiceBank({});
+        const bank = createVoiceBank({ session: session || makeProjectSession() });
         assert.deepEqual(volumeLabels(bank), ['100']);
         assert.equal(bank._getEntries()[0].volume, 100);
     });
 
     test('a null volume is backfilled too', () => {
         seed([entry('a', null)]);
-        const bank = createVoiceBank({});
+        const bank = createVoiceBank({ session: session || makeProjectSession() });
         assert.deepEqual(volumeLabels(bank), ['100']);
     });
 });
@@ -64,7 +83,7 @@ describe('voicebank volume', () => {
 describe('voicebank slot colors', () => {
     test('colors follow the slot index on load, overriding stale saved ones', () => {
         seed([entry('a', 100, '#ffffff'), entry('b', 100, '#000000')]);
-        const bank = createVoiceBank({});
+        const bank = createVoiceBank({ session: session || makeProjectSession() });
         assert.deepEqual(occupied(bank).map(e => e.color), PATCH_COLORS.slice(0, 2));
     });
 });
@@ -72,13 +91,13 @@ describe('voicebank slot colors', () => {
 describe('the slot is the channel: entries never shift', () => {
     test('the bank is always a fixed array of 8 slots', () => {
         seed([entry('a', 100)]);
-        const bank = createVoiceBank({});
+        const bank = createVoiceBank({ session: session || makeProjectSession() });
         assert.equal(bank._getEntries().length, 8);
     });
 
     test('removing a slot leaves a hole; the others keep index, color and volume', () => {
         seed([entry('a', 100), entry('b', 70), entry('c', 50)]);
-        const bank = createVoiceBank({});
+        const bank = createVoiceBank({ session: session || makeProjectSession() });
         bank._removeEntry('b');
         const after = bank._getEntries();
         assert.equal(after[0].id, 'a');
@@ -90,8 +109,8 @@ describe('the slot is the channel: entries never shift', () => {
 
     test('the hole survives a save/load round trip', () => {
         seed([entry('a', 100), entry('b', 70), entry('c', 50)]);
-        createVoiceBank({})._removeEntry('b');
-        const bank = createVoiceBank({});
+        createVoiceBank({ session: session || makeProjectSession() })._removeEntry('b');
+        const bank = createVoiceBank({ session: session || makeProjectSession() });
         const after = bank._getEntries();
         assert.equal(after[1], null);
         assert.equal(after[2].id, 'c');
@@ -99,7 +118,7 @@ describe('the slot is the channel: entries never shift', () => {
 
     test('removing the active entry selects the first remaining one', () => {
         seed([entry('a', 100), entry('b', 100)]);
-        const bank = createVoiceBank({});
+        const bank = createVoiceBank({ session: session || makeProjectSession() });
         bank._removeEntry('a');
         assert.equal(bank._getActive().id, 'b');
     });
@@ -108,7 +127,7 @@ describe('the slot is the channel: entries never shift', () => {
 describe('one voice, one slot', () => {
     test('assignToSlot writes to the exact slot asked for', () => {
         localStorage.clear();
-        const bank = createVoiceBank({});
+        const bank = createVoiceBank({ session: session || makeProjectSession() });
         assert.ok(bank._assignToSlot(3, { name: 'Piano', voiceData: 'piano-data', patchId: 'p1' }));
         const e = bank._getEntries();
         assert.equal(e[0], null);
@@ -118,7 +137,7 @@ describe('one voice, one slot', () => {
 
     test('assigning the same bytes to another slot is a move, not a copy', () => {
         localStorage.clear();
-        const bank = createVoiceBank({});
+        const bank = createVoiceBank({ session: session || makeProjectSession() });
         bank._assignToSlot(0, { name: 'Piano', voiceData: 'piano-data', patchId: 'p1' });
         bank._getEntries()[0].volume = 42;
         bank._assignToSlot(5, { name: 'Piano', voiceData: 'piano-data', patchId: 'p1' });
@@ -131,7 +150,7 @@ describe('one voice, one slot', () => {
 
     test('assigning an unassigned voice onto an occupied slot overwrites it silently', () => {
         localStorage.clear();
-        const bank = createVoiceBank({});
+        const bank = createVoiceBank({ session: session || makeProjectSession() });
         bank._assignToSlot(2, { name: 'Old', voiceData: 'old-data' });
         bank._assignToSlot(2, { name: 'New', voiceData: 'new-data' });
         const e = bank._getEntries();
@@ -141,7 +160,7 @@ describe('one voice, one slot', () => {
 
     test('assigning a voice that already has a slot onto an occupied one swaps them', () => {
         localStorage.clear();
-        const bank = createVoiceBank({});
+        const bank = createVoiceBank({ session: session || makeProjectSession() });
         bank._assignToSlot(0, { name: 'A', voiceData: 'a-data' });
         bank._assignToSlot(3, { name: 'B', voiceData: 'b-data' });
         bank._getEntries()[0].volume = 42;
@@ -157,7 +176,7 @@ describe('one voice, one slot', () => {
 
     test('dedup sees through encodings: Array and Uint8Array of the same bytes match', () => {
         localStorage.clear();
-        const bank = createVoiceBank({});
+        const bank = createVoiceBank({ session: session || makeProjectSession() });
         bank._assignToSlot(0, { name: 'Bass', voiceData: [1, 2, 3], patchId: 'p1' });
         bank._assignToSlot(4, { name: 'Bass copy', voiceData: Uint8Array.from([1, 2, 3]), patchId: 'p2' });
         assert.equal(occupied(bank).length, 1, 'same bytes may not occupy two slots');
@@ -167,7 +186,7 @@ describe('one voice, one slot', () => {
 
     test('addEntry fills the first empty slot and re-selects an existing voice', () => {
         localStorage.clear();
-        const bank = createVoiceBank({});
+        const bank = createVoiceBank({ session: session || makeProjectSession() });
         bank._assignToSlot(0, { name: 'A', voiceData: 'a-data' });
         bank._assignToSlot(2, { name: 'C', voiceData: 'c-data' });
         bank._addEntry('B', 'b-data', 'pb');
@@ -177,20 +196,22 @@ describe('one voice, one slot', () => {
         assert.equal(bank._getActive().name, 'A', 'the existing entry just becomes active');
     });
 
-    test('_setEntries keeps slot positions and drops duplicate voices', () => {
-        localStorage.clear();
-        const bank = createVoiceBank({});
-        bank._setEntries([
-            { name: 'A', voiceData: 'a-data', volume: 60 },
+    test('reading the tracks keeps slot positions and drops duplicate voices', () => {
+        // `_setEntries` used to do this for a song's saved bank array.
+        // The tracks *are* the bank now, so the same guarantees belong on
+        // the load path: a hole is a slot with no voice, and a track whose
+        // voice already sits in a lower slot does not get a second strip.
+        seed([
+            { id: 'a', name: 'A', voiceData: 'a-data', patchId: 'a', volume: 60 },
             null,
-            { name: 'B', voiceData: 'b-data' },
-            { name: 'A dup', voiceData: 'a-data' },
+            { id: 'b', name: 'B', voiceData: 'b-data', patchId: 'b' },
+            { id: 'dup', name: 'A dup', voiceData: 'a-data', patchId: 'a' },
         ]);
-        const e = bank._getEntries();
+        const e = createVoiceBank({ session })._getEntries();
         assert.equal(e[0].name, 'A');
         assert.equal(e[0].volume, 60);
-        assert.equal(e[1], null, 'the saved hole is kept');
+        assert.equal(e[1], null, 'a slot with no voice is a hole');
         assert.equal(e[2].name, 'B');
-        assert.equal(e[3], null, 'the duplicate is dropped');
+        assert.equal(e[3], null, 'the duplicate voice gets no second strip');
     });
 });

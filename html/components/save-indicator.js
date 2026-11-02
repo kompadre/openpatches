@@ -36,9 +36,19 @@ const DAY = 24 * HOUR;
  * @param {number} now
  * @returns {{state: 'saving'|'saved'|'unsaved'|'idle', text: string, title: string}}
  */
-export function describeSave({ saving, savedAt, dirty }, now = Date.now()) {
+export function describeSave({ saving, savedAt, dirty, failed }, now = Date.now()) {
     if (saving) {
         return { state: 'saving', text: 'Saving…', title: 'Writing your project to this browser' };
+    }
+    // A failed write outranks everything a successful one could say: the
+    // stored project is behind what is on screen, and leaving now costs
+    // the difference.
+    if (failed) {
+        return {
+            state: 'failed',
+            text: 'Not saved',
+            title: 'Your changes could not be saved. Click to try again, and do not close this tab until it succeeds.',
+        };
     }
     if (savedAt == null) {
         // Nothing has been written yet this session. Say which it is: with
@@ -53,8 +63,8 @@ export function describeSave({ saving, savedAt, dirty }, now = Date.now()) {
         state: 'saved',
         text: `Saved ${ago}`,
         title: dirty
-            ? `Last saved ${ago}. There are newer changes still to write.`
-            : `Last saved ${ago}. Everything is written.`,
+            ? `Last saved ${ago}. There are newer changes still to write. Click to save now.`
+            : `Last saved ${ago}. Everything is written. Click to save now.`,
     };
 }
 
@@ -78,6 +88,64 @@ function plural(n, unit) {
 }
 
 /**
+ * The "your work is at risk" warning.
+ *
+ * Deliberately **not** raised from the unload handler, where the quota
+ * failure actually happens: by then the page is going and nothing can be
+ * shown. There are exactly two moments it can be told, and both are while
+ * the page is alive:
+ *
+ *   - a write **fails** (IndexedDB quota, a closed database) — said at
+ *     once, because staying on the page and retrying is a real option;
+ *   - the **next boot** after a last gasp that could not even journal —
+ *     said once, because the work is already gone and pretending
+ *     otherwise is worse.
+ *
+ * It sits above the footer rather than over the page. The action is "wait,
+ * or press Save" — trapping the user behind an overlay would stop them
+ * freeing the space that might let the save through.
+ */
+export function attachSaveWarning({ session, root, lost } = {}) {
+    const el = root || document.getElementById('save-warning');
+    if (!el) return () => {};
+
+    const text = el.querySelector('.save-warning-text');
+    const button = el.querySelector('.save-warning-save');
+
+    function show(message, { retry }) {
+        if (text) text.textContent = message;
+        if (button) button.style.display = retry ? '' : 'none';
+        el.style.display = '';
+    }
+    function hide() { el.style.display = 'none'; }
+
+    hide();
+    // A marker from the last page load: the work is gone, so there is
+    // nothing to retry — only something to own up to.
+    if (lost) {
+        show(`Changes to “${lost.name || 'your project'}” from your last session could not be saved `
+            + 'and have been lost. Browser storage was full.', { retry: false });
+    }
+
+    const unsubscribe = session.subscribe(() => {
+        if (session.hasFailed && session.hasFailed()) {
+            show('Your changes could not be saved — browser storage may be full. '
+                + 'Do not close this tab until the save goes through.', { retry: true });
+        } else if (!lost || session.isSaving() || !session.isDirty()) {
+            hide();
+        }
+    });
+
+    const onSave = () => { if (session.flush) session.flush(); };
+    if (button && button.addEventListener) button.addEventListener('click', onSave);
+
+    return () => {
+        unsubscribe();
+        if (button && button.removeEventListener) button.removeEventListener('click', onSave);
+    };
+}
+
+/**
  * Drive the footer element from a project session.
  *
  * `session` need only provide `subscribe`, `isSaving` and `isDirty`, which
@@ -98,7 +166,12 @@ export function attachSaveIndicator({ session, root, label, now = () => Date.now
 
     function render() {
         const view = describeSave(
-            { saving: session.isSaving(), savedAt, dirty: session.isDirty() },
+            {
+                saving: session.isSaving(),
+                savedAt,
+                dirty: session.isDirty(),
+                failed: session.hasFailed ? session.hasFailed() : false,
+            },
             now(),
         );
         dot.className = 'save-status save-' + view.state;
@@ -117,6 +190,12 @@ export function attachSaveIndicator({ session, root, label, now = () => Date.now
         render();
     });
 
+    // The light is also a button. A save that failed, or an edit the user
+    // wants on disk before they walk away, needs somewhere to press — and
+    // the thing already reporting the state is the obvious place.
+    const onClick = () => { if (session.flush) session.flush(); };
+    if (dot.addEventListener) dot.addEventListener('click', onClick);
+
     // Nothing else ticks while the user reads, so "2 minutes ago" would sit
     // at "just now" forever without this.
     const timer = setInterval(render, REFRESH_MS);
@@ -127,5 +206,6 @@ export function attachSaveIndicator({ session, root, label, now = () => Date.now
     return () => {
         unsubscribe();
         clearInterval(timer);
+        if (dot.removeEventListener) dot.removeEventListener('click', onClick);
     };
 }

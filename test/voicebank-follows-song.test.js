@@ -1,13 +1,11 @@
-// The voice bank follows the project.
+// The Mixer strips ARE the project's tracks.
 //
-// Loading a song used to restore the voices it was written for — that was
-// the song bar's job, and the bar is gone. The toolbar now does it when the
-// session switches project, and keeps the open project's copy of the bank
-// up to date so a new project remembers its sounds too.
-//
-// Still the flat `voiceBank` array inherited from the Song era. Phase 3c
-// moves it onto the project's tracks, where the patch and the mixer strip
-// already live, and this file goes with it.
+// There is no separate bank any more — no `voiceBank` array, no
+// `openpatches_voicebank` key, and crucially no second mute flag. A strip
+// is a track: the slot is the channel, and the name, patch, volume, mute
+// and solo all describe one voice. Assigning a voice writes the track;
+// switching project brings its own band with it because the strips are
+// only ever a view of `project.tracks`.
 
 import { test, before, beforeEach, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -46,24 +44,51 @@ function build() {
     };
 }
 
-describe('the current song keeps its voices current', () => {
-    test('adding a voice is recorded on the song', () => {
+describe('a strip is a track', () => {
+    test('assigning a voice writes the project track', () => {
+        const h = build();
+        h.dock._voiceBank._addEntry('Piano', 'piano-data', 'p1');
+        const tracks = h.session.get().tracks;
+        assert.deepEqual(tracks.map(t => [t.slot, t.name, t.patchId]), [[0, 'Piano', 'p1']]);
+        assert.equal(tracks[0].voiceData, 'piano-data');
+    });
+
+    test('typed voice data becomes a plain array — JSON cannot carry it', () => {
+        const h = build();
+        h.dock._voiceBank._addEntry('Bass', Uint8Array.from([1, 2, 3]), 'p2');
+        assert.deepEqual(h.session.get().tracks[0].voiceData, [1, 2, 3]);
+    });
+
+    test('there is one mute, and the scheduler reads it', () => {
+        // The bug this merge exists to make unrepeatable: the song's track
+        // and the bank entry each kept their own mute, neither showed the
+        // other, and they could disagree.
         const h = build();
         const bank = h.dock._voiceBank;
         bank._addEntry('Piano', 'piano-data', 'p1');
-        const saved = h.session.get().voiceBank;
-        assert.ok(Array.isArray(saved));
-        assert.deepEqual(saved.map(e => e.name), ['Piano']);
-        assert.equal(saved[0].voiceData, 'piano-data');
+        bank._toggleMute(0);
+        assert.equal(h.session.get().tracks[0].mute, true);
+        bank._toggleMute(0);
+        assert.equal(h.session.get().tracks[0].mute, false);
     });
 
-    test('typed voice data is stored as a plain array — JSON cannot carry it', () => {
+    test('a track the roll made keeps its clips when a voice lands on its slot', () => {
+        // The roll creates a bare track the moment a note is drawn, before
+        // any patch exists. Assigning one must fill that track in, not
+        // replace it and orphan its clips.
         const h = build();
-        h.dock._voiceBank._addEntry('Bass', Uint8Array.from([1, 2, 3]), 'p2');
-        assert.deepEqual(h.session.get().voiceBank[0].voiceData, [1, 2, 3]);
+        h.roll.addNote({ midi: 60, start: 0, dur: 1, slot: 0 });
+        const trackId = h.session.get().tracks[0].id;
+        const clips = h.session.getSection().clips.length;
+
+        h.dock._voiceBank._addEntry('Piano', 'piano-data', 'p1');
+        assert.equal(h.session.get().tracks.length, 1, 'filled in, not duplicated');
+        assert.equal(h.session.get().tracks[0].id, trackId);
+        assert.equal(h.session.get().tracks[0].name, 'Piano');
+        assert.equal(h.session.getSection().clips.length, clips, 'its clips survived');
     });
 
-    test('an ordinary song edit does not reapply the stored voices', () => {
+    test('an ordinary edit does not rebuild the strips', () => {
         const h = build();
         const bank = h.dock._voiceBank;
         bank._addEntry('Piano', 'piano-data', 'p1');
@@ -77,7 +102,7 @@ describe('the current song keeps its voices current', () => {
 
         const after = bank._getEntries().filter(Boolean);
         assert.deepEqual(after.map(e => e.name), ['Piano']);
-        assert.equal(after[0].id, idBefore, 'the very same entries, not a rebuilt copy');
+        assert.equal(after[0].id, idBefore, 'the very same strip, not a rebuilt copy');
     });
 
     test('the roll keeps its working copies when the bank is written', () => {
@@ -102,37 +127,36 @@ describe('the current song keeps its voices current', () => {
     });
 });
 
-describe('switching project restores its voices', () => {
-    test('the bank is replaced by the project it was written for', async () => {
+describe('switching project brings its own band', () => {
+    test('the strips are replaced by the new project\'s tracks, and come back', async () => {
         const h = build();
         const bank = h.dock._voiceBank;
         bank._addEntry('Piano', 'piano-data', 'p1');
         const first = h.session.getId();
 
-        // A second project with its own voices.
         h.session.createFrom({
             name: 'Other',
-            voiceBank: [{ name: 'Strings', patchId: 'p9', volume: 80, voiceData: 'str-data' }],
+            tracks: [{ name: 'Strings', slot: 0, patchId: 'p9', volume: 80, voiceData: 'str-data' }],
         }, 'song-editor');
-
         assert.deepEqual(bank._getEntries().filter(Boolean).map(e => e.name), ['Strings']);
+
         // Reading a body back is the one switch that has to be async.
         await h.session.open(first, 'song-editor');
         assert.deepEqual(bank._getEntries().filter(Boolean).map(e => e.name), ['Piano']);
     });
 
-    test('a new project has no voices of its own, so the bank carries on', () => {
+    test('a new project starts with no band at all', () => {
+        // The old behaviour — carrying the previous song's voices over
+        // because the new one had none — went with the separate bank. A
+        // project owns its tracks, and an empty project has none.
         const h = build();
-        const bank = h.dock._voiceBank;
-        bank._addEntry('Piano', 'piano-data', 'p1');
+        h.dock._voiceBank._addEntry('Piano', 'piano-data', 'p1');
 
-        const fresh = h.session.createNew('Fresh', 'song-editor');
-        assert.equal(fresh.voiceBank, null, 'nothing of its own yet');
-        assert.deepEqual(bank._getEntries().filter(Boolean).map(e => e.name), ['Piano'],
-            'so the voices on screen are left alone rather than wiped');
+        h.session.createNew('Fresh', 'song-editor');
+        assert.deepEqual(h.dock._voiceBank._getEntries().filter(Boolean), []);
+        assert.deepEqual(h.session.get().tracks, []);
 
-        // Touching the bank from here on records it against the new song.
-        bank._addEntry('Bass', 'bass-data', 'p2');
-        assert.deepEqual(h.session.get().voiceBank.map(e => e.name), ['Piano', 'Bass']);
+        h.dock._voiceBank._addEntry('Bass', 'bass-data', 'p2');
+        assert.deepEqual(h.session.get().tracks.map(t => t.name), ['Bass']);
     });
 });

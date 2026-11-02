@@ -215,27 +215,12 @@ export function createToolbar(opts) {
     let takeRunning = false;      // the transport's view, for re-basing recordStartTime
     let activeRecordSlot = 0;
 
-    // Set once the session exists; the voice bank is built before it and
-    // fires its first snapshot immediately.
-    let sessionRef = null;
-
-    /**
-     * Voice bank entries as plain JSON (typed arrays do not survive it).
-     * Holes are kept as nulls — the index is the slot is the channel — with
-     * trailing ones trimmed so an untouched bank still serializes to [].
-     */
-    function serializeBank(entries) {
-        const out = (entries || []).map(e => e ? {
-            name: e.name,
-            patchId: e.patchId,
-            volume: e.volume,
-            muted: !!e.muted,
-            solo: !!e.solo,
-            voiceData: e.voiceData instanceof Uint8Array ? Array.from(e.voiceData) : e.voiceData,
-        } : null);
-        while (out.length > 0 && out[out.length - 1] == null) out.pop();
-        return out;
-    }
+    // The open project, shared by the piano roll (which edits a pattern in
+    // it), the Section editor (which arranges one of its sections) and the
+    // Mixer (which is a view of its tracks). app.js owns it and has
+    // already opened it — the store is async, so it cannot be initialised
+    // from here.
+    const session = opts.session;
 
     const voiceSelect = document.createElement('select');
     voiceSelect.className = 'kb-voice-select';
@@ -259,6 +244,9 @@ export function createToolbar(opts) {
     }
 
     const voiceBank = createVoiceBank({
+        // The bank *is* the project's tracks now: it reads and writes them
+        // directly, so there is no separate copy to keep in step.
+        session,
         onSelect: (entry, slot) => {
             if (pianorollRef) {
                 pianorollRef.setActiveSlot(slot);
@@ -271,11 +259,6 @@ export function createToolbar(opts) {
         },
         onSnapshot: (entries) => {
             if (opts.onSnapshot) opts.onSnapshot(entries);
-            // Keep the current song's copy of the voices current. Marked
-            // 'voicebank' so the roll knows the arrangement did not change.
-            if (sessionRef) {
-                sessionRef.update((project) => { project.voiceBank = serializeBank(entries); }, 'voicebank');
-            }
             if (pianorollRef && pianorollRef.renderLegend) pianorollRef.renderLegend();
             if (wrapper._songEditor) wrapper._songEditor.render();
             refreshVoiceSelect();
@@ -287,25 +270,14 @@ export function createToolbar(opts) {
     // pattern editor reaches it through the kb-voice-select and the legend.
     mixerPanel.appendChild(voiceBank);
 
-    // The open project, shared by the piano roll (which edits a pattern in
-    // it) and the Section editor (which arranges one of its sections).
-    // app.js owns it and has already opened it — the store is async, so it
-    // cannot be initialised from here.
-    const session = opts.session;
-    sessionRef = session;
-
-    // Switching project restores the voices it was written for. Still the
-    // per-project `voiceBank` array for now; phase 3c moves the bank onto
-    // the project's tracks and this goes with it.
+    // Switching project brings its own band with it. The bank re-reads the
+    // tracks itself (it subscribes too); all that is needed here is to cut
+    // whatever the old project's voices were still sounding.
     let lastProjectId = session.get() ? session.get().id : null;
     session.subscribe((ev) => {
         if (ev.kind !== 'project' || ev.projectId === lastProjectId) return;
         lastProjectId = ev.projectId;
-        const bank = session.get().voiceBank;
-        if (Array.isArray(bank) && bank.length > 0 && voiceBank._setEntries) {
-            stopAll();
-            voiceBank._setEntries(bank);
-        }
+        stopAll();
     });
 
     pianorollRef = createPianoroll({

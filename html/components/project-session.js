@@ -71,8 +71,8 @@ export function createProjectSession(store) {
     // forced flush) are passed on, so an indicator can subscribe to the
     // session alone rather than to both.
     store.subscribe((e) => {
-        if (e.reason === 'save-start' || e.reason === 'save-end') {
-            notify('saving', { saving: e.saving });
+        if (e.reason === 'save-start' || e.reason === 'save-end' || e.reason === 'save-failed') {
+            notify('saving', { saving: e.saving, failed: e.failed });
         }
     });
 
@@ -301,6 +301,8 @@ export function createProjectSession(store) {
         flush() { return store.flush({ force: true }); },
         isSaving() { return store.isSaving(); },
         isDirty() { return store.isDirty(); },
+        /** The last write failed — the stored body is behind the open one. */
+        hasFailed() { return store.hasFailed(); },
         /** Resolves when no write is in flight — what Play waits on. */
         whenIdle() { return store.whenIdle(); },
 

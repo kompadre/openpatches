@@ -45,6 +45,9 @@ export const MAX_SLOTS = 8;      // slot IS the channel, so this is the track li
 export const MIN_BPM = 32;
 export const MAX_BPM = 255;
 export const DEFAULT_BPM = 120;
+/** Channel volume, on the 0–127 scale the engine and the fader both use. */
+export const MAX_VOLUME = 127;
+export const DEFAULT_VOLUME = 100;
 export const PATTERN_KINDS = ['mono'];
 
 // A clip cannot start past, or run past, bar 4097. Generous: the point is to
@@ -65,13 +68,12 @@ function uid(prefix) {
 }
 
 function clampInt(v, min, max, fallback) {
+    // `null` has to be caught explicitly: `Number(null)` is 0, which is
+    // finite, so a null volume would read as *silence* and a null bpm as
+    // the slowest tempo — both indistinguishable from a deliberate choice.
+    // `undefined` already falls through as NaN; null must behave the same.
+    if (v == null) return fallback;
     const n = Math.round(Number(v));
-    if (!Number.isFinite(n)) return fallback;
-    return Math.max(min, Math.min(max, n));
-}
-
-function clampNum(v, min, max, fallback) {
-    const n = Number(v);
     if (!Number.isFinite(n)) return fallback;
     return Math.max(min, Math.min(max, n));
 }
@@ -165,7 +167,7 @@ export function createTrack(partial = {}) {
         slot: clampInt(partial.slot, 0, MAX_SLOTS - 1, 0),
         patchId: partial.patchId || null,
         voiceData: normalizeVoiceData(partial.voiceData),
-        volume: clampNum(partial.volume, 0, 1, 1),
+        volume: clampInt(partial.volume, 0, MAX_VOLUME, DEFAULT_VOLUME),
         // One mute and one solo for the strip. Two records used to carry
         // these separately and could disagree; see the file header.
         mute: partial.mute === true,
@@ -174,12 +176,15 @@ export function createTrack(partial = {}) {
 }
 
 /**
- * Voice bytes as a plain number array, so a body is JSON all the way down.
+ * Voice bytes, in a shape a JSON body can hold.
  *
- * Three shapes reach here. The `Uint8Array` the synth passes around; the
- * plain array that comes back out of storage; and — the one worth the
- * trouble — `{"0":12,"1":34,...}`, which is what `JSON.stringify` makes of a
- * typed array. That third case is the quiet one: a caller who assigns
+ * Four shapes reach here. A **base64 string**, which is how patch-model
+ * stores `voice_data` and therefore the commonest of the lot — kept as it
+ * is, because re-encoding it would only lose fidelity. The `Uint8Array`
+ * the synth passes around, and the plain array that comes back out of
+ * storage, both of which become arrays. And — the one worth the trouble —
+ * `{"0":12,"1":34,...}`, which is what `JSON.stringify` makes of a typed
+ * array. That last case is the quiet one: a caller who assigns
  * `track.voiceData = someUint8Array` directly, bypassing this factory, gets
  * a body that works perfectly in memory and loses its patch on the next
  * load. Accepting the object shape means the round trip survives careless
@@ -188,6 +193,7 @@ export function createTrack(partial = {}) {
  * Anything else becomes null rather than a half-record.
  */
 function normalizeVoiceData(v) {
+    if (typeof v === 'string') return v || null;
     if (ArrayBuffer.isView(v)) return Array.from(v);
     let src = v;
     if (!Array.isArray(src)) {
@@ -292,14 +298,6 @@ export function createProject(partial = {}) {
         // profile's; an export carries only what it uses, and an import
         // unions them back in.
         tags: normalizeTags(p.tags),
-        // **Transitional.** The voice bank as the flat array the Song era
-        // used. Carried verbatim so the bank still follows a project switch
-        // while phase 3c is pending; that phase moves it onto `tracks`
-        // (where the patch and the mixer strip already belong) and this
-        // field goes away. Kept here rather than dropped because the
-        // factory runs on every load, and silently losing the user's voices
-        // between two phases is worse than one field of churn.
-        voiceBank: Array.isArray(p.voiceBank) ? p.voiceBank : null,
         created: p.created || Date.now(),
         modified: p.modified || Date.now(),
     });

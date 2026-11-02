@@ -74,6 +74,27 @@ export const DEFAULT_INTERVAL_MS = 30_000;
  */
 const JOURNAL_KEY = 'openpatches_project_journal';
 
+/**
+ * The few bytes left behind when even the journal could not be written —
+ * see `writeJournal`. Read once on the next boot so the user can be told
+ * their last session's edits are gone, rather than discovering it.
+ */
+const LOST_KEY = 'openpatches_project_lost';
+
+/**
+ * Read and clear the "a save was lost" marker. Called once at startup by
+ * whatever is going to report it; taking it means it is reported exactly
+ * once.
+ */
+export function takeLostSaveMarker() {
+    try {
+        const raw = localStorage.getItem(LOST_KEY);
+        if (!raw) return null;
+        localStorage.removeItem(LOST_KEY);
+        return JSON.parse(raw);
+    } catch { return null; }
+}
+
 // --- Backends ---
 //
 // A backend is four async methods over opaque JSON bodies keyed by project
@@ -193,6 +214,11 @@ export function createProjectStore(opts = {}) {
     // happening.
     let pending = 0;
     let saving = false;
+    // The last write failed and the body on disk is still stale. Surfaced
+    // rather than only logged: this is the one state where the user can
+    // actually do something (stay on the page, retry) and the only one
+    // where leaving costs them work.
+    let failed = false;
     // Writes are serialised through this so a slow save cannot be overtaken
     // by a faster one started later and leave the older body on disk.
     let inFlight = Promise.resolve();
@@ -202,7 +228,7 @@ export function createProjectStore(opts = {}) {
 
     function notify(reason) {
         for (const fn of [...subscribers]) {
-            try { fn({ reason, project, saving, dirty }); } catch (e) { console.warn('[project-store] subscriber failed:', e); }
+            try { fn({ reason, project, saving, dirty, failed }); } catch (e) { console.warn('[project-store] subscriber failed:', e); }
         }
     }
 
@@ -217,9 +243,35 @@ export function createProjectStore(opts = {}) {
         } catch { return null; }
     }
 
-    /** Synchronous, and called from an unload handler. Must not throw. */
+    /**
+     * Synchronous, and called from an unload handler. Must not throw.
+     *
+     * localStorage has a quota (~5 MB for the whole origin, shared with
+     * the patch library and the profile), so a large project can fail to
+     * fit. Nothing can be shown at that point — the page is already going
+     * — so the fallback is a handful of bytes saying *that* it happened.
+     * The next boot reads that and tells the user, which is the only
+     * honest option left: losing work silently is the one outcome this
+     * whole mechanism exists to prevent.
+     *
+     * The stale journal is dropped rather than kept. It is older than what
+     * we just failed to write, so restoring it would quietly resurrect the
+     * wrong state and look like success.
+     */
     function writeJournal(body) {
-        try { localStorage.setItem(JOURNAL_KEY, JSON.stringify(body)); } catch (e) { onError(e); }
+        try {
+            localStorage.setItem(JOURNAL_KEY, JSON.stringify(body));
+            return true;
+        } catch (e) {
+            try { localStorage.removeItem(JOURNAL_KEY); } catch { /* ignore */ }
+            try {
+                localStorage.setItem(LOST_KEY, JSON.stringify({
+                    id: body.id, name: body.name, at: Date.now(),
+                }));
+            } catch { /* nothing left to try */ }
+            onError(e);
+            return false;
+        }
     }
 
     /**
@@ -265,6 +317,7 @@ export function createProjectStore(opts = {}) {
         // transaction was opened inside the event handler or just after it
         // is the difference between the last edits being committed and
         // being lost. Only chain when ordering actually requires it.
+        failed = false;
         let write;
         if (pending === 1) {
             try { write = Promise.resolve(backend.save(body.id, body)); }
@@ -279,6 +332,8 @@ export function createProjectStore(opts = {}) {
                 // next tick (or flush) should try again rather than assume it
                 // was written.
                 dirty = true;
+                failed = true;
+                notify('save-failed');
                 onError(e);
             })
             .then(settle);
@@ -318,6 +373,9 @@ export function createProjectStore(opts = {}) {
 
         /** A write is in flight. What Play checks before it starts. */
         isSaving() { return saving; },
+
+        /** The last write failed, so the stored body is behind the open one. */
+        hasFailed() { return failed; },
 
         /**
          * Resolves once nothing is being written.
@@ -447,6 +505,7 @@ export function createProjectStore(opts = {}) {
             project = null;
             dirty = false;
             try { localStorage.removeItem(JOURNAL_KEY); } catch { /* ignore */ }
+            try { localStorage.removeItem(LOST_KEY); } catch { /* ignore */ }
             await backend.clear();
             notify('close');
         },

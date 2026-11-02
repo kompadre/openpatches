@@ -8,11 +8,13 @@ import { test, before, beforeEach, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { installBrowserEnv } from './harness.js';
 
-let createVoiceBank;
+let createVoiceBank, makeProjectSession;
+let session = null;
 
 before(async () => {
     installBrowserEnv();
     ({ createVoiceBank } = await import('../html/components/voicebank.js'));
+    ({ makeProjectSession } = await import('./project-fixture.js'));
 });
 
 let volumeCalls;
@@ -20,10 +22,13 @@ let volumeCalls;
 beforeEach(() => {
     localStorage.clear();
     volumeCalls = [];
+    session = null;
 });
 
 function build() {
+    session = session || makeProjectSession();
     const bank = createVoiceBank({
+        session,
         onVolumeChange: (slot, vol) => volumeCalls.push([slot, vol]),
     });
     bank._assignToSlot(0, { name: 'A', voiceData: 'a-data' });
@@ -53,9 +58,12 @@ describe('mute', () => {
         assert.deepEqual(volumeCalls, [[0, 100]]);
     });
 
-    test('mute is persisted and still effective after a reload', () => {
+    test('mute is persisted on the track and still effective after a reload', () => {
         build()._toggleMute(1);
-        const bank = createVoiceBank({});
+        assert.equal(session.get().tracks.find(t => t.slot === 1).mute, true,
+            'one mute flag, on the track the scheduler reads');
+        // A second bank over the same project is what a reload amounts to.
+        const bank = createVoiceBank({ session });
         const e = bank._getEntries()[1];
         assert.equal(e.muted, true);
         assert.equal(e.effectiveVolume, 0, 'recomputed on load');

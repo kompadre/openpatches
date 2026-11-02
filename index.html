@@ -241,6 +241,17 @@
         </div>
     </div>
 
+    <!-- Raised when a save fails, or when the last page load could not even
+         journal its unsaved work. Above the footer rather than over the
+         page: the action is to wait or press Save, and trapping the user
+         behind an overlay would stop them freeing the space that might let
+         the save through. -->
+    <div id="save-warning" class="save-warning" style="display:none;">
+        <span class="save-warning-icon">■</span>
+        <span class="save-warning-text"></span>
+        <button class="save-warning-save">Save now</button>
+    </div>
+
     <footer>
         <span class="footer-copy">&copy; Alexey S. Kompaniets 2026</span>
         <span class="footer-storage-note">All data stored locally in your browser</span>

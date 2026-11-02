@@ -16,8 +16,8 @@
 // a channel behind the user's back.
 
 import { voiceKey } from './patch-model.js';
+import { createTrack } from './project-model.js';
 
-const STORAGE_KEY = 'openpatches_voicebank';
 const MAX_SLOTS = 8;
 const DEFAULT_VOLUME = 100;
 
@@ -33,7 +33,7 @@ function copyVoice(voiceData) {
 }
 
 export function createVoiceBank(opts) {
-    const { onSelect, onVolumeChange, onPreview, onSnapshot } = opts;
+    const { onSelect, onVolumeChange, onPreview, onSnapshot, session } = opts;
     let entries = new Array(MAX_SLOTS).fill(null);
     let activeId = null;
 
@@ -397,55 +397,88 @@ export function createVoiceBank(opts) {
         }
     }
 
+    /**
+     * Write the strips back onto the project's **tracks**.
+     *
+     * A track and a mixer strip are one thing: the slot is the channel, and
+     * the name, patch, volume, mute and solo all describe the same voice.
+     * They used to be two records with two mute flags that could disagree —
+     * the song's track gated whether notes were *scheduled* while the bank
+     * entry gated the channel's *volume*, and nothing kept them in step.
+     *
+     * Tracks with no voice are left alone: the roll makes one the moment a
+     * note is drawn, before any patch is assigned, and that track's clips
+     * must survive the bank not knowing about it yet.
+     */
     function saveState() {
-        try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify({ entries, activeId }));
-        } catch (e) {
-            console.warn('VoiceBank save failed:', e);
-        }
+        if (!session || !session.get()) return;
+        session.update((project) => {
+            const bySlot = new Map(project.tracks.map(t => [t.slot, t]));
+            for (let slot = 0; slot < MAX_SLOTS; slot++) {
+                const entry = entries[slot];
+                const track = bySlot.get(slot);
+                if (!entry) {
+                    // The strip was emptied. The track keeps its place and
+                    // its clips; it just has nothing to sound with.
+                    if (track) { track.patchId = null; track.voiceData = null; }
+                    continue;
+                }
+                const fields = {
+                    name: entry.name,
+                    patchId: entry.patchId || null,
+                    voiceData: entry.voiceData,
+                    volume: entry.volume,
+                    mute: !!entry.muted,
+                    solo: !!entry.solo,
+                };
+                if (track) Object.assign(track, fields);
+                // The new track takes the strip's id, so the two never have
+                // two identities for one voice — and so a strip survives a
+                // save/reload cycle as the same object to its subscribers.
+                else project.tracks.push(createTrack({ ...fields, id: entry.id, slot }));
+            }
+            project.tracks.sort((a, b) => a.slot - b.slot);
+        }, 'voicebank', 'tracks');
     }
 
-    // Rebuild the fixed slot array from a plain list, keeping positions and
-    // dropping voiceKey duplicates (first occurrence wins). Shared by
-    // loadState and _setEntries; old saved state (dense, spliced) comes
-    // through unchanged because its indices were already its slots.
-    function slotsFromList(list, mapEntry) {
-        const slots = new Array(MAX_SLOTS).fill(null);
-        const seen = new Set();
-        (Array.isArray(list) ? list : []).slice(0, MAX_SLOTS).forEach((e, i) => {
-            if (!e || !e.voiceData) return;
-            const voiceCopy = copyVoice(e.voiceData);
-            if (!voiceCopy) return;
-            const key = e.voiceKey || voiceKey(voiceCopy);
-            if (key && seen.has(key)) return;
-            if (key) seen.add(key);
-            slots[i] = mapEntry(e, i, voiceCopy, key);
-        });
-        return slots;
-    }
-
+    /**
+     * Read the strips back off the project's tracks. A track with no voice
+     * data is not a strip — the roll creates bare tracks for notes, and an
+     * empty slot is how the mixer shows one.
+     *
+     * The entry's id **is** the track id, so selecting a strip and
+     * selecting a track are the same act.
+     */
     function loadState() {
-        try {
-            const raw = localStorage.getItem(STORAGE_KEY);
-            if (!raw) return;
-            const data = JSON.parse(raw);
-            // Saved entries keep their ids and volumes; only the fixed-array
-            // shape, the voiceKey backfill and the dedup are imposed here.
-            entries = slotsFromList(data.entries, (e, i, voiceCopy, key) => ({
-                ...e,
+        const project = session && session.get();
+        if (!project) return;
+        const next = new Array(MAX_SLOTS).fill(null);
+        const seen = new Set();
+        for (const track of project.tracks) {
+            if (track.slot < 0 || track.slot >= MAX_SLOTS) continue;
+            const voiceCopy = copyVoice(track.voiceData);
+            if (!voiceCopy) continue;
+            const key = voiceKey(voiceCopy);
+            // One voice, one slot — the invariant assignToSlot enforces.
+            if (key && seen.has(key)) continue;
+            if (key) seen.add(key);
+            next[track.slot] = {
+                id: track.id,
+                name: track.name,
+                patchId: track.patchId || null,
                 voiceData: voiceCopy,
                 voiceKey: key,
-                volume: e.volume == null ? DEFAULT_VOLUME : e.volume,
-                muted: !!e.muted,
-                solo: !!e.solo,
-            }));
-            activeId = data.activeId || null;
-            if (activeId && !entries.find(e => e && e.id === activeId)) {
-                const first = entries.find(e => e);
-                activeId = first ? first.id : null;
-            }
-        } catch (e) {
-            console.warn('VoiceBank load failed:', e);
+                color: PATCH_COLORS[track.slot % PATCH_COLORS.length],
+                volume: track.volume == null ? DEFAULT_VOLUME : track.volume,
+                muted: !!track.mute,
+                solo: !!track.solo,
+            };
+        }
+        entries = next;
+        if (activeId && !entries.find(e => e && e.id === activeId)) activeId = null;
+        if (!activeId) {
+            const first = entries.find(e => e);
+            activeId = first ? first.id : null;
         }
     }
 
@@ -455,6 +488,20 @@ export function createVoiceBank(opts) {
     applyMix(false);
     render();
 
+    // Another editor changed the band, or the project was switched: the
+    // strips are a view of the tracks, so re-read them. Our own writes are
+    // skipped — re-reading mid-edit would fight the user's drag.
+    if (session) {
+        session.subscribe((ev) => {
+            if (ev.source === 'voicebank') return;
+            if (ev.kind !== 'project' && ev.kind !== 'tracks') return;
+            loadState();
+            applyMix(false);
+            render();
+            notifySnapshot();
+        });
+    }
+
     container._addEntry = addEntry;
     container._assignToSlot = assignToSlot;
     container._firstEmptySlot = firstEmptySlot;
@@ -462,6 +509,7 @@ export function createVoiceBank(opts) {
     container._toggleMute = toggleMute;
     container._toggleSolo = toggleSolo;
     container._clear = () => { entries = new Array(MAX_SLOTS).fill(null); activeId = null; render(); saveState(); notifySnapshot(); };
+    container._reload = () => { loadState(); applyMix(false); render(); notifySnapshot(); };
     container._getActive = getActive;
     container._setActive = setActive;
     container._getEntries = () => entries;
@@ -475,23 +523,6 @@ export function createVoiceBank(opts) {
     };
     container._render = render;
     container._notifySnapshot = notifySnapshot;
-    // Replace every slot at once (song load). Entries get fresh ids but keep
-    // their saved slot positions; the first occupied slot becomes active so
-    // the piano roll and keyboard follow, exactly as after a reload.
-    container._setEntries = (list) => {
-        entries = slotsFromList(list, (e, i, voiceCopy, key) => ({
-            ...makeEntry(i, e.name, voiceCopy, e.patchId || e.name, key, e.volume),
-            muted: !!e.muted,
-            solo: !!e.solo,
-        }));
-        const first = entries.find(e => e);
-        activeId = first ? first.id : null;
-        applyMix();
-        render();
-        fireSelect();
-        saveState();
-        notifySnapshot();
-    };
 
     return container;
 }

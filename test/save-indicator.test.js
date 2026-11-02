@@ -11,11 +11,11 @@ import { test, before, beforeEach, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { installBrowserEnv } from './harness.js';
 
-let describeSave, relativeTime, attachSaveIndicator;
+let describeSave, relativeTime, attachSaveIndicator, attachSaveWarning;
 
 before(async () => {
     installBrowserEnv();
-    ({ describeSave, relativeTime, attachSaveIndicator } =
+    ({ describeSave, relativeTime, attachSaveIndicator, attachSaveWarning } =
         await import('../html/components/save-indicator.js'));
 });
 
@@ -87,6 +87,21 @@ describe('describeSave', () => {
     });
 });
 
+describe('a save that failed', () => {
+    test('outranks everything a successful one could say', () => {
+        const now = 10 * MINUTE;
+        const v = describeSave({ saving: false, savedAt: now - MINUTE, dirty: true, failed: true }, now);
+        assert.equal(v.state, 'failed');
+        assert.equal(v.text, 'Not saved');
+        assert.match(v.title, /do not close this tab/i);
+    });
+
+    test('but a write in progress still wins — it may yet succeed', () => {
+        const v = describeSave({ saving: true, savedAt: null, dirty: true, failed: true });
+        assert.equal(v.state, 'saving');
+    });
+});
+
 describe('attachSaveIndicator', () => {
     let dot, label, listeners, stub, clock;
 
@@ -98,8 +113,12 @@ describe('attachSaveIndicator', () => {
         stub = {
             saving: false,
             dirty: false,
+            failed: false,
+            flushed: 0,
             isSaving() { return this.saving; },
             isDirty() { return this.dirty; },
+            hasFailed() { return this.failed; },
+            flush() { this.flushed++; },
             subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); },
             emit() { for (const fn of [...listeners]) fn({ kind: 'saving' }); },
         };
@@ -158,6 +177,20 @@ describe('attachSaveIndicator', () => {
         assert.equal(label.textContent, 'Not saved yet');
     });
 
+    test('the light is a button: clicking it saves now', () => {
+        attach();
+        dot.dispatch('click', {});
+        assert.equal(stub.flushed, 1);
+    });
+
+    test('a failed write turns it red and says so', () => {
+        attach();
+        stub.failed = true;
+        stub.emit();
+        assert.match(dot.className, /save-failed/);
+        assert.equal(label.textContent, 'Not saved');
+    });
+
     test('tearing down stops listening', () => {
         const detach = attach();
         detach();
@@ -168,5 +201,78 @@ describe('attachSaveIndicator', () => {
         const detach = attachSaveIndicator({ session: stub, root: null, label: null });
         assert.equal(typeof detach, 'function');
         detach();
+    });
+});
+
+describe('attachSaveWarning', () => {
+    // The quota failure itself happens during unload, when nothing can be
+    // shown. These are the two moments it *can* be told, both with the
+    // page alive: a write failing, and the boot after a lost last gasp.
+
+    let root, text, button, listeners, stub;
+
+    beforeEach(() => {
+        root = document.createElement('div');
+        text = document.createElement('span');
+        text.className = 'save-warning-text';
+        button = document.createElement('button');
+        button.className = 'save-warning-save';
+        root.appendChild(text);
+        root.appendChild(button);
+        listeners = new Set();
+        stub = {
+            saving: false, dirty: false, failed: false, flushed: 0,
+            isSaving() { return this.saving; },
+            isDirty() { return this.dirty; },
+            hasFailed() { return this.failed; },
+            flush() { this.flushed++; },
+            subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); },
+            emit() { for (const fn of [...listeners]) fn({ kind: 'saving' }); },
+        };
+    });
+
+    test('silent when all is well', () => {
+        attachSaveWarning({ session: stub, root });
+        assert.equal(root.style.display, 'none');
+    });
+
+    test('a failed write raises it, with a retry', () => {
+        attachSaveWarning({ session: stub, root });
+        stub.failed = true;
+        stub.emit();
+        assert.equal(root.style.display, '');
+        assert.match(text.textContent, /do not close this tab/i);
+        assert.equal(button.style.display, '');
+    });
+
+    test('Save now retries', () => {
+        attachSaveWarning({ session: stub, root });
+        stub.failed = true;
+        stub.emit();
+        button.dispatch('click', {});
+        assert.equal(stub.flushed, 1);
+    });
+
+    test('a write that then succeeds clears it', () => {
+        attachSaveWarning({ session: stub, root });
+        stub.failed = true;
+        stub.emit();
+        stub.failed = false;
+        stub.emit();
+        assert.equal(root.style.display, 'none');
+    });
+
+    test('a lost last gasp is reported once, with nothing to retry', () => {
+        attachSaveWarning({ session: stub, root, lost: { name: 'Nocturne' } });
+        assert.equal(root.style.display, '');
+        assert.match(text.textContent, /Nocturne/);
+        assert.match(text.textContent, /lost/i);
+        assert.equal(button.style.display, 'none', 'that work is already gone');
+    });
+
+    test('tearing down stops listening', () => {
+        const detach = attachSaveWarning({ session: stub, root });
+        detach();
+        assert.equal(listeners.size, 0);
     });
 });
