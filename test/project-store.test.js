@@ -30,7 +30,7 @@ beforeEach(() => {
 
 /** A store over the shared backend, with the page lifecycle left alone. */
 function makeStore(opts = {}) {
-    return createProjectStore({ backend, debounceMs: 10, bindLifecycle: false, ...opts });
+    return createProjectStore({ backend, intervalMs: 10, bindLifecycle: false, ...opts });
 }
 
 async function opened(opts = {}) {
@@ -84,7 +84,7 @@ describe('adopt and open', () => {
     });
 });
 
-describe('the debounced flush', () => {
+describe('the autosave tick', () => {
     test('touch does not write immediately — that is what keeps callers sync', async () => {
         const store = await opened();
         store.get().bpm = 140;
@@ -147,7 +147,7 @@ describe('the debounced flush', () => {
         store.get().bpm = 140;
         store.touch();
         await tick(30);
-        assert.equal(errors.length, 1);
+        assert.ok(errors.length >= 1, 'the failure was reported');
         assert.equal(store.isDirty(), true, 'the body on disk is still stale, so say so');
         assert.equal((await backend.load(store.getId())).bpm, 120, 'nothing was written');
 
@@ -182,6 +182,130 @@ describe('the debounced flush', () => {
         resolveFirst();
         await store.flush();
         assert.deepEqual(order, ['first', 'second:2'], 'in order, newest last');
+    });
+});
+
+describe('canSave — not while the transport is busy', () => {
+    test('an autosave tick is skipped while the transport says no', async () => {
+        let busy = true;
+        const store = makeStore({ canSave: () => !busy });
+        await store.adopt({ name: 'Piece' });
+
+        store.get().bpm = 140;
+        store.touch();
+        await tick(40);
+        assert.equal(store.isDirty(), true, 'still pending');
+        assert.equal((await backend.load(store.getId())).bpm, 120);
+
+        // The take ends; the next tick picks it up.
+        busy = false;
+        await tick(40);
+        assert.equal(store.isDirty(), false);
+        assert.equal((await backend.load(store.getId())).bpm, 140);
+    });
+
+    test('a forced flush ignores canSave — stopping a take saves at once', async () => {
+        const store = makeStore({ canSave: () => false });
+        await store.adopt({ name: 'Piece' });
+        store.get().bpm = 140;
+        store.touch();
+
+        await store.flush({ force: true });
+        assert.equal((await backend.load(store.getId())).bpm, 140);
+        assert.equal(store.isDirty(), false);
+    });
+
+    test('the lifecycle flush is forced, so a tab killed mid-take still saves', async () => {
+        // "Do not save while playing" is a latency preference. It loses to
+        // not losing the session.
+        const store = createProjectStore({
+            backend, intervalMs: 10_000, bindLifecycle: true, canSave: () => false,
+        });
+        await store.adopt({ name: 'Piece' });
+        store.get().bpm = 140;
+        store.touch();
+
+        document.visibilityState = 'hidden';
+        for (const fn of document._listeners.visibilitychange || []) fn();
+        await tick(5);
+
+        assert.equal((await backend.load(store.getId())).bpm, 140);
+    });
+
+    test('a skipped tick does not count as a write', async () => {
+        const store = makeStore({ canSave: () => false });
+        await store.adopt({ name: 'Piece' });
+        let writes = 0;
+        const save = backend.save;
+        backend.save = (...a) => { writes++; return save(...a); };
+
+        store.touch();
+        await tick(40);
+        assert.equal(writes, 0);
+        assert.equal(store.isSaving(), false, 'nothing is in flight either');
+    });
+});
+
+describe('isSaving and whenIdle — the Play deferral', () => {
+    test('whenIdle resolves immediately when nothing is being written', async () => {
+        const store = await opened();
+        assert.equal(store.isSaving(), false);
+        let resolved = false;
+        store.whenIdle().then(() => { resolved = true; });
+        await tick(1);
+        assert.equal(resolved, true);
+    });
+
+    test('pressing Play mid-write waits for the write, then starts', async () => {
+        const store = await opened();
+        let release;
+        const save = backend.save;
+        backend.save = (...a) => new Promise((r) => { release = () => r(save(...a)); });
+
+        store.get().bpm = 140;
+        store.touch();
+        await tick(20);                       // the tick fired; the write hangs
+        assert.equal(store.isSaving(), true);
+
+        const order = [];
+        store.whenIdle().then(() => order.push('play starts'));
+        await tick(5);
+        assert.deepEqual(order, [], 'the button is down but nothing has started');
+
+        release();
+        await store.flush();
+        await tick(1);
+        assert.deepEqual(order, ['play starts']);
+        assert.equal(store.isSaving(), false);
+    });
+
+    test('several waiters all resolve on the one write', async () => {
+        const store = await opened();
+        let release;
+        const save = backend.save;
+        backend.save = (...a) => new Promise((r) => { release = () => r(save(...a)); });
+        store.touch();
+        await tick(20);
+
+        let n = 0;
+        store.whenIdle().then(() => n++);
+        store.whenIdle().then(() => n++);
+        release();
+        await store.flush();
+        await tick(1);
+        assert.equal(n, 2);
+    });
+
+    test('a write that fails still releases the waiters, or Play would hang forever', async () => {
+        const store = await opened({ onError: () => {} });
+        backend.save = () => Promise.reject(new Error('nope'));
+        store.touch();
+        await tick(20);
+
+        let resolved = false;
+        store.whenIdle().then(() => { resolved = true; });
+        await tick(40);
+        assert.equal(resolved, true);
     });
 });
 
@@ -232,7 +356,10 @@ describe('subscribers', () => {
         await store.adopt({ name: 'Piece' });
         store.touch();
         await store.close();
-        assert.deepEqual(seen, ['open', 'edit', 'close']);
+        // save-start/save-end bracket each write; they are what the "Now
+        // saving" indicator renders from.
+        assert.deepEqual(seen.filter(r => !r.startsWith('save-')), ['open', 'edit', 'close']);
+        assert.ok(seen.includes('save-start') && seen.includes('save-end'));
     });
 
     test('a throwing subscriber does not stop the others', async () => {
@@ -262,7 +389,7 @@ describe('the page going away', () => {
     // page is still alive and is the only one a mobile tab-kill honours.
 
     test('visibilitychange -> hidden flushes immediately', async () => {
-        const store = createProjectStore({ backend, debounceMs: 10_000, bindLifecycle: true });
+        const store = createProjectStore({ backend, intervalMs: 10_000, bindLifecycle: true });
         await store.adopt({ name: 'Piece' });
         store.get().bpm = 140;
         store.touch();
@@ -277,7 +404,7 @@ describe('the page going away', () => {
     });
 
     test('becoming visible again does not write', async () => {
-        const store = createProjectStore({ backend, debounceMs: 10_000, bindLifecycle: true });
+        const store = createProjectStore({ backend, intervalMs: 10_000, bindLifecycle: true });
         await store.adopt({ name: 'Piece' });
         let writes = 0;
         const save = backend.save;

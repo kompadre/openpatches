@@ -183,15 +183,64 @@ CHANGELOG.md and the TODO.md reconciliation.
   is **no "Save your changes?" on the way out**, and there cannot be. A
   page cannot show its own `confirm()` during `beforeunload` — browsers
   offer only their own generic dialog — and an IndexedDB transaction opened
-  during unload is **not guaranteed to commit**. So the store autosaves, as
-  the rest of the app always has: debounced flush plus an immediate one on
-  `visibilitychange -> hidden`, which fires while the page is still alive
-  and is the only one a mobile tab-kill honours (`beforeunload` is skipped
-  there and in bfcache). `pagehide` is wired as belt-and-braces. Worst case
-  is losing the last few hundred ms, and there is nothing to confirm.
+  during unload is **not guaranteed to commit**. So the store autosaves,
+  with an immediate flush on `visibilitychange -> hidden`, which fires
+  while the page is still alive and is the only one a mobile tab-kill
+  honours (`beforeunload` is skipped there and in bfcache). `pagehide` is
+  wired as belt-and-braces.
   *(If an explicit Save/discard is ever wanted, that is a separate feature
   — a dirty indicator and "revert to last saved" layered on top of
   autosave, not an unload handler.)*
+
+- [x] **1b. Autosave policy, to the user's spec — done 2026-11-02, 832
+  unit passing.** Replaces phase 1's 500 ms debounce.
+  - **Every 30 s (`DEFAULT_INTERVAL_MS`), and only when dirty.** One
+    repeating ticker, not a timer per edit: a tick that finds the body
+    clean costs nothing and a burst cannot stack timers up.
+  - **`canSave()` is injected** — "is the transport idle?" A tick that
+    finds it busy is skipped and retried on the next one.
+  - **`flush({force:true})` bypasses `canSave()`**: open, adopt, close,
+    remove, the end of a take, and the lifecycle flush. `force` is the
+    difference between "autosave, if now is a good moment" and "write this
+    out now, the moment may not come again".
+  - **The lifecycle flush is forced on purpose.** A tab killed mid-playback
+    must not lose the session: "do not save while playing" is a latency
+    preference and it loses to not losing work.
+  - **`isSaving()` / `whenIdle()`** are the Play deferral: pressing Play
+    the millisecond a write starts parks the transport until the store is
+    quiet. `whenIdle()` resolves immediately when idle, so the common case
+    costs one microtask.
+  - Subscribers get `save-start` / `save-end`, which is what the "Now
+    saving" indicator will render from.
+
+  **Measured, because it decides the policy:** a realistically-large body
+  (8 tracks, 24 patterns × 64 notes, 6 sections × 48 clips, 1000 patches)
+  is 364 KB and the synchronous JSON clone costs **4.3 ms**; a small one
+  (32 patches, 85 KB) costs 1.6 ms. The IndexedDB commit itself is
+  off-thread. So the don't-save-while-playing rule is avoiding a few ms of
+  main-thread stall — not an audio dropout (audio is on its own thread) but
+  note-scheduling jitter, since the main thread is what handles tick
+  messages. Cheap to avoid, so avoided.
+
+  **Bug this turn's tests caught:** idle was originally signalled by "the
+  write settled *and* the body is no longer dirty". A **failed** write sets
+  dirty back, so `saving` stuck on forever and **Play would have hung
+  permanently**. Now a pending-write *counter* decides, so the last write
+  settling releases the waiters however it settled. A dirty body only means
+  a future tick will write, never that one is running.
+
+  **Open with the user — the "Now saving" modal.** Asked for as
+  "impossible to miss". A save is ~2–4 ms of main-thread work plus an
+  off-thread commit, so a modal bracketing the real duration would flash
+  for single-digit milliseconds — invisible, or a strobe. Making it
+  perceptible means an artificial minimum display time, i.e. deliberately
+  blocking the user for ~0.5 s every 30 s. Recommended instead: a
+  prominent but non-blocking status line, with the **modal reserved for a
+  save that actually takes a while** (> ~250 ms — quota pressure, a
+  stalled DB), which is exactly when interrupting is warranted. **Awaiting
+  the user's call; the store already emits what either needs.** Built in
+  phase 3, where it can be rendered and e2e-tested — nothing is wired into
+  app.js yet, so a modal built now would have nothing to show.
 - [ ] **2. Session + clock.** `project-session.js` replaces
   `song-session.js`; transport and sequencer read tracks from the project
   and the timeline from the active section; **one** mute/solo path.
