@@ -149,4 +149,36 @@ test.describe('mobile', () => {
         expect(kb.whiteH).toBeGreaterThan(kb.blackH);
         expect(kb.blackInsideWhite).toBe(true);
     });
+
+    // A phone cannot usefully drag the playhead's header marker, so the
+    // mobile row has two buttons that move the step-record cursor instead.
+    test('the step nudge buttons fit the row and move the record cursor', async ({ page }) => {
+        await openMobile(page);
+        await page.locator('.dock-tab', { hasText: 'Piano Roll' }).click();
+
+        const back = page.locator('.kb-btn-step-nudge', { hasText: '« Step' });
+        const fwd = page.locator('.kb-btn-step-nudge', { hasText: 'Step »' });
+        await expect(back).toBeVisible();
+        await expect(fwd).toBeVisible();
+        for (const b of [back, fwd]) {
+            const box = await b.boundingBox();
+            expect(box.x).toBeGreaterThanOrEqual(0);
+            expect(box.x + box.width).toBeLessThanOrEqual(390);
+        }
+        await expect(fwd).toBeDisabled();
+
+        const cursor = () => page.evaluate(() => window.__opDock._pianoroll.getStepCursor());
+        await page.locator('.kb-btn-record').tap();     // clock stopped: a step record
+        await expect(fwd).toBeEnabled();
+        expect(await cursor()).toBe(0);
+
+        await fwd.tap();
+        await fwd.tap();
+        expect(await cursor()).toBe(2);                 // default step: a sixteenth
+        await back.tap();
+        expect(await cursor()).toBe(1);
+        await back.tap();
+        await back.tap();
+        expect(await cursor()).toBe(15);                // wrapped to the pattern end
+    });
 });

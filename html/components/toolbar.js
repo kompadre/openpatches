@@ -293,7 +293,6 @@ export function createToolbar(opts) {
             const entries = voiceBank._getEntries ? voiceBank._getEntries() : [];
             return entries[slot] || null;
         },
-        onClear: () => { if (voiceBank._clear) voiceBank._clear(); },
         onStopPlayback: opts.onPlaybackStop || null,
         // Play during a step record becomes a live take (the one way to
         // start a take on an empty section, which Play alone refuses).
@@ -423,6 +422,23 @@ export function createToolbar(opts) {
         return parseInt(stepLenSelect.value) || 1;
     }
 
+    // Nudge the step cursor: the mobile twin of dragging the playhead by its
+    // header marker, which a touch screen does badly. Only a step record has
+    // a cursor to move (with the clock running the playhead is the
+    // transport's), so they are disabled otherwise. Labelled "Step" so
+    // neither reads as Play.
+    const btnStepBack = document.createElement('button');
+    btnStepBack.className = 'kb-btn kb-btn-step-nudge';
+    btnStepBack.textContent = '« Step';
+    btnStepBack.title = 'Move the record cursor back one step length';
+    btnStepBack.disabled = true;
+
+    const btnStepFwd = document.createElement('button');
+    btnStepFwd.className = 'kb-btn kb-btn-step-nudge';
+    btnStepFwd.textContent = 'Step »';
+    btnStepFwd.title = 'Move the record cursor forward one step length';
+    btnStepFwd.disabled = true;
+
     function syncRecordButtons() {
         const on = recording || stepping;
         for (const b of [btnRecord, btnRecordDesktop]) {
@@ -432,6 +448,7 @@ export function createToolbar(opts) {
         btnRecord.textContent = on ? 'Stop ■' : 'Record ●';
         btnRecordDesktop.textContent = on ? '\u25A0 Stop Rec' : '\u25CF Rec';
         stepLenSelect.style.display = stepping ? '' : 'none';
+        btnStepBack.disabled = btnStepFwd.disabled = !stepping;
     }
 
     const btnPlayStop = document.createElement('button');
@@ -479,6 +496,8 @@ export function createToolbar(opts) {
 
     kbControls.appendChild(btnUndo);
     kbControls.appendChild(btnRecord);
+    kbControls.appendChild(btnStepBack);
+    kbControls.appendChild(btnStepFwd);
     kbControls.appendChild(btnPlayStop);
     kbControls.appendChild(kbVoices);
     kbControls.appendChild(midiIndicator);
@@ -790,6 +809,18 @@ export function createToolbar(opts) {
         stepMaxDur = 0;
         if (pianorollRef.setStepCursor) pianorollRef.setStepCursor(stepCol);
     }
+
+    // One step length per press, wrapping at the pattern's ends the way a
+    // finished step does. Not while keys are down: the step in progress would
+    // land at the old column and then advance from the new one.
+    function nudgeStep(dir) {
+        if (!stepping || stepPresses.size > 0) return;
+        const total = stepTotalCols();
+        stepCol = ((stepCol + dir * stepLen()) % total + total) % total;
+        if (pianorollRef.setStepCursor) pianorollRef.setStepCursor(stepCol);
+    }
+    btnStepBack.addEventListener('click', () => nudgeStep(-1));
+    btnStepFwd.addEventListener('click', () => nudgeStep(1));
 
     btnRecord.addEventListener('click', toggleRecording);
     btnRecordDesktop.addEventListener('click', toggleRecording);

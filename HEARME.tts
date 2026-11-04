@@ -1,6 +1,6 @@
 OpenPatches: A Codebase Audio Tour
 
-This file is intended to be a high-level introduction to the project's anatomy and optimized to be read by TTS. Last commit covered a five nine six nine two b, the end of the six-phase Project work — projects, sections, the merged track model, export and import — from November second, two thousand twentysix.
+This file is intended to be a high-level introduction to the project's anatomy and optimized to be read by TTS. Last commit covered c zero f one e b two, plus the piano roll's Clear narrowed to one pattern and the mobile step cursor buttons, from November fourth, two thousand twentysix.
 
 Welcome to this architectural walkthrough of OpenPatches. This is a browser-based DX seven patch editor, sequencer, and sound design environment. It runs entirely on the client side — no server-side computation for the editor itself. The only server dependency is an inference engine for turning WAV files into DX seven patches, and even that is optional. Everything else — the synthesizer, the sequencer, the patch editing, the voice bank — happens in the browser using vanilla JavaScript, Web Audio, WebAssembly, and Web Workers.
 
@@ -111,7 +111,9 @@ The recording tick handler processes each tick by calculating the wrapped column
 
 When the user presses a key on the keyboard during recording, the start handler records the press time and column. The sound is played immediately through the play note function. When the key is released, the end handler calculates the duration from the elapsed time and adds a note to the pianoroll with the correct start position and duration. The note gets flagged so the tick recording method won't play it again during the same loop iteration.
 
-Record with the clock stopped is a step record instead of a take. A key held for a full second places a note of the chosen step length — a selector that only appears while stepping, from a sixteenth up to a whole note — and each further second held grows it by one more step length. A short tap is a rest that jumps the cursor to the next beat, and the cursor itself can be dragged by the playhead's marker in the roll's header strip.
+Record with the clock stopped is a step record instead of a take. A key held for a full second places a note of the chosen step length — a selector that only appears while stepping, from a sixteenth up to a whole note — and each further second held grows it by one more step length. A short tap is a rest that jumps the cursor to the next beat, and the cursor itself can be dragged by the playhead's marker in the roll's header strip. A phone cannot drag that marker well, so the mobile control row has two buttons, Step back and Step forward, that move the cursor by one step length, wrapping at the ends of the pattern the way a finished step does. They are greyed out unless a step record is armed, because with the clock running the playhead belongs to the transport.
+
+The piano roll's Clear button empties the pattern on screen and nothing else. Its notes go, and it shrinks back to one measure. Tracks, the patches on them, and the section's clips are untouched, so a clip of the cleared pattern stays where it was, now one bar of silence. It used to empty the project's tracks, the section's clips and the voice bank as well.
 
 The undo system maintains a rolling stack of five note references. Each time a note is recorded, it gets pushed onto the stack. Pressing undo pops the last note and removes it from the pianoroll.
 

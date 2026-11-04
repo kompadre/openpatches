@@ -326,6 +326,68 @@ describe('seeking the cursor', () => {
     });
 });
 
+describe('the mobile step nudge buttons', () => {
+    const nudge = (h) => {
+        const [back, fwd] = h.dock.querySelectorAll('.kb-btn-step-nudge');
+        return { back, fwd };
+    };
+    const select = (h) => h.dock.querySelector('.pianoroll-step-len');
+
+    test('they sit in the mobile row and are live only while a step record is armed', () => {
+        const h = build();
+        const { back, fwd } = nudge(h);
+        assert.ok(h.dock.querySelector('.kb-controls').contains(back), 'in the mobile row');
+        assert.equal(back.disabled, true);
+        assert.equal(fwd.disabled, true);
+        h.rec.dispatch('click');
+        assert.equal(back.disabled, false);
+        assert.equal(fwd.disabled, false);
+        h.rec.dispatch('click');
+        assert.equal(back.disabled, true, 'disarmed again');
+    });
+
+    test('a press moves the cursor one step length, and the next step lands there', async () => {
+        const h = build();
+        const { back, fwd } = nudge(h);
+        h.rec.dispatch('click');
+        select(h).value = '4';
+        fwd.dispatch('click');
+        fwd.dispatch('click');
+        assert.equal(h.roll.getStepCursor(), 8);
+        back.dispatch('click');
+        assert.equal(h.roll.getStepCursor(), 4);
+        await h.hold(60, 1000);
+        assert.deepEqual(h.notes(), [{ midi: 60, start: 4, dur: 4 }]);
+    });
+
+    test('the cursor wraps at both ends of the pattern', () => {
+        const h = build();
+        const { back, fwd } = nudge(h);
+        h.rec.dispatch('click');
+        select(h).value = '4';
+        back.dispatch('click');
+        assert.equal(h.roll.getStepCursor(), 12, 'back from the top wraps to the last beat');
+        fwd.dispatch('click');
+        assert.equal(h.roll.getStepCursor(), 0, 'forward from the last beat wraps to the top');
+    });
+
+    test('ignored while a key is down, and while not step recording', async () => {
+        const h = build();
+        const { fwd } = nudge(h);
+        fwd.dispatch('click');                  // disabled in a browser; the handler guards too
+        h.rec.dispatch('click');
+        assert.equal(h.roll.getStepCursor(), 0);
+        h.down(60);
+        await flush();
+        fwd.dispatch('click');
+        assert.equal(h.roll.getStepCursor(), 0, 'the step in progress keeps its column');
+        clock += 1000;
+        tickTimers();
+        h.up(60);
+        assert.deepEqual(h.notes(), [{ midi: 60, start: 0, dur: 1 }]);
+    });
+});
+
 describe('where the notes go', () => {
     test('into the pattern on screen, even when the record slot points elsewhere', async () => {
         const h = build();

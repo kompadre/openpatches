@@ -4215,6 +4215,10 @@ footer {
         color: #fff;
         border-color: #ff6b8a;
     }
+    .kb-btn:disabled {
+        opacity: 0.4;
+        cursor: default;
+    }
     .kb-btn-record.active {
         animation: rec-pulse 1s infinite;
     }

@@ -2,6 +2,14 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-04: Piano roll Clear clears the pattern; mobile step-cursor buttons
+
+**Clear empties the pattern on screen and nothing else.** It used to set `project.tracks = []` and `section.clips = []`, then (through the roll's `onClear` hook) wipe the voice bank too — one button that cost the user their whole arrangement. Now its notes go and it shrinks back to one measure, written to the project via the same `setMeasures` + `saveState` path as `✕ Msr`. Tracks, their patches and the section's clips are untouched; a clip's length is derived from its pattern unless it has its own `lengthCols`, so a clip of the cleared pattern stays put as one bar of silence. A pattern placed on several tracks is one pattern, so clearing it empties every placement. `onClear` and `voiceBank._clear` had no other callers and are gone. Closes the TODO item.
+
+**« Step / Step » on the mobile control row** move the step-record cursor by one step length, wrapping at the pattern's ends the way a finished step does — the touch replacement for dragging the playhead's header marker. They go through `setStepCursor` like a completed step, so the cursor is scrolled into view. Disabled unless a step record is armed (with the clock running the playhead is the transport's; seeking that is a different feature), and ignored while a key is down so the step in progress keeps its column. Labelled "Step" so neither reads as Play. The voice picker now wraps to a second line on a 390px screen.
+
+Tests: the old `Clear wipes every track` unit test is replaced by three that pin the new contract (notes and measures gone and persisted; tracks, other patterns and clips unchanged; mobile Clear the same); four unit tests for the nudge buttons; one mobile e2e case tapping them at 390px.
+
 ## 2026-11-04: `demo/` — a scripted feature video
 
 A ninety-second tour of the app for musicians and hobbyists: narration plus a Playwright script that drives a real Chrome window through it so the screen and the synth can be captured together. The fuller reference walkthrough is deliberately left for later.

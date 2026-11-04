@@ -279,14 +279,47 @@ describe('persistence', () => {
             [{ midi: 60, start: 0, dur: 2, slot: 0 }, { midi: 72, start: 8, dur: 1, slot: 2 }]);
     });
 
-    test('Clear wipes every track, not just the edited one', () => {
+    test('Clear empties the edited pattern: its notes and its extra measures', () => {
+        const h = build();
+        drawNote(h, 60, 0);
+        h.btn('+ Msr').dispatch('click');
+        drawNote(h, 62, 20);
+        const id = h.roll.getEditTarget().pattern.id;
+
+        h.roll.element.querySelector('.pianoroll-clear-desktop').dispatch('click');
+
+        assert.deepEqual(h.roll.getNotes(), []);
+        assert.equal(h.roll.totalCols(), 16, 'back to one measure');
+        assert.deepEqual(storedPattern(id).notes, [], 'written to the project, not just the view');
+        assert.equal(storedPattern(id).measures, 1);
+    });
+
+    test('Clear leaves tracks, other patterns and the section alone', () => {
         const h = build();
         drawNote(h, 60, 0);
         h.roll.setActiveSlot(1);
         drawNote(h, 48, 0);
+        const tracksBefore = session.get().tracks.map(t => ({ ...t }));
+        const clipsBefore = session.getSection().clips.map(c => ({ ...c }));
+
         h.roll.element.querySelector('.pianoroll-clear-desktop').dispatch('click');
-        assert.deepEqual(h.roll.getTracks(), []);
-        assert.deepEqual(h.roll.getAllNotes().notes, []);
+
+        assert.deepEqual(session.get().tracks, tracksBefore, 'tracks and their slots untouched');
+        assert.deepEqual(session.getSection().clips, clipsBefore, 'clips untouched');
+        assert.deepEqual(h.roll.getTracks().map(t => t.slot), [0, 1]);
+        assert.deepEqual(h.roll.getAllNotes().notes, [{ midi: 60, start: 0, dur: 1, slot: 0 }],
+            'only the edited pattern (slot 1) was cleared');
+    });
+
+    test('the mobile Clear in the more-menu does the same', () => {
+        const h = build();
+        drawNote(h, 60, 0);
+        h.roll.setActiveSlot(1);
+        drawNote(h, 48, 0);
+        h.roll.element.querySelector('.pianoroll-more-menu')
+            .querySelectorAll('.pianoroll-btn').find(b => b.textContent.endsWith('Clear'))
+            .dispatch('click');
+        assert.deepEqual(h.roll.getAllNotes().notes, [{ midi: 60, start: 0, dur: 1, slot: 0 }]);
     });
 });
 

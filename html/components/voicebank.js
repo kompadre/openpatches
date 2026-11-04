@@ -508,7 +508,6 @@ export function createVoiceBank(opts) {
     container._removeEntry = removeEntry;
     container._toggleMute = toggleMute;
     container._toggleSolo = toggleSolo;
-    container._clear = () => { entries = new Array(MAX_SLOTS).fill(null); activeId = null; render(); saveState(); notifySnapshot(); };
     container._reload = () => { loadState(); applyMix(false); render(); notifySnapshot(); };
     container._getActive = getActive;
     container._setActive = setActive;

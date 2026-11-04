@@ -79,7 +79,7 @@ const PLAYHEAD_COLOR = '#ff3b3b';
 const DEFAULT_COLORS = ['#e94560', '#4caf50', '#2196f3', '#ff9800', '#9c27b0', '#00bcd4', '#ff5722', '#607d8b'];
 
 export function createPianoroll(opts) {
-    const { playNoteFn, onNotesChange, onClear } = opts;
+    const { playNoteFn, onNotesChange } = opts;
     // The open project is shared with the Section editor through the session;
     // the roll edits one pattern placed in it. `tracks` is the roll's view:
     // one entry per project track (sorted by slot) with the clip and pattern
@@ -1435,24 +1435,21 @@ export function createPianoroll(opts) {
 
     playBtn.addEventListener('click', startPlayback);
     stopBtn.addEventListener('click', stopPlayback);
-    clearBtn.addEventListener('click', () => {
-        clearEverything();
-    });
-    clearBtnDesktop.addEventListener('click', () => {
-        clearEverything();
-    });
+    clearBtn.addEventListener('click', clearPattern);
+    clearBtnDesktop.addEventListener('click', clearPattern);
 
-    function clearEverything() {
-        session.update((project, section) => {
-            project.tracks = [];
-            section.clips = [];
-        }, 'roll');
-        adoptProject(session.get());
+    // Clear empties the pattern on screen and nothing else: its notes go and
+    // it shrinks back to one measure. The tracks, the patches on them and
+    // the section's clips are the project's, not the roll's — a clip of the
+    // cleared pattern stays where it is, now one bar of silence.
+    function clearPattern() {
+        notes.length = 0;   // `notes` is the edited pattern's own array
+        setMeasures(1);
+        updateMeasureButtons();
         draw();
         renderLegend();
         onNotesChange();
         saveState();
-        if (onClear) onClear();
     }
 
     bpmInput.addEventListener('change', () => {
