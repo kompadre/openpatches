@@ -22,16 +22,5 @@ Project backlog. Parent tasks with nested subtasks; `[ ]` pending, `[x]` done,
 _(The **Project** concept and **exporting a project** are **done** —
 delivered 2026-11-02 as one six-phase task; see CHANGELOG.md.)_
 
-- [ ] Multi-timbral tracks and multi-voice patterns. Pattern defines notes in Voice slots. Track defines specific patches for those slots: **Needs reconciling before it starts (noted 2026-11-02).** It assumes a Track that maps *several* slots to patches, which is not the Track the Project model settled on: a Track is now one slot, which is one synth/MIDI channel, one Mixer strip and one patch, and patterns are mono. Deciding how multi-voice fits that — a new level above Track? a Track that owns several channels? — is the first step, not an implementation detail.
-
-   Pattern 1:
-      Voice 1: C3 C3
-      Voice 2: D5 
-
-   Track 1:
-      Voices: 1: Drum, 2: Piano
-      Patterns: Pattern 1, Empty, Pattern 2
-
-   - [ ] When assigning a multi-voice pattern to a track that doesn't define enough voices ask user to do it.
-   - [ ] **Section** tab pattern visualization: paint small colored dots (different colors for different voices) where notes are inside that pattern. Generate an image blob. Cache that blob,  invalidate cache when pattern changes.
+- [ ] **Section** tab pattern visualization: paint small dots inside each clip where the pattern's notes are. Generate an image blob, cache it, invalidate the cache when the pattern changes.
 
