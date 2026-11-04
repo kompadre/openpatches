@@ -77,6 +77,20 @@ run `node --check` + `node --test` and tick this file only. (Open: AGENTS.md
 "Keep it current ... in the same commit/change" reads per-change; awaiting
 the user's wording if SESSION.md should be deferred too.)
 
+### Feature video (`demo/`) — DONE 2026-11-04
+
+Script + Playwright tour, recorded by the user in headed Chrome. See
+CHANGELOG.md. Live state:
+
+- **Outstanding:** the final voice is the user's to record (espeak scratch is
+  only for timing), and the Volca FM insert footage is theirs to shoot. The
+  `archeology` scene has never run against a live fmguessr — it needs the
+  server on :8080 and a `--wav`, and both were absent here.
+- **Rehearse with `npm run demo:rehearse`** (headless, 4×, frames to
+  `demo/out/shots/`) and *look at the frames*. A run reporting ten clean
+  scenes filmed four empty panels; the traps are listed in `demo/README.md`.
+- `demo/` is outside `e2e/` on purpose — `npm run e2e` does not collect it.
+
 ### Project + Export — DONE 2026-11-02, all six phases
 
 Delivered and written up in CHANGELOG.md (2026-11-02). 845 unit / 69 e2e.

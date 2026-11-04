@@ -4,6 +4,9 @@
   },
   "scripts": {
     "e2e:port": "node -e \"import('./playwright.config.js').then(m=>console.log(new URL(m.default.use.baseURL).port))\"",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "demo": "node demo/feature-tour.mjs",
+    "demo:rehearse": "node demo/feature-tour.mjs --headless --speed 4 --shots",
+    "demo:voice": "node demo/make-voice.mjs && node demo/make-script.mjs"
   }
 }
