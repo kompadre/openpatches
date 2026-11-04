@@ -330,7 +330,7 @@ export function createToolbar(opts) {
             const track = session.get().tracks.find(t => t.id === trackId);
             if (track && voiceBank._setActiveSlot) voiceBank._setActiveSlot(track.slot);
             pianorollRef.openClip(clipId);
-            handleTabClick(tabPianoroll, pianorollPanel);
+            activateTab(tabPianoroll, pianorollPanel);
             requestAnimationFrame(positionBlackKeys);
         },
     });
