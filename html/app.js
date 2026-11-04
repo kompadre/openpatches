@@ -826,9 +826,9 @@ function initToolbar() {
             onPatchCreated: (patch) => {
                 addContainer(patch.name, { patchIds: [patch.id], isNew: true });
                 initCanvas(getCanvasOpts());
-                // Minimize piano-dock to show the night-sky
-                const pd = document.getElementById('piano-dock');
-                if (pd) pd.classList.add('collapsed');
+                // Show the new patch where it landed. This used to collapse
+                // the dock to uncover the night sky; the sky is a tab now.
+                if (pianoDockWrapper && pianoDockWrapper._showCanvas) pianoDockWrapper._showCanvas();
             },
         },
     });
@@ -841,11 +841,11 @@ function initToolbar() {
     // cannot check: the stub has no worker. Nothing in the app reads this.
     window.__opDock = dock;
 
-    if (isMobile) {
-        const sky = document.getElementById('night-sky');
-        const canvasPanel = dock.querySelector('.dock-panel-canvas');
-        if (sky && canvasPanel) canvasPanel.appendChild(sky);
-    }
+    // The night sky is the Patches tab's panel at every size now — it used
+    // to be a permanent half of the desktop page, above the dock.
+    const sky = document.getElementById('night-sky');
+    const canvasPanel = dock.querySelector('.dock-panel-canvas');
+    if (sky && canvasPanel) canvasPanel.appendChild(sky);
 
     // Register pianoroll stop for audio-manager shutdown
     if (dock._pianoroll && dock._pianoroll.stopPlayback) {
@@ -1161,60 +1161,6 @@ document.getElementById('menu-restart-tutorial').addEventListener('click', () =>
         if (e.target === e.currentTarget) e.currentTarget.style.display = 'none';
     });
 });
-
-// --- Grid Resize Handle (desktop only) ---
-
-{
-    const handle = document.getElementById('grid-resize-handle');
-    const pageContent = document.getElementById('page-content');
-    const pianoDock = document.getElementById('piano-dock');
-
-    if (handle && pageContent && pianoDock) {
-        let startY = 0;
-        let startDockH = 0;
-        let pageH = 0;
-
-        function onMouseMove(e) {
-            const delta = e.clientY - startY;
-            let newDockH = startDockH - delta;
-            const minH = pageH * 0.1;
-            const maxH = pageH * 0.8;
-            if (newDockH < minH) newDockH = minH;
-            if (newDockH > maxH) newDockH = maxH;
-            pageContent.style.gridTemplateRows = `auto 6px ${newDockH}px`;
-        }
-
-        function onMouseUp() {
-            document.removeEventListener('mousemove', onMouseMove);
-            document.removeEventListener('mouseup', onMouseUp);
-        }
-
-        handle.addEventListener('mousedown', (e) => {
-            e.preventDefault();
-            startY = e.clientY;
-            startDockH = pianoDock.offsetHeight;
-            pageH = pageContent.offsetHeight;
-            pageContent.style.gridTemplateRows = `auto 6px ${startDockH}px`;
-            document.addEventListener('mousemove', onMouseMove);
-            document.addEventListener('mouseup', onMouseUp);
-        });
-
-        // Reset grid when dock collapses, restore when it expands
-        const observer = new MutationObserver(() => {
-            if (pageContent.classList.contains('dock-collapsed')) {
-                pageContent.style.gridTemplateRows = '';
-            } else {
-                let h = pianoDock.clientHeight;
-                const pageH = pageContent.offsetHeight;
-                const minSky = pageH * 0.1;
-                const maxDock = pageH - minSky - 6;
-                if (h > maxDock) h = maxDock;
-                if (h > 0) pageContent.style.gridTemplateRows = `auto 6px ${h}px`;
-            }
-        });
-        observer.observe(pageContent, { attributes: true, attributeFilter: ['class'] });
-    }
-}
 
 // --- Init ---
 

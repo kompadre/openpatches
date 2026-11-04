@@ -187,9 +187,18 @@ export function addContainer(name, opts = {}) {
         const sky = document.getElementById('night-sky');
         if (sky) {
             const skyRect = sky.getBoundingClientRect();
+            // The sky lives in the Patches tab's panel, which is display:none
+            // unless that tab is open — and a hidden element measures 0×0.
+            // Centring on that put every new container at (10, 10), stacked
+            // on each other under the + Container button. The dock is the
+            // region the panel will fill, so measure that instead.
+            const host = document.getElementById('piano-dock');
+            const hostRect = host ? host.getBoundingClientRect() : null;
+            const skyW = skyRect.width || (hostRect && hostRect.width) || 0;
+            const skyH = skyRect.height || (hostRect && hostRect.height) || 0;
             const ctrWidth = opts.width || 260;
-            left = Math.max(10, (skyRect.width - ctrWidth) / 2);
-            top = Math.max(10, skyRect.height / 2 - 60);
+            left = Math.max(10, (skyW - ctrWidth) / 2);
+            top = Math.max(10, skyH / 2 - 60);
         } else {
             left = left || 50 + Math.random() * 100;
             top = top || 50 + Math.random() * 100;

@@ -6,7 +6,7 @@
 // rebuilds, and mute/solo reaching the engine across a reload.
 
 import { readFileSync } from 'node:fs';
-import { test, expect, openApp, openMixerTab } from './fixtures.js';
+import { test, expect, openApp, openMixerTab, openPatchesTab } from './fixtures.js';
 
 const DEMO_SYX = 'html/DEMO.syx';
 
@@ -15,7 +15,10 @@ async function importDemoBank(page) {
     const picker = page.waitForEvent('filechooser');
     await page.locator('#menu-import-syx').click();
     await (await picker).setFiles(DEMO_SYX);
-    // The import lands as a container of patch rows on the canvas.
+    // The import lands as a container of patch rows on the canvas — which
+    // is the Patches tab, so it has to be open for the rows to be visible
+    // (and clickable) at all.
+    await openPatchesTab(page);
     await expect(page.locator('.patch-row').first()).toBeVisible();
 }
 

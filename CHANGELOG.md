@@ -2,6 +2,20 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-04: Desktop goes full-page tabs; the canvas becomes the Patches tab
+
+**The tab strip moved to the top, centred, directly under the menu bar, and the canvas became a tab of its own called Patches.** `#page-content` was a two-row grid — night sky above, dock below, `#grid-resize-handle` between — and is now a flex column holding one tabbed region. The desktop layout has converged on the mobile one, which already worked this way; the Patches tab is simply no longer hidden (`.dock-tab-canvas { display: none }` is gone) and `app.js` moves `#night-sky` into its panel at every size, not just under 600px.
+
+**Three things followed from it rather than being separate decisions.** The drag handle had nothing left to split, so the element, its CSS and its ~50 lines of drag/MutationObserver code in `app.js` are gone. The desktop collapse (the ▼ tab, `collapseDock`/`expandDock`, `#piano-dock.collapsed`, `#page-content.dock-collapsed`) existed to fold the dock away and uncover the night sky — with one panel on screen there is nothing behind to reveal, so it went too, and `onPatchCreated` now calls `_showCanvas()` where it used to collapse the dock. And `.pianoroll-scroll` lost its hard `height: 180px`, a leftover from the dock being a fixed strip: the grid is `flex: 1` and fills its tab, which is roughly three octaves at 900px instead of eight semitones. The demo tour's splitter-drag workaround went with it.
+
+**One real regression, caught by screenshot rather than by a test.** `addContainer` centres a new container on `#night-sky.getBoundingClientRect()`, and a hidden element measures 0×0 — so with the Patches tab closed every import landed at (10, 10), stacked on the previous one under the + Container button. It now falls back to the dock's rect, which is the region the panel will fill.
+
+**Tutorial.** Its tab steps used `:nth-child`, which drifted when the Mixer tab was added: `nth-child(4)` is the Mixer, so the step titled "Edit Patches" had been opening the Mixer. Now they target `.dock-tab-section` / `.dock-tab-edit` / `.dock-tab-pianoroll` (new classes on the tabs), and the containers step opens Patches so the thing it describes is on screen.
+
+Tests: `openPatchesTab()` joins the fixtures, and `voicebank.spec.js` / `syx.spec.js` open it before touching canvas rows — including after a reload, which returns to the default tab. The `pianoroll-tab` and `mixer-tab` visual baselines are regenerated (the dock went 426px → 822px). 851 unit and 70 e2e pass.
+
+**Not changed:** desktop still opens on Piano Roll. Patches may be the better first screen now that it is no longer visible by default — flagged for the user rather than decided here.
+
 ## 2026-11-04: Piano roll Clear clears the pattern; mobile step-cursor buttons
 
 **Clear empties the pattern on screen and nothing else.** It used to set `project.tracks = []` and `section.clips = []`, then (through the roll's `onClear` hook) wipe the voice bank too — one button that cost the user their whole arrangement. Now its notes go and it shrinks back to one measure, written to the project via the same `setMeasures` + `saveState` path as `✕ Msr`. Tracks, their patches and the section's clips are untouched; a clip's length is derived from its pattern unless it has its own `lengthCols`, so a clip of the cleared pattern stays put as one bar of silence. A pattern placed on several tracks is one pattern, so clearing it empties every placement. `onClear` and `voiceBank._clear` had no other callers and are gone. Closes the TODO item.

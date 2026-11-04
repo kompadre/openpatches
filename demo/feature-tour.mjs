@@ -200,12 +200,9 @@ function makeActions(page) {
             await this.click(`#${itemId}`, { after: 0.6 });
         },
 
-        /** Switch dock tabs. The Piano Roll tab is the one without a modifier class. */
+        /** Switch dock tabs. Every tab carries its own `dock-tab-<name>`. */
         async tab(name) {
-            const sel = name === 'pianoroll'
-                ? '.dock-tab:not([class*="dock-tab-"])'
-                : `.dock-tab-${name}`;
-            await this.click(sel, { after: 0.6 });
+            await this.click(`.dock-tab-${name}`, { after: 0.6 });
         },
     };
 }
@@ -274,23 +271,14 @@ async function main() {
         for (let i = COUNTDOWN; i > 0; i--) { console.log(`  ${i}…`); await sleep(1); }
     }
 
-    // The dock opens at half the window, which leaves the piano roll grid a
-    // ~180px slit — too cramped to read on video. Pull the splitter up once,
-    // before recording starts, so the sequencing scenes have room.
-    const handle = await page.locator('#grid-resize-handle').boundingBox();
-    if (handle) {
-        await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
-        await page.mouse.down();
-        await page.mouse.move(handle.x + handle.width / 2, handle.y - 180, { steps: 20 });
-        await page.mouse.up();
-        await sleep(0.5);
-    }
-
     t0 = Date.now();
     const run = (id, body) => (!wanted || wanted.has(id)) ? scene(id, body) : Promise.resolve();
 
     // --- 1. the night sky, and a bank landing on it
     await run('intro', async () => {
+        // The canvas is the Patches tab now, not a permanent half of the
+        // page — open it, or the bank lands somewhere off screen.
+        await ui.tab('canvas');
         await ui.glide(960, 300, 700);
         await sleep(2.5);
         await ui.menu('file', 'menu-load-demo');
@@ -319,6 +307,7 @@ async function main() {
 
     // --- 3. containers and sysex export
     await run('curation', async () => {
+        await ui.tab('canvas');
         const rows = page.locator('.sky-container .patch-row');
         if (await rows.count() > 2) {
             // Drag one patch out of the cartridge onto the open canvas.
@@ -428,6 +417,7 @@ async function main() {
     await run('midi', async () => {
         // 🎹 on a cartridge sends the whole bank to the device — the most
         // direct picture of "it talks to the real thing".
+        await ui.tab('canvas');
         await ui.point('.sky-container-send', { dwell: 1 });
         await ui.menu('midi', 'menu-midi-devices');
         // Enable, so the device list and the slot-to-channel map fill in.
@@ -441,9 +431,8 @@ async function main() {
     });
 
     // --- 10. back out to the sky
-    // The Canvas dock tab is display:none on desktop — the night sky is
-    // always on screen here — so this just settles the pointer over it.
     await run('outro', async () => {
+        await ui.tab('canvas');
         await ui.glide(960, 420, 1200);
         await sleep(1);
     });

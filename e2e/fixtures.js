@@ -95,4 +95,15 @@ export async function openMixerTab(page) {
     await expect(page.locator('.voicebank')).toBeVisible();
 }
 
+/**
+ * Open the Patches tab — the night sky, containers and patch rows. The
+ * canvas used to be a permanent half of the desktop page and needed no
+ * opening; it is a tab like any other now, so anything that clicks a patch
+ * row has to come through here first.
+ */
+export async function openPatchesTab(page) {
+    await page.locator('.dock-tab-canvas').click();
+    await expect(page.locator('#night-sky')).toBeVisible();
+}
+
 export { expect };

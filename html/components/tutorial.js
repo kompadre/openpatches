@@ -49,6 +49,7 @@ const STEPS = [
         title: 'Patch Containers',
         highlight: '.sky-container',
         fallbackHighlight: '#night-sky',
+        selectTab: '#piano-dock .dock-tab-canvas',
         noBlur: true,
         illustration: null,
         description:
@@ -66,6 +67,7 @@ const STEPS = [
         id: 'pianoroll',
         title: 'Piano Roll',
         highlight: '#piano-dock .dock-tabs',
+        selectTab: '#piano-dock .dock-tab-pianoroll',
         noBlur: true,
         illustration: null,
         description:
@@ -83,8 +85,8 @@ const STEPS = [
     {
         id: 'section',
         title: 'Section',
-        highlight: '#piano-dock .dock-tab:nth-child(3)',
-        selectTab: '#piano-dock .dock-tab:nth-child(3)',
+        highlight: '#piano-dock .dock-tab-section',
+        selectTab: '#piano-dock .dock-tab-section',
         noBlur: true,
         illustration: null,
         description:
@@ -102,8 +104,8 @@ const STEPS = [
     {
         id: 'edit',
         title: 'Edit Patches',
-        highlight: '#piano-dock .dock-tab:nth-child(4)',
-        selectTab: '#piano-dock .dock-tab:nth-child(4)',
+        highlight: '#piano-dock .dock-tab-edit',
+        selectTab: '#piano-dock .dock-tab-edit',
         clickElement: '.sky-container .patch-edit-btn',
         noBlur: true,
         illustration: null,

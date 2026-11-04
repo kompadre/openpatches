@@ -4,7 +4,7 @@
 // patch store → container on the canvas → export button → download event.
 
 import { readFileSync } from 'node:fs';
-import { test, expect, openApp } from './fixtures.js';
+import { test, expect, openApp, openPatchesTab } from './fixtures.js';
 
 const DEMO_SYX = 'html/DEMO.syx';          // the bank the app ships, 4104 bytes
 
@@ -27,6 +27,8 @@ async function importDemoBank(page) {
     const picker = page.waitForEvent('filechooser');
     await page.locator('#menu-import-syx').click();
     await (await picker).setFiles(DEMO_SYX);
+    // The container lands on the canvas, which is the Patches tab now.
+    await openPatchesTab(page);
 }
 
 /** Patches belong to the open project now, not to a key of their own. */
@@ -55,6 +57,9 @@ test.describe('.syx I/O', () => {
         await page.reload();
         await expect(page.locator('.keyboard .key').first()).toBeVisible();
         expect((await storedPatches(page)).length).toBe(patches.length);
+        // A reload comes back on the default tab, so the canvas needs
+        // opening again before anything on it can be seen.
+        await openPatchesTab(page);
         await expect(page.locator('[title="Export as .SYX"]').first()).toBeVisible();
     });
 

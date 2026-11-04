@@ -77,6 +77,21 @@ run `node --check` + `node --test` and tick this file only. (Open: AGENTS.md
 "Keep it current ... in the same commit/change" reads per-change; awaiting
 the user's wording if SESSION.md should be deferred too.)
 
+### Desktop full-page tabs — DONE 2026-11-04
+
+Tabs at the top centred, canvas is the Patches tab. See CHANGELOG.md. Live
+state:
+
+- **Open question for the user:** desktop still opens on Piano Roll. The
+  canvas used to be permanently visible there and now is not, so Patches
+  may be the better default. Changing it means `openApp()` in
+  `e2e/fixtures.js` can no longer wait on a visible keyboard.
+- **A hidden panel measures 0x0.** `addContainer` centred on `#night-sky`
+  and silently piled every container at (10, 10) once the canvas became a
+  tab. Anything else that measures a panel needs the same fallback.
+- Gone with the layout: `#grid-resize-handle`, the desktop dock collapse,
+  and `.pianoroll-scroll`'s fixed 180px height.
+
 ### Feature video (`demo/`) — DONE 2026-11-04
 
 Script + Playwright tour, recorded by the user in headed Chrome. See

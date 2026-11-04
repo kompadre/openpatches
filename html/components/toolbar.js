@@ -79,10 +79,11 @@ export function createToolbar(opts) {
 
     const tabCanvas = document.createElement('button');
     tabCanvas.className = 'dock-tab dock-tab-canvas' + (effectiveInitialTab === 'canvas' ? ' active' : '');
-    tabCanvas.innerHTML = '<span>🖼️</span><span>Canvas</span>';
+    tabCanvas.innerHTML = '<span>🖼️</span><span>Patches</span>';
+    tabCanvas.title = 'Patches';
 
     const tabPianoroll = document.createElement('button');
-    tabPianoroll.className = 'dock-tab' + (effectiveInitialTab === 'pianoroll' ? ' active' : '');
+    tabPianoroll.className = 'dock-tab dock-tab-pianoroll' + (effectiveInitialTab === 'pianoroll' ? ' active' : '');
     tabPianoroll.innerHTML = '<span>🎹</span><span>Piano Roll</span>';
 
     const tabSection = document.createElement('button');
@@ -96,7 +97,7 @@ export function createToolbar(opts) {
     tabMixer.title = 'Mixer';
 
     const tabEdit = document.createElement('button');
-    tabEdit.className = 'dock-tab' + (effectiveInitialTab === 'edit' ? ' active' : '');
+    tabEdit.className = 'dock-tab dock-tab-edit' + (effectiveInitialTab === 'edit' ? ' active' : '');
     tabEdit.innerHTML = '<span>✏️</span><span>Edit</span>';
 
     const tabLog = document.createElement('button');
@@ -110,10 +111,6 @@ export function createToolbar(opts) {
         if (opts.onEmergencyStop) opts.onEmergencyStop();
     });
 
-    const tabCollapse = document.createElement('button');
-    tabCollapse.className = 'dock-tab dock-tab-collapse';
-    tabCollapse.innerHTML = '<span>▼</span>';
-
     tabBar.appendChild(tabCanvas);
     tabBar.appendChild(tabPianoroll);
     tabBar.appendChild(tabSection);
@@ -121,9 +118,6 @@ export function createToolbar(opts) {
     tabBar.appendChild(tabEdit);
     tabBar.appendChild(tabLog);
     tabBar.appendChild(tabStop);
-    if (!window.matchMedia('(max-width: 600px)').matches) {
-        tabBar.appendChild(tabCollapse);
-    }
     wrapper.appendChild(tabBar);
 
     // Panels
@@ -159,45 +153,20 @@ export function createToolbar(opts) {
         panel.classList.add('active');
     }
 
-    // Desktop-only collapse: clicking active tab collapses, clicking any tab while collapsed expands
-    const isDesktop = !window.matchMedia('(max-width: 600px)').matches;
-    const pianoDock = document.getElementById('piano-dock');
-
-    function collapseDock() {
-        if (pianoDock) pianoDock.classList.add('collapsed');
-        const pageContent = document.getElementById('page-content');
-        if (pageContent) pageContent.classList.add('dock-collapsed');
-    }
-
-    function expandDock() {
-        if (pianoDock) pianoDock.classList.remove('collapsed');
-        const pageContent = document.getElementById('page-content');
-        if (pageContent) pageContent.classList.remove('dock-collapsed');
-    }
-
-    function handleTabClick(tab, panel) {
-        if (isDesktop && pianoDock && pianoDock.classList.contains('collapsed')) {
-            expandDock();
-        }
-        activateTab(tab, panel);
-    }
-
-    tabCanvas.addEventListener('click', () => handleTabClick(tabCanvas, canvasPanel));
+    // Every size is a tab layout now: the canvas is the Patches tab rather
+    // than a half of the page the dock shared. The desktop-only collapse
+    // went with it — it existed to get the dock out of the night sky's way,
+    // and with one panel on screen at a time there is nothing behind to
+    // reveal.
+    tabCanvas.addEventListener('click', () => activateTab(tabCanvas, canvasPanel));
     tabPianoroll.addEventListener('click', () => {
-        handleTabClick(tabPianoroll, pianorollPanel);
+        activateTab(tabPianoroll, pianorollPanel);
         requestAnimationFrame(positionBlackKeys);
     });
-    tabSection.addEventListener('click', () => handleTabClick(tabSection, sectionPanel));
-    tabMixer.addEventListener('click', () => handleTabClick(tabMixer, mixerPanel));
-    tabEdit.addEventListener('click', () => handleTabClick(tabEdit, editPanel));
-    tabLog.addEventListener('click', () => handleTabClick(tabLog, logPanel));
-    tabCollapse.addEventListener('click', () => {
-        if (pianoDock && pianoDock.classList.contains('collapsed')) {
-            expandDock();
-        } else {
-            collapseDock();
-        }
-    });
+    tabSection.addEventListener('click', () => activateTab(tabSection, sectionPanel));
+    tabMixer.addEventListener('click', () => activateTab(tabMixer, mixerPanel));
+    tabEdit.addEventListener('click', () => activateTab(tabEdit, editPanel));
+    tabLog.addEventListener('click', () => activateTab(tabLog, logPanel));
 
     // --- VoiceBank + Pianoroll (top section) ---
     const pianorollRow = document.createElement('div');
@@ -1028,11 +997,11 @@ export function createToolbar(opts) {
     wrapper._updateHighlights = updateHighlights;
     wrapper._pianoroll = pianorollRef;
     wrapper._voiceBank = voiceBank;
-    wrapper._showCanvas = () => { expandDock(); activateTab(tabCanvas, canvasPanel); };
-    wrapper._showPianoroll = () => { expandDock(); activateTab(tabPianoroll, pianorollPanel); };
-    wrapper._showEdit = () => { expandDock(); activateTab(tabEdit, editPanel); };
-    wrapper._showMixer = () => { expandDock(); activateTab(tabMixer, mixerPanel); };
-    wrapper._showLog = () => { expandDock(); activateTab(tabLog, logPanel); };
+    wrapper._showCanvas = () => { activateTab(tabCanvas, canvasPanel); };
+    wrapper._showPianoroll = () => { activateTab(tabPianoroll, pianorollPanel); };
+    wrapper._showEdit = () => { activateTab(tabEdit, editPanel); };
+    wrapper._showMixer = () => { activateTab(tabMixer, mixerPanel); };
+    wrapper._showLog = () => { activateTab(tabLog, logPanel); };
     wrapper._logPanel = logPanel;
     wrapper._setKeyboardCollapsed = setKeyboardCollapsed;
     wrapper._isKeyboardCollapsed = () => kbWrapper.classList.contains('collapsed');
