@@ -952,6 +952,46 @@ export function createPianoroll(opts) {
         draw();
     }
 
+    /**
+     * Clamp a canvas-relative point onto the canvas (folding follow mode's
+     * second grid copy). The marquee's natural sweep for notes at the
+     * canvas edge runs *past* that edge; clamped back on, the rectangle
+     * reaches the border notes it was aimed at instead of stopping a pixel
+     * short of them.
+     */
+    function marqueePoint(x, y) {
+        return {
+            x: foldX(Math.max(0, Math.min(canvasWidth(), x))),
+            y: Math.max(0, Math.min(CANVAS_H, y)),
+        };
+    }
+
+    function commitMarquee() {
+        const m = marquee;
+        marquee = null;
+        if (!m) return;
+        // A bare click on empty grid in Select mode drops the selection.
+        if (Math.abs(m.x1 - m.x0) < 4 && Math.abs(m.y1 - m.y0) < 4) { selected.clear(); draw(); }
+        else selectInRect(m.x0, m.y0, m.x1, m.y1);
+    }
+
+    // A mouse marquee lives on the document, not the canvas: leaving the
+    // canvas mid-drag must neither kill it (mouseleave) nor freeze it at
+    // the last in-canvas pixel — the sweep for border notes goes outside.
+    function marqueeDocMove(e) {
+        if (!marquee) return;
+        const rect = canvas.getBoundingClientRect();
+        const pt = marqueePoint(e.clientX - rect.left, e.clientY - rect.top);
+        marquee.x1 = pt.x;
+        marquee.y1 = pt.y;
+        draw();
+    }
+    function marqueeDocUp() {
+        document.removeEventListener('mousemove', marqueeDocMove);
+        document.removeEventListener('mouseup', marqueeDocUp);
+        commitMarquee();
+    }
+
     /** Select the edited track's notes that intersect a canvas-px rectangle. */
     function selectInRect(x0, y0, x1, y1) {
         const left = Math.min(x0, x1), right = Math.max(x0, x1);
@@ -1176,10 +1216,13 @@ export function createPianoroll(opts) {
         }
 
         // Empty grid. In Select mode (or with Shift) a drag is a marquee;
-        // otherwise it draws a note.
+        // otherwise it draws a note. The rest of the gesture is tracked on
+        // the document (see marqueeDocMove) so it survives the canvas edge.
         if (selectMode || e.shiftKey) {
-            const fx = foldX(x);
-            marquee = { x0: fx, y0: y, x1: fx, y1: y };
+            const pt = marqueePoint(x, y);
+            marquee = { x0: pt.x, y0: pt.y, x1: pt.x, y1: pt.y };
+            document.addEventListener('mousemove', marqueeDocMove);
+            document.addEventListener('mouseup', marqueeDocUp);
             draw();
             return;
         }
@@ -1200,12 +1243,7 @@ export function createPianoroll(opts) {
             return;
         }
 
-        if (marquee) {
-            marquee.x1 = foldX(x);
-            marquee.y1 = y;
-            draw();
-            return;
-        }
+        if (marquee) return;        // the document handlers own the gesture
 
         if (resizingNote && moveStartPos) {
             const dx = x - moveStartPos.x;
@@ -1270,14 +1308,7 @@ export function createPianoroll(opts) {
             return;
         }
 
-        if (marquee) {
-            const m = marquee;
-            marquee = null;
-            // A bare click on empty grid in Select mode drops the selection.
-            if (Math.abs(m.x1 - m.x0) < 4 && Math.abs(m.y1 - m.y0) < 4) { selected.clear(); draw(); }
-            else selectInRect(m.x0, m.y0, m.x1, m.y1);
-            return;
-        }
+        if (marquee) return;        // the document mouseup commits it
 
         if (resizingNote) {
             if (moveCommitted) {
@@ -1346,8 +1377,8 @@ export function createPianoroll(opts) {
     canvas.addEventListener('mouseleave', () => {
         canvas.style.cursor = '';
         // A seek is already committed as it moves; just stop following.
+        // (A live marquee is NOT cancelled: it is a document-level drag.)
         seekingPlayhead = false;
-        if (marquee) { marquee = null; draw(); }
         if (resizingNote && moveOriginal) {
             resizingNote.dur = moveOriginal.dur;
             resizingNote.start = moveOriginal.start;
@@ -1453,10 +1484,12 @@ export function createPianoroll(opts) {
             return;
         }
 
-        // Select mode: a drag on empty grid is a marquee, a tap drops the selection.
+        // Select mode: a drag on empty grid is a marquee, a tap drops the
+        // selection. No document handlers here: a touch keeps streaming to
+        // the element it started on even outside its bounds.
         if (selectMode) {
-            const fx = foldX(x);
-            marquee = { x0: fx, y0: y, x1: fx, y1: y };
+            const pt = marqueePoint(x, y);
+            marquee = { x0: pt.x, y0: pt.y, x1: pt.x, y1: pt.y };
             draw();
             return;
         }
@@ -1500,8 +1533,9 @@ export function createPianoroll(opts) {
         }
 
         if (marquee) {
-            marquee.x1 = foldX(x);
-            marquee.y1 = y;
+            const pt = marqueePoint(x, y);
+            marquee.x1 = pt.x;
+            marquee.y1 = pt.y;
             draw();
             return;
         }
@@ -1603,10 +1637,7 @@ export function createPianoroll(opts) {
         }
 
         if (marquee) {
-            const m = marquee;
-            marquee = null;
-            if (Math.abs(m.x1 - m.x0) < 6 && Math.abs(m.y1 - m.y0) < 6) { selected.clear(); draw(); }
-            else selectInRect(m.x0, m.y0, m.x1, m.y1);
+            commitMarquee();
             return;
         }
 

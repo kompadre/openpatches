@@ -2,6 +2,12 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-05: The marquee survives the canvas edge; touched notes are selected
+
+**Notes touching the canvas border could never be marquee-selected.** The hit test was already intersection ("inside + touched"), but the gesture could not express it there: the sweep for a border note naturally runs *past* the edge, where `mouseleave` killed the marquee outright — and even stopping a pixel short left the rectangle unable to reach across the last cells. A mouse marquee now lives on the **document** (as the Section editor's drags do): `mousedown` on empty grid registers document `mousemove`/`mouseup` handlers, the canvas-level branches stand down, `mouseleave` no longer cancels, and `marqueePoint()` clamps every point back onto the canvas, so dragging far outside pins the rectangle's edge to the border and the notes there fall inside. Touch needed only the clamping — a touch keeps streaming to its start element outside its bounds — and both paths commit through one `commitMarquee()`.
+
+Tests: two unit regressions (a partly covered note is selected; a sweep past the edge — including a real `mouseleave` mid-drag — takes the bottom-right note and draws nothing) and an e2e sweep releasing 80px right of the canvas. 866 unit, 79 e2e pass.
+
 ## 2026-11-05: Step record without tap-rests; the roll gets a selection, Copy and Paste
 
 **Step record: the note is on the grid the moment the key goes down, and each further full second held doubles it** (`stepLen × 2^seconds`, clamped to the pattern end). The tap-rest is gone — it did not work out in practice — so every tap is a note, and a rest is the cursor moved by hand: the « Step / Step » buttons, or the playhead dragged in the roll. `toolbar.js`: `stepNoteOn` places at once, `syncStepNote` doubles, `stepNoteOff` only ever advances past the longest note.

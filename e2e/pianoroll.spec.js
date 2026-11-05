@@ -217,6 +217,22 @@ test.describe('selection, copy and paste', () => {
         expect((await getNotes(page)).map(n => [n.midi, n.start]).sort()).toEqual([[76, 4], [80, 2]]);
     });
 
+    test('a sweep past the canvas edge selects the note touching it', async ({ page }) => {
+        // A note in the last column; the selection sweep naturally runs off
+        // the canvas, which must neither cancel the marquee (mouseleave)
+        // nor leave the border note out: touched is selected.
+        await drag(page, { x: cellX(15), y: cellY(78) }, { x: cellX(15), y: cellY(78) });
+        await expect.poll(() => getNotes(page)).toHaveLength(3);
+
+        await page.locator('.pianoroll-controls .pianoroll-select').click();
+        const box = await page.locator('.pianoroll-canvas').boundingBox();
+        await page.mouse.move(box.x + cellX(14), box.y + cellY(79));      // empty cell inside
+        await page.mouse.down();
+        await page.mouse.move(box.x + box.width + 80, box.y + cellY(77), { steps: 8 });
+        await page.mouse.up();
+        expect(await selectedMidis(page)).toEqual([78]);
+    });
+
     test('Copy then Paste repeats the phrase after itself', async ({ page }) => {
         await drag(page, { x: cellX(0) - 10, y: cellY(82) }, { x: cellX(4), y: cellY(74) }, { shift: true });
         expect(await selectedMidis(page)).toEqual([76, 80]);

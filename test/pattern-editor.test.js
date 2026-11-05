@@ -561,12 +561,17 @@ describe('selection, copy and paste', () => {
         h.selectedMidis = () => h.roll.getSelectedNotes().map(n => n.midi).sort();
         return h;
     }
+    // Once a marquee starts, the gesture lives on the document (so it
+    // survives the canvas edge) — move and release are document events.
+    // The stub canvas sits at (0,0), so client and canvas px coincide.
+    const docMouse = (type, x, y) =>
+        (document._listeners[type] || []).slice().forEach(fn => fn({ clientX: x, clientY: y, preventDefault() {} }));
     // A rectangle over the first two notes (rows 60 and 64, columns 0–3),
     // on empty grid: from above-left of 64 to below-right of 60.
     const marqueeBoth = (h, mouse) => {
         mouse('mousedown', colX(0) + 2, rowY(66));
-        mouse('mousemove', colX(4) + 20, rowY(58));
-        mouse('mouseup', colX(4) + 20, rowY(58));
+        docMouse('mousemove', colX(4) + 20, rowY(58));
+        docMouse('mouseup', colX(4) + 20, rowY(58));
     };
 
     test('a Shift-drag over empty grid selects the notes it crosses, and draws none', () => {
@@ -583,9 +588,34 @@ describe('selection, copy and paste', () => {
         marqueeBoth(h, h.mouse);
         assert.deepEqual(h.selectedMidis(), [60, 64]);
         h.mouse('mousedown', colX(8), rowY(50));
-        h.mouse('mouseup', colX(8) + 1, rowY(50));
+        docMouse('mouseup', colX(8) + 1, rowY(50));
         assert.deepEqual(h.selectedMidis(), []);
         assert.equal(h.notes().length, 3, 'nothing drawn in Select mode');
+    });
+
+    test('touching a note is enough: a partly covered note is selected', () => {
+        const h = seeded();
+        // The note at 64 spans [2,4); the rectangle reaches only into its
+        // first column. Inside + intersected is the contract.
+        h.shiftMouse('mousedown', colX(0) + 2, rowY(66));
+        docMouse('mousemove', colX(2) + 10, rowY(62));
+        docMouse('mouseup', colX(2) + 10, rowY(62));
+        assert.deepEqual(h.selectedMidis(), [64]);
+    });
+
+    test('a sweep past the canvas edge still takes the notes touching it', () => {
+        const h = seeded();
+        drawNote(h, 36, 15);        // the bottom-right cell: last column, lowest row
+        // Start on empty grid inside, drag far beyond the canvas on both
+        // axes, release out there. mouseleave must not kill the marquee,
+        // and the clamped rectangle must reach the border note.
+        h.shiftMouse('mousedown', colX(14) + 2, rowY(40));
+        docMouse('mousemove', colX(14) + 2, rowY(40) + 5);
+        h.canvas.dispatch('mouseleave', {});
+        docMouse('mousemove', colX(COLS) + 500, rowY(36) + 2000);
+        docMouse('mouseup', colX(COLS) + 500, rowY(36) + 2000);
+        assert.deepEqual(h.selectedMidis(), [36]);
+        assert.equal(h.notes().length, 4, 'and the sweep drew nothing');
     });
 
     test('dragging a selected note moves the whole selection as one block', () => {
