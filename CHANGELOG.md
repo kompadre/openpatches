@@ -2,6 +2,18 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-05: The Section moves to a left pane; time runs down; the pattern list goes
+
+**The Section editor could not use the height it had: as a full-page tab with time running across, a long section was wide and the tracks were eight short rows.** It now lives on desktop in a collapsible, resizable **left pane** (`.lpane`, ~28% wide, handle on its right, folded to a vertical bookmark; the Section tab toggles it exactly as the bottom tabs toggle theirs; state under `openpatches_lpane`). `toolbar.js` gained a `.dock-split` row — left pane | handle | `.dock-centre` (the main panels and the bottom pane) — and the main-panel/bottom-pane widths become the centre column's. Only Patches and Piano Roll remain full-page tabs on desktop; mobile is unchanged apart from the editor itself.
+
+**Inside the editor, time runs down.** Tracks are columns (`--section-track-w`) under a sticky head row; bars are rows beside a sticky left ruler (`--section-ruler-w`); clips are positioned by `top`/`height`, lengthened by their **bottom** edge, moved in time by a vertical drag and between tracks by a horizontal one; the playhead is a horizontal line and the loop band a vertical strip on the ruler. `MEASURE_W` is now the bar's *height*. The grid absorbs a long section downward and many tracks sideways. `section-editor.js` was rewritten around this; the model is untouched.
+
+**The pattern palette is gone.** `+ Pattern` in the toolbar creates a pattern *and places it* at the end of the **selected track** (click a track head to select one — `.section-track-head.selected`; selecting a clip selects its track; with no track at all it adds one on the first free voice; `getSelectedTrackId()` exposes it). Clicking a clip selects its pattern, and a click on an empty lane spot places that pattern again. The pattern's name, colour and Duplicate moved to the selected clip's action bar under the grid (Duplicate places the copy at the end of the clip's track). Pattern *delete* has no home for now — an unplaced pattern is simply not shown; the Piano Roll's planned pattern switcher (TODO) is where that belongs.
+
+**A touch gap closed on the way:** `preventDefault` on a clip's `touchstart` (needed so a drag does not scroll) also swallowed the synthetic click that selected the clip, so a tap never selected on a phone. Touch taps now select in the press/release path.
+
+Docs: tutorial step and demo tour scene follow the new gestures; HEARME.tts describes both panes. Tests: `section-editor.test.js` rewritten for the vertical geometry, track selection, `+ Pattern`, the action bar and the touch tap (76 tests); `openSectionPane` fixture; `layout.spec.js` covers the long-section-downward and many-tracks-sideways containment plus the left pane's fold/unfold; `mobile.spec.js` taps and swipes vertically; visual baselines regenerated. 856 unit and 74 e2e pass; the demo tour rehearses clean.
+
 ## 2026-11-05: Bottom pane — one shared scrollbar instead of per-column scrolling
 
 **Params mode (and the Mixer) grew their own little vertical scrollbars inside the pane; now `.bpane-body` is the single scroller per item, horizontal first.** All inner `overflow` went away: the wrapper panels (`.dx7-top-row`, the algo/global panels, the op body halves) dissolve with `display: contents`, so every param group is its own 190px column flowing sideways — pitch envelope, preview note, algorithm diagram, algorithm & feedback, LFO, then per-operator Frequency | Output | Envelope | Keyboard Scaling. The envelope graphs moved (in `edit-panel.js`) from floating panel children into their groups, which keeps each column coherent; stacked on mobile they render in the same order as before.

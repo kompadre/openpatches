@@ -1,7 +1,11 @@
-// The Section editor: tracks × measures, clips placed from a pattern palette,
-// everything autosaved through the session. The model (project-model.js)
-// decides what is legal; this is about the UI reaching it correctly and
-// reporting refusals instead of swallowing them.
+// The Section editor: measures (down) × tracks (across), clips placed on
+// lanes, everything autosaved through the session. The model
+// (project-model.js) decides what is legal; this is about the UI reaching
+// it correctly and reporting refusals instead of swallowing them.
+//
+// Time runs down: a clip's position is its `top`, its length its `height`,
+// and a drag that moves it in time is a vertical one. Lanes sit side by
+// side, so a drag that changes track is a horizontal one.
 
 import { test, before, beforeEach, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -30,7 +34,6 @@ const BANK = [
     { name: 'Piano', color: '#aaa001', voiceData: 'p' },
     { name: 'Bass', color: '#bbb002', voiceData: 'b' },
 ];
-const getPattern = (id) => session.getPattern(id);
 const COLS = 16;              // COLS_PER_MEASURE — a bar, in columns
 
 function build({ patterns = [], tracks = [], clips = [] } = {}) {
@@ -62,10 +65,11 @@ function build({ patterns = [], tracks = [], clips = [] } = {}) {
         section: () => session.getSection(),
         status: () => root.querySelector('.section-status').textContent,
         lanes: () => root.querySelectorAll('.section-lane'),
+        heads: () => root.querySelectorAll('.section-track-head'),
         clips: () => root.querySelectorAll('.section-clip'),
-        items: () => root.querySelectorAll('.section-pattern-item'),
         btn: (cls) => root.querySelector('.' + cls),
-        click: (el, x = 0) => el.dispatch('click', { target: el, clientX: x, clientY: 0, stopPropagation() {} }),
+        /** A click at `y` px down the element — time runs down. */
+        click: (el, y = 0) => el.dispatch('click', { target: el, clientX: 0, clientY: y, stopPropagation() {} }),
         doc: (type, e) => (env.document._listeners[type] || []).slice().forEach(fn => fn(e)),
     };
     return h;
@@ -74,28 +78,31 @@ function build({ patterns = [], tracks = [], clips = [] } = {}) {
 const ev = (extra = {}) => ({ preventDefault() {}, stopPropagation() {}, clientX: 0, clientY: 0, cancelable: true, ...extra });
 
 describe('rendering', () => {
-    test('one row per track, one block per clip, sized by pattern length × repeats', () => {
+    test('one lane per track, one block per clip, sized by pattern length × repeats', () => {
         const h = build({
             patterns: [{ name: 'A', measures: 2 }],
             tracks: [{ slot: 0 }, { slot: 1 }],
             clips: [{ track: 0, pattern: 0, at: 1, repeats: 2 }, { track: 1, pattern: 0, at: 0 }],
         });
         assert.equal(h.lanes().length, 2);
+        assert.equal(h.heads().length, 2, 'a head above every lane');
         const clips = h.clips();
         assert.equal(clips.length, 2);
-        assert.equal(clips[0].style.left, (1 * MEASURE_W) + 'px');
-        assert.equal(clips[0].style.width, (4 * MEASURE_W - 2) + 'px');
+        assert.equal(clips[0].style.top, (1 * MEASURE_W) + 'px');
+        assert.equal(clips[0].style.height, (4 * MEASURE_W - 2) + 'px');
         assert.equal(clips[0].querySelector('.section-clip-label').textContent, 'A ×2');
         assert.equal(clips[1].querySelector('.section-clip-label').textContent, 'A');
         assert.equal(clips[1].style.background, h.patterns[0].color, 'painted with its pattern\'s colour');
         assert.equal(h.lanes()[1].style.backgroundColor, 'rgba(187,176,2,0.16)', 'the lane is tinted with the voice');
     });
 
-    test('the palette lists every stored pattern with its length', () => {
-        const h = build({ patterns: [{ name: 'Zed', measures: 1 }, { name: 'Alpha', measures: 3 }] });
-        const items = h.items();
-        assert.deepEqual(items.map(i => i.querySelector('.section-pattern-name').textContent), ['Alpha', 'Zed']);
-        assert.deepEqual(items.map(i => i.querySelector('.section-pattern-len').textContent), ['3 bars', '1 bar']);
+    test('the ruler runs down the section with a tick per bar', () => {
+        const h = build({ patterns: [{ name: 'A', measures: 2 }], tracks: [{ slot: 0 }], clips: [{ track: 0, pattern: 0, at: 20 }] });
+        const ticks = h.root.querySelectorAll('.section-ruler-tick');
+        assert.equal(ticks.length, 26, 'the section (22 bars) plus four spare');
+        assert.equal(ticks[3].style.top, (3 * MEASURE_W) + 'px');
+        assert.equal(ticks[3].textContent, '4');
+        assert.equal(parseFloat(h.root.querySelector('.section-ruler').style.height), 26 * MEASURE_W);
     });
 
     test('a clip whose pattern is gone is skipped, not fatal', () => {
@@ -112,15 +119,20 @@ describe('rendering', () => {
         assert.equal(sel.value, '1');
         assert.deepEqual(sel.children.slice(0, 2).map(o => o.textContent), ['1. Piano', '2. Bass']);
     });
+
+    test('there is no pattern list — the toolbar has + Pattern instead', () => {
+        const h = build({ patterns: [{ name: 'A' }] });
+        assert.equal(h.root.querySelector('.section-palette'), null);
+        assert.ok(h.btn('section-pattern-new'));
+    });
 });
 
 describe('placing clips', () => {
     test('click a lane with a pattern selected → a clip at that bar', () => {
         const h = build({ patterns: [{ name: 'A', measures: 2 }], tracks: [{ slot: 0 }] });
-        h.click(h.items()[0]);
+        h.editor.selectPattern(h.patterns[0].id);
         assert.equal(h.editor.getSelectedPatternId(), h.patterns[0].id);
         h.click(h.lanes()[0], 3 * MEASURE_W + 5);
-        const project = h.project();
         const section = h.section();
         assert.equal(section.clips.length, 1);
         assert.equal(section.clips[0].startCol, 3 * COLS, 'bars are the default snap');
@@ -129,11 +141,19 @@ describe('placing clips', () => {
         assert.equal(h.editor.getSelectedClipId(), section.clips[0].id, 'the new clip is selected');
     });
 
+    test('selecting a clip selects its pattern, so a lane click places it again', () => {
+        const h = build({ patterns: [{ name: 'A', measures: 2 }], tracks: [{ slot: 0 }], clips: [{ track: 0, pattern: 0, at: 0 }] });
+        h.click(h.clips()[0]);
+        h.click(h.lanes()[0], 5 * MEASURE_W + 5);
+        assert.equal(h.section().clips.length, 2);
+        assert.equal(h.section().clips[1].patternId, h.patterns[0].id);
+    });
+
     test('without a selected pattern the click explains itself', () => {
         const h = build({ patterns: [{ name: 'A' }], tracks: [{ slot: 0 }] });
         h.click(h.lanes()[0], 10);
         assert.equal(h.section().clips.length, 0);
-        assert.match(h.status(), /Select a pattern/);
+        assert.match(h.status(), /Select a clip.*\+ Pattern/);
     });
 
     test('an overlap is refused and reported, nothing changes', () => {
@@ -141,7 +161,7 @@ describe('placing clips', () => {
             patterns: [{ name: 'A', measures: 2 }], tracks: [{ slot: 0 }],
             clips: [{ track: 0, pattern: 0, at: 0, repeats: 2 }],          // [0,4)
         });
-        h.click(h.items()[0]);
+        h.editor.selectPattern(h.patterns[0].id);
         h.click(h.lanes()[0], 2 * MEASURE_W + 5);
         assert.equal(h.section().clips.length, 1);
         assert.equal(h.status(), 'Clip overlaps');
@@ -150,7 +170,7 @@ describe('placing clips', () => {
 
     test('the same pattern can be placed on two tracks at the same bar', () => {
         const h = build({ patterns: [{ name: 'A' }], tracks: [{ slot: 0 }, { slot: 1 }] });
-        h.click(h.items()[0]);
+        h.editor.selectPattern(h.patterns[0].id);
         h.click(h.lanes()[0], 5);
         h.click(h.lanes()[1], 5);
         assert.equal(h.section().clips.length, 2);
@@ -165,21 +185,21 @@ describe('moving and lengthening clips', () => {
         });
     }
 
-    test('drag moves by whole bars at the default snap', () => {
+    test('a drag down moves by whole bars at the default snap', () => {
         const h = one();
         const clip = h.clips()[0];
-        clip.dispatch('mousedown', ev({ clientX: 10 }));
-        h.doc('mousemove', ev({ clientX: 10 + 3 * MEASURE_W }));
-        h.doc('mouseup', ev({ clientX: 10 + 3 * MEASURE_W }));
+        clip.dispatch('mousedown', ev({ clientY: 10 }));
+        h.doc('mousemove', ev({ clientY: 10 + 3 * MEASURE_W }));
+        h.doc('mouseup', ev({ clientY: 10 + 3 * MEASURE_W }));
         assert.equal(h.section().clips[0].startCol, 3 * COLS);
     });
 
     test('a jitter under the threshold is a click, not a move', () => {
         const h = one();
         const clip = h.clips()[0];
-        clip.dispatch('mousedown', ev({ clientX: 10 }));
-        h.doc('mousemove', ev({ clientX: 12 }));
-        h.doc('mouseup', ev({ clientX: 12 }));
+        clip.dispatch('mousedown', ev({ clientY: 10 }));
+        h.doc('mousemove', ev({ clientY: 12 }));
+        h.doc('mouseup', ev({ clientY: 12 }));
         assert.equal(h.section().clips[0].startCol, 0);
         // Nothing happened, so nothing was redrawn: the same element is
         // still there, and the click that follows selects it as usual.
@@ -191,29 +211,29 @@ describe('moving and lengthening clips', () => {
     test('a move onto a neighbour snaps back and says why', () => {
         const h = one([{ track: 0, pattern: 0, at: 3 }]);              // [3,5)
         const clip = h.clips()[0];                                     // [0,2)
-        clip.dispatch('mousedown', ev({ clientX: 0 }));
-        h.doc('mousemove', ev({ clientX: 2 * MEASURE_W }));
-        h.doc('mouseup', ev({ clientX: 2 * MEASURE_W }));             // → [2,4) overlaps
+        clip.dispatch('mousedown', ev({ clientY: 0 }));
+        h.doc('mousemove', ev({ clientY: 2 * MEASURE_W }));
+        h.doc('mouseup', ev({ clientY: 2 * MEASURE_W }));             // → [2,4) overlaps
         assert.equal(h.section().clips[0].startCol, 0);
         assert.equal(h.status(), 'Clip overlaps');
-        assert.equal(h.clips()[0].style.left, '0px', 're-rendered in place');
+        assert.equal(h.clips()[0].style.top, '0px', 're-rendered in place');
     });
 
     test('cannot be dragged before the start of the section', () => {
         const h = one();
         const clip = h.clips()[0];
-        clip.dispatch('mousedown', ev({ clientX: 200 }));
-        h.doc('mousemove', ev({ clientX: 0 }));
-        h.doc('mouseup', ev({ clientX: 0 }));
+        clip.dispatch('mousedown', ev({ clientY: 200 }));
+        h.doc('mousemove', ev({ clientY: 0 }));
+        h.doc('mouseup', ev({ clientY: 0 }));
         assert.equal(h.section().clips[0].startCol, 0);
     });
 
-    test('dragging the handle gives the clip a length of its own', () => {
+    test('dragging the bottom handle gives the clip a length of its own', () => {
         const h = one();
         const handle = h.clips()[0].querySelector('.section-clip-handle');
-        handle.dispatch('mousedown', ev({ clientX: 2 * MEASURE_W }));
-        h.doc('mousemove', ev({ clientX: 2 * MEASURE_W + 4 * MEASURE_W }));
-        h.doc('mouseup', ev({ clientX: 2 * MEASURE_W + 4 * MEASURE_W }));
+        handle.dispatch('mousedown', ev({ clientY: 2 * MEASURE_W }));
+        h.doc('mousemove', ev({ clientY: 2 * MEASURE_W + 4 * MEASURE_W }));
+        h.doc('mouseup', ev({ clientY: 2 * MEASURE_W + 4 * MEASURE_W }));
         assert.equal(h.section().clips[0].lengthCols, 6 * COLS, '2 bars + 4 bars');
         assert.equal(h.section().clips[0].repeats, undefined, 'it no longer follows its pattern');
         assert.equal(h.clips()[0].querySelector('.section-clip-label').textContent, 'A ×3');
@@ -222,9 +242,9 @@ describe('moving and lengthening clips', () => {
     test('a length that is not whole repeats is shown as a fraction', () => {
         const h = one();
         const handle = h.clips()[0].querySelector('.section-clip-handle');
-        handle.dispatch('mousedown', ev({ clientX: 0 }));
-        h.doc('mousemove', ev({ clientX: MEASURE_W }));                 // 2 bars + 1 = 1.5 repeats
-        h.doc('mouseup', ev({ clientX: MEASURE_W }));
+        handle.dispatch('mousedown', ev({ clientY: 0 }));
+        h.doc('mousemove', ev({ clientY: MEASURE_W }));                 // 2 bars + 1 = 1.5 repeats
+        h.doc('mouseup', ev({ clientY: MEASURE_W }));
         assert.equal(h.section().clips[0].lengthCols, 3 * COLS);
         assert.equal(h.clips()[0].querySelector('.section-clip-label').textContent, 'A ×1.5');
     });
@@ -232,9 +252,9 @@ describe('moving and lengthening clips', () => {
     test('shrinking stops at one snap cell', () => {
         const h = one();
         const handle = h.clips()[0].querySelector('.section-clip-handle');
-        handle.dispatch('mousedown', ev({ clientX: 100 }));
-        h.doc('mousemove', ev({ clientX: -500 }));
-        h.doc('mouseup', ev({ clientX: -500 }));
+        handle.dispatch('mousedown', ev({ clientY: 100 }));
+        h.doc('mousemove', ev({ clientY: -500 }));
+        h.doc('mouseup', ev({ clientY: -500 }));
         assert.equal(h.section().clips[0].lengthCols, COLS, 'one bar, the default snap');
     });
 
@@ -242,10 +262,10 @@ describe('moving and lengthening clips', () => {
         const h = one();
         const clip = h.clips()[0];
         clip.dispatch('touchstart', ev({ touches: [{ clientX: 0, clientY: 0 }] }));
-        h.doc('touchmove', ev({ touches: [{ clientX: 3 * MEASURE_W, clientY: 0 }] }));
+        h.doc('touchmove', ev({ touches: [{ clientX: 0, clientY: 3 * MEASURE_W }] }));
         h.doc('touchcancel', ev({}));
         assert.equal(h.section().clips[0].startCol, 0);
-        assert.equal(h.clips()[0].style.left, '0px');
+        assert.equal(h.clips()[0].style.top, '0px');
     });
 });
 
@@ -287,6 +307,14 @@ describe('selecting, opening and removing clips', () => {
         const c = h.section().clips[0];
         assert.deepEqual(h.opened, [{ clipId: c.id, trackId: h.project().tracks[0].id, patternId: h.patterns[0].id }]);
     });
+
+    test('the action bar exists only while a clip is selected', () => {
+        const h = one();
+        assert.equal(h.btn('section-clip-remove'), null);
+        h.click(h.clips()[0]);
+        assert.ok(h.btn('section-clip-remove'));
+        assert.ok(h.btn('section-clip-open'));
+    });
 });
 
 // The two note gestures from the piano roll, on clips: double-tap removes,
@@ -324,6 +352,16 @@ describe('clip gestures', () => {
         assert.deepEqual(h.opened, []);
     });
 
+    test('a touch tap selects the clip — preventDefault on touchstart eats the click', (t) => {
+        t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+        const h = one();
+        tap(h, 'touch');
+        assert.equal(h.editor.getSelectedClipId(), h.section().clips[0].id);
+        assert.equal(h.editor.getSelectedPatternId(), h.patterns[0].id);
+        assert.ok(h.clips()[0].classList.contains('selected'));
+        assert.equal(h.section().clips.length, 1, 'selected, not removed');
+    });
+
     test('two quick touch taps remove it as well', (t) => {
         t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
         const h = one();
@@ -345,13 +383,13 @@ describe('clip gestures', () => {
     test('re-grabbing a clip right after dragging it is not a double tap', (t) => {
         t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
         const h = build({ patterns: [{ name: 'A' }], tracks: [{ slot: 0 }], clips: [{ track: 0, pattern: 0, at: 0 }] });
-        h.clips()[0].dispatch('mousedown', ev({ clientX: 0 }));
-        h.doc('mousemove', ev({ clientX: MEASURE_W }));
-        h.doc('mouseup', ev({ clientX: MEASURE_W }));
+        h.clips()[0].dispatch('mousedown', ev({ clientY: 0 }));
+        h.doc('mousemove', ev({ clientY: MEASURE_W }));
+        h.doc('mouseup', ev({ clientY: MEASURE_W }));
         assert.equal(h.section().clips[0].startCol, COLS);
         t.mock.timers.tick(50);
-        h.clips()[0].dispatch('mousedown', ev({ clientX: MEASURE_W }));
-        h.doc('mouseup', ev({ clientX: MEASURE_W }));
+        h.clips()[0].dispatch('mousedown', ev({ clientY: MEASURE_W }));
+        h.doc('mouseup', ev({ clientY: MEASURE_W }));
         assert.equal(h.section().clips.length, 1);
     });
 
@@ -383,12 +421,12 @@ describe('clip gestures', () => {
     test('moving during the press cancels the hold — it is a drag', (t) => {
         t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
         const h = one();
-        h.clips()[0].dispatch('mousedown', ev({ clientX: 0 }));
+        h.clips()[0].dispatch('mousedown', ev({ clientY: 0 }));
         t.mock.timers.tick(300);
-        h.doc('mousemove', ev({ clientX: MEASURE_W }));
+        h.doc('mousemove', ev({ clientY: MEASURE_W }));
         t.mock.timers.tick(600);
         assert.deepEqual(h.opened, []);
-        h.doc('mouseup', ev({ clientX: MEASURE_W }));
+        h.doc('mouseup', ev({ clientY: MEASURE_W }));
         assert.equal(h.section().clips[0].startCol, COLS);
     });
 
@@ -402,16 +440,16 @@ describe('clip gestures', () => {
         assert.deepEqual(h.opened, []);
     });
 
-    test('the repeat handle has neither gesture', (t) => {
+    test('the length handle has neither gesture', (t) => {
         t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
         const h = one();
         const handle = () => h.root.querySelector('.section-clip-handle');
-        handle().dispatch('mousedown', ev({ clientX: 40 }));
+        handle().dispatch('mousedown', ev({ clientY: 40 }));
         t.mock.timers.tick(700);
         assert.deepEqual(h.opened, []);
-        h.doc('mouseup', ev({ clientX: 40 }));
-        handle().dispatch('mousedown', ev({ clientX: 40 }));
-        h.doc('mouseup', ev({ clientX: 40 }));
+        h.doc('mouseup', ev({ clientY: 40 }));
+        handle().dispatch('mousedown', ev({ clientY: 40 }));
+        h.doc('mouseup', ev({ clientY: 40 }));
         assert.equal(h.section().clips.length, 1);
     });
 });
@@ -457,44 +495,101 @@ describe('tracks', () => {
         assert.deepEqual(h.project().tracks, []);
         assert.deepEqual(h.section().clips, []);
     });
-});
 
-describe('palette', () => {
-    test('+ creates a pattern and selects it', () => {
-        const h = build();
-        h.btn('section-pattern-new').dispatch('click', ev());
-        assert.equal(session.listPatterns().length, 1);
-        assert.equal(h.editor.getSelectedPatternId(), session.listPatterns()[0].id);
+    test('the first track is current until a head is clicked', () => {
+        const h = build({ tracks: [{ slot: 0 }, { slot: 1 }] });
+        assert.equal(h.editor.getSelectedTrackId(), h.project().tracks[0].id);
+        assert.ok(h.heads()[0].classList.contains('selected'));
+        h.click(h.heads()[1]);
+        assert.equal(h.editor.getSelectedTrackId(), h.project().tracks[1].id);
+        assert.ok(h.heads()[1].classList.contains('selected'));
+        assert.ok(h.lanes()[1].classList.contains('selected'), 'the lane shows it too');
+        assert.ok(!h.heads()[0].classList.contains('selected'));
     });
 
-    test('duplicate copies the notes under a new id', () => {
-        const h = build({ patterns: [{ name: 'A', notes: [{ midi: 60, start: 0, dur: 1 }] }] });
+    test('selecting a clip selects its track', () => {
+        const h = build({ patterns: [{ name: 'A' }], tracks: [{ slot: 0 }, { slot: 1 }], clips: [{ track: 1, pattern: 0, at: 0 }] });
+        h.click(h.clips()[0]);
+        assert.equal(h.editor.getSelectedTrackId(), h.project().tracks[1].id);
+    });
+
+    test('removing the current track falls back to the first', () => {
+        const h = build({ tracks: [{ slot: 0 }, { slot: 1 }] });
+        h.click(h.heads()[1]);
+        h.root.querySelectorAll('.section-track-remove')[1].dispatch('click', ev());
+        assert.equal(h.editor.getSelectedTrackId(), h.project().tracks[0].id);
+    });
+});
+
+// There is no pattern list. New patterns are born in place, at the end of
+// the selected track; a pattern's name, colour and copies are edited from
+// the selected clip's action bar.
+describe('patterns', () => {
+    test('+ Pattern creates a pattern and places it at the end of the selected track', () => {
+        const h = build({
+            patterns: [{ name: 'A', measures: 2 }], tracks: [{ slot: 0 }, { slot: 1 }],
+            clips: [{ track: 1, pattern: 0, at: 1, repeats: 2 }],          // [1,5) on track 2
+        });
+        h.click(h.heads()[1]);
+        h.btn('section-pattern-new').dispatch('click', ev());
+        assert.equal(session.listPatterns().length, 2);
+        const made = session.listPatterns().find(p => p.id !== h.patterns[0].id);
+        assert.equal(made.name, 'Pattern 2');
+        const clip = h.section().clips.find(c => c.patternId === made.id);
+        assert.ok(clip, 'placed, not just created');
+        assert.equal(clip.trackId, h.project().tracks[1].id);
+        assert.equal(clip.startCol, 5 * COLS, 'right after the track\'s last clip');
+        assert.equal(h.editor.getSelectedClipId(), clip.id, 'and selected');
+        assert.equal(h.editor.getSelectedPatternId(), made.id);
+    });
+
+    test('on an empty track it lands at bar 1; on no track at all it makes one first', () => {
+        const h = build();
+        h.btn('section-pattern-new').dispatch('click', ev());
+        assert.equal(h.project().tracks.length, 1, 'a track on the first free voice');
+        assert.equal(h.project().tracks[0].slot, 0);
+        assert.equal(h.section().clips.length, 1);
+        assert.equal(h.section().clips[0].startCol, 0);
+        assert.equal(h.lanes().length, 1);
+        assert.equal(h.clips().length, 1);
+    });
+
+    test('duplicate copies the notes under a new id and places the copy after the clip\'s track', () => {
+        const h = build({
+            patterns: [{ name: 'A', notes: [{ midi: 60, start: 0, dur: 1 }] }], tracks: [{ slot: 0 }],
+            clips: [{ track: 0, pattern: 0, at: 0 }],
+        });
+        h.click(h.clips()[0]);
         h.btn('section-pattern-dup').dispatch('click', ev());
         const all = session.listPatterns();
         assert.equal(all.length, 2);
         const copy = all.find(p => p.name === 'A copy');
         assert.deepEqual(copy.notes, [{ midi: 60, start: 0, dur: 1 }]);
         assert.notEqual(copy.id, h.patterns[0].id);
+        const placed = h.section().clips.find(c => c.patternId === copy.id);
+        assert.equal(placed.startCol, COLS, 'after the one-bar original');
+        assert.equal(h.editor.getSelectedClipId(), placed.id);
     });
 
-    test('rename in place', () => {
-        const h = build({ patterns: [{ name: 'A' }] });
-        const nameEl = h.items()[0].querySelector('.section-pattern-name');
-        nameEl.dispatch('dblclick', ev());
-        nameEl.textContent = 'Bassline';
-        nameEl.dispatch('blur');
-        assert.equal(session.getPattern(h.patterns[0].id).name, 'Bassline');
-    });
-
-    test('delete is refused while the pattern is placed anywhere', () => {
-        const h = build({ patterns: [{ name: 'A' }], tracks: [{ slot: 0 }], clips: [{ track: 0, pattern: 0, at: 0 }] });
-        h.btn('section-pattern-del').dispatch('click', ev());
-        assert.ok(session.getPattern(h.patterns[0].id), 'still there');
-        assert.match(h.status(), /placed in 1 section/);
+    test('the name field renames the pattern; every clip of it follows', () => {
+        const h = build({ patterns: [{ name: 'A' }], tracks: [{ slot: 0 }], clips: [{ track: 0, pattern: 0, at: 0 }, { track: 0, pattern: 0, at: 2 }] });
         h.click(h.clips()[0]);
-        h.btn('section-clip-remove').dispatch('click', ev());
-        h.btn('section-pattern-del').dispatch('click', ev());
-        assert.equal(session.getPattern(h.patterns[0].id), null);
+        const name = h.btn('section-pattern-name');
+        assert.equal(name.value, 'A');
+        name.value = ' Bassline ';
+        name.dispatch('change');
+        assert.equal(session.getPattern(h.patterns[0].id).name, 'Bassline');
+        assert.deepEqual(h.clips().map(c => c.querySelector('.section-clip-label').textContent), ['Bassline', 'Bassline']);
+    });
+
+    test('an empty name is discarded, not saved', () => {
+        const h = build({ patterns: [{ name: 'A' }], tracks: [{ slot: 0 }], clips: [{ track: 0, pattern: 0, at: 0 }] });
+        h.click(h.clips()[0]);
+        const name = h.btn('section-pattern-name');
+        name.value = '   ';
+        name.dispatch('change');
+        assert.equal(session.getPattern(h.patterns[0].id).name, 'A');
+        assert.equal(name.value, 'A', 'the field snaps back');
     });
 });
 
@@ -534,7 +629,10 @@ describe('section toolbar', () => {
         h.btn('section-loop-end').value = '3';
         h.btn('section-loop-end').dispatch('change');
         assert.deepEqual(h.section().loop, { start: 1, end: 3 }, '1-based inclusive bars → 0-based half-open');
-        assert.ok(h.root.querySelector('.section-loop-band'), 'shown on the ruler');
+        const band = h.root.querySelector('.section-loop-band');
+        assert.ok(band, 'shown on the ruler');
+        assert.equal(band.style.top, MEASURE_W + 'px');
+        assert.equal(band.style.height, (2 * MEASURE_W) + 'px');
 
         h.btn('section-loop-on').checked = false;
         h.btn('section-loop-on').dispatch('change');
@@ -550,7 +648,6 @@ describe('section toolbar', () => {
         assert.equal(h.section().loop, null);
         assert.match(h.status(), /later/);
     });
-
 });
 
 describe('it follows the session', () => {
@@ -561,12 +658,12 @@ describe('it follows the session', () => {
         assert.equal(h.lanes().length, 1);
     });
 
-    test('a pattern lengthened elsewhere widens its clips', () => {
+    test('a pattern lengthened elsewhere lengthens its clips', () => {
         const h = build({ patterns: [{ name: 'A', measures: 1 }], tracks: [{ slot: 0 }], clips: [{ track: 0, pattern: 0, at: 0 }] });
-        assert.equal(h.clips()[0].style.width, (MEASURE_W - 2) + 'px');
+        assert.equal(h.clips()[0].style.height, (MEASURE_W - 2) + 'px');
         session.updatePattern(h.patterns[0].id, { measures: 3 }, 'test');
         h.session.notifyPattern(h.patterns[0].id, 'roll');
-        assert.equal(h.clips()[0].style.width, (3 * MEASURE_W - 2) + 'px');
+        assert.equal(h.clips()[0].style.height, (3 * MEASURE_W - 2) + 'px');
     });
 
     test('destroy unhooks the keyboard and the session', () => {
@@ -606,7 +703,7 @@ describe('playhead (phase 5)', () => {
         return { editor, transport, tickWorker, session, root: editor.element };
     }
 
-    test('hidden at rest, follows the section column while playing', async () => {
+    test('hidden at rest, follows the section column down while playing', async () => {
         const h = await withTransport();
         const head = () => h.root.querySelector('.section-playhead');
         assert.equal(head().style.display, 'none');
@@ -614,9 +711,9 @@ describe('playhead (phase 5)', () => {
         h.transport.play();
         h.tickWorker.tick(0);
         assert.equal(head().style.display, '');
-        const left0 = parseFloat(head().style.left);
+        const top0 = parseFloat(head().style.top);
         h.tickWorker.tick(16);                       // one bar on
-        assert.equal(parseFloat(head().style.left) - left0, MEASURE_W);
+        assert.equal(parseFloat(head().style.top) - top0, MEASURE_W);
 
         h.transport.stop();
         assert.equal(head().style.display, 'none');
@@ -629,9 +726,9 @@ describe('playhead (phase 5)', () => {
         h.transport.play();
         h.tickWorker.tick(0);
         assert.equal(head().style.display, '');
-        const left0 = parseFloat(head().style.left);
+        const top0 = parseFloat(head().style.top);
         h.tickWorker.tick(16);
-        assert.equal(parseFloat(head().style.left) - left0, MEASURE_W);
+        assert.equal(parseFloat(head().style.top) - top0, MEASURE_W);
     });
 
     test('Play and Stop in the toolbar drive the transport, in section mode', async () => {
@@ -684,42 +781,20 @@ describe('playhead (phase 5)', () => {
     });
 });
 
-describe('pattern rename without a double-click', () => {
-    test('the ✎ button opens the same in-place editor (touch has no dblclick)', () => {
-        const h = build({ patterns: [{ name: 'A' }] });
-        const item = h.items()[0];
-        const nameEl = item.querySelector('.section-pattern-name');
-        item.querySelector('.section-pattern-rename').dispatch('click', ev());
-        assert.equal(nameEl.contentEditable, 'true');
-        nameEl.textContent = 'Lead line';
-        nameEl.dispatch('blur');
-        assert.equal(session.getPattern(h.patterns[0].id).name, 'Lead line');
-        assert.equal(h.items()[0].querySelector('.section-pattern-name').textContent, 'Lead line');
-    });
-
-    test('an empty name is discarded, not saved', () => {
-        const h = build({ patterns: [{ name: 'A' }] });
-        const nameEl = h.items()[0].querySelector('.section-pattern-name');
-        h.items()[0].querySelector('.section-pattern-rename').dispatch('click', ev());
-        nameEl.textContent = '   ';
-        nameEl.dispatch('blur');
-        assert.equal(session.getPattern(h.patterns[0].id).name, 'A');
-    });
-});
-
-// A clip dragged into another lane changes track. Only the notes travel —
-// a clip is a pattern id placed somewhere, and the voice is the track's.
+// A clip dragged sideways into another lane changes track. Only the notes
+// travel — a clip is a pattern id placed somewhere, and the voice is the
+// track's.
 describe('moving clips between tracks', () => {
-    const LANE_H = 30;
+    const LANE_W = 100;
     function two(extraClips = []) {
         const h = build({
             patterns: [{ name: 'A', measures: 2, notes: [{ midi: 60, start: 0, dur: 1 }] }],
             tracks: [{ slot: 0 }, { slot: 1 }],
             clips: [{ track: 0, pattern: 0, at: 0 }, ...extraClips],
         });
-        // The harness has no layout: give the lanes stacked rectangles.
+        // The harness has no layout: give the lanes side-by-side rectangles.
         h.lanes().forEach((lane, i) => {
-            lane.getBoundingClientRect = () => ({ top: i * LANE_H, bottom: (i + 1) * LANE_H, left: 0, right: 1000 });
+            lane.getBoundingClientRect = () => ({ left: i * LANE_W, right: (i + 1) * LANE_W, top: 0, bottom: 1000 });
         });
         return h;
     }
@@ -729,104 +804,93 @@ describe('moving clips between tracks', () => {
         h.doc('mouseup', ev(to));
     };
 
-    test('a vertical drag moves the clip to the lane under the pointer, same bar', () => {
+    test('a sideways drag moves the clip to the lane under the pointer, same bar', () => {
         const h = two();
         const before = h.section().clips[0];
-        drag(h, h.clips()[0], { clientX: 10, clientY: 5 }, { clientX: 10, clientY: LANE_H + 5 });
+        drag(h, h.clips()[0], { clientX: 5, clientY: 10 }, { clientX: LANE_W + 5, clientY: 10 });
         const after = h.section().clips[0];
         assert.equal(after.trackId, h.project().tracks[1].id);
         assert.equal(after.startCol, 0);
         assert.equal(after.patternId, before.patternId, 'the same pattern — only the notes moved');
         assert.equal(h.lanes()[1].querySelectorAll('.section-clip').length, 1, 'drawn in the new lane');
         assert.equal(h.lanes()[0].querySelectorAll('.section-clip').length, 0);
+        assert.equal(h.editor.getSelectedTrackId(), after.trackId, 'the destination is the current track now');
     });
 
     test('it then sounds on the new track\'s voice', async () => {
         const { createSectionSequence } = await import('../html/synth/section-sequencer.js');
         const h = two();
-        drag(h, h.clips()[0], { clientX: 10, clientY: 5 }, { clientX: 10, clientY: LANE_H + 5 });
+        drag(h, h.clips()[0], { clientX: 5, clientY: 10 }, { clientX: LANE_W + 5, clientY: 10 });
         const ev0 = createSectionSequence(h.project(), h.section()).eventsAt(0);
         assert.deepEqual(ev0.map(e => [e.midi, e.slot]), [[60, 1]]);
     });
 
     test('diagonal: bars and track change together', () => {
         const h = two();
-        drag(h, h.clips()[0], { clientX: 0, clientY: 5 }, { clientX: 3 * MEASURE_W, clientY: LANE_H + 5 });
-        const c = h.section().clips[0];
-        assert.equal(c.trackId, h.project().tracks[1].id);
-        assert.equal(c.startCol, 3 * COLS);
+        drag(h, h.clips()[0], { clientX: 5, clientY: 0 }, { clientX: LANE_W + 5, clientY: 3 * MEASURE_W });
+        const after = h.section().clips[0];
+        assert.equal(after.trackId, h.project().tracks[1].id);
+        assert.equal(after.startCol, 3 * COLS);
     });
 
     test('while dragging, the clip previews in the target lane, keeping its pattern colour', () => {
         const h = two();
         const clip = h.clips()[0];
-        clip.dispatch('mousedown', ev({ clientX: 10, clientY: 5 }));
-        h.doc('mousemove', ev({ clientX: 10, clientY: LANE_H + 5 }));
-        assert.equal(clip.parentNode, h.lanes()[1]);
-        assert.equal(clip.style.background, h.patterns[0].color, 'the lane tint says which voice; the clip stays its own colour');
-        h.doc('mousemove', ev({ clientX: 10, clientY: 5 }));
+        clip.dispatch('mousedown', ev({ clientX: 5, clientY: 10 }));
+        h.doc('mousemove', ev({ clientX: LANE_W + 5, clientY: 10 }));
+        assert.equal(clip.parentNode, h.lanes()[1], 're-parented under the pointer');
+        assert.equal(clip.style.background, h.patterns[0].color);
+        h.doc('mousemove', ev({ clientX: 5, clientY: 10 }));
         assert.equal(clip.parentNode, h.lanes()[0], 'and back');
-        h.doc('mouseup', ev({ clientX: 10, clientY: 5 }));
-        assert.equal(h.section().clips[0].trackId, h.project().tracks[0].id, 'returned home: nothing changed');
+        h.doc('mouseup', ev({ clientX: 5, clientY: 10 }));
+        assert.equal(h.section().clips[0].trackId, h.project().tracks[0].id, 'returned home: no change');
     });
 
     test('landing on a clip in the other lane is refused and snaps back', () => {
-        const h = two([{ track: 1, pattern: 0, at: 1 }]);          // [1,3) on track 1
-        drag(h, h.clips()[0], { clientX: 0, clientY: 5 }, { clientX: 0, clientY: LANE_H + 5 });  // [0,2) → overlaps
+        const h = two([{ track: 1, pattern: 0, at: 1 }]);                 // [1,3) on track 2
+        drag(h, h.clips()[0], { clientX: 5, clientY: 0 }, { clientX: LANE_W + 5, clientY: 0 });  // [0,2) → overlaps
         assert.equal(h.section().clips[0].trackId, h.project().tracks[0].id);
         assert.equal(h.status(), 'Clip overlaps');
-        assert.equal(h.lanes()[0].querySelectorAll('.section-clip').length, 1, 're-rendered where it was');
+        assert.equal(h.lanes()[0].querySelectorAll('.section-clip').length, 1, 'drawn back where it was');
     });
 
     test('a pointer outside every lane keeps the last lane it was over', () => {
         const h = two();
-        drag(h, h.clips()[0], { clientX: 10, clientY: 5 }, { clientX: 10, clientY: 10 * LANE_H });
+        drag(h, h.clips()[0], { clientX: 5, clientY: 10 }, { clientX: 10 * LANE_W, clientY: 10 });
         assert.equal(h.section().clips[0].trackId, h.project().tracks[0].id);
     });
 
     test('touch: the same, with touches', () => {
         const h = two();
         const clip = h.clips()[0];
-        clip.dispatch('touchstart', ev({ touches: [{ clientX: 10, clientY: 5 }] }));
-        h.doc('touchmove', ev({ touches: [{ clientX: 10, clientY: LANE_H + 5 }] }));
-        h.doc('touchend', ev({ changedTouches: [{ clientX: 10, clientY: LANE_H + 5 }] }));
+        clip.dispatch('touchstart', ev({ touches: [{ clientX: 5, clientY: 10 }] }));
+        h.doc('touchmove', ev({ touches: [{ clientX: LANE_W + 5, clientY: 10 }] }));
+        h.doc('touchend', ev({ changedTouches: [{ clientX: LANE_W + 5, clientY: 10 }] }));
         assert.equal(h.section().clips[0].trackId, h.project().tracks[1].id);
     });
 });
 
-// Colours: a lane is tinted with its track's voice, a clip is painted with
-// its pattern's own colour, chosen in the palette.
 describe('pattern colours', () => {
     test('every pattern has one; the default is stable per id and survives a reload', () => {
-        const h = build({ patterns: [{ name: 'A' }, { name: 'B', color: '#ABCDEF' }] });
+        const h = build({ patterns: [{ name: 'A' }, { name: 'B' }] });
         const [a, b] = h.patterns;
         assert.match(a.color, /^#[0-9a-f]{6}$/);
-        assert.equal(a.color, M.defaultPatternColor(a.id));
-        assert.equal(b.color, '#abcdef', 'a given colour is kept, lower-cased');
-        assert.equal(session.getPattern(a.id).color, a.color, 'read back the same');
-        assert.equal(M.createPattern({ id: 'legacy_x' }).color, M.createPattern({ id: 'legacy_x' }).color,
-            'a stored record without a colour gets the same default every load');
-        assert.equal(M.createPattern({ color: 'red', id: 'q' }).color, M.defaultPatternColor('q'), 'junk is replaced');
+        assert.notEqual(a.color, b.color, 'two patterns, two hues');
+        const again = M.createPattern({ ...a, color: undefined });
+        assert.equal(again.color, a.color, 'derived from the id, so a stored pattern without one keeps its colour');
+        assert.equal(session.getPattern(a.id).color, a.color);
     });
 
-    test('the palette swatch recolours the pattern and its clips', () => {
-        const h = build({ patterns: [{ name: 'A' }], tracks: [{ slot: 0 }], clips: [{ track: 0, pattern: 0, at: 0 }] });
-        const swatch = h.items()[0].querySelector('.section-pattern-swatch');
+    test('the swatch in the action bar recolours the pattern and its clips', () => {
+        const h = build({ patterns: [{ name: 'A' }], tracks: [{ slot: 0 }], clips: [{ track: 0, pattern: 0, at: 0 }, { track: 0, pattern: 0, at: 2 }] });
+        h.click(h.clips()[0]);
+        const swatch = h.btn('section-pattern-swatch');
         assert.equal(swatch.type, 'color');
         assert.equal(swatch.value, h.patterns[0].color);
         swatch.value = '#123456';
         swatch.dispatch('change');
         assert.equal(session.getPattern(h.patterns[0].id).color, '#123456');
-        assert.equal(h.clips()[0].style.background, '#123456');
-        assert.equal(h.items()[0].style.borderLeftColor, '#123456');
-    });
-
-    test('clicking the swatch does not toggle the pattern selection', () => {
-        const h = build({ patterns: [{ name: 'A' }] });
-        let stopped = 0;
-        h.items()[0].querySelector('.section-pattern-swatch').dispatch('click', { stopPropagation() { stopped++; } });
-        assert.equal(stopped, 1);
-        assert.equal(h.editor.getSelectedPatternId(), null);
+        assert.deepEqual(h.clips().map(c => c.style.background), ['#123456', '#123456']);
     });
 
     test('moving a clip to another track keeps its colour — the pattern did not change', () => {
@@ -839,12 +903,12 @@ describe('pattern colours', () => {
 });
 
 // Clips are not bar-aligned by nature: their geometry is columns. The Snap
-// select decides how coarsely a pointer may land, and Zoom widens the bar
-// so the fine resolutions are something a pointer can actually hit.
+// select decides how coarsely a pointer may land, and Zoom makes the bar
+// taller so the fine resolutions are something a pointer can actually hit.
 describe('sub-bar placement and length', () => {
     // A function, not a constant: describe bodies run before before(),
     // where MEASURE_W is imported.
-    const colW = (zoom = 1) => MEASURE_W * zoom / COLS;
+    const colH = (zoom = 1) => MEASURE_W * zoom / COLS;
 
     function one({ snap, zoom, clips = [{ track: 0, pattern: 0, at: 0 }] } = {}) {
         if (snap != null) localStorage.setItem('openpatches_song_snap', String(snap));
@@ -869,8 +933,8 @@ describe('sub-bar placement and length', () => {
     test('a finer snap places a clip part-way through a bar', () => {
         const h = one({ clips: [] });
         pick(h, 'section-snap', 4);                             // quarter notes
-        h.click(h.items()[0]);
-        h.click(h.lanes()[0], MEASURE_W + 7 * colW());       // bar 2, a shade past beat 2
+        h.editor.selectPattern(h.patterns[0].id);
+        h.click(h.lanes()[0], MEASURE_W + 7 * colH());       // bar 2, a shade past beat 2
         assert.equal(h.section().clips[0].startCol, COLS + 4, 'floored to the quarter it fell in');
     });
 
@@ -878,9 +942,9 @@ describe('sub-bar placement and length', () => {
         const h = one({ snap: 8 });                      // halves
         assert.equal(h.btn('section-snap').value, '8');
         const clip = h.clips()[0];
-        clip.dispatch('mousedown', ev({ clientX: 0 }));
-        h.doc('mousemove', ev({ clientX: 11 * colW() })); // 11 columns → nearest half is 8
-        h.doc('mouseup', ev({ clientX: 11 * colW() }));
+        clip.dispatch('mousedown', ev({ clientY: 0 }));
+        h.doc('mousemove', ev({ clientY: 11 * colH() })); // 11 columns → nearest half is 8
+        h.doc('mouseup', ev({ clientY: 11 * colH() }));
         assert.equal(h.section().clips[0].startCol, 8);
     });
 
@@ -888,18 +952,18 @@ describe('sub-bar placement and length', () => {
         const h = one({ snap: COLS, clips: [{ track: 0, pattern: 0, at: 0 }] });
         h.session.update((project, section) => { section.clips[0].startCol = 3; }, 'test');
         const clip = h.clips()[0];
-        clip.dispatch('mousedown', ev({ clientX: 0 }));
-        h.doc('mousemove', ev({ clientX: MEASURE_W }));
-        h.doc('mouseup', ev({ clientX: MEASURE_W }));
+        clip.dispatch('mousedown', ev({ clientY: 0 }));
+        h.doc('mousemove', ev({ clientY: MEASURE_W }));
+        h.doc('mouseup', ev({ clientY: MEASURE_W }));
         assert.equal(h.section().clips[0].startCol, 3 + COLS, 'moved a bar, kept its offset');
     });
 
     test('the edge handle lengthens by sub-bar steps', () => {
         const h = one({ snap: 4 });
         const handle = h.clips()[0].querySelector('.section-clip-handle');
-        handle.dispatch('mousedown', ev({ clientX: 0 }));
-        h.doc('mousemove', ev({ clientX: 5 * colW() }));  // 5 columns → nearest quarter is 4
-        h.doc('mouseup', ev({ clientX: 5 * colW() }));
+        handle.dispatch('mousedown', ev({ clientY: 0 }));
+        h.doc('mousemove', ev({ clientY: 5 * colH() }));  // 5 columns → nearest quarter is 4
+        h.doc('mouseup', ev({ clientY: 5 * colH() }));
         assert.equal(h.section().clips[0].lengthCols, 2 * COLS + 4);
     });
 
@@ -912,8 +976,8 @@ describe('sub-bar placement and length', () => {
             });
         }, 'test');
         const el = h.clips()[0];
-        assert.equal(el.style.left, (8 * colW()) + 'px');
-        assert.equal(el.style.width, (20 * colW() - 2) + 'px');
+        assert.equal(el.style.top, (8 * colH()) + 'px');
+        assert.equal(el.style.height, (20 * colH() - 2) + 'px');
         // [8,28) is taken, so a clip at bar 1 ([0,32)) cannot go in beside it.
         assert.throws(() => h.session.update((project, section) => {
             M.addClip(project, section, {
@@ -922,20 +986,20 @@ describe('sub-bar placement and length', () => {
         }, 'test'), /overlaps/);
     });
 
-    test('zoom widens the bar; everything on the grid follows', () => {
+    test('zoom makes the bar taller; everything on the grid follows', () => {
         const h = one();
-        assert.equal(h.clips()[0].style.width, (2 * MEASURE_W - 2) + 'px');
+        assert.equal(h.clips()[0].style.height, (2 * MEASURE_W - 2) + 'px');
         pick(h, 'section-zoom', 4);
-        assert.equal(h.clips()[0].style.width, (2 * 4 * MEASURE_W - 2) + 'px');
-        assert.ok(parseFloat(h.root.querySelector('.section-ruler-lane').style.width) >= 16 * 4 * MEASURE_W);
+        assert.equal(h.clips()[0].style.height, (2 * 4 * MEASURE_W - 2) + 'px');
+        assert.ok(parseFloat(h.root.querySelector('.section-ruler').style.height) >= 16 * 4 * MEASURE_W);
         assert.equal(localStorage.getItem('openpatches_song_zoom'), '4', 'remembered');
     });
 
     test('the grid draws a snap line under every bar line', () => {
         const h = one({ snap: 4, zoom: 2 });
         const g = h.root.querySelector('.section-grid');
-        assert.equal(g.style.getPropertyValue('--section-measure-w'), (2 * MEASURE_W) + 'px');
-        assert.equal(g.style.getPropertyValue('--section-snap-w'), (4 * colW(2)) + 'px');
+        assert.equal(g.style.getPropertyValue('--section-measure-h'), (2 * MEASURE_W) + 'px');
+        assert.equal(g.style.getPropertyValue('--section-snap-h'), (4 * colH(2)) + 'px');
     });
 
     test('a drag at a fine snap still cannot cross a neighbour', () => {
@@ -943,9 +1007,9 @@ describe('sub-bar placement and length', () => {
         // DRAG_THRESHOLD — which is what the zoom is for.
         const h = one({ snap: 1, zoom: 2, clips: [{ track: 0, pattern: 0, at: 0 }, { track: 0, pattern: 0, at: 2 }] });
         const clip = h.clips()[0];                       // [0,32)
-        clip.dispatch('mousedown', ev({ clientX: 0 }));
-        h.doc('mousemove', ev({ clientX: colW(2) }));    // → [1,33) runs into [32,64)
-        h.doc('mouseup', ev({ clientX: colW(2) }));
+        clip.dispatch('mousedown', ev({ clientY: 0 }));
+        h.doc('mousemove', ev({ clientY: colH(2) }));    // → [1,33) runs into [32,64)
+        h.doc('mouseup', ev({ clientY: colH(2) }));
         assert.equal(h.section().clips[0].startCol, 0);
         assert.equal(h.status(), 'Clip overlaps');
     });

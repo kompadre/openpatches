@@ -141,25 +141,40 @@ export function createToolbar(opts) {
 
     // Two layouts, decided at build time like the rest of the mobile/desktop
     // split. Mobile keeps one full-page panel per tab. Desktop keeps
-    // Patches / Piano Roll / Section as pages and houses Mixer, Edit and Log
-    // in a resizable bottom pane — full-page, each of the three was mostly
-    // empty space.
+    // Patches / Piano Roll as pages, puts the Section in a resizable left
+    // pane (it grows downward without end, so it wants height) and houses
+    // Mixer, Edit and Log in a resizable bottom pane — full-page, each of
+    // them was mostly empty space.
     const isMobileLayout = window.matchMedia('(max-width: 600px)').matches;
 
-    const mainTabs = [tabCanvas, tabPianoroll, tabSection];
-    const mainPanels = [canvasPanel, pianorollPanel, sectionPanel];
+    const mainTabs = [tabCanvas, tabPianoroll];
+    const mainPanels = [canvasPanel, pianorollPanel];
     if (isMobileLayout) {
-        mainTabs.push(tabMixer, tabEdit, tabLog);
-        mainPanels.push(mixerPanel, editPanel, logPanel);
+        mainTabs.push(tabSection, tabMixer, tabEdit, tabLog);
+        mainPanels.push(sectionPanel, mixerPanel, editPanel, logPanel);
     }
 
-    wrapper.appendChild(canvasPanel);
-    wrapper.appendChild(pianorollPanel);
-    wrapper.appendChild(sectionPanel);
+    // Desktop: tabs / [ left pane | centre column ( panels / bottom pane ) ].
+    // `centre` is where the main panels and the bottom pane go; on mobile it
+    // is simply the wrapper itself.
+    let centre = wrapper;
+    if (!isMobileLayout) {
+        const split = document.createElement('div');
+        split.className = 'dock-split';
+        centre = document.createElement('div');
+        centre.className = 'dock-centre';
+        wrapper.appendChild(split);
+        wrapper._split = split;      // the left pane is mounted here below
+        split.appendChild(centre);
+    }
+
+    centre.appendChild(canvasPanel);
+    centre.appendChild(pianorollPanel);
     if (isMobileLayout) {
-        wrapper.appendChild(mixerPanel);
-        wrapper.appendChild(editPanel);
-        wrapper.appendChild(logPanel);
+        centre.appendChild(sectionPanel);
+        centre.appendChild(mixerPanel);
+        centre.appendChild(editPanel);
+        centre.appendChild(logPanel);
     }
 
     function activateTab(tab, panel) {
@@ -174,7 +189,80 @@ export function createToolbar(opts) {
         activateTab(tabPianoroll, pianorollPanel);
         requestAnimationFrame(positionBlackKeys);
     });
-    tabSection.addEventListener('click', () => activateTab(tabSection, sectionPanel));
+
+    // `showSection()` reveals the Section: a tab switch on mobile, an
+    // unfold of the left pane on desktop.
+    let showSection;
+    if (isMobileLayout) {
+        tabSection.addEventListener('click', () => activateTab(tabSection, sectionPanel));
+        showSection = () => activateTab(tabSection, sectionPanel);
+    } else {
+        // --- Left pane (desktop) ---
+        // The Section editor beside the main panel, ~28% wide and draggable
+        // by the handle on its right. It folds toward the left into a thin
+        // vertical bookmark; the Section tab toggles it the same way.
+        const LPANE_KEY = 'openpatches_lpane';
+        let lpaneState = { w: 0.28, collapsed: false };
+        try {
+            const saved = JSON.parse(localStorage.getItem(LPANE_KEY));
+            if (saved && typeof saved === 'object') lpaneState = { ...lpaneState, ...saved };
+        } catch { /* corrupt state: fall back to the default */ }
+
+        sectionPanel.className = 'lpane-content lpane-content-section';
+
+        const lpane = document.createElement('div');
+        lpane.className = 'lpane';
+        const lbookmark = document.createElement('button');
+        lbookmark.className = 'lpane-bookmark';
+        lbookmark.innerHTML = '<span>Section</span>';
+        lbookmark.title = 'Collapse/expand the Section';
+        const lbody = document.createElement('div');
+        lbody.className = 'lpane-body';
+        lbody.appendChild(sectionPanel);
+        lpane.appendChild(lbookmark);
+        lpane.appendChild(lbody);
+        const lhandle = document.createElement('div');
+        lhandle.className = 'lpane-handle';
+        lhandle.title = 'Drag to resize · double-click to collapse';
+        wrapper._split.insertBefore(lhandle, centre);
+        wrapper._split.insertBefore(lpane, lhandle);
+
+        const saveLpane = () => {
+            try { localStorage.setItem(LPANE_KEY, JSON.stringify(lpaneState)); } catch { /* storage full/blocked */ }
+        };
+        const syncLpane = () => {
+            lpane.classList.toggle('collapsed', lpaneState.collapsed);
+            lhandle.classList.toggle('collapsed', lpaneState.collapsed);
+            tabSection.classList.toggle('active', !lpaneState.collapsed);
+            lpane.style.width = lpaneState.collapsed ? '' : (lpaneState.w * 100).toFixed(1) + '%';
+        };
+        const setLpane = (collapsed) => { lpaneState.collapsed = collapsed; saveLpane(); syncLpane(); };
+        lbookmark.addEventListener('click', () => setLpane(!lpaneState.collapsed));
+        tabSection.addEventListener('click', () => setLpane(!lpaneState.collapsed));
+        showSection = () => setLpane(false);
+
+        lhandle.addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            lhandle.setPointerCapture(e.pointerId);
+            const startX = e.clientX;
+            const startW = lpane.getBoundingClientRect().width;
+            const total = wrapper._split.getBoundingClientRect().width || 1;
+            const onMove = (ev) => {
+                lpaneState.w = Math.min(0.6, Math.max(0.15, (startW + ev.clientX - startX) / total));
+                syncLpane();
+            };
+            const stop = () => {
+                lhandle.removeEventListener('pointermove', onMove);
+                saveLpane();
+            };
+            lhandle.addEventListener('pointermove', onMove);
+            lhandle.addEventListener('pointerup', stop, { once: true });
+            lhandle.addEventListener('pointercancel', stop, { once: true });
+        });
+        lhandle.addEventListener('dblclick', () => setLpane(true));
+
+        syncLpane();
+    }
 
     // `showBottom(key)` is how the rest of the app reveals Mixer / Edit /
     // Log: a tab switch on mobile, an expand-in-pane on desktop.
@@ -243,8 +331,8 @@ export function createToolbar(opts) {
         paneCollapseBtn.addEventListener('click', () => { bpaneState.paneCollapsed = true; saveBpane(); syncBpane(); });
         bpane.appendChild(paneCollapseBtn);
 
-        wrapper.appendChild(bpaneHandle);
-        wrapper.appendChild(bpane);
+        centre.appendChild(bpaneHandle);
+        centre.appendChild(bpane);
 
         const saveBpane = () => {
             try { localStorage.setItem(BPANE_KEY, JSON.stringify(bpaneState)); } catch { /* storage full/blocked */ }
@@ -293,7 +381,7 @@ export function createToolbar(opts) {
             bpaneHandle.setPointerCapture(e.pointerId);
             const startY = e.clientY;
             const startH = bpane.getBoundingClientRect().height;
-            const total = wrapper.getBoundingClientRect().height || 1;
+            const total = centre.getBoundingClientRect().height || 1;
             const onMove = (ev) => {
                 const h = startH + (startY - ev.clientY);
                 bpaneState.h = Math.min(0.6, Math.max(0.1, h / total));
@@ -1146,6 +1234,7 @@ export function createToolbar(opts) {
     wrapper._showEdit = () => { showBottom('edit'); };
     wrapper._showMixer = () => { showBottom('mixer'); };
     wrapper._showLog = () => { showBottom('log'); };
+    wrapper._showSection = () => { showSection(); };
     wrapper._logPanel = logPanel;
     wrapper._setKeyboardCollapsed = setKeyboardCollapsed;
     wrapper._isKeyboardCollapsed = () => kbWrapper.classList.contains('collapsed');

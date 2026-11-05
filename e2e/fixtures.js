@@ -111,4 +111,15 @@ export async function openPatchesTab(page) {
     await expect(page.locator('#night-sky')).toBeVisible();
 }
 
+/**
+ * Reveal the Section editor. A tab switch on mobile; on desktop the Section
+ * tab *toggles* the left pane, so only click when the editor is not already
+ * on screen.
+ */
+export async function openSectionPane(page) {
+    const editor = page.locator('.section-editor');
+    if (!(await editor.isVisible())) await page.locator('.dock-tab-section').click();
+    await expect(editor).toBeVisible();
+}
+
 export { expect };

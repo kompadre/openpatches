@@ -5,7 +5,7 @@
 // proves the parts a stub cannot: that a body actually lands in IndexedDB,
 // survives a reload, and that the indicator the user reads agrees with it.
 
-import { test, expect, openApp } from './fixtures.js';
+import { test, expect, openApp, openSectionPane } from './fixtures.js';
 
 const PROFILE_KEY = 'openpatches_profile';
 
@@ -123,7 +123,7 @@ test.describe('project management lives in the File menu', () => {
 
     test('the Section editor names the section, not the project', async ({ page }) => {
         await openApp(page);
-        await page.locator('.dock-tab', { hasText: 'Section' }).click();
+        await openSectionPane(page);
         await expect(page.locator('.section-name')).toHaveValue('Section 1');
         // Project switching left this toolbar: a project is the whole piece.
         await expect(page.locator('.section-select')).toHaveCount(0);

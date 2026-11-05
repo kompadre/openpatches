@@ -3,16 +3,19 @@
 // The dock centres its panels (`.dock-panel { align-items: center }`). That
 // is a trap: a centred box wider than its container overflows on *both*
 // sides, and the start side of a centred overflow cannot be scrolled to.
-// A panel that takes its content width therefore strands its own left edge —
-// the section palette, the track heads — off screen permanently. Measured on a
-// long section: the palette sat at x=-4412 with no way to reach it.
+// A panel that takes its content width therefore strands its own left edge
+// off screen permanently. Measured on a long section, back when the Section
+// was a full-page tab with time running across: its palette sat at x=-4412
+// with no way to reach it.
 //
-// The guard is that every panel sizes itself to the dock and scrolls
-// internally. These tests hold the panels to that.
+// The guard is that every panel sizes itself to its container and scrolls
+// internally. The Section now lives in the left pane with time running
+// *down*, so a long section is tall rather than wide — the grid must absorb
+// that height, and the pane must never take the grid's width.
 
-import { test, expect, openApp } from './fixtures.js';
+import { test, expect, openApp, openSectionPane } from './fixtures.js';
 
-/** A section with a clip far out at bar 200 — ~10 000 px of grid. */
+/** A section with a clip far out at bar 200 — ~10 000 px of grid, downward. */
 async function seedLongSection(page) {
     await page.evaluate(async () => {
         const pm = await import('/html/components/project-model.js');
@@ -29,10 +32,7 @@ async function seedLongSection(page) {
     });
 }
 
-async function openSectionTab(page) {
-    await page.locator('.dock-tab', { hasText: 'Section' }).click();
-    await expect(page.locator('.section-editor')).toBeVisible();
-}
+const openSectionTab = openSectionPane;
 
 function layout(page) {
     return page.evaluate(() => {
@@ -45,87 +45,80 @@ function layout(page) {
         const grid = document.querySelector('.section-grid');
         const dock = document.querySelector('#piano-dock');
         return {
-            palette: box('.section-palette'),
+            toolbar: box('.section-toolbar'),
+            ruler: box('.section-ruler'),
             editor: box('.section-editor'),
-            panel: box('.dock-panel.active'),
-            gridClientW: grid.clientWidth,
-            gridScrollW: grid.scrollWidth,
+            pane: box('.lpane-body'),
+            gridClientH: grid.clientHeight,
+            gridScrollH: grid.scrollHeight,
             dockOverflow: dock.scrollWidth - dock.clientWidth,
         };
     });
 }
 
 test.describe('layout invariants', () => {
-    test('a long section scrolls the grid, it does not widen the editor', async ({ page }) => {
+    test('a long section scrolls the grid down, it does not grow the pane', async ({ page }) => {
         await openApp(page);
         await openSectionTab(page);
         await seedLongSection(page);
 
         const l = await layout(page);
 
-        // The palette is the thing that goes missing, so check it first.
-        expect(l.palette.x, 'palette pushed off the left edge').toBeGreaterThanOrEqual(0);
+        // The toolbar and the ruler are the things that would go missing.
+        expect(l.toolbar.x, 'toolbar pushed off the left edge').toBeGreaterThanOrEqual(0);
+        expect(l.ruler.x, 'ruler pushed off the left edge').toBeGreaterThanOrEqual(0);
 
-        // The editor is the dock's width, never the section's length.
-        expect(l.editor.width).toBeLessThanOrEqual(l.panel.width + 1);
+        // The editor is the pane's width, never the section's.
+        expect(l.editor.width).toBeLessThanOrEqual(l.pane.width + 1);
 
-        // The grid is what absorbs the section: it must actually be scrolling.
-        expect(l.gridScrollW).toBeGreaterThan(l.gridClientW);
+        // The grid is what absorbs the section: it must actually be scrolling, downward.
+        expect(l.gridScrollH).toBeGreaterThan(l.gridClientH);
 
         // And nothing leaks out to scroll the dock sideways.
         expect(l.dockOverflow).toBeLessThanOrEqual(2);
     });
 
-    test('the panel contains its content even if the grid stops absorbing it', async ({ page }) => {
-        // The containment above must not depend on the grid's cooperation.
-        // Take the grid's own overflow away — the state the observed
-        // breakage was in — and the palette must still be reachable. Without
-        // `width: 100%` on .section-editor this fails with the palette at
-        // x=-4412; it is the test that actually pins the fix down.
+    test('the pane contains its content even if the grid stops absorbing it', async ({ page }) => {
+        // The containment must not depend on the grid's cooperation. Take
+        // the grid's own overflow away and the toolbar must still be
+        // reachable and the editor still no wider than the pane.
         await openApp(page);
         await openSectionTab(page);
         await seedLongSection(page);
 
         await page.addStyleTag({ content: '.section-grid { overflow: visible !important; }' });
-        await expect.poll(async () => (await layout(page)).palette.x).toBeGreaterThanOrEqual(0);
+        await expect.poll(async () => (await layout(page)).toolbar.x).toBeGreaterThanOrEqual(0);
 
         const l = await layout(page);
-        expect(l.editor.width).toBeLessThanOrEqual(l.panel.width + 1);
+        expect(l.editor.width).toBeLessThanOrEqual(l.pane.width + 1);
+        expect(l.dockOverflow).toBeLessThanOrEqual(2);
     });
 
-    test('pattern palette rows stay on one line', async ({ page }) => {
+    test('many tracks scroll the grid sideways, inside the pane', async ({ page }) => {
         await openApp(page);
-        await page.evaluate(async () => {
-            const pm = await import('/html/components/project-model.js');
-            window.__opDock._session.createPattern({ name: 'A long pattern name', measures: 16 }, 'e2e');
-            window.__opDock._sectionEditor.render();
-        });
         await openSectionTab(page);
+        for (let i = 0; i < 8; i++) await page.locator('.section-add-track').click();
+        await expect(page.locator('.section-lane')).toHaveCount(8);
 
-        // "16 bars" is squeezed by the flexible name beside it and used to
-        // break after the number, doubling the height of every row.
-        const rows = await page.locator('.section-pattern-len').evaluateAll((els) =>
-            els.map((el) => {
-                const lineHeight = parseFloat(getComputedStyle(el).lineHeight) || 12;
-                return { text: el.textContent, lines: Math.round(el.getBoundingClientRect().height / lineHeight) };
-            }));
-        expect(rows.length).toBeGreaterThan(0);
-        for (const row of rows) {
-            expect(row.lines, `"${row.text}" wrapped onto ${row.lines} lines`).toBe(1);
-        }
+        const m = await page.evaluate(() => {
+            const grid = document.querySelector('.section-grid');
+            const pane = document.querySelector('.lpane-body').getBoundingClientRect();
+            const editor = document.querySelector('.section-editor').getBoundingClientRect();
+            return { gridOverflowX: grid.scrollWidth - grid.clientWidth, editorW: editor.width, paneW: pane.width };
+        });
+        expect(m.gridOverflowX).toBeGreaterThan(0);
+        expect(m.editorW).toBeLessThanOrEqual(m.paneW + 1);
     });
 
     test('every dock panel keeps every child inside the dock', async ({ page }) => {
-        // The generic form of the two tests above, over every full-page tab.
-        // The Section editor is the panel that has actually broken, but the
-        // trap is in `.dock-panel` itself: a wide child of *any* panel is
-        // centred and its left edge stranded. (Mixer, Edit and Log left the
-        // dock-panel world for the bottom pane — covered below.)
+        // The generic form of the tests above, over every full-page tab.
+        // The Section editor is the panel that actually broke, but the trap
+        // is in `.dock-panel` itself: a wide child of *any* panel is centred
+        // and its left edge stranded. (Section, Mixer, Edit and Log left
+        // the dock-panel world for the side panes — covered separately.)
         await openApp(page);
-        await openSectionTab(page);
-        await seedLongSection(page);
 
-        const tabs = ['Patches', 'Piano Roll', 'Section'];
+        const tabs = ['Patches', 'Piano Roll'];
         for (const name of tabs) {
             await page.locator('.dock-tab', { hasText: name }).click();
             await expect(page.locator('.dock-panel.active')).toBeVisible();
@@ -230,5 +223,35 @@ test.describe('layout invariants', () => {
         await expect(page.locator('.bpane-item-edit .bpane-body')).toBeVisible();
         await expect(page.locator('.bpane-item-mixer .bpane-body')).toBeVisible();
         await expect(page.locator('.bpane-item-log .bpane-body')).toBeHidden();
+    });
+
+    test('left pane: the bookmark and the Section tab fold it, it keeps its width', async ({ page }) => {
+        await openApp(page);
+        const pane = page.locator('.lpane');
+        const editor = page.locator('.section-editor');
+        await expect(editor).toBeVisible();
+        await expect(page.locator('.dock-tab-section')).toHaveClass(/active/);
+
+        const paneW = await pane.evaluate((el) => el.getBoundingClientRect().width);
+        const rollW = await page.locator('.dock-panel-pianoroll').evaluate((el) => el.getBoundingClientRect().width);
+
+        // Fold by the bookmark: the editor hides, the bookmark stays, the
+        // piano roll takes the room.
+        await page.locator('.lpane-bookmark').click();
+        await expect(editor).toBeHidden();
+        await expect(page.locator('.lpane-bookmark')).toBeVisible();
+        await expect(page.locator('.lpane-handle')).toBeHidden();
+        await expect(page.locator('.dock-tab-section')).not.toHaveClass(/active/);
+        expect(await page.locator('.dock-panel-pianoroll').evaluate((el) => el.getBoundingClientRect().width))
+            .toBeGreaterThan(rollW + paneW / 2);
+
+        // The tab reopens it at the width it had.
+        await page.locator('.dock-tab-section').click();
+        await expect(editor).toBeVisible();
+        expect(Math.abs(await pane.evaluate((el) => el.getBoundingClientRect().width) - paneW)).toBeLessThanOrEqual(1);
+
+        // And the tab toggles it away again.
+        await page.locator('.dock-tab-section').click();
+        await expect(editor).toBeHidden();
     });
 });

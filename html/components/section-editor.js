@@ -1,11 +1,20 @@
 // Section editor — arrange patterns as clips on tracks.
 //
 // A **section** is one smaller piece of the project; this edits the one
-// the session says is current. A grid: tracks are rows, bars are columns.
-// Left of it a palette of every pattern in the project. Pick a pattern,
-// click an empty spot on a lane, and a clip is placed there; drag a clip
-// to move it, drag its right edge to lengthen it, select it and press
-// Delete (or the Remove button) to take it out.
+// the session says is current. A grid with **time running down**: tracks
+// are columns side by side, bars are rows, the ruler is the left column.
+// It lives in a tall, narrow place (the desktop's left pane, a phone's
+// screen), which is why time is vertical — a section grows downward
+// without end, while tracks top out at eight.
+//
+// There is no pattern list. `+ Pattern` makes a new pattern and places it
+// at the end of the **selected track** (click a track head to select one;
+// selecting a clip selects its track too). Click a clip to select it and
+// its pattern; click an empty spot on a lane to place that pattern there
+// again; drag a clip to move it (sideways onto another track too), drag its
+// bottom edge to lengthen it, select it and press Delete (or the Remove
+// button) to take it out. Renaming, recolouring and duplicating a pattern
+// happen in the selected clip's action bar.
 //
 // **A lane is a track is a Mixer strip is a voice.** One record: the slot
 // is the synth channel, and the name, patch, volume, mute and solo all
@@ -15,24 +24,24 @@
 //
 // Placing, moving and lengthening all happen at the **snap** resolution,
 // a bar by default and down to a sixteenth — clips are not bar-aligned by
-// nature, their geometry is columns (see project-model.js). **Zoom** widens
-// the bar so the finer resolutions are something a pointer can hit.
+// nature, their geometry is columns (see project-model.js). **Zoom** makes
+// the bar taller so the finer resolutions are something a pointer can hit.
 //
 // Everything autosaves through the project session; there is no Save
 // button. Choosing, creating and deleting *projects* is not here — a
 // project is the whole piece, and that lives in the File menu.
 //
-// Opening a clip (double-click, or the ✎ button when selected) hands its
+// Opening a clip (long press, or the ✎ button when selected) hands its
 // pattern to the piano roll via opts.onOpenPattern.
 
 import {
     addClip, updateClip, removeClip, removeTrack, setTrackSlot,
-    clipCols, clipRepeats, sectionLength, createTrack, patternCols,
+    clipCols, clipRepeats, sectionLength, createTrack,
     COLS_PER_MEASURE, MAX_SLOTS, MIN_BPM, MAX_BPM,
 } from './project-model.js';
 
-export const MEASURE_W = 48;      // px per measure in the grid, at zoom ×1
-const MIN_GRID_MEASURES = 16;     // never show an empty, zero-width grid
+export const MEASURE_W = 48;      // px per measure in the grid (its height, time runs down), at zoom ×1
+const MIN_GRID_MEASURES = 16;     // never show an empty, zero-height grid
 const DRAG_THRESHOLD = 4;         // px before a press becomes a drag
 const LONG_PRESS_MS = 600;        // a still press this long opens the clip in the roll
 const DOUBLE_TAP_MS = 400;        // two presses on one clip within this remove it (as in the roll)
@@ -68,6 +77,7 @@ export function createSectionEditor(opts = {}) {
 
     let selectedPatternId = null;
     let selectedClipId = null;
+    let selectedTrackId = null;  // where `+ Pattern` lands; a clip's track when one is selected
     let playBtn = null;        // transport buttons, re-created by renderToolbar, synced per tick
     let stopBtn = null;
     let lastPress = { clipId: null, at: 0 };   // last body press, for double-tap removal
@@ -77,9 +87,9 @@ export function createSectionEditor(opts = {}) {
     let snapCols = loadNum(SNAP_KEY, SNAPS.map(s => s.cols), COLS_PER_MEASURE);
     let zoom = loadNum(ZOOM_KEY, ZOOMS, 1);
 
-    /** Grid scale. One bar is MEASURE_W at zoom ×1; a column is 1/16 of it. */
-    const measureW = () => MEASURE_W * zoom;
-    const colW = () => measureW() / COLS_PER_MEASURE;
+    /** Grid scale. One bar is MEASURE_W tall at zoom ×1; a column is 1/16 of it. */
+    const measureH = () => MEASURE_W * zoom;
+    const colH = () => measureH() / COLS_PER_MEASURE;
     /** Round a column count to the snap resolution (a delta, or a position). */
     const snap = (cols) => Math.round(cols / snapCols) * snapCols;
 
@@ -88,18 +98,17 @@ export function createSectionEditor(opts = {}) {
 
     const toolbar = document.createElement('div');
     toolbar.className = 'section-toolbar';
-    const body = document.createElement('div');
-    body.className = 'section-body';
-    const palette = document.createElement('div');
-    palette.className = 'section-palette';
     const grid = document.createElement('div');
     grid.className = 'section-grid';
+    // Selected-clip actions live under the grid rather than on the clip so
+    // they are reachable by touch, where there is no hover and no Delete key.
+    const actions = document.createElement('div');
+    actions.className = 'section-clip-actions';
     const status = document.createElement('div');
     status.className = 'section-status';
-    body.appendChild(palette);
-    body.appendChild(grid);
     root.appendChild(toolbar);
-    root.appendChild(body);
+    root.appendChild(grid);
+    root.appendChild(actions);
     root.appendChild(status);
 
     function say(msg) {
@@ -141,6 +150,62 @@ export function createSectionEditor(opts = {}) {
         return Math.max(MIN_GRID_MEASURES, sectionLength(project, sec()) + 4);
     }
 
+    // --- Tracks: which one is "current", and where it ends ---
+
+    /** The track `+ Pattern` lands on: the selected one, else the first. */
+    function currentTrack(project) {
+        return project.tracks.find(t => t.id === selectedTrackId) || project.tracks[0] || null;
+    }
+
+    /** The column after the track's last clip — 0 on an empty track. */
+    function trackEndCol(project, trackId) {
+        let end = 0;
+        for (const clip of sec().clips) {
+            if (clip.trackId !== trackId) continue;
+            const span = clipCols(clip, getPattern(clip.patternId));
+            if (span && span.endCol > end) end = span.endCol;
+        }
+        return end;
+    }
+
+    /** Add a track on the first free voice. Returns it, or null when all eight are taken. */
+    function addTrack() {
+        const used = new Set(session.get().tracks.map(t => t.slot));
+        let slot = 0;
+        while (slot < MAX_SLOTS && used.has(slot)) slot++;
+        if (slot >= MAX_SLOTS) { say(`All ${MAX_SLOTS} voices have a track`); return null; }
+        let made = null;
+        change((s) => { made = createTrack({ name: slotLabel(slot), slot }); s.tracks.push(made); });
+        if (made) selectedTrackId = made.id;
+        return made;
+    }
+
+    /**
+     * Place a pattern at the end of a track and select the new clip. Returns
+     * the clip, or null when the model refused (reported in the status).
+     */
+    function placeAtEnd(patternId, trackId) {
+        const startCol = trackEndCol(session.get(), trackId);
+        let placed = null;
+        change((project, section) => {
+            placed = addClip(project, section, { trackId, patternId, startCol });
+            selectedClipId = placed.id;
+        });
+        if (placed) { selectedPatternId = patternId; selectedTrackId = trackId; }
+        return placed;
+    }
+
+    /** `+ Pattern`: a new pattern, placed at the end of the selected track. */
+    function newPatternOnTrack() {
+        let track = currentTrack(session.get());
+        if (!track) track = addTrack();          // nothing to land on yet: make the first track
+        if (!track) return;
+        const p = session.createPattern({ name: `Pattern ${session.listPatterns().length + 1}` }, 'section-editor');
+        placeAtEnd(p.id, track.id);
+        session.notifyPattern(p.id, 'section-editor');
+        render();
+    }
+
     // --- Toolbar: the section's name, the project's tempo, the section's loop ---
 
     function button(label, title, onClick, className = 'section-btn') {
@@ -157,14 +222,14 @@ export function createSectionEditor(opts = {}) {
 
         // Play here is the whole section; the roll's Play loops one pattern.
         if (transport) {
-            playBtn = button('\u25B6 Play', 'Play the section from the start of its loop', () => {
+            playBtn = button('▶ Play', 'Play the section from the start of its loop', () => {
                 transport.play({ mode: 'section' });
             }, 'section-btn section-play');
             // Armed for an external clock: Play is taken but nothing runs
             // until the device starts us. The pulse says so; Stop disarms.
             const waitTitle = 'Waiting for the external MIDI clock to start';
             playBtn.dataset.waitTitle = waitTitle;
-            stopBtn = button('\u25A0 Stop', 'Stop', () => transport.stop(), 'section-btn section-stop');
+            stopBtn = button('■ Stop', 'Stop', () => transport.stop(), 'section-btn section-stop');
             toolbar.appendChild(playBtn);
             toolbar.appendChild(stopBtn);
             syncTransportButtons({
@@ -172,6 +237,11 @@ export function createSectionEditor(opts = {}) {
                 waiting: transport.isWaiting ? transport.isWaiting() : false,
             });
         }
+
+        // The pattern library has no list of its own any more: new patterns
+        // are born in place, on the selected track.
+        toolbar.appendChild(button('+ Pattern', 'New pattern at the end of the selected track',
+            newPatternOnTrack, 'section-btn section-pattern-new'));
 
         // This toolbar edits the **section** on screen. Choosing, creating
         // and deleting *projects* used to live here too — a project is the
@@ -250,8 +320,8 @@ export function createSectionEditor(opts = {}) {
             SNAPS.map(x => [x.cols, x.label]), snapCols,
             (v) => { snapCols = v; store(SNAP_KEY, v); render(); }));
         toolbar.appendChild(chooser('Zoom ', 'section-zoom',
-            'Width of a bar — the finer snaps need the room',
-            ZOOMS.map(z => [z, '\u00d7' + z]), zoom,
+            'Height of a bar — the finer snaps need the room',
+            ZOOMS.map(z => [z, '×' + z]), zoom,
             (v) => { zoom = v; store(ZOOM_KEY, v); render(); }));
     }
 
@@ -280,117 +350,7 @@ export function createSectionEditor(opts = {}) {
         return label;
     }
 
-    // --- Palette: the pattern library ---
-
-    function renderPalette(project) {
-        palette.innerHTML = '';
-        const head = document.createElement('div');
-        head.className = 'section-palette-head';
-        head.textContent = 'Patterns';
-        head.appendChild(button('+', 'New pattern', () => {
-            const p = session.createPattern({ name: `Pattern ${session.listPatterns().length + 1}` }, 'section-editor');
-            selectedPatternId = p.id;
-            session.notifyPattern(p.id, 'section-editor');
-            render();
-        }, 'section-btn section-pattern-new'));
-        palette.appendChild(head);
-
-        const list = document.createElement('div');
-        list.className = 'section-pattern-list';
-        const patterns = session.listPatterns();
-        if (patterns.length === 0) {
-            const empty = document.createElement('div');
-            empty.className = 'section-empty';
-            empty.textContent = 'No patterns yet — draw one in the piano roll, or press +.';
-            list.appendChild(empty);
-        }
-        if (selectedPatternId && !patterns.some(p => p.id === selectedPatternId)) selectedPatternId = null;
-
-        for (const p of patterns) {
-            const item = document.createElement('div');
-            item.className = 'section-pattern-item' + (p.id === selectedPatternId ? ' selected' : '');
-            item.dataset.patternId = p.id;
-            item.title = 'Click to select, then click a lane to place';
-
-            // The pattern's colour — what its clips are painted with. The
-            // swatch is the picker; a click on it must not toggle selection.
-            const swatch = document.createElement('input');
-            swatch.type = 'color';
-            swatch.className = 'section-pattern-swatch';
-            swatch.value = p.color;
-            swatch.title = 'Pattern colour';
-            swatch.addEventListener('click', (e) => e.stopPropagation());
-            swatch.addEventListener('input', () => { item.style.borderLeftColor = swatch.value; });
-            swatch.addEventListener('change', () => {
-                session.updatePattern(p.id, { color: swatch.value }, 'section-editor');
-                render();
-            });
-            item.appendChild(swatch);
-            item.style.borderLeftColor = p.color;
-
-            const nameEl = document.createElement('span');
-            nameEl.className = 'section-pattern-name';
-            nameEl.textContent = p.name;
-            item.appendChild(nameEl);
-
-            const len = document.createElement('span');
-            len.className = 'section-pattern-len';
-            len.textContent = p.measures + (p.measures === 1 ? ' bar' : ' bars');
-            item.appendChild(len);
-
-            // Rename in place, the way patch rows and containers do. The
-            // button exists for touch, where a double-click is not a thing.
-            const beginRename = () => {
-                nameEl.contentEditable = 'true';
-                nameEl.focus();
-            };
-            item.appendChild(button('✎', 'Rename pattern', beginRename, 'section-btn section-pattern-rename'));
-            item.appendChild(button('⧉', 'Duplicate', () => {
-                const copy = session.createPattern({ ...p, id: undefined, name: p.name + ' copy', created: undefined }, 'section-editor');
-                selectedPatternId = copy.id;
-                session.notifyPattern(copy.id, 'section-editor');
-                render();
-            }, 'section-btn section-pattern-dup'));
-            item.appendChild(button('✕', 'Delete pattern', () => {
-                const used = session.patternUsage(p.id);
-                if (used.length > 0) {
-                    say(`"${p.name}" is placed in ${used.length} section${used.length > 1 ? 's' : ''} — remove its clips first`);
-                    return;
-                }
-                if (!confirm(`Delete pattern "${p.name}"?`)) return;
-                session.removePattern(p.id, 'section-editor');
-                if (selectedPatternId === p.id) selectedPatternId = null;
-                session.notifyPattern(p.id, 'section-editor');
-                render();
-            }, 'section-btn section-pattern-del'));
-
-            item.addEventListener('click', () => {
-                selectedPatternId = selectedPatternId === p.id ? null : p.id;
-                render();
-            });
-            nameEl.addEventListener('dblclick', (e) => {
-                e.stopPropagation();
-                beginRename();
-            });
-            nameEl.addEventListener('blur', () => {
-                if (nameEl.contentEditable !== 'true') return;
-                nameEl.contentEditable = 'false';
-                const v = String(nameEl.textContent).trim();
-                if (v && v !== p.name) {
-                    session.updatePattern(p.id, { name: v }, 'section-editor');
-                }
-                render();
-            });
-            nameEl.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') { e.preventDefault(); if (nameEl.blur) nameEl.blur(); }
-                if (e.key === 'Escape') { nameEl.textContent = p.name; nameEl.contentEditable = 'false'; }
-            });
-            list.appendChild(item);
-        }
-        palette.appendChild(list);
-    }
-
-    // --- Grid: tracks × measures ---
+    // --- Grid: measures (down) × tracks (across) ---
 
     function pointer(e) {
         // On touchend `e.touches` exists but is EMPTY — the finger just left
@@ -407,9 +367,9 @@ export function createSectionEditor(opts = {}) {
      * The column a click lands on, floored to the snap cell the way a click
      * used to be floored to its bar: anywhere inside a cell means that cell.
      */
-    function colAt(lane, clientX) {
+    function colAt(lane, clientY) {
         const rect = lane.getBoundingClientRect();
-        const col = (clientX - rect.left + (lane.scrollLeft || 0)) / colW();
+        const col = (clientY - rect.top + (lane.scrollTop || 0)) / colH();
         return Math.max(0, Math.floor(col / snapCols) * snapCols);
     }
 
@@ -423,87 +383,86 @@ export function createSectionEditor(opts = {}) {
 
     function renderGrid(project) {
         grid.innerHTML = '';
-        const cols = gridMeasures(project);
+        const measures = gridMeasures(project);
+        const gridH = measures * measureH();
         // The bar lines and the (fainter) snap lines are gradients in the
         // stylesheet; these are their periods. At Bar snap the two coincide
         // and the snap layer is invisible, which is the point.
-        grid.style.setProperty('--section-measure-w', measureW() + 'px');
-        grid.style.setProperty('--section-snap-w', (snapCols * colW()) + 'px');
+        grid.style.setProperty('--section-measure-h', measureH() + 'px');
+        grid.style.setProperty('--section-snap-h', (snapCols * colH()) + 'px');
 
-        // Measure ruler
+        if (selectedTrackId && !project.tracks.some(t => t.id === selectedTrackId)) selectedTrackId = null;
+
+        // Track heads: one row across the top, stuck there while the grid
+        // scrolls down. The corner above the ruler names the axis.
+        const heads = document.createElement('div');
+        heads.className = 'section-heads';
+        const corner = document.createElement('div');
+        corner.className = 'section-ruler-head';
+        corner.textContent = 'Bar';
+        heads.appendChild(corner);
+        const current = currentTrack(project);
+        for (const track of project.tracks) heads.appendChild(renderTrackHead(project, track, current));
+        const addCell = document.createElement('div');
+        addCell.className = 'section-add-track-cell';
+        addCell.appendChild(button('+ Track', 'Add a track on the first free voice', () => { addTrack(); },
+            'section-btn section-add-track'));
+        heads.appendChild(addCell);
+        grid.appendChild(heads);
+
+        // Lanes: the ruler down the left, stuck there while the grid scrolls
+        // sideways, then one lane per track.
+        const lanes = document.createElement('div');
+        lanes.className = 'section-lanes';
+
         const ruler = document.createElement('div');
         ruler.className = 'section-ruler';
-        const rulerHead = document.createElement('div');
-        rulerHead.className = 'section-track-head section-ruler-head';
-        rulerHead.textContent = 'Track';
-        ruler.appendChild(rulerHead);
-        const rulerLane = document.createElement('div');
-        rulerLane.className = 'section-ruler-lane';
-        rulerLane.style.width = (cols * measureW()) + 'px';
-        for (let m = 0; m < cols; m++) {
+        ruler.style.height = gridH + 'px';
+        for (let m = 0; m < measures; m++) {
             const tick = document.createElement('span');
             tick.className = 'section-ruler-tick';
-            tick.style.left = (m * measureW()) + 'px';
+            tick.style.top = (m * measureH()) + 'px';
             tick.textContent = String(m + 1);
-            rulerLane.appendChild(tick);
+            ruler.appendChild(tick);
         }
         if (sec().loop) {
             const band = document.createElement('div');
             band.className = 'section-loop-band';
-            band.style.left = (sec().loop.start * measureW()) + 'px';
-            band.style.width = ((sec().loop.end - sec().loop.start) * measureW()) + 'px';
-            rulerLane.appendChild(band);
+            band.style.top = (sec().loop.start * measureH()) + 'px';
+            band.style.height = ((sec().loop.end - sec().loop.start) * measureH()) + 'px';
+            ruler.appendChild(band);
         }
-        ruler.appendChild(rulerLane);
-        grid.appendChild(ruler);
+        lanes.appendChild(ruler);
+
+        for (const track of project.tracks) lanes.appendChild(renderLane(project, track, gridH, current));
 
         // Re-created by each render, then only moved on a tick: rebuilding
         // every clip element sixteen times a bar is not an option.
         playheadEl = document.createElement('div');
         playheadEl.className = 'section-playhead';
         playheadEl.style.display = 'none';
-        grid.appendChild(playheadEl);
+        lanes.appendChild(playheadEl);
         if (transport) movePlayhead(transport.isRunning() ? transport.getColumn() : -1);
+
+        grid.appendChild(lanes);
 
         if (project.tracks.length === 0) {
             const empty = document.createElement('div');
             empty.className = 'section-empty';
-            empty.textContent = 'No tracks. Add one, or draw a note in the piano roll.';
+            empty.textContent = 'No tracks. Add one, press + Pattern, or draw a note in the piano roll.';
             grid.appendChild(empty);
         }
 
-        for (const track of project.tracks) grid.appendChild(renderTrack(project, track, cols));
-
-        const addRow = document.createElement('div');
-        addRow.className = 'section-add-track-row';
-        const used = new Set(project.tracks.map(t => t.slot));
-        addRow.appendChild(button('+ Track', 'Add a track on the first free voice', () => {
-            let slot = 0;
-            while (slot < MAX_SLOTS && used.has(slot)) slot++;
-            if (slot >= MAX_SLOTS) { say(`All ${MAX_SLOTS} voices have a track`); return; }
-            change((s) => { s.tracks.push(createTrack({ name: slotLabel(slot), slot })); });
-        }, 'section-btn section-add-track'));
-        grid.appendChild(addRow);
-
-        // Selected-clip actions live here rather than on the clip so they
-        // are reachable by touch, where there is no hover and no Delete key.
-        if (selectedClipId && sec().clips.some(c => c.id === selectedClipId)) {
-            const bar = document.createElement('div');
-            bar.className = 'section-clip-actions';
-            bar.appendChild(button('✎ Open in piano roll', 'Edit this clip\'s pattern', () => openClip(selectedClipId), 'section-btn section-clip-open'));
-            bar.appendChild(button('Remove clip', 'Remove this clip from the section', () => deleteClip(selectedClipId), 'section-btn section-clip-remove'));
-            grid.appendChild(bar);
-        }
+        renderActions(project);
     }
 
-    function renderTrack(project, track, cols) {
-        const row = document.createElement('div');
-        row.className = 'section-track';
-        row.dataset.trackId = track.id;
-
+    function renderTrackHead(project, track, current) {
         const head = document.createElement('div');
-        head.className = 'section-track-head';
-        head.style.borderLeftColor = slotColor(track.slot);
+        head.className = 'section-track-head' + (current && current.id === track.id ? ' selected' : '');
+        head.dataset.trackId = track.id;
+        head.style.borderTopColor = slotColor(track.slot);
+        head.title = 'Click to select this track — + Pattern lands at its end';
+        head.addEventListener('click', () => { selectedTrackId = track.id; render(); });
 
         const slotSel = document.createElement('select');
         slotSel.className = 'section-track-slot';
@@ -516,6 +475,7 @@ export function createSectionEditor(opts = {}) {
             slotSel.appendChild(opt);
         }
         slotSel.value = String(track.slot);
+        slotSel.addEventListener('click', (e) => e.stopPropagation());
         slotSel.addEventListener('change', () => {
             const slot = parseInt(slotSel.value);
             // Swaps when the slot is taken. Assigning it directly would put
@@ -525,23 +485,29 @@ export function createSectionEditor(opts = {}) {
         });
         head.appendChild(slotSel);
 
-        head.appendChild(button('M', 'Mute', () => {
+        const controls = document.createElement('div');
+        controls.className = 'section-track-controls';
+        controls.appendChild(button('M', 'Mute', () => {
             change((s) => { const t = s.tracks.find(x => x.id === track.id); t.mute = !t.mute; });
         }, 'section-btn section-track-mute' + (track.mute ? ' active' : '')));
-        head.appendChild(button('S', 'Solo', () => {
+        controls.appendChild(button('S', 'Solo', () => {
             change((s) => { const t = s.tracks.find(x => x.id === track.id); t.solo = !t.solo; });
         }, 'section-btn section-track-solo' + (track.solo ? ' active' : '')));
-        head.appendChild(button('✕', 'Remove track', () => {
+        controls.appendChild(button('✕', 'Remove track', () => {
             const n = sec().clips.filter(c => c.trackId === track.id).length;
             if (n > 0 && !confirm(`Remove this track and its ${n} clip${n > 1 ? 's' : ''}?`)) return;
             if (selectedClipId && sec().clips.some(c => c.id === selectedClipId && c.trackId === track.id)) selectedClipId = null;
+            if (selectedTrackId === track.id) selectedTrackId = null;
             change((project) => { removeTrack(project, track.id); });
         }, 'section-btn section-track-remove'));
-        row.appendChild(head);
+        head.appendChild(controls);
+        return head;
+    }
 
+    function renderLane(project, track, gridH, current) {
         const lane = document.createElement('div');
-        lane.className = 'section-lane';
-        lane.style.width = (cols * measureW()) + 'px';
+        lane.className = 'section-lane' + (current && current.id === track.id ? ' selected' : '');
+        lane.style.height = gridH + 'px';
         // The whole lane carries the voice, quietly; clips carry their
         // pattern's colour on top. (backgroundColor, not background: the
         // bar grid is a background-image on the same element.)
@@ -549,13 +515,14 @@ export function createSectionEditor(opts = {}) {
         lane.dataset.trackId = track.id;
         lane.addEventListener('click', (e) => {
             if (e.target !== lane) return;           // a clip handles its own clicks
+            selectedTrackId = track.id;
             if (!selectedPatternId) {
                 selectedClipId = null;
-                say('Select a pattern in the palette, then click a lane to place it');
+                say('Select a clip to place its pattern again, or press + Pattern for a new one');
                 render();
                 return;
             }
-            const startCol = colAt(lane, e.clientX);
+            const startCol = colAt(lane, e.clientY);
             change((project, section) => {
                 const clip = addClip(project, section, { trackId: track.id, patternId: selectedPatternId, startCol });
                 selectedClipId = clip.id;
@@ -569,27 +536,26 @@ export function createSectionEditor(opts = {}) {
             if (!span) continue;                     // dangling: silence, not a crash
             lane.appendChild(renderClip(clip, pattern, span, track, lane));
         }
-        row.appendChild(lane);
-        return row;
+        return lane;
     }
 
     /** ' ×3' / ' ×2.5' — how many times the clip plays its pattern, '' for once. */
     function repeatLabel(clip, pattern) {
         const reps = clipRepeats(clip, pattern);
         if (reps === 1) return '';
-        return ' \u00d7' + (Math.round(reps * 100) / 100);
+        return ' ×' + (Math.round(reps * 100) / 100);
     }
 
     function renderClip(clip, pattern, span, track, lane) {
         const el = document.createElement('div');
         el.className = 'section-clip' + (clip.id === selectedClipId ? ' selected' : '');
         el.dataset.clipId = clip.id;
-        el.style.left = (span.startCol * colW()) + 'px';
-        el.style.width = ((span.endCol - span.startCol) * colW() - 2) + 'px';
+        el.style.top = (span.startCol * colH()) + 'px';
+        el.style.height = ((span.endCol - span.startCol) * colH() - 2) + 'px';
         el.style.background = pattern.color;
         const reps = repeatLabel(clip, pattern);
-        el.title = `${pattern.name}${reps} at ${positionLabel(span.startCol)} — drag to move (to another track too), `
-            + 'drag the edge to lengthen, hold to open, double-click to remove';
+        el.title = `${pattern.name}${reps} at ${positionLabel(span.startCol)} — drag to move (onto another track too), `
+            + 'drag the bottom edge to lengthen, hold to open, double-click to remove';
 
         const label = document.createElement('span');
         label.className = 'section-clip-label';
@@ -607,6 +573,7 @@ export function createSectionEditor(opts = {}) {
             if (!sec().clips.some(c => c.id === clip.id)) return;
             selectedClipId = clip.id;
             selectedPatternId = clip.patternId;
+            selectedTrackId = clip.trackId;
             render();
         });
         // Move (body) or lengthen (handle). Pointer deltas are snapped to
@@ -615,7 +582,7 @@ export function createSectionEditor(opts = {}) {
         // whether the result is legal. Below DRAG_THRESHOLD a press is a
         // click: no preview, no re-render.
         //
-        // A move is two-dimensional: sideways by measures, and down or up
+        // A move is two-dimensional: down or up by measures, and sideways
         // into another track's lane. A clip is only a pattern placed
         // somewhere — the voice is the track's — so crossing lanes needs
         // nothing but a new trackId, and the model's overlap check covers
@@ -636,13 +603,17 @@ export function createSectionEditor(opts = {}) {
                 return;
             }
             const origin = pointer(e);
+            // preventDefault on touchstart is what keeps a drag from
+            // scrolling the page — and it also swallows the synthetic click
+            // a tap would otherwise send, so touch selects here instead.
+            const isTouch = !!(e.touches || e.changedTouches);
             let moved = false;
             let hold = null;
             let targetLane = lane;     // where the body is being dragged to
-            const laneAt = (clientY) => {
+            const laneAt = (clientX) => {
                 for (const l of Array.from(grid.querySelectorAll('.section-lane'))) {
                     const r = l.getBoundingClientRect();
-                    if (clientY >= r.top && clientY < r.bottom) return l;
+                    if (clientX >= r.left && clientX < r.right) return l;
                 }
                 return null;
             };
@@ -661,18 +632,18 @@ export function createSectionEditor(opts = {}) {
                 if (!moved && Math.abs(dx) < DRAG_THRESHOLD && Math.abs(dy) < DRAG_THRESHOLD) return;
                 if (hold) { clearTimeout(hold); hold = null; }   // it moved: a drag, not a hold
                 moved = true;
-                const dCols = snap(dx / colW());
+                const dCols = snap(dy / colH());
                 if (mode === 'move') {
-                    el.style.left = (Math.max(0, span.startCol + dCols) * colW()) + 'px';
+                    el.style.top = (Math.max(0, span.startCol + dCols) * colH()) + 'px';
                     // Preview across lanes: re-parent the element. It keeps
                     // its pattern colour — the lane's tint says which voice.
-                    const over = laneAt(pt.y) || targetLane;
+                    const over = laneAt(pt.x) || targetLane;
                     if (over !== targetLane) {
                         targetLane = over;
                         targetLane.appendChild(el);
                     }
                 } else {
-                    el.style.width = (resizedLength(span, dCols) * colW() - 2) + 'px';
+                    el.style.height = (resizedLength(span, dCols) * colH() - 2) + 'px';
                 }
             };
             const finish = (ev) => {
@@ -680,15 +651,24 @@ export function createSectionEditor(opts = {}) {
                 if (!moved) {
                     // A tap. Only a tap arms the double-tap: re-grabbing a
                     // clip right after dragging it must not remove it.
-                    if (mode === 'move') lastPress = { clipId: clip.id, at: Date.now() };
+                    if (mode === 'move') {
+                        lastPress = { clipId: clip.id, at: Date.now() };
+                        if (isTouch && sec().clips.some(c => c.id === clip.id)) {
+                            selectedClipId = clip.id;
+                            selectedPatternId = clip.patternId;
+                            selectedTrackId = clip.trackId;
+                            render();
+                        }
+                    }
                     return;
                 }
-                const dCols = snap((pointer(ev).x - origin.x) / colW());
+                const dCols = snap((pointer(ev).y - origin.y) / colH());
                 selectedClipId = clip.id;
                 if (mode === 'move') {
                     const startCol = Math.max(0, span.startCol + dCols);
                     const trackId = targetLane.dataset.trackId || clip.trackId;
                     if (startCol === clip.startCol && trackId === clip.trackId) { render(); return; }
+                    selectedTrackId = trackId;
                     change((project, section) => { updateClip(project, section, clip.id, { startCol, trackId }); });
                 } else {
                     // Dragging the edge gives the clip a length of its own;
@@ -728,6 +708,57 @@ export function createSectionEditor(opts = {}) {
         return Math.max(snapCols, span.endCol - span.startCol + dCols);
     }
 
+    // --- The selected clip's actions: open, remove, and its pattern's name, colour and copies ---
+
+    function renderActions(project) {
+        actions.innerHTML = '';
+        const clip = selectedClipId ? sec().clips.find(c => c.id === selectedClipId) : null;
+        const pattern = clip ? getPattern(clip.patternId) : null;
+        actions.style.display = clip && pattern ? '' : 'none';
+        if (!clip || !pattern) return;
+
+        // The pattern's colour — what its clips are painted with.
+        const swatch = document.createElement('input');
+        swatch.type = 'color';
+        swatch.className = 'section-pattern-swatch';
+        swatch.value = pattern.color;
+        swatch.title = 'Pattern colour';
+        swatch.addEventListener('input', () => {
+            for (const el of grid.querySelectorAll('.section-clip')) {
+                const c = sec().clips.find(x => x.id === el.dataset.clipId);
+                if (c && c.patternId === pattern.id) el.style.background = swatch.value;
+            }
+        });
+        swatch.addEventListener('change', () => {
+            session.updatePattern(pattern.id, { color: swatch.value }, 'section-editor');
+            render();
+        });
+        actions.appendChild(swatch);
+
+        // Rename: the field is the pattern's name; every clip of it follows.
+        const name = document.createElement('input');
+        name.type = 'text';
+        name.className = 'section-pattern-name';
+        name.value = pattern.name;
+        name.title = 'Pattern name';
+        name.addEventListener('change', () => {
+            const v = String(name.value).trim();
+            if (!v || v === pattern.name) { name.value = pattern.name; return; }
+            session.updatePattern(pattern.id, { name: v }, 'section-editor');
+            render();
+        });
+        actions.appendChild(name);
+
+        actions.appendChild(button('✎ Open', 'Edit this clip\'s pattern in the piano roll', () => openClip(clip.id), 'section-btn section-clip-open'));
+        actions.appendChild(button('⧉ Duplicate', 'Copy the pattern and place the copy at the end of this track', () => {
+            const copy = session.createPattern({ ...pattern, id: undefined, name: pattern.name + ' copy', created: undefined }, 'section-editor');
+            placeAtEnd(copy.id, clip.trackId);
+            session.notifyPattern(copy.id, 'section-editor');
+            render();
+        }, 'section-btn section-pattern-dup'));
+        actions.appendChild(button('Remove clip', 'Remove this clip from the section', () => deleteClip(clip.id), 'section-btn section-clip-remove'));
+    }
+
     /**
      * Park the playhead at a section column. Both modes have one — pattern
      * mode loops a window of the project — except a pattern placed nowhere,
@@ -740,10 +771,10 @@ export function createSectionEditor(opts = {}) {
             return;
         }
         playheadEl.style.display = '';
-        // Offset from the lane's left edge; the head column's width is a
-        // rem value the stylesheet adds as margin-left, so the playhead
-        // tracks it at any root font size instead of a pixel guess.
-        playheadEl.style.left = ((col / COLS_PER_MEASURE) * measureW()) + 'px';
+        // Offset from the top of the lanes; the ruler's width is a rem value
+        // the stylesheet adds as margin-left, so the line starts where the
+        // lanes do at any root font size instead of a pixel guess.
+        playheadEl.style.top = ((col / COLS_PER_MEASURE) * measureH()) + 'px';
     }
 
     function deleteClip(clipId) {
@@ -762,11 +793,11 @@ export function createSectionEditor(opts = {}) {
     }
 
     function openClip(clipId) {
-        const project = session.get();
         const clip = sec().clips.find(c => c.id === clipId);
         if (!clip) return;
         selectedClipId = clipId;
         selectedPatternId = clip.patternId;
+        selectedTrackId = clip.trackId;
         // Park the project position on this clip so it, and not another
         // placement of the same pattern, is what the roll's Play loops.
         if (transport && transport.setSectionPosition) transport.setSectionPosition(clip.startCol);
@@ -790,7 +821,6 @@ export function createSectionEditor(opts = {}) {
         const project = session.get();
         if (!project) return;
         renderToolbar(project);
-        renderPalette(project);
         renderGrid(project);
     }
 
@@ -812,6 +842,7 @@ export function createSectionEditor(opts = {}) {
         render,
         getSelectedPatternId() { return selectedPatternId; },
         getSelectedClipId() { return selectedClipId; },
+        getSelectedTrackId() { const t = currentTrack(session.get()); return t ? t.id : null; },
         selectPattern(id) { selectedPatternId = id; render(); },
         destroy() {
             document.removeEventListener('keydown', onKey);

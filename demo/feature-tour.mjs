@@ -387,19 +387,22 @@ async function main() {
         await ui.click('.pianoroll-stop', { after: 0.3 });
         await ui.tab('section');
 
-        // The real placing gesture: select the pattern in the palette, then
-        // click a lane to drop a clip there (section-editor.js:313). Click
-        // the *name*, not the chip: the chip's centre is the colour-picker
-        // input, which stops the click before selection happens.
-        await ui.click('.section-pattern-name', { after: 0.4 });
+        // The real placing gesture: select a clip (that selects its
+        // pattern), then click a lane to drop that pattern there. Time runs
+        // down, so a bar is a step down the lane. With no clip yet,
+        // + Pattern makes one at the end of the selected track first.
+        if (await page.locator('.section-clip').count() === 0) {
+            await ui.click('.section-pattern-new', { after: 0.4 });
+        }
+        await ui.click('.section-clip', { after: 0.4 });
         const lanes = page.locator('.section-lane');
         const n = await lanes.count();
-        for (const [row, bar] of [[0, 1], [2, 2], [4, 1]]) {
-            if (row >= n) continue;
-            const lane = await lanes.nth(row).boundingBox();
+        for (const [col, bar] of [[0, 3], [1, 2], [2, 5]]) {
+            if (col >= n) continue;
+            const lane = await lanes.nth(col).boundingBox();
             if (!lane) continue;
-            const x = lane.x + 30 + bar * 46;
-            const y = lane.y + lane.height / 2;
+            const x = lane.x + lane.width / 2;
+            const y = lane.y + 10 + bar * 46;
             await ui.glide(x, y, 260);
             await page.evaluate(([cx, cy]) => window.__demoClickRipple?.(cx, cy), [x, y]);
             await page.mouse.click(x, y);

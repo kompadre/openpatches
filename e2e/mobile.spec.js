@@ -81,17 +81,22 @@ test.describe('mobile', () => {
 
         // The mobile face of the stranding bug: before the width:100% fix,
         // one small clip was enough to put Play at x=-258 on a 390px screen.
+        // Time runs down now, so a long section is tall, not wide — the
+        // grid must take that height and scroll it.
         const l = await page.evaluate(() => {
             const x = (sel) => Math.round(document.querySelector(sel).getBoundingClientRect().x);
+            const grid = document.querySelector('.section-grid');
             return {
                 toolbar: x('.section-toolbar button'),
-                palette: x('.section-palette'),
+                ruler: x('.section-ruler'),
                 editorW: Math.round(document.querySelector('.section-editor').getBoundingClientRect().width),
+                gridScrolls: grid.scrollHeight > grid.clientHeight,
             };
         });
         expect(l.toolbar).toBeGreaterThanOrEqual(0);
-        expect(l.palette).toBeGreaterThanOrEqual(0);
+        expect(l.ruler).toBeGreaterThanOrEqual(0);
         expect(l.editorW).toBeLessThanOrEqual(390);
+        expect(l.gridScrolls).toBe(true);
     });
 
     test('a tap places a clip, a swipe scrolls the grid', async ({ page }) => {
@@ -100,17 +105,19 @@ test.describe('mobile', () => {
         await page.locator('.dock-tab', { hasText: 'Section' }).click();
         await expect(page.locator('.section-clip')).toBeVisible();
 
-        await page.locator('.section-pattern-item').first().tap();
+        // Selecting the clip selects its pattern; a tap further down the
+        // lane places that pattern again (bar 4 — the clip holds bar 1).
+        await page.locator('.section-clip').first().tap();
         const lane = await page.locator('.section-lane').first().boundingBox();
-        await page.touchscreen.tap(lane.x + 150, lane.y + lane.height / 2);
+        await page.touchscreen.tap(lane.x + lane.width / 2, lane.y + 150);
         await expect.poll(() => clips(page)).toHaveLength(2);
 
         const grid = page.locator('.section-grid');
-        const before = await grid.evaluate((el) => el.scrollLeft);
+        const before = await grid.evaluate((el) => el.scrollTop);
         await touchSwipe(page,
-            { x: lane.x + 200, y: lane.y + lane.height / 2 },
-            { x: lane.x + 20, y: lane.y + lane.height / 2 });
-        expect(await grid.evaluate((el) => el.scrollLeft)).toBeGreaterThan(before);
+            { x: lane.x + lane.width / 2, y: lane.y + 250 },
+            { x: lane.x + lane.width / 2, y: lane.y + 60 });
+        expect(await grid.evaluate((el) => el.scrollTop)).toBeGreaterThan(before);
     });
 
     test('a touch-drag moves a clip and does not throw', async ({ page }) => {
@@ -125,9 +132,9 @@ test.describe('mobile', () => {
         const clip = await page.locator('.section-clip').first().boundingBox();
         await touchSwipe(page,
             { x: clip.x + clip.width / 2, y: clip.y + clip.height / 2 },
-            { x: clip.x + clip.width / 2 + 97, y: clip.y + clip.height / 2 });
+            { x: clip.x + clip.width / 2, y: clip.y + clip.height / 2 + 97 });
 
-        // 97px right at 48px/measure, snapped to the bar: two bars = 32 cols.
+        // 97px down at 48px/measure, snapped to the bar: two bars = 32 cols.
         await expect.poll(() => clips(page)).toEqual([{ start: 32, repeats: 1 }]);
     });
 
