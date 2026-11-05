@@ -40,12 +40,14 @@ function settle(page) {
 }
 
 /** Press-move-release in canvas coordinates, with enough steps to beat MOVE_THRESHOLD. */
-async function drag(page, from, to) {
+async function drag(page, from, to, { shift = false } = {}) {
     const box = await canvasOrigin(page);
+    if (shift) await page.keyboard.down('Shift');
     await page.mouse.move(box.x + from.x, box.y + from.y);
     await page.mouse.down();
     await page.mouse.move(box.x + to.x, box.y + to.y, { steps: 8 });
     await page.mouse.up();
+    if (shift) await page.keyboard.up('Shift');
 }
 
 function getNotes(page) {
@@ -158,9 +160,72 @@ test.describe('step record UI', () => {
         expect(await getNotes(page)).toEqual([]);
     });
 
+    test('the playhead is dragged by its line too, anywhere below the header', async ({ page }) => {
+        await page.locator('.pianoroll-record').click();
+        // Grab the line of the step cursor (column 0) in the empty middle of
+        // the grid and pull it to column 7.
+        const o = await canvasOrigin(page);
+        const lineX = LABEL_W + 0 * COL_W;
+        // (Top rows: lower ones scroll out of the roll's viewport at 900px.)
+        await page.mouse.move(o.x + lineX + 1, o.y + cellY(78));
+        await page.mouse.down();
+        await page.mouse.move(o.x + cellX(7), o.y + cellY(78), { steps: 6 });
+        await page.mouse.up();
+        expect(await page.evaluate(() => window.__opDock._pianoroll.getStepCursor())).toBe(7);
+        expect(await getNotes(page)).toEqual([]);
+    });
+
+    test('a key down is a note at once, doubled per second held; a rest is a nudge', async ({ page }) => {
+        await page.locator('.pianoroll-record').click();
+        const key = page.locator('.keyboard .key[title="C4"]').first();
+        const box = await key.boundingBox();
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height - 8);
+        await page.mouse.down();
+        await expect.poll(() => getNotes(page)).toEqual([{ midi: 60, start: 0, dur: 1 }]);
+        await page.mouse.up();
+        expect(await page.evaluate(() => window.__opDock._pianoroll.getStepCursor())).toBe(1);
+    });
+
     test('a header click outside a step record does not seek or draw', async ({ page }) => {
         await page.mouse.click((await canvasOrigin(page)).x + cellX(5), (await canvasOrigin(page)).y + HEADER_H / 2);
         expect(await page.evaluate(() => window.__opDock._pianoroll.getStepCursor())).toBe(-1);
         expect(await getNotes(page)).toEqual([]);
+    });
+});
+
+test.describe('selection, copy and paste', () => {
+    test.beforeEach(async ({ page }) => {
+        await openApp(page);
+        await openRollTab(page);
+        // Two notes on rows that are on screen without scrolling: G#5 [0,2) and E5 [2,4).
+        await drag(page, { x: cellX(0), y: cellY(80) }, { x: cellX(1), y: cellY(80) });
+        await drag(page, { x: cellX(2), y: cellY(76) }, { x: cellX(3), y: cellY(76) });
+        await expect.poll(() => getNotes(page)).toHaveLength(2);
+    });
+
+    const selectedMidis = (page) => page.evaluate(() => window.__opDock._pianoroll.getSelectedNotes().map(n => n.midi).sort());
+
+    test('Select mode: a rectangle picks notes, a drag moves them together', async ({ page }) => {
+        await page.locator('.pianoroll-controls .pianoroll-select').click();
+        // A marquee from above-left of the upper note to below-right of the lower, over empty grid.
+        await drag(page, { x: cellX(0) - 10, y: cellY(82) }, { x: cellX(4), y: cellY(74) });
+        expect(await selectedMidis(page)).toEqual([76, 80]);
+        expect(await getNotes(page)).toHaveLength(2);
+
+        // Drag the upper note two columns right: both follow.
+        await drag(page, { x: cellX(0), y: cellY(80) }, { x: cellX(2), y: cellY(80) });
+        expect((await getNotes(page)).map(n => [n.midi, n.start]).sort()).toEqual([[76, 4], [80, 2]]);
+    });
+
+    test('Copy then Paste repeats the phrase after itself', async ({ page }) => {
+        await drag(page, { x: cellX(0) - 10, y: cellY(82) }, { x: cellX(4), y: cellY(74) }, { shift: true });
+        expect(await selectedMidis(page)).toEqual([76, 80]);
+        const copy = page.locator('.pianoroll-controls .pianoroll-copy');
+        const paste = page.locator('.pianoroll-controls .pianoroll-paste');
+        await expect(paste).toBeDisabled();
+        await copy.click();
+        await expect(paste).toBeEnabled();
+        await paste.click();
+        expect((await getNotes(page)).map(n => [n.midi, n.start]).sort()).toEqual([[76, 2], [76, 6], [80, 0], [80, 4]]);
     });
 });

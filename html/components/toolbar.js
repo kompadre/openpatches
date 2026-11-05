@@ -590,8 +590,8 @@ export function createToolbar(opts) {
     btnRecordDesktop.className = 'pianoroll-btn pianoroll-record';
     btnRecordDesktop.textContent = '\u25CF Rec';
     btnRecordDesktop.title = 'Record from the on-screen keyboard or a MIDI controller into the piano roll. '
-        + 'Stopped: step by step — a tap places a note of the chosen length (one more per second held), '
-        + 'a short tap with no note is a rest to the next beat, and the playhead can be dragged by its header marker. '
+        + 'Stopped: step by step — a tap places a note of the chosen length at the cursor the moment the key goes down, '
+        + 'and every further second held doubles it. For a rest, move the cursor with the « Step / Step » buttons or drag the playhead. '
         + 'Playing: a live take.';
 
     // The step length: how long a note the next step places (and the unit
@@ -895,16 +895,16 @@ export function createToolbar(opts) {
     }
 
     // --- Step record -------------------------------------------------------
-    // Rec with the clock stopped. A key held for a full second puts a note
-    // of the chosen step length (the `stepLenSelect` above, visible only
-    // here) on the grid at the step cursor, and every further second grows
-    // it by one more step length — what is on the grid when the key comes
-    // up is what is kept, so the grid is the only clock to watch. A tap
-    // shorter than a second is a rest: the cursor jumps to the next beat.
-    // Keys down together make a chord; when the last of them comes up the
-    // step is done and the cursor moves on past its longest note, wrapping
-    // at the pattern's end. The cursor can also be dragged by its header
-    // marker in the roll (`onStepSeek`).
+    // Rec with the clock stopped. A key going down puts a note of the chosen
+    // step length (the `stepLenSelect` above, visible only here) on the grid
+    // at the step cursor *at once*, and every further full second held
+    // doubles it — what is on the grid when the key comes up is what is
+    // kept, so the grid is the only clock to watch. There is no tap-rest:
+    // every tap is a note. A rest is the cursor moved by hand — the
+    // « Step / Step » buttons, or the playhead dragged in the roll
+    // (`onStepSeek`). Keys down together make a chord; when the last of
+    // them comes up the step is done and the cursor moves on past its
+    // longest note, wrapping at the pattern's end.
     //
     // Notes go into the pattern on screen (the roll's edit target), not
     // through the take's slot mapping: the voice select and the roll can
@@ -913,9 +913,8 @@ export function createToolbar(opts) {
     // cursor is drawn. With nothing on screen the note starts a track on
     // the record slot, as a take does.
 
-    const STEP_MS_PER_UNIT = 1000;
+    const STEP_MS_PER_UNIT = 1000;   // each further second held doubles the note
     const STEP_GROW_INTERVAL_MS = 100;
-    const BEAT_COLS = 4;          // a beat is a quarter: four sixteenths
 
     function startStepRecord() {
         stepping = true;
@@ -968,16 +967,14 @@ export function createToolbar(opts) {
     }
 
     /**
-     * Bring a held key's note up to date at time `at`: nothing under a
-     * second, then one step length per full second, never past the end of
-     * the pattern. The note is created the moment the first second is up.
+     * Bring a held key's note up to date at time `at`: one step length the
+     * moment it went down, doubled for every full second held since, never
+     * past the end of the pattern.
      */
     function syncStepNote(midi, press, at) {
-        const held = Math.floor((at - press.startTime) / STEP_MS_PER_UNIT);
-        if (held < 1) return;
-        if (!press.note) press.note = addStepNote(midi);
         if (!press.note) return;
-        const dur = Math.max(1, Math.min(held * stepLen(), stepTotalCols() - press.note.start));
+        const held = Math.max(0, Math.floor((at - press.startTime) / STEP_MS_PER_UNIT));
+        const dur = Math.max(1, Math.min(stepLen() * (2 ** held), stepTotalCols() - press.note.start));
         if (dur !== press.note.dur && pianorollRef.setNoteDur) pianorollRef.setNoteDur(press.note, dur);
     }
 
@@ -987,7 +984,8 @@ export function createToolbar(opts) {
     }
 
     function stepNoteOn(midi, when) {
-        stepPresses.set(midi, { note: null, startTime: when });
+        // On the grid at once: the step is visible from the first instant.
+        stepPresses.set(midi, { note: addStepNote(midi), startTime: when });
         if (!stepTimer) stepTimer = setInterval(growHeldSteps, STEP_GROW_INTERVAL_MS);
     }
 
@@ -997,16 +995,11 @@ export function createToolbar(opts) {
         syncStepNote(midi, press, when);
         if (press.note) stepMaxDur = Math.max(stepMaxDur, press.note.dur);
         if (stepPresses.size > 0) return;
-        // Last key up: the step is done. Past its longest note — or, when
-        // nothing was held long enough for one, a rest: the cursor jumps to
-        // the next beat (the next quarter boundary, a full beat when it is
-        // already on one).
+        // Last key up: the step is done, the cursor moves past its longest
+        // note. (A press that put nothing on the grid — no pattern to land
+        // in — leaves the cursor where it was.)
         stopStepTimer();
-        if (stepMaxDur > 0) {
-            stepCol = (stepCol + stepMaxDur) % stepTotalCols();
-        } else {
-            stepCol = (stepCol - (stepCol % BEAT_COLS) + BEAT_COLS) % stepTotalCols();
-        }
+        if (stepMaxDur > 0) stepCol = (stepCol + stepMaxDur) % stepTotalCols();
         stepMaxDur = 0;
         if (pianorollRef.setStepCursor) pianorollRef.setStepCursor(stepCol);
     }

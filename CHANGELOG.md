@@ -2,6 +2,18 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-05: Step record without tap-rests; the roll gets a selection, Copy and Paste
+
+**Step record: the note is on the grid the moment the key goes down, and each further full second held doubles it** (`stepLen × 2^seconds`, clamped to the pattern end). The tap-rest is gone — it did not work out in practice — so every tap is a note, and a rest is the cursor moved by hand: the « Step / Step » buttons, or the playhead dragged in the roll. `toolbar.js`: `stepNoteOn` places at once, `syncStepNote` doubles, `stepNoteOff` only ever advances past the longest note.
+
+**The step cursor is a drag handle along its whole line**, not just its header marker — mouse and touch — with the notes keeping priority: a note under the pointer is moved or resized as before, and only an empty spot on the line seeks. (`nearPlayhead`, checked after the note hit-test.)
+
+**Selection.** `⬚ Select` (desktop row and the mobile more-menu) makes a drag on empty grid a marquee instead of a note; Shift-drag does the same without the mode. Selected notes draw bold; dragging any one of them moves the whole selection as a block, clamped so no member leaves the grid, with ghosts for every origin. Grabbing an unselected note drops the selection. Delete/Backspace removes the selection, Escape drops it (document-level, never while typing in a field). The selection is pruned on every draw, so a track switch or a Clear cannot leave stale members.
+
+**Copy and Paste** (`⎘ Copy`, `⎗ Paste`, also Ctrl/Cmd+C/V). Copy stores the selection relative to its first note. Paste lands at the playhead — the step cursor while a step record is armed (and then moves the cursor past the pasted span, through `onStepSeek`, so the toolbar follows), the play position while the clock runs — else right after the copied phrase and, after each paste, after the last one, so repeated Paste lays the phrase down again and again. Notes that would start past the end are dropped, the rest clamped; the pasted notes become the selection. New roll API: `getSelectedNotes`, `selectNotes`, `clearSelection`, `deleteSelected`, `copySelection`, `pasteClipboard`, `getClipboard`, `setSelectMode`, `isSelectMode`.
+
+Tests: `toolbar-step-record.test.js` reworked to the new contract (instant note, doubling, rests by nudge/seek); `pattern-editor.test.js` gains a selection/copy/paste block including the playhead-vs-note priority; `e2e/pianoroll.spec.js` covers the line drag, the instant step note, a marquee + group move, and Copy/Paste. HEARME.tts updated.
+
 ## 2026-11-05: The Section moves to a left pane; time runs down; the pattern list goes
 
 **The Section editor could not use the height it had: as a full-page tab with time running across, a long section was wide and the tracks were eight short rows.** It now lives on desktop in a collapsible, resizable **left pane** (`.lpane`, ~28% wide, handle on its right, folded to a vertical bookmark; the Section tab toggles it exactly as the bottom tabs toggle theirs; state under `openpatches_lpane`). `toolbar.js` gained a `.dock-split` row — left pane | handle | `.dock-centre` (the main panels and the bottom pane) — and the main-panel/bottom-pane widths become the centre column's. Only Patches and Piano Roll remain full-page tabs on desktop; mobile is unchanged apart from the editor itself.

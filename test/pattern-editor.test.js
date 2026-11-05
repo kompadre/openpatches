@@ -541,3 +541,171 @@ describe('renaming the edited pattern from the roll', () => {
         assert.equal(session.listPatterns()[0].name, 'Piano');
     });
 });
+
+// Selection: a marquee (Shift-drag, or any drag on empty grid in Select
+// mode) picks notes; dragging any selected note moves them all as one
+// block; Copy and Paste repeat them — at the step cursor when one is
+// shown, else right after the phrase. The step cursor's line is also a
+// drag handle along its whole height, but a note under the pointer wins.
+describe('selection, copy and paste', () => {
+    const COLS = 16;
+    function seeded() {
+        const h = build();
+        // Drawn, not pushed: the first drawn note is what creates the track
+        // and its pattern — a push before that lands in a throwaway array.
+        drawNote(h, 60, 0, 1);      // [0,2)
+        drawNote(h, 64, 2, 3);      // [2,4)
+        drawNote(h, 72, 10);        // [10,11)
+        h.notes = () => h.roll.getNotes().map(n => ({ midi: n.midi, start: n.start, dur: n.dur }));
+        h.shiftMouse = (type, x, y) => h.canvas.dispatch(type, { clientX: x, clientY: y, shiftKey: true, preventDefault() {} });
+        h.selectedMidis = () => h.roll.getSelectedNotes().map(n => n.midi).sort();
+        return h;
+    }
+    // A rectangle over the first two notes (rows 60 and 64, columns 0–3),
+    // on empty grid: from above-left of 64 to below-right of 60.
+    const marqueeBoth = (h, mouse) => {
+        mouse('mousedown', colX(0) + 2, rowY(66));
+        mouse('mousemove', colX(4) + 20, rowY(58));
+        mouse('mouseup', colX(4) + 20, rowY(58));
+    };
+
+    test('a Shift-drag over empty grid selects the notes it crosses, and draws none', () => {
+        const h = seeded();
+        marqueeBoth(h, h.shiftMouse);
+        assert.deepEqual(h.selectedMidis(), [60, 64]);
+        assert.equal(h.notes().length, 3, 'a selection, not a new note');
+    });
+
+    test('Select mode makes a plain drag do the same; a bare click drops the selection', () => {
+        const h = seeded();
+        h.btn('⬚ Select').dispatch('click');
+        assert.equal(h.roll.isSelectMode(), true);
+        marqueeBoth(h, h.mouse);
+        assert.deepEqual(h.selectedMidis(), [60, 64]);
+        h.mouse('mousedown', colX(8), rowY(50));
+        h.mouse('mouseup', colX(8) + 1, rowY(50));
+        assert.deepEqual(h.selectedMidis(), []);
+        assert.equal(h.notes().length, 3, 'nothing drawn in Select mode');
+    });
+
+    test('dragging a selected note moves the whole selection as one block', () => {
+        const h = seeded();
+        marqueeBoth(h, h.shiftMouse);
+        // Grab the note at 64 and drag two columns right, one row down.
+        h.mouse('mousedown', colX(3), rowY(64));
+        h.mouse('mousemove', colX(5), rowY(62));
+        h.mouse('mouseup', colX(5), rowY(62));
+        const by = Object.fromEntries(h.notes().map(n => [n.midi, n.start]));
+        assert.deepEqual(by, { 58: 2, 62: 4, 72: 10 }, 'both moved by (+2 cols, -2 semitones); the third stayed');
+        assert.deepEqual(h.selectedMidis(), [58, 62], 'and are still the selection');
+    });
+
+    test('a group move is clamped so no member leaves the grid', () => {
+        const h = seeded();
+        marqueeBoth(h, h.shiftMouse);
+        h.mouse('mousedown', colX(1), rowY(60));
+        h.mouse('mousemove', colX(1) - 10 * COL_W, rowY(60));   // far left of column 0
+        h.mouse('mouseup', colX(1) - 10 * COL_W, rowY(60));
+        const by = Object.fromEntries(h.notes().map(n => [n.midi, n.start]));
+        assert.deepEqual(by, { 60: 0, 64: 2, 72: 10 }, 'the block stopped at the edge, spacing intact');
+    });
+
+    test('grabbing an unselected note drops the selection and moves just that note', () => {
+        const h = seeded();
+        marqueeBoth(h, h.shiftMouse);
+        // Grab the middle of the note: its outer 8px are the resize handles.
+        h.mouse('mousedown', colX(10) + 15, rowY(72));
+        h.mouse('mousemove', colX(12) + 15, rowY(72));
+        h.mouse('mouseup', colX(12) + 15, rowY(72));
+        const by = Object.fromEntries(h.notes().map(n => [n.midi, n.start]));
+        assert.deepEqual(by, { 60: 0, 64: 2, 72: 12 });
+        assert.deepEqual(h.selectedMidis(), []);
+    });
+
+    test('Copy and Paste repeat the phrase right after itself, and again after that', () => {
+        const h = seeded();
+        marqueeBoth(h, h.shiftMouse);
+        const copy = h.btn('⎘ Copy'), paste = h.btn('⎗ Paste');
+        assert.equal(paste.disabled, true, 'nothing copied yet');
+        copy.dispatch('click');
+        assert.equal(paste.disabled, false);
+        paste.dispatch('click');
+        assert.deepEqual(h.notes().filter(n => n.start >= 4).map(n => [n.midi, n.start, n.dur]).sort(),
+            [[60, 4, 2], [64, 6, 2], [72, 10, 1]], 'pasted at the end of the copied span (column 4)');
+        assert.deepEqual(h.selectedMidis(), [60, 64], 'the pasted notes are the selection');
+        paste.dispatch('click');
+        assert.ok(h.notes().some(n => n.midi === 60 && n.start === 8), 'the next paste follows the last');
+        assert.equal(storedPattern(h.roll.getPattern().id).notes.length, 7, 'written through');
+    });
+
+    test('with a step cursor shown, Paste lands there and moves the cursor past the phrase', () => {
+        const h = seeded();
+        const seeks = [];
+        h.roll.setStepCursor(8);
+        marqueeBoth(h, h.shiftMouse);
+        h.roll.copySelection();
+        h.roll.pasteClipboard();
+        assert.deepEqual(h.notes().filter(n => n.start >= 8 && n.midi !== 72).map(n => [n.midi, n.start]).sort(), [[60, 8], [64, 10]]);
+        assert.equal(h.roll.getStepCursor(), 12, 'past the pasted span');
+        void seeks;
+    });
+
+    test('notes that would start past the end are dropped, the rest clamped', () => {
+        const h = seeded();
+        h.roll.setStepCursor(13);
+        marqueeBoth(h, h.shiftMouse);
+        h.roll.copySelection();
+        assert.equal(h.roll.pasteClipboard(), true);
+        const pasted = h.notes().filter(n => n.start >= 13);
+        assert.deepEqual(pasted.map(n => [n.midi, n.start, n.dur]), [[60, 13, 2], [64, 15, 1]], 'the second is cut to the end');
+        assert.equal(h.roll.getStepCursor(), 15, 'clamped to the last column');
+    });
+
+    test('Delete removes the selection, Escape drops it', () => {
+        const h = seeded();
+        marqueeBoth(h, h.shiftMouse);
+        const key = (k) => (document._listeners.keydown || []).slice().forEach(fn => fn({ key: k, target: { tagName: 'DIV' }, preventDefault() {} }));
+        key('Escape');
+        assert.deepEqual(h.selectedMidis(), []);
+        marqueeBoth(h, h.shiftMouse);
+        key('Delete');
+        assert.deepEqual(h.notes().map(n => n.midi), [72]);
+    });
+
+    test('the step cursor is dragged by its line, except where a note is under the pointer', (t) => {
+        // Real time: a second press on one cell within 350 ms is the
+        // double-click that deletes a note, which is not what is tested here.
+        t.mock.timers.enable({ apis: ['Date'] });
+        const seeks = [];
+        const own = makeProjectSession();
+        const roll = createPianoroll({
+            session: own, playNoteFn: () => {}, onNotesChange: () => {}, activeSlot: 0,
+            tickWorker: makeTickWorker(), startWorker: () => {}, stopWorker: () => {},
+            getSlotData: (slot) => BANK[slot] || null, onStepSeek: (c) => seeks.push(c),
+        });
+        const canvas = roll.element.querySelector('.pianoroll-canvas');
+        const mouse = (type, x, y) => canvas.dispatch(type, { clientX: x, clientY: y, preventDefault() {} });
+        roll.setStepCursor(6);
+        // Grab the line in the empty middle of the grid, well below the header.
+        mouse('mousedown', colX(6) + 2, rowY(50));
+        mouse('mousemove', colX(9) + 2, rowY(50));
+        mouse('mouseup', colX(9) + 2, rowY(50));
+        assert.equal(roll.getStepCursor(), 9);
+        assert.deepEqual(seeks, [9]);
+        assert.equal(roll.getNotes().length, 0, 'no note drawn by the gesture');
+
+        // A note under the line wins: with the cursor's line running through
+        // a note's body, a grab right on the line moves the note, not the cursor.
+        roll.setStepCursor(-1);
+        mouse('mousedown', colX(9) + 5, rowY(50));          // draw [9,11)
+        mouse('mouseup', colX(10) + 5, rowY(50));
+        assert.deepEqual(roll.getNotes(), [{ midi: 50, start: 9, dur: 2 }]);
+        roll.setStepCursor(10);                              // the line crosses the note's middle
+        t.mock.timers.tick(500);
+        mouse('mousedown', colX(10) + 2, rowY(50));          // 2px from the line, inside the note
+        mouse('mousemove', colX(12) + 2, rowY(50));
+        mouse('mouseup', colX(12) + 2, rowY(50));
+        assert.equal(roll.getStepCursor(), 10, 'the cursor stayed');
+        assert.equal(roll.getNotes()[0].start, 11, 'the note moved');
+    });
+});

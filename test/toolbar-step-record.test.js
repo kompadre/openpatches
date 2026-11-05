@@ -1,13 +1,14 @@
 // Step record: Rec with the clock stopped.
 //
-// A key held for a full second puts a note of the chosen step length (the
-// picker only on screen while stepping; default a sixteenth) at the step
-// cursor and grows it by one more step length per further second; a tap
-// shorter than a second is a rest that jumps the cursor to the next beat.
-// The last key-up of a step moves the cursor on; the cursor can also be
-// seeked by dragging the playhead's header marker. Rec while the clock runs
-// is still a live take, and Play while a step record is armed becomes one.
-// Notes go into the pattern on screen, not through the take's slot mapping.
+// A key going down puts a note of the chosen step length (the picker only
+// on screen while stepping; default a sixteenth) at the step cursor *at
+// once*, and every further full second held doubles it. There is no
+// tap-rest: every tap is a note, and a rest is the cursor moved by hand —
+// the « Step / Step » buttons, or the playhead dragged in the roll. The
+// last key-up of a step moves the cursor on past its longest note. Rec
+// while the clock runs is still a live take, and Play while a step record
+// is armed becomes one. Notes go into the pattern on screen, not through
+// the take's slot mapping.
 
 import { test, before, beforeEach, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -84,6 +85,8 @@ function build() {
             tickTimers();
             h.up(midi);
         },
+        /** A tap: well under a second, so the note keeps its step length. */
+        tap(midi) { return h.hold(midi, 200); },
         notes: () => roll.getNotes().map(n => ({ midi: n.midi, start: n.start, dur: n.dur })),
     };
     return h;
@@ -135,36 +138,36 @@ describe('arming', () => {
 });
 
 describe('notes', () => {
-    test('a key held a full second is a sixteenth at the cursor; the cursor moves on by one', async () => {
+    test('a key down is a sixteenth at the cursor at once; the cursor moves on when it comes up', async () => {
         const h = build();
         h.rec.dispatch('click');
         h.down(60);
         await flush();
-        assert.deepEqual(h.notes(), [], 'nothing on the grid before the first second');
-        clock += 1000;
-        tickTimers();
-        assert.deepEqual(h.notes(), [{ midi: 60, start: 0, dur: 1 }], 'the first second puts it on the grid');
+        assert.deepEqual(h.notes(), [{ midi: 60, start: 0, dur: 1 }], 'on the grid the moment the key goes down');
         assert.equal(h.roll.getStepCursor(), 0, 'the cursor waits for the key to come up');
         clock += 400;
+        tickTimers();
         h.up(60);
-        assert.deepEqual(h.notes(), [{ midi: 60, start: 0, dur: 1 }]);
+        assert.deepEqual(h.notes(), [{ midi: 60, start: 0, dur: 1 }], 'under a second: the step length as it was');
         assert.equal(h.roll.getStepCursor(), 1);
         assert.equal(h.roll.getNotes()[0]._recordedInSession, undefined, 'no echo guard: it must sound on a take\'s first pass');
     });
 
-    test('every further second grows it by a sixteenth, on the grid while still held', async () => {
+    test('every further full second held doubles it, on the grid while still held', async () => {
         const h = build();
         h.rec.dispatch('click');
         h.down(60);
         await flush();
-        clock += 1999; tickTimers();
+        clock += 999; tickTimers();
         assert.equal(h.notes()[0].dur, 1);
         clock += 1; tickTimers();
-        assert.equal(h.notes()[0].dur, 2, 'two full seconds: two sixteenths');
+        assert.equal(h.notes()[0].dur, 2, 'one full second: doubled');
+        clock += 1000; tickTimers();
+        assert.equal(h.notes()[0].dur, 4, 'two: doubled again');
         clock += 1000;
         h.up(60);
-        assert.equal(h.notes()[0].dur, 3, 'the release itself counts the time');
-        assert.equal(h.roll.getStepCursor(), 3);
+        assert.equal(h.notes()[0].dur, 8, 'the release itself counts the time');
+        assert.equal(h.roll.getStepCursor(), 8);
     });
 
     test('a chord: each note keeps its own hold, the cursor skips the longest', async () => {
@@ -172,24 +175,24 @@ describe('notes', () => {
         h.rec.dispatch('click');
         h.down(60); h.down(64); h.down(67);
         await flush();
-        clock += 1200; tickTimers();
-        assert.equal(h.notes().length, 3);
+        assert.equal(h.notes().length, 3, 'all three on the grid at once');
         assert.ok(h.notes().every(n => n.start === 0), 'all at the cursor');
+        clock += 1200; tickTimers();
         h.up(64);
         assert.equal(h.roll.getStepCursor(), 0, 'still a key down: the step is not over');
         clock += 2000;                      // 3.2 s for the other two
         h.up(60);
         h.up(67);
         const byMidi = Object.fromEntries(h.notes().map(n => [n.midi, n.dur]));
-        assert.deepEqual(byMidi, { 60: 3, 64: 1, 67: 3 });
-        assert.equal(h.roll.getStepCursor(), 3);
+        assert.deepEqual(byMidi, { 60: 8, 64: 2, 67: 8 });
+        assert.equal(h.roll.getStepCursor(), 8);
     });
 
     test('the next step lands where the cursor is', async () => {
         const h = build();
         h.rec.dispatch('click');
-        await h.hold(60, 2000);                      // dur 2 → cursor 2
-        await h.hold(62, 1000);
+        await h.hold(60, 1000);                      // dur 2 → cursor 2
+        await h.tap(62);
         assert.deepEqual(h.notes().find(x => x.midi === 62), { midi: 62, start: 2, dur: 1 });
         assert.equal(h.roll.getStepCursor(), 3);
     });
@@ -201,15 +204,15 @@ describe('notes', () => {
         await h.hold(60, 60000);
         assert.equal(h.notes()[0].dur, 16);
         assert.equal(h.roll.getStepCursor(), 0, 'wrapped to the top');
-        await h.hold(62, 1000);
+        await h.tap(62);
         assert.equal(h.notes().find(x => x.midi === 62).start, 0);
     });
 
     test('Undo removes the last step note', async () => {
         const h = build();
         h.rec.dispatch('click');
-        await h.hold(60, 1000);
-        await h.hold(62, 1000);
+        await h.tap(60);
+        await h.tap(62);
         h.undo.dispatch('click');
         assert.deepEqual(h.notes().map(n => n.midi), [60]);
     });
@@ -222,41 +225,48 @@ describe('notes', () => {
         h.rec.dispatch('click');
         stub.inputs[0].receive([0x90, 60, 100], 5000);
         await flush();
+        assert.deepEqual(h.notes(), [{ midi: 60, start: 0, dur: 1 }], 'placed on note-on');
         stub.inputs[0].receive([0x80, 60, 0], 8100);
-        assert.deepEqual(h.notes(), [{ midi: 60, start: 0, dur: 3 }]);
-        assert.equal(h.roll.getStepCursor(), 3);
+        assert.deepEqual(h.notes(), [{ midi: 60, start: 0, dur: 8 }], '3.1 s: three doublings');
+        assert.equal(h.roll.getStepCursor(), 8);
     });
 });
 
-describe('rests', () => {
-    test('a tap shorter than a second jumps the cursor to the next beat', async () => {
+// There is no tap-rest any more: a tap of any length is a note. A rest is
+// the cursor moved by hand, with the nudge buttons or a drag of the
+// playhead — which the roll reports through onStepSeek.
+describe('rests are made by hand', () => {
+    const nudge = (h) => {
+        const [back, fwd] = h.dock.querySelectorAll('.kb-btn-step-nudge');
+        return { back, fwd };
+    };
+
+    test('a short tap is a note, not a rest', async () => {
         const h = build();
         h.rec.dispatch('click');
-        await h.hold(60, 300);
-        assert.deepEqual(h.notes(), [], 'no note');
-        assert.equal(h.roll.getStepCursor(), 4, 'on a beat already: a full beat on');
-        await h.hold(62, 1000);
-        assert.deepEqual(h.notes(), [{ midi: 62, start: 4, dur: 1 }]);
+        await h.hold(60, 50);
+        assert.deepEqual(h.notes(), [{ midi: 60, start: 0, dur: 1 }]);
+        assert.equal(h.roll.getStepCursor(), 1);
     });
 
-    test('off the beat, a tap closes out the beat in progress', async () => {
+    test('a nudge forward leaves a gap, and the next note lands after it', async () => {
         const h = build();
+        const { fwd } = nudge(h);
         h.rec.dispatch('click');
-        await h.hold(62, 1000);             // a sixteenth → cursor 1
-        await h.hold(60, 200);              // rest: to the next beat
-        assert.equal(h.roll.getStepCursor(), 4);
-        await h.hold(62, 1000);             // → 5
-        await h.hold(60, 200);
-        assert.equal(h.roll.getStepCursor(), 8);
+        await h.tap(60);                     // [0,1)
+        fwd.dispatch('click');               // rest: 1 → 2
+        fwd.dispatch('click');               // 2 → 3
+        await h.tap(62);
+        assert.deepEqual(h.notes(), [{ midi: 60, start: 0, dur: 1 }, { midi: 62, start: 3, dur: 1 }]);
     });
 
-    test('a rest at the last beat wraps to the top of the pattern', async () => {
+    test('a playhead drag reported by the roll does the same', async () => {
         const h = build();
         h.rec.dispatch('click');
-        for (let i = 0; i < 3; i++) await h.hold(60, 200);   // 4, 8, 12
-        assert.equal(h.roll.getStepCursor(), 12);
-        await h.hold(60, 200);
-        assert.equal(h.roll.getStepCursor(), 0, 'wrapped');
+        h.roll.seekStep(9);
+        await h.tap(60);
+        assert.deepEqual(h.notes(), [{ midi: 60, start: 9, dur: 1 }]);
+        assert.equal(h.roll.getStepCursor(), 10);
     });
 });
 
@@ -272,30 +282,30 @@ describe('step length', () => {
         assert.equal(select(h).style.display, 'none');
     });
 
-    test('a step places a note of the chosen length and the cursor skips past it', async () => {
+    test('a tap places a note of the chosen length and the cursor skips past it', async () => {
         const h = build();
         h.rec.dispatch('click');
         select(h).value = '4';              // a quarter
-        await h.hold(60, 1000);
+        await h.tap(60);
         assert.deepEqual(h.notes(), [{ midi: 60, start: 0, dur: 4 }]);
         assert.equal(h.roll.getStepCursor(), 4);
     });
 
-    test('every further held second grows the note by one more step length', async () => {
+    test('every further held second doubles the chosen length', async () => {
         const h = build();
         h.rec.dispatch('click');
         select(h).value = '2';              // an eighth
-        await h.hold(60, 3000);
-        assert.deepEqual(h.notes(), [{ midi: 60, start: 0, dur: 6 }], 'three seconds, three eighths');
-        assert.equal(h.roll.getStepCursor(), 6);
+        await h.hold(60, 2000);
+        assert.deepEqual(h.notes(), [{ midi: 60, start: 0, dur: 8 }], 'two seconds: an eighth doubled twice');
+        assert.equal(h.roll.getStepCursor(), 8);
     });
 
     test('a long step is clamped to the pattern end', async () => {
         const h = build();
         h.rec.dispatch('click');
         select(h).value = '16';
-        await h.hold(60, 1000);             // a whole note in a 16-col pattern
-        await h.hold(62, 1000);             // wrapped: another, clamped from col 0
+        await h.tap(60);                    // a whole note in a 16-col pattern
+        await h.tap(62);                    // wrapped: another, clamped from col 0
         assert.deepEqual(h.notes().map(n => [n.midi, n.start, n.dur]), [[60, 0, 16], [62, 0, 16]]);
     });
 
@@ -304,25 +314,6 @@ describe('step length', () => {
         select(h).value = '8';
         select(h).dispatch('change');
         assert.equal(localStorage.getItem('openpatches_step_len'), '8');
-    });
-});
-
-describe('seeking the cursor', () => {
-    test('a header drag reported by the roll moves the next step', async () => {
-        const h = build();
-        h.rec.dispatch('click');
-        h.roll.seekStep(9);
-        await h.hold(60, 1000);
-        assert.deepEqual(h.notes(), [{ midi: 60, start: 9, dur: 1 }]);
-        assert.equal(h.roll.getStepCursor(), 10);
-    });
-
-    test('a rest after a seek still lands on a beat boundary', async () => {
-        const h = build();
-        h.rec.dispatch('click');
-        h.roll.seekStep(5);
-        await h.hold(60, 200);
-        assert.equal(h.roll.getStepCursor(), 8);
     });
 });
 
@@ -356,7 +347,7 @@ describe('the mobile step nudge buttons', () => {
         assert.equal(h.roll.getStepCursor(), 8);
         back.dispatch('click');
         assert.equal(h.roll.getStepCursor(), 4);
-        await h.hold(60, 1000);
+        await h.tap(60);
         assert.deepEqual(h.notes(), [{ midi: 60, start: 4, dur: 4 }]);
     });
 
@@ -384,7 +375,7 @@ describe('the mobile step nudge buttons', () => {
         clock += 1000;
         tickTimers();
         h.up(60);
-        assert.deepEqual(h.notes(), [{ midi: 60, start: 0, dur: 1 }]);
+        assert.deepEqual(h.notes(), [{ midi: 60, start: 0, dur: 2 }]);
     });
 });
 
@@ -406,7 +397,7 @@ describe('where the notes go', () => {
         h.roll.openClip(leadClip);
         assert.equal(h.roll.getEditTarget().slot, 1);
         h.rec.dispatch('click');
-        await h.hold(64, 1000);
+        await h.tap(64);
         assert.deepEqual(session.getPattern(lead.id).notes.map(n => [n.midi, n.start, n.dur]), [[64, 0, 1]], 'in the pattern on screen');
         assert.equal(session.getPattern(bass.id).notes.length, 1, 'and not in the record slot\'s');
     });
@@ -415,7 +406,7 @@ describe('where the notes go', () => {
         const h = build();
         assert.equal(h.roll.getEditTarget(), null);
         h.rec.dispatch('click');
-        await h.hold(60, 1000);
+        await h.tap(60);
         assert.deepEqual(h.notes(), [{ midi: 60, start: 0, dur: 1 }]);
         assert.equal(h.session.get().tracks.length, 1);
     });
@@ -425,13 +416,13 @@ describe('where the notes go', () => {
         h.scroll.clientHeight = 100; h.scroll.clientWidth = 300;
         h.scroll.scrollTop = 0; h.scroll.scrollLeft = 0;
         h.rec.dispatch('click');
-        await h.hold(84, 1000);             // C6, the top row: already in view
+        await h.tap(84);                    // C6, the top row: already in view
         assert.ok(h.scroll.scrollTop >= 0);
         const topAfterC6 = h.scroll.scrollTop;
-        await h.hold(60, 1000);             // C4, further down
+        await h.tap(60);                    // C4, further down
         assert.ok(h.scroll.scrollTop > topAfterC6, 'centred on the lower row even though it was already visible');
         // Walk the cursor past the right edge of a 300px viewport (COL_W 30):
-        for (let i = 0; i < 9; i++) await h.hold(60, 1000);
+        for (let i = 0; i < 9; i++) await h.tap(60);
         assert.ok(h.scroll.scrollLeft > 0, 'scrolled sideways once the cursor left the view');
     });
 });
@@ -460,7 +451,7 @@ describe('handing over to the clock', () => {
     test('the clock starting elsewhere ends the step record', async () => {
         const h = build();
         h.rec.dispatch('click');
-        await h.hold(60, 1000);
+        await h.tap(60);
         assert.equal(h.transport.play({ mode: 'section' }), true);
         assert.equal(h.rec.classList.contains('active'), false);
         assert.equal(h.roll.getStepCursor(), -1);
@@ -471,7 +462,7 @@ describe('handing over to the clock', () => {
         h.rec.dispatch('click');
         h.down(60); await flush(); clock += 2100; tickTimers();
         h.rec.dispatch('click');
-        assert.equal(h.notes()[0].dur, 2);
+        assert.equal(h.notes()[0].dur, 4, 'two full seconds: two doublings');
         assert.equal(h.roll.getStepCursor(), -1);
     });
 });

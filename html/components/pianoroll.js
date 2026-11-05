@@ -369,6 +369,32 @@ export function createPianoroll(opts) {
     clearBtnDesktop.textContent = '\u{1F9F9} Clear';
     controls.appendChild(clearBtnDesktop);
 
+    // Selection: Select mode (a drag on empty grid selects instead of
+    // drawing; Shift-drag does the same without the mode), Copy and Paste.
+    // Mobile copies live in the more-menu below.
+    const SELECT_LABEL = '\u2B1A Select';
+    const SELECT_TITLE = 'Select mode: drag a rectangle over notes to select them (Shift-drag works too), '
+        + 'then drag any selected note to move them all, Delete to remove them, Copy and Paste to repeat them';
+    const COPY_LABEL = '\u2398 Copy';
+    const COPY_TITLE = 'Copy the selected notes (Ctrl+C)';
+    const PASTE_LABEL = '\u2397 Paste';
+    const PASTE_TITLE = 'Paste at the playhead — the step cursor, or the play position — else right after the copied phrase (Ctrl+V)';
+    const mkBtn = (cls, label, title) => {
+        const b = document.createElement('button');
+        b.className = 'pianoroll-btn ' + cls;
+        b.textContent = label;
+        b.title = title;
+        return b;
+    };
+    const selectBtn = mkBtn('pianoroll-select', SELECT_LABEL, SELECT_TITLE);
+    const copyBtn = mkBtn('pianoroll-copy', COPY_LABEL, COPY_TITLE);
+    const pasteBtn = mkBtn('pianoroll-paste', PASTE_LABEL, PASTE_TITLE);
+    copyBtn.disabled = true;
+    pasteBtn.disabled = true;
+    controls.appendChild(selectBtn);
+    controls.appendChild(copyBtn);
+    controls.appendChild(pasteBtn);
+
     // Ellipsis menu (mobile)
     const moreBtn = document.createElement('button');
     moreBtn.className = 'pianoroll-btn pianoroll-more';
@@ -390,6 +416,18 @@ export function createPianoroll(opts) {
     followBtnMobile.textContent = FOLLOW_LABEL;
     followBtnMobile.title = FOLLOW_TITLE;
     moreMenu.appendChild(followBtnMobile);
+
+    const selectBtnMobile = mkBtn('pianoroll-select', SELECT_LABEL, SELECT_TITLE);
+    const copyBtnMobile = mkBtn('pianoroll-copy', COPY_LABEL, COPY_TITLE);
+    const pasteBtnMobile = mkBtn('pianoroll-paste', PASTE_LABEL, PASTE_TITLE);
+    copyBtnMobile.disabled = true;
+    pasteBtnMobile.disabled = true;
+    moreMenu.appendChild(selectBtnMobile);
+    moreMenu.appendChild(copyBtnMobile);
+    moreMenu.appendChild(pasteBtnMobile);
+    for (const b of [selectBtn, selectBtnMobile]) b.addEventListener('click', () => setSelectMode(!selectMode));
+    for (const b of [copyBtn, copyBtnMobile]) b.addEventListener('click', () => copySelection());
+    for (const b of [pasteBtn, pasteBtnMobile]) b.addEventListener('click', () => pasteClipboard());
 
     const addMeasureBtnMobile = document.createElement('button');
     addMeasureBtnMobile.className = 'pianoroll-btn';
@@ -556,6 +594,18 @@ export function createPianoroll(opts) {
     const MOVE_THRESHOLD = 5;
     const RESIZE_MARGIN = 8;
     const TOUCH_RESIZE_MARGIN = 20;
+    const PLAYHEAD_GRAB = 6;          // px either side of the step cursor's line that grab it
+    const TOUCH_PLAYHEAD_GRAB = 16;
+
+    // Selection: a set of the edited track's notes. Made by a marquee (a
+    // drag on empty grid in Select mode, or with Shift held), moved as one
+    // by dragging any selected note, copied and pasted by the buttons.
+    const selected = new Set();
+    let selectMode = false;
+    let marquee = null;               // {x0, y0, x1, y1} in folded canvas px while dragging one
+    let groupMove = null;             // [{note, start, midi}] originals while moving a selection
+    let clipboard = null;             // {notes: [{midi, start (relative), dur}], span, sourceEnd}
+    let pasteCursor = -1;             // where the next Paste lands when no playhead is shown
     /**
      * Write the edited pattern(s) back and refresh playback. Only patterns
      * the roll changed are written — a pattern renamed in the Section editor
@@ -708,14 +758,16 @@ export function createPianoroll(opts) {
         const x = ox + LABEL_W + n.start * COL_W;
         const y = HEADER_H + r * ROW_H;
         const w = n.dur * COL_W - 1;
+        const isSel = active && selected.has(n);
         ctx.fillStyle = color;
-        ctx.globalAlpha = active ? 0.85 : 0.25;
+        ctx.globalAlpha = isSel ? 1 : active ? 0.85 : 0.25;
         ctx.fillRect(x + 1, y + 1, w, ROW_H - 2);
         ctx.globalAlpha = 1.0;
         if (!active) return;
         ctx.strokeStyle = '#fff';
-        ctx.lineWidth = 0.5;
+        ctx.lineWidth = isSel ? 2 : 0.5;
         ctx.strokeRect(x + 1, y + 1, w, ROW_H - 2);
+        ctx.lineWidth = 0.5;
         const handleW = Math.min(4, w / 4);
         ctx.fillStyle = 'rgba(255,255,255,0.5)';
         ctx.fillRect(x + 1, y + 1, handleW, ROW_H - 2);
@@ -733,13 +785,16 @@ export function createPianoroll(opts) {
         const activeColor = slotColor(activeTrackIdx >= 0 ? tracks[activeTrackIdx].slot : currentSlot());
         for (const n of notes) drawNote(ctx, ox, n, activeColor, true);
 
-        // Ghost note
+        // Ghost note(s): where a move started from.
         if (movingNote && moveCommitted && moveOriginal) {
-            const origRow = NOTES.findIndex(nn => nn.midi === moveOriginal.midi);
-            if (origRow >= 0) {
-                const gx = ox + LABEL_W + moveOriginal.start * COL_W;
+            const ghosts = groupMove ? groupMove.map(g => ({ start: g.start, midi: g.midi, dur: g.note.dur }))
+                : [{ start: moveOriginal.start, midi: moveOriginal.midi, dur: movingNote.dur }];
+            for (const g of ghosts) {
+                const origRow = NOTES.findIndex(nn => nn.midi === g.midi);
+                if (origRow < 0) continue;
+                const gx = ox + LABEL_W + g.start * COL_W;
                 const gy = HEADER_H + origRow * ROW_H;
-                const gw = movingNote.dur * COL_W - 1;
+                const gw = g.dur * COL_W - 1;
                 ctx.fillStyle = slotColor(activeTrackIdx >= 0 ? tracks[activeTrackIdx].slot : currentSlot());
                 ctx.globalAlpha = 0.12;
                 ctx.fillRect(gx + 1, gy + 1, gw, ROW_H - 2);
@@ -750,6 +805,21 @@ export function createPianoroll(opts) {
                 ctx.strokeRect(gx + 1, gy + 1, gw, ROW_H - 2);
                 ctx.setLineDash([]);
             }
+        }
+
+        // The marquee being dragged.
+        if (marquee) {
+            const mx = ox + Math.min(marquee.x0, marquee.x1);
+            const my = Math.min(marquee.y0, marquee.y1);
+            const mw = Math.abs(marquee.x1 - marquee.x0);
+            const mh = Math.abs(marquee.y1 - marquee.y0);
+            ctx.fillStyle = 'rgba(255,255,255,0.08)';
+            ctx.fillRect(mx, my, mw, mh);
+            ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([4, 3]);
+            ctx.strokeRect(mx + 0.5, my + 0.5, mw, mh);
+            ctx.setLineDash([]);
         }
 
         // Playhead: a red line at the leading edge of the current column,
@@ -788,6 +858,10 @@ export function createPianoroll(opts) {
     }
 
     function draw() {
+        // The selection only ever holds the edited track's live notes: a
+        // switch of track or pattern, a delete, a Clear all drop members.
+        for (const n of selected) if (!notes.includes(n)) selected.delete(n);
+        updateSelectionButtons();
         resizeCanvas();
         ctx.clearRect(0, 0, canvasWidth(), CANVAS_H);
 
@@ -857,6 +931,177 @@ export function createPianoroll(opts) {
     let lastClickCol = -1;
     let seekingPlayhead = false;
 
+    // --- Selection, group move, copy and paste ---------------------------
+
+    /** Is the (folded) x within grabbing distance of the step cursor's line? */
+    function nearPlayhead(x, margin) {
+        if (stepCol < 0) return false;
+        return Math.abs(foldX(x) - (LABEL_W + stepCol * COL_W)) <= margin;
+    }
+
+    function commitNotes() {
+        draw();
+        renderLegend();
+        onNotesChange();
+        saveState();
+    }
+
+    function clearSelection() {
+        if (selected.size === 0) return;
+        selected.clear();
+        draw();
+    }
+
+    /** Select the edited track's notes that intersect a canvas-px rectangle. */
+    function selectInRect(x0, y0, x1, y1) {
+        const left = Math.min(x0, x1), right = Math.max(x0, x1);
+        const top = Math.min(y0, y1), bottom = Math.max(y0, y1);
+        selected.clear();
+        for (const n of notes) {
+            const r = NOTES.findIndex(nn => nn.midi === n.midi);
+            if (r < 0) continue;
+            const nx0 = LABEL_W + n.start * COL_W, nx1 = nx0 + n.dur * COL_W;
+            const ny0 = HEADER_H + r * ROW_H, ny1 = ny0 + ROW_H;
+            if (nx0 < right && left < nx1 && ny0 < bottom && top < ny1) selected.add(n);
+        }
+        draw();
+    }
+
+    /** Begin moving `note` — and every selected note with it when it is one of them. */
+    function beginMove(note, x, y) {
+        if (!selected.has(note)) selected.clear();     // grabbing an unselected note drops the selection
+        movingNote = note;
+        moveStartPos = { x, y };
+        moveOriginal = { start: note.start, midi: note.midi, dur: note.dur };
+        moveCommitted = false;
+        groupMove = selected.size > 1 ? [...selected].map(n => ({ note: n, start: n.start, midi: n.midi })) : null;
+    }
+
+    /**
+     * Apply a move delta. A group moves as one block: the delta is clamped
+     * so that no member leaves the grid, which keeps their spacing intact.
+     */
+    function applyMoveDelta(colOffset, rowOffset) {
+        if (!groupMove) {
+            const newStart = Math.max(0, Math.min(totalCols() - movingNote.dur, moveOriginal.start + colOffset));
+            const newRow = Math.max(0, Math.min(NOTES.length - 1, NOTES.findIndex(nn => nn.midi === moveOriginal.midi) + rowOffset));
+            movingNote.start = newStart;
+            movingNote.midi = NOTES[newRow].midi;
+            return;
+        }
+        let minStart = Infinity, maxEnd = -Infinity, minRow = Infinity, maxRow = -Infinity;
+        for (const g of groupMove) {
+            const r = NOTES.findIndex(nn => nn.midi === g.midi);
+            minStart = Math.min(minStart, g.start);
+            maxEnd = Math.max(maxEnd, g.start + g.note.dur);
+            minRow = Math.min(minRow, r);
+            maxRow = Math.max(maxRow, r);
+        }
+        const dc = Math.max(-minStart, Math.min(totalCols() - maxEnd, colOffset));
+        const dr = Math.max(-minRow, Math.min(NOTES.length - 1 - maxRow, rowOffset));
+        for (const g of groupMove) {
+            g.note.start = g.start + dc;
+            g.note.midi = NOTES[NOTES.findIndex(nn => nn.midi === g.midi) + dr].midi;
+        }
+    }
+
+    /** Put a move back where it started (mouseleave / touchcancel). */
+    function restoreMove() {
+        if (groupMove) {
+            for (const g of groupMove) { g.note.start = g.start; g.note.midi = g.midi; }
+        } else if (movingNote && moveOriginal) {
+            movingNote.start = moveOriginal.start;
+            movingNote.midi = moveOriginal.midi;
+        }
+    }
+
+    function endMove() {
+        movingNote = null;
+        moveStartPos = null;
+        moveOriginal = null;
+        moveCommitted = false;
+        groupMove = null;
+    }
+
+    function deleteSelected() {
+        if (selected.size === 0) return;
+        for (const n of selected) {
+            const idx = notes.indexOf(n);
+            if (idx >= 0) notes.splice(idx, 1);
+        }
+        selected.clear();
+        commitNotes();
+    }
+
+    /** Copy the selection, positions relative to its first note. */
+    function copySelection() {
+        if (selected.size === 0) return false;
+        const list = [...selected];
+        const minStart = Math.min(...list.map(n => n.start));
+        const sourceEnd = Math.max(...list.map(n => n.start + n.dur));
+        clipboard = {
+            notes: list.map(n => ({ midi: n.midi, start: n.start - minStart, dur: n.dur })),
+            span: sourceEnd - minStart,
+            sourceEnd,
+        };
+        pasteCursor = sourceEnd;
+        updateSelectionButtons();
+        return true;
+    }
+
+    /**
+     * Paste at the playhead — the step cursor while a step record is armed,
+     * the play position while the clock runs — else right after the copied
+     * phrase (and after each paste), so Paste, Paste, Paste repeats it along.
+     * Notes that would start past the end are dropped, the rest clamped.
+     * The pasted notes become the selection; the step cursor moves past them.
+     */
+    function pasteClipboard() {
+        if (!clipboard || clipboard.notes.length === 0) return false;
+        const at = stepCol >= 0 ? stepCol : playCol >= 0 ? playCol : pasteCursor >= 0 ? pasteCursor : clipboard.sourceEnd;
+        if (at >= totalCols()) return false;
+        ensureActiveTrack();
+        selected.clear();
+        for (const c of clipboard.notes) {
+            const start = at + c.start;
+            if (start >= totalCols()) continue;
+            const n = { midi: c.midi, start, dur: clampDur(start, c.dur) };
+            notes.push(n);
+            selected.add(n);
+        }
+        if (selected.size === 0) return false;
+        pasteCursor = at + clipboard.span;
+        if (stepCol >= 0) seekStep(Math.min(totalCols() - 1, at + clipboard.span) % totalCols());
+        commitNotes();
+        return true;
+    }
+
+    function setSelectMode(on) {
+        selectMode = !!on;
+        for (const b of [selectBtn, selectBtnMobile]) b.classList.toggle('active', selectMode);
+    }
+
+    function updateSelectionButtons() {
+        if (!copyBtn) return;
+        for (const b of [copyBtn, copyBtnMobile]) b.disabled = selected.size === 0;
+        for (const b of [pasteBtn, pasteBtnMobile]) b.disabled = !clipboard;
+    }
+
+    // Keyboard: Delete removes the selection, Escape drops it, Ctrl/Cmd+C
+    // and +V copy and paste — never while typing in a field.
+    function onKeyDown(e) {
+        const tag = e.target && e.target.tagName;
+        if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+        if (e.target && e.target.isContentEditable) return;
+        const mod = e.ctrlKey || e.metaKey;
+        if (mod && (e.key === 'c' || e.key === 'C')) { if (copySelection()) e.preventDefault(); return; }
+        if (mod && (e.key === 'v' || e.key === 'V')) { if (pasteClipboard()) e.preventDefault(); return; }
+        if (selected.size === 0) return;
+        if (e.key === 'Escape') { clearSelection(); return; }
+        if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteSelected(); }
+    }
+    document.addEventListener('keydown', onKeyDown);
+
     // Step record: drag the playhead by its header marker. Only live while
     // the step cursor is shown (the clock is stopped — playCol owns the
     // header otherwise). The toolbar is told so its own cursor follows.
@@ -900,10 +1145,8 @@ export function createPianoroll(opts) {
         if (target && target.note && now - lastClickTime < 350 && row === lastClickRow && Math.abs(col - lastClickCol) <= 1) {
             const idx = notes.indexOf(target.note);
             if (idx >= 0) notes.splice(idx, 1);
-            draw();
-            renderLegend();
-            onNotesChange();
-            saveState();
+            selected.delete(target.note);
+            commitNotes();
             lastClickTime = 0;
             return;
         }
@@ -921,14 +1164,25 @@ export function createPianoroll(opts) {
                 moveCommitted = false;
                 return;
             }
-            movingNote = target.note;
-            moveStartPos = { x, y };
-            moveOriginal = { start: target.note.start, midi: target.note.midi, dur: target.note.dur };
-            moveCommitted = false;
+            beginMove(target.note, x, y);
             return;
         }
 
-        // Start drag to create note
+        // The step cursor's line is a drag handle along its whole height —
+        // after the notes, which keep their say over anything under them.
+        if (nearPlayhead(x, PLAYHEAD_GRAB)) {
+            seekingPlayhead = true;
+            return;
+        }
+
+        // Empty grid. In Select mode (or with Shift) a drag is a marquee;
+        // otherwise it draws a note.
+        if (selectMode || e.shiftKey) {
+            const fx = foldX(x);
+            marquee = { x0: fx, y0: y, x1: fx, y1: y };
+            draw();
+            return;
+        }
         dragging = true;
         dragStart = { row, col };
         lastMousePos = { x, y };
@@ -943,6 +1197,13 @@ export function createPianoroll(opts) {
 
         if (seekingPlayhead) {
             stepSeekTo(x);
+            return;
+        }
+
+        if (marquee) {
+            marquee.x1 = foldX(x);
+            marquee.y1 = y;
+            draw();
             return;
         }
 
@@ -976,16 +1237,7 @@ export function createPianoroll(opts) {
                 canvas.style.cursor = 'grabbing';
             }
             moveCommitted = true;
-
-            const colOffset = Math.round(dx / COL_W);
-            const rowOffset = Math.round(dy / ROW_H);
-
-            const newStart = Math.max(0, Math.min(totalCols() - movingNote.dur, moveOriginal.start + colOffset));
-            const newRow = Math.max(0, Math.min(NOTES.length - 1, NOTES.findIndex(nn => nn.midi === moveOriginal.midi) + rowOffset));
-            const newMidi = NOTES[newRow].midi;
-
-            movingNote.start = newStart;
-            movingNote.midi = newMidi;
+            applyMoveDelta(Math.round(dx / COL_W), Math.round(dy / ROW_H));
             draw();
             return;
         }
@@ -1003,8 +1255,10 @@ export function createPianoroll(opts) {
             } else {
                 canvas.style.cursor = 'grab';
             }
+        } else if (y > HEADER_H && nearPlayhead(x, PLAYHEAD_GRAB)) {
+            canvas.style.cursor = 'ew-resize';
         } else {
-            canvas.style.cursor = 'crosshair';
+            canvas.style.cursor = selectMode ? 'cell' : 'crosshair';
         }
     });
 
@@ -1013,6 +1267,15 @@ export function createPianoroll(opts) {
 
         if (seekingPlayhead) {
             seekingPlayhead = false;
+            return;
+        }
+
+        if (marquee) {
+            const m = marquee;
+            marquee = null;
+            // A bare click on empty grid in Select mode drops the selection.
+            if (Math.abs(m.x1 - m.x0) < 4 && Math.abs(m.y1 - m.y0) < 4) { selected.clear(); draw(); }
+            else selectInRect(m.x0, m.y0, m.x1, m.y1);
             return;
         }
 
@@ -1039,10 +1302,7 @@ export function createPianoroll(opts) {
 
         if (movingNote) {
             if (moveCommitted) {
-                draw();
-                renderLegend();
-                onNotesChange();
-                saveState();
+                commitNotes();
             } else {
                 // Click preview — look up voice data from slot
                 const entry = getSlotData(currentSlot());
@@ -1051,10 +1311,7 @@ export function createPianoroll(opts) {
                 const msPerSixteenth = 60000 / bpm / 4;
                 playNoteFn(movingNote.midi, movingNote.dur * msPerSixteenth, voiceData, currentSlot());
             }
-            movingNote = null;
-            moveStartPos = null;
-            moveOriginal = null;
-            moveCommitted = false;
+            endMove();
             return;
         }
 
@@ -1077,10 +1334,7 @@ export function createPianoroll(opts) {
 
             ensureActiveTrack();
             notes.push({ midi, start: minC, dur });
-            draw();
-            renderLegend();
-            onNotesChange();
-            saveState();
+            commitNotes();
         }
 
         dragging = false;
@@ -1093,6 +1347,7 @@ export function createPianoroll(opts) {
         canvas.style.cursor = '';
         // A seek is already committed as it moves; just stop following.
         seekingPlayhead = false;
+        if (marquee) { marquee = null; draw(); }
         if (resizingNote && moveOriginal) {
             resizingNote.dur = moveOriginal.dur;
             resizingNote.start = moveOriginal.start;
@@ -1104,12 +1359,8 @@ export function createPianoroll(opts) {
             draw();
         }
         if (movingNote && moveOriginal) {
-            movingNote.start = moveOriginal.start;
-            movingNote.midi = moveOriginal.midi;
-            movingNote = null;
-            moveStartPos = null;
-            moveOriginal = null;
-            moveCommitted = false;
+            restoreMove();
+            endMove();
             draw();
         }
         if (dragging) {
@@ -1154,6 +1405,17 @@ export function createPianoroll(opts) {
 
         if (col < 0) return;
 
+        // The header strip is the step cursor's handle on touch as well; it
+        // never draws (pixelToRow clamps, so a header tap used to land a
+        // note on the top row).
+        if (y <= HEADER_H) {
+            if (stepCol >= 0) {
+                seekingPlayhead = true;
+                stepSeekTo(x);
+            }
+            return;
+        }
+
         const now = Date.now();
         const target = findInteractionTargetTouch(x, y);
         const isStopped = !playing && !looping;
@@ -1162,10 +1424,8 @@ export function createPianoroll(opts) {
         if (target && target.note && now - lastTapTime < 400 && row === lastClickRow && Math.abs(col - lastClickCol) <= 1) {
             const idx = notes.indexOf(target.note);
             if (idx >= 0) notes.splice(idx, 1);
-            draw();
-            renderLegend();
-            onNotesChange();
-            saveState();
+            selected.delete(target.note);
+            commitNotes();
             lastTapTime = 0;
             return;
         }
@@ -1183,10 +1443,21 @@ export function createPianoroll(opts) {
                 moveCommitted = false;
                 return;
             }
-            movingNote = target.note;
-            moveStartPos = { x, y };
-            moveOriginal = { start: target.note.start, midi: target.note.midi, dur: target.note.dur };
-            moveCommitted = false;
+            beginMove(target.note, x, y);
+            return;
+        }
+
+        // The step cursor's line, grabbed anywhere along it — notes first.
+        if (nearPlayhead(x, TOUCH_PLAYHEAD_GRAB)) {
+            seekingPlayhead = true;
+            return;
+        }
+
+        // Select mode: a drag on empty grid is a marquee, a tap drops the selection.
+        if (selectMode) {
+            const fx = foldX(x);
+            marquee = { x0: fx, y0: y, x1: fx, y1: y };
+            draw();
             return;
         }
 
@@ -1222,6 +1493,18 @@ export function createPianoroll(opts) {
         const x = touch.clientX - rect.left;
         const y = touch.clientY - rect.top;
         lastMousePos = { x, y };
+
+        if (seekingPlayhead) {
+            stepSeekTo(x);
+            return;
+        }
+
+        if (marquee) {
+            marquee.x1 = foldX(x);
+            marquee.y1 = y;
+            draw();
+            return;
+        }
 
         // Long-press pending — check if moved (scroll instead)
         if (longPressTimer && longPressPos) {
@@ -1268,12 +1551,7 @@ export function createPianoroll(opts) {
             const dy = y - moveStartPos.y;
             if (!moveCommitted && Math.abs(dx) < MOVE_THRESHOLD && Math.abs(dy) < MOVE_THRESHOLD) return;
             moveCommitted = true;
-            const colOffset = Math.round(dx / COL_W);
-            const rowOffset = Math.round(dy / ROW_H);
-            const newStart = Math.max(0, Math.min(totalCols() - movingNote.dur, moveOriginal.start + colOffset));
-            const newRow = Math.max(0, Math.min(NOTES.length - 1, NOTES.findIndex(nn => nn.midi === moveOriginal.midi) + rowOffset));
-            movingNote.start = newStart;
-            movingNote.midi = NOTES[newRow].midi;
+            applyMoveDelta(Math.round(dx / COL_W), Math.round(dy / ROW_H));
             draw();
             return;
         }
@@ -1295,16 +1573,12 @@ export function createPianoroll(opts) {
             resizingNote.dur = moveOriginal.dur;
             resizingNote.start = moveOriginal.start;
         }
-        if (movingNote && moveOriginal) {
-            movingNote.start = moveOriginal.start;
-            movingNote.midi = moveOriginal.midi;
-        }
+        if (movingNote && moveOriginal) restoreMove();
+        seekingPlayhead = false;
+        marquee = null;
         resizingNote = null;
         resizeSide = null;
-        movingNote = null;
-        moveStartPos = null;
-        moveOriginal = null;
-        moveCommitted = false;
+        endMove();
         dragging = false;
         dragStart = null;
         lastMousePos = null;
@@ -1323,6 +1597,19 @@ export function createPianoroll(opts) {
         isTouchScrolling = false;
         touchScrollStart = null;
 
+        if (seekingPlayhead) {
+            seekingPlayhead = false;
+            return;
+        }
+
+        if (marquee) {
+            const m = marquee;
+            marquee = null;
+            if (Math.abs(m.x1 - m.x0) < 6 && Math.abs(m.y1 - m.y0) < 6) { selected.clear(); draw(); }
+            else selectInRect(m.x0, m.y0, m.x1, m.y1);
+            return;
+        }
+
         if (resizingNote) {
             if (moveCommitted) {
                 draw();
@@ -1338,16 +1625,8 @@ export function createPianoroll(opts) {
         }
 
         if (movingNote) {
-            if (moveCommitted) {
-                draw();
-                renderLegend();
-                onNotesChange();
-                saveState();
-            }
-            movingNote = null;
-            moveStartPos = null;
-            moveOriginal = null;
-            moveCommitted = false;
+            if (moveCommitted) commitNotes();
+            endMove();
             return;
         }
 
@@ -1607,6 +1886,16 @@ export function createPianoroll(opts) {
          * with -1. Drawn exactly like the playhead, which takes over
          * whenever the clock runs.
          */
+        // Selection, for the tests and the toolbar.
+        getSelectedNotes() { return [...selected]; },
+        selectNotes(list) { selected.clear(); for (const n of list) if (notes.includes(n)) selected.add(n); draw(); },
+        clearSelection() { clearSelection(); },
+        deleteSelected() { deleteSelected(); },
+        copySelection() { return copySelection(); },
+        pasteClipboard() { return pasteClipboard(); },
+        getClipboard() { return clipboard ? clipboard.notes.map(n => ({ ...n })) : null; },
+        setSelectMode(on) { setSelectMode(on); },
+        isSelectMode() { return selectMode; },
         setStepCursor(col) {
             stepCol = col >= 0 ? col : -1;
             draw();
