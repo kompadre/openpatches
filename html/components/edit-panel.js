@@ -407,17 +407,16 @@ function renderParamsMode(slotArea, sliderRow, paramsArea, goBtn, statusEl) {
     const leftPanel = document.createElement('div');
     leftPanel.className = 'dx7-algo-panel';
 
-    leftPanel.appendChild(makeGroupLabel('Pitch Envelope'));
-
     const pitchEnvCanvas = document.createElement('canvas');
     pitchEnvCanvas.className = 'dx7-env-graph';
     pitchEnvCanvas.width = 160;
     pitchEnvCanvas.height = 40;
-    leftPanel.appendChild(pitchEnvCanvas);
     renderEnvGraph(pitchEnvCanvas, [g.pitchR1, g.pitchR2, g.pitchR3, g.pitchR4], [g.pitchL1, g.pitchL2, g.pitchL3, g.pitchL4]);
 
     const pitchGroup = document.createElement('div');
     pitchGroup.className = 'dx7-param-group';
+    pitchGroup.appendChild(makeGroupLabel('Pitch Envelope'));
+    pitchGroup.appendChild(pitchEnvCanvas);
     pitchGroup.appendChild(makeSlider('R1', g.pitchR1, 0, 99, (v) => { g.pitchR1 = v; renderEnvGraph(pitchEnvCanvas, [g.pitchR1, g.pitchR2, g.pitchR3, g.pitchR4], [g.pitchL1, g.pitchL2, g.pitchL3, g.pitchL4]); }));
     pitchGroup.appendChild(makeSlider('R2', g.pitchR2, 0, 99, (v) => { g.pitchR2 = v; renderEnvGraph(pitchEnvCanvas, [g.pitchR1, g.pitchR2, g.pitchR3, g.pitchR4], [g.pitchL1, g.pitchL2, g.pitchL3, g.pitchL4]); }));
     pitchGroup.appendChild(makeSlider('R3', g.pitchR3, 0, 99, (v) => { g.pitchR3 = v; renderEnvGraph(pitchEnvCanvas, [g.pitchR1, g.pitchR2, g.pitchR3, g.pitchR4], [g.pitchL1, g.pitchL2, g.pitchL3, g.pitchL4]); }));
@@ -511,7 +510,6 @@ function renderParamsMode(slotArea, sliderRow, paramsArea, goBtn, statusEl) {
         envGraph.width = 160; envGraph.height = 40;
         envGraph.className = 'dx7-env-graph';
         renderEnvGraph(envGraph, [op.r1, op.r2, op.r3, op.r4], [op.l1, op.l2, op.l3, op.l4]);
-        left.appendChild(envGraph);
 
         const freqGroup = document.createElement('div');
         freqGroup.className = 'dx7-param-group';
@@ -541,6 +539,7 @@ function renderParamsMode(slotArea, sliderRow, paramsArea, goBtn, statusEl) {
         const envGroup = document.createElement('div');
         envGroup.className = 'dx7-param-group';
         envGroup.appendChild(makeGroupLabel('Envelope'));
+        envGroup.appendChild(envGraph);
         envGroup.appendChild(makeSlider('R1', op.r1, 0, 99, (v) => { op.r1 = v; refreshEnv(); }));
         envGroup.appendChild(makeSlider('R2', op.r2, 0, 99, (v) => { op.r2 = v; refreshEnv(); }));
         envGroup.appendChild(makeSlider('R3', op.r3, 0, 99, (v) => { op.r3 = v; refreshEnv(); }));

@@ -2483,11 +2483,15 @@ h1 {
 
 /* Edit: controls on the left, params/tags flowing to the right. This is the
    decided look for the pane; it also retires the stranded-left-edge trap the
-   centred 400px-minimum inner carried as a full page. */
+   centred 400px-minimum inner carried as a full page.
+
+   One scroller. Nothing inside an item scrolls on its own — the content
+   takes its natural size and `.bpane-body` (overflow: auto) is the single
+   shared scrollbar, horizontal first because the pane flows sideways. */
 .bpane .edit-panel-inner {
     min-width: 0;
     width: 100%;
-    height: 100%;
+    min-height: 100%;
     padding: 0;
     display: flex;
     gap: 0.75rem;
@@ -2495,67 +2499,78 @@ h1 {
 
 .bpane .edit-left {
     flex: 0 0 230px;
-    min-height: 0;
-    overflow-y: auto;
     padding-right: 0.25rem;
 }
 
 .bpane .edit-right {
     flex: 1;
     min-width: 0;
-    min-height: 0;
-    overflow: auto;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
 }
 
-/* Params mode: the sub-panels flow side by side instead of stacking —
-   pitch/preview column, algorithm/LFO column, then one column per operator —
-   and the whole row scrolls horizontally inside the pane. */
+.bpane .edit-right > * { flex: 0 0 auto; }
+
+.bpane .edit-tags-area { width: 210px; }
+
+/* Params mode: every group is its own column. The page layout's wrappers
+   (top row, left/global panels, the op body halves) dissolve with
+   `display: contents`, so the groups flow side by side in one row and the
+   shared body scrollbar absorbs the width. */
 .bpane .dx7-layout {
     flex-direction: row;
-    align-items: stretch;
-    height: 100%;
+    align-items: flex-start;
+    height: auto;
     margin-bottom: 0;
     gap: 0.5rem;
 }
 
-.bpane .dx7-top-row {
-    display: flex;
-    flex-direction: row;
-    height: auto;
-    flex-shrink: 0;
-    gap: 0.5rem;
+.bpane .dx7-top-row,
+.bpane .dx7-algo-panel,
+.bpane .dx7-global-panel,
+.bpane .dx7-op-left,
+.bpane .dx7-op-right {
+    display: contents;
 }
 
-.bpane .dx7-algo-panel,
-.bpane .dx7-global-panel {
-    width: 200px;
+.bpane .dx7-layout .dx7-param-group,
+.bpane .dx7-op-body .dx7-param-group {
+    width: 190px;
     flex-shrink: 0;
-    min-height: 0;
-    overflow-y: auto;
 }
 
 .bpane .dx7-params-panel {
     flex-direction: row;
-    align-items: stretch;
+    align-items: flex-start;
     flex-shrink: 0;
+    gap: 0.5rem;
 }
 
-.bpane .dx7-op-section {
-    display: flex;
-    flex-direction: column;
-    flex-shrink: 0;
-    min-height: 0;
-}
+.bpane .dx7-op-section { flex-shrink: 0; }
 
-.bpane .dx7-op-section + .dx7-op-section { margin-top: 0; margin-left: 0.25rem; }
+.bpane .dx7-op-section + .dx7-op-section { margin-top: 0; }
 
 .bpane .dx7-op-body {
-    grid-template-columns: 200px 200px;
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 0.5rem;
     max-height: none;
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
+    overflow: visible;
 }
+
+/* Tighter vertical rhythm so an 8-slider group plus its graph fits the
+   default pane height without waking the shared vertical scrollbar. */
+.bpane .dx7-param-group { gap: 1px; }
+.bpane .dx7-env-graph { height: 22px; }
+.bpane .dx7-slider-row { line-height: 1.1; }
+
+/* A range input's intrinsic minimum (~130px) overflows a 190px column and
+   bleeds the value text into the neighbouring group — let it shrink. */
+.bpane .dx7-slider { min-width: 0; }
+.bpane .dx7-slider-label { min-width: 52px; }
+.bpane .dx7-slider-val { white-space: nowrap; }
 
 .dock-panel-log {
     flex-direction: column;

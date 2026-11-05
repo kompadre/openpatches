@@ -2,6 +2,12 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-05: Bottom pane — one shared scrollbar instead of per-column scrolling
+
+**Params mode (and the Mixer) grew their own little vertical scrollbars inside the pane; now `.bpane-body` is the single scroller per item, horizontal first.** All inner `overflow` went away: the wrapper panels (`.dx7-top-row`, the algo/global panels, the op body halves) dissolve with `display: contents`, so every param group is its own 190px column flowing sideways — pitch envelope, preview note, algorithm diagram, algorithm & feedback, LFO, then per-operator Frequency | Output | Envelope | Keyboard Scaling. The envelope graphs moved (in `edit-panel.js`) from floating panel children into their groups, which keeps each column coherent; stacked on mobile they render in the same order as before.
+
+Two sizing facts made the columns fit: a tighter vertical rhythm in the pane (1px group gap, 22px graphs) brings an 8-slider group under the default pane height, and `min-width: 0` on `.dx7-slider` stops a range input's ~130px intrinsic minimum from bleeding the value text into the neighbouring column. Verified by a scroller audit: the only scrolling elements inside the pane are the two `.bpane-body`s, zero vertical overflow at the default height.
+
 ## 2026-11-05: Desktop bottom pane — Mixer, Edit and Log in a resizable strip
 
 **Full-page Mixer, Edit and Log were mostly empty, so on desktop the three moved into a bottom pane** (~25% tall, drag the handle above it to resize, height persisted) under whichever main tab — Patches, Piano Roll, Section — is open. The layout branches at build time in `toolbar.js` on the 600px media query; mobile keeps one full-page panel per tab, untouched.
