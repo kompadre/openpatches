@@ -2,6 +2,12 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-05: Generic stranded-edge guard over every dock panel
+
+**`e2e/layout.spec.js` gained one test that walks all six tabs and holds every visible child of the active `.dock-panel` to the panel's own box** (left edge ≥ −1 px, right edge ≤ +1 px, no sideways dock overflow). This closes the TODO audit of `.pianoroll-row`, `.kb-toggle`, `.keyboard-wrapper` and `.dock-log`: rather than four ad-hoc tests, the invariant is generic, so a future wide child in any panel fails the suite instead of silently stranding its left edge. Checked negatively — forcing `.edit-panel-inner` to 3000 px makes it fail with the inner at −835 px — so it does catch the trap it is for.
+
+The `.edit-panel-inner` item itself stays open: it is latent and its fix is a look decision (full-width vs. the current centred 400 px minimum), not a CSS one-liner. TODO's "Bugs and small improvements assorted" was split into **Bugs** (that one item) and **Features** (section list, whole-piece playback, tempo automation, dedup, WAV re-upload), which were never bugs.
+
 ## 2026-11-04: Desktop goes full-page tabs; the canvas becomes the Patches tab
 
 **The tab strip moved to the top, centred, directly under the menu bar, and the canvas became a tab of its own called Patches.** `#page-content` was a two-row grid — night sky above, dock below, `#grid-resize-handle` between — and is now a flex column holding one tabbed region. The desktop layout has converged on the mobile one, which already worked this way; the Patches tab is simply no longer hidden (`.dock-tab-canvas { display: none }` is gone) and `app.js` moves `#night-sky` into its panel at every size, not just under 600px.

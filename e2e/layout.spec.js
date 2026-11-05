@@ -114,4 +114,49 @@ test.describe('layout invariants', () => {
             expect(row.lines, `"${row.text}" wrapped onto ${row.lines} lines`).toBe(1);
         }
     });
+
+    test('every dock panel keeps every child inside the dock', async ({ page }) => {
+        // The generic form of the two tests above, over every tab. The
+        // Section editor is the panel that has actually broken, but the trap
+        // is in `.dock-panel` itself: a wide child of *any* panel is centred
+        // and its left edge stranded. Nothing in the CSS forbids that — the
+        // other panels merely happen to be width:100% today — so this walks
+        // the tabs and holds each active panel's children to the dock.
+        await openApp(page);
+        await openSectionTab(page);
+        await seedLongSection(page);
+
+        const tabs = ['Patches', 'Piano Roll', 'Section', 'Mixer', 'Edit', 'Log'];
+        for (const name of tabs) {
+            await page.locator('.dock-tab', { hasText: name }).click();
+            await expect(page.locator('.dock-panel.active')).toBeVisible();
+
+            const l = await page.evaluate(() => {
+                const dock = document.querySelector('#piano-dock');
+                const panel = document.querySelector('.dock-panel.active');
+                const p = panel.getBoundingClientRect();
+                const children = [...panel.children]
+                    .map((el) => ({ el, r: el.getBoundingClientRect() }))
+                    .filter(({ el, r }) => r.width > 0 && getComputedStyle(el).display !== 'none')
+                    .map(({ el, r }) => ({
+                        tag: el.tagName.toLowerCase() + (el.className ? '.' + String(el.className).split(' ')[0] : ''),
+                        left: Math.round(r.left - p.left),
+                        right: Math.round(r.right - p.right),
+                    }));
+                return {
+                    panelX: Math.round(p.x),
+                    children,
+                    dockOverflow: dock.scrollWidth - dock.clientWidth,
+                };
+            });
+
+            expect(l.panelX, `${name}: panel off the left edge`).toBeGreaterThanOrEqual(0);
+            expect(l.children.length, `${name}: panel has no visible children`).toBeGreaterThan(0);
+            for (const c of l.children) {
+                expect(c.left, `${name}: ${c.tag} starts left of its panel`).toBeGreaterThanOrEqual(-1);
+                expect(c.right, `${name}: ${c.tag} ends right of its panel`).toBeLessThanOrEqual(1);
+            }
+            expect(l.dockOverflow, `${name}: dock scrolls sideways`).toBeLessThanOrEqual(2);
+        }
+    });
 });
