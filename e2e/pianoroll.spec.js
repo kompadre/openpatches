@@ -233,15 +233,26 @@ test.describe('selection, copy and paste', () => {
         expect(await selectedMidis(page)).toEqual([78]);
     });
 
-    test('Copy then Paste repeats the phrase after itself', async ({ page }) => {
+    test('Copy stamps: the shadow follows the pointer and a click places the copy', async ({ page }) => {
         await drag(page, { x: cellX(0) - 10, y: cellY(82) }, { x: cellX(4), y: cellY(74) }, { shift: true });
         expect(await selectedMidis(page)).toEqual([76, 80]);
+        await expect(page.locator('.pianoroll-controls .pianoroll-paste')).toHaveCount(0);
+
         const copy = page.locator('.pianoroll-controls .pianoroll-copy');
-        const paste = page.locator('.pianoroll-controls .pianoroll-paste');
-        await expect(paste).toBeDisabled();
         await copy.click();
-        await expect(paste).toBeEnabled();
-        await paste.click();
-        expect((await getNotes(page)).map(n => [n.midi, n.start]).sort()).toEqual([[76, 2], [76, 6], [80, 0], [80, 4]]);
+        await expect(copy).toHaveClass(/active/);
+        expect(await getNotes(page)).toHaveLength(2);
+
+        // Hover: the shadow's top-left cell tracks the pointer.
+        const box = await canvasOrigin(page);
+        await page.mouse.move(box.x + cellX(8), box.y + cellY(80));
+        expect(await page.evaluate(() => window.__opDock._pianoroll.getPlacement())).toEqual({ col: 8, row: 84 - 80 });
+
+        // Click: the copy lands there, becomes the selection, the stamp is spent.
+        await page.mouse.click(box.x + cellX(8), box.y + cellY(80));
+        expect((await getNotes(page)).map(n => [n.midi, n.start]).sort((a, b) => a[0] - b[0] || a[1] - b[1]))
+            .toEqual([[76, 2], [76, 10], [80, 0], [80, 8]]);
+        expect(await selectedMidis(page)).toEqual([76, 80]);
+        await expect(copy).not.toHaveClass(/active/);
     });
 });

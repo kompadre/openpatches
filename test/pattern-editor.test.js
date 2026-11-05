@@ -652,43 +652,76 @@ describe('selection, copy and paste', () => {
         assert.deepEqual(h.selectedMidis(), []);
     });
 
-    test('Copy and Paste repeat the phrase right after itself, and again after that', () => {
+    // Copy arms a stamp: a shadow of the selection follows the pointer and a
+    // click puts the copy down where the shadow is. There is no Paste.
+    test('Copy arms the stamp; the shadow follows the pointer, kept inside the grid', () => {
         const h = seeded();
         marqueeBoth(h, h.shiftMouse);
-        const copy = h.btn('⎘ Copy'), paste = h.btn('⎗ Paste');
-        assert.equal(paste.disabled, true, 'nothing copied yet');
+        const copy = h.btn('⎘ Copy');
+        assert.equal(h.btn('⎗ Paste'), undefined, 'no Paste button');
         copy.dispatch('click');
-        assert.equal(paste.disabled, false);
-        paste.dispatch('click');
-        assert.deepEqual(h.notes().filter(n => n.start >= 4).map(n => [n.midi, n.start, n.dur]).sort(),
-            [[60, 4, 2], [64, 6, 2], [72, 10, 1]], 'pasted at the end of the copied span (column 4)');
-        assert.deepEqual(h.selectedMidis(), [60, 64], 'the pasted notes are the selection');
-        paste.dispatch('click');
-        assert.ok(h.notes().some(n => n.midi === 60 && n.start === 8), 'the next paste follows the last');
-        assert.equal(storedPattern(h.roll.getPattern().id).notes.length, 7, 'written through');
+        assert.equal(h.roll.isPlacing(), true);
+        assert.ok(copy.classList.contains('active'), 'lit while armed');
+        assert.equal(h.notes().length, 3, 'nothing placed yet');
+
+        h.mouse('mousemove', colX(8) + 5, rowY(70));
+        assert.deepEqual(h.roll.getPlacement(), { col: 8, row: TOP_MIDI - 70 }, 'top-left cell under the pointer');
+        // The block is 4 columns wide and 5 rows tall (64 down to 60): it
+        // cannot hang off the right edge or the bottom row.
+        h.mouse('mousemove', colX(15) + 5, rowY(36));
+        assert.deepEqual(h.roll.getPlacement(), { col: COLS - 4, row: TOP_MIDI - 36 - 4 });
     });
 
-    test('with a step cursor shown, Paste lands there and moves the cursor past the phrase', () => {
+    test('a click places the copy there; it becomes the selection and the stamp is spent', () => {
         const h = seeded();
-        const seeks = [];
-        h.roll.setStepCursor(8);
         marqueeBoth(h, h.shiftMouse);
-        h.roll.copySelection();
-        h.roll.pasteClipboard();
-        assert.deepEqual(h.notes().filter(n => n.start >= 8 && n.midi !== 72).map(n => [n.midi, n.start]).sort(), [[60, 8], [64, 10]]);
-        assert.equal(h.roll.getStepCursor(), 12, 'past the pasted span');
-        void seeks;
+        h.btn('⎘ Copy').dispatch('click');
+        h.mouse('mousemove', colX(8) + 5, rowY(70));
+        h.mouse('mousedown', colX(8) + 5, rowY(70));
+        h.mouse('mouseup', colX(8) + 5, rowY(70));
+        // Original 60@0 / 64@2 → top-left is (col 0, row of 64); placed with
+        // that corner at (8, row of 70): 64's copy is 70@10, 60's is 66@8.
+        assert.deepEqual(h.notes().filter(n => n.start >= 8 && n.midi !== 72).map(n => [n.midi, n.start, n.dur]).sort(),
+            [[66, 8, 2], [70, 10, 2]]);
+        assert.deepEqual(h.selectedMidis(), [66, 70], 'the copy is the selection');
+        assert.equal(h.roll.isPlacing(), false, 'spent');
+        assert.equal(h.notes().length, 5);
+        assert.equal(storedPattern(h.roll.getPattern().id).notes.length, 5, 'written through');
+        // Nothing else happened on that click: no note drawn, originals intact.
+        assert.deepEqual(h.notes().filter(n => n.start < 8).map(n => [n.midi, n.start]).sort(), [[60, 0], [64, 2]]);
     });
 
-    test('notes that would start past the end are dropped, the rest clamped', () => {
+    test('Copy again while armed, or Escape, cancels; the shadow leaves with the pointer', () => {
         const h = seeded();
-        h.roll.setStepCursor(13);
         marqueeBoth(h, h.shiftMouse);
+        const copy = h.btn('⎘ Copy');
+        copy.dispatch('click');
+        h.mouse('mousemove', colX(8) + 5, rowY(70));
+        h.canvas.dispatch('mouseleave', {});
+        assert.equal(h.roll.getPlacement(), null, 'no shadow off the canvas');
+        assert.equal(h.roll.isPlacing(), true, 'but still armed');
+        copy.dispatch('click');
+        assert.equal(h.roll.isPlacing(), false);
+        assert.ok(!copy.classList.contains('active'));
+
+        copy.dispatch('click');
+        assert.equal(h.roll.isPlacing(), true);
+        (document._listeners.keydown || []).slice().forEach(fn => fn({ key: 'Escape', target: { tagName: 'DIV' }, preventDefault() {} }));
+        assert.equal(h.roll.isPlacing(), false);
+        assert.deepEqual(h.selectedMidis(), [60, 64], 'Escape cancelled the stamp, not the selection');
+        assert.equal(h.notes().length, 3);
+    });
+
+    test('during a step record, placing moves the cursor past the copy; a clipped copy is cut, not dropped', () => {
+        const h = seeded();
+        marqueeBoth(h, h.shiftMouse);
+        h.roll.setStepCursor(0);           // after the marquee: the cursor's line would take the grab
         h.roll.copySelection();
-        assert.equal(h.roll.pasteClipboard(), true);
-        const pasted = h.notes().filter(n => n.start >= 13);
-        assert.deepEqual(pasted.map(n => [n.midi, n.start, n.dur]), [[60, 13, 2], [64, 15, 1]], 'the second is cut to the end');
-        assert.equal(h.roll.getStepCursor(), 15, 'clamped to the last column');
+        h.mouse('mousemove', colX(13) + 5, rowY(64));     // clamped to col 12: the block is 4 wide
+        h.mouse('mousedown', colX(13) + 5, rowY(64));
+        h.mouse('mouseup', colX(13) + 5, rowY(64));
+        assert.deepEqual(h.notes().filter(n => n.start >= 12).map(n => [n.midi, n.start, n.dur]).sort(), [[60, 12, 2], [64, 14, 2]]);
+        assert.equal(h.roll.getStepCursor(), 15, 'past the copy, clamped to the last column');
     });
 
     test('Delete removes the selection, Escape drops it', () => {

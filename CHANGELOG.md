@@ -2,6 +2,12 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-05: Copy is a stamp — the Paste button goes
+
+**Paste-ahead-of-the-selection was clunky; Copy now arms a stamp.** Clicking `⎘ Copy` (or Ctrl/Cmd+C) takes the selection as a block relative to its top-left cell and a **shadow** of it follows the pointer over the grid (semi-transparent, dashed outline, clamped so the block never hangs off the right edge or the bottom row). A **click** on the grid places the copy there; the placed notes become the selection and the stamp is spent — Copy, click, Copy, click repeats a phrase along the pattern. Copy stays lit while armed; Copy again or Escape cancels; leaving the canvas hides the shadow without disarming. On touch the finger carries the shadow and lifting it places. During a step record, placing moves the cursor past the copy. The Paste button, Ctrl+V, `pasteClipboard`/`getClipboard` are gone; `isPlacing`/`getPlacement`/`cancelPlacement` join the roll's API.
+
+Tests: the three paste tests in `pattern-editor.test.js` became four stamp tests (arming and clamping, placing, cancelling, step-cursor advance with a clipped copy); the e2e Copy test hovers, checks the shadow's cell, clicks and asserts the placed notes. HEARME.tts updated.
+
 ## 2026-11-05: The marquee survives the canvas edge; touched notes are selected
 
 **Notes touching the canvas border could never be marquee-selected.** The hit test was already intersection ("inside + touched"), but the gesture could not express it there: the sweep for a border note naturally runs *past* the edge, where `mouseleave` killed the marquee outright — and even stopping a pixel short left the rectangle unable to reach across the last cells. A mouse marquee now lives on the **document** (as the Section editor's drags do): `mousedown` on empty grid registers document `mousemove`/`mouseup` handlers, the canvas-level branches stand down, `mouseleave` no longer cancels, and `marqueePoint()` clamps every point back onto the canvas, so dragging far outside pins the rectangle's edge to the border and the notes there fall inside. Touch needed only the clamping — a touch keeps streaming to its start element outside its bounds — and both paths commit through one `commitMarquee()`.

@@ -374,11 +374,10 @@ export function createPianoroll(opts) {
     // Mobile copies live in the more-menu below.
     const SELECT_LABEL = '\u2B1A Select';
     const SELECT_TITLE = 'Select mode: drag a rectangle over notes to select them (Shift-drag works too), '
-        + 'then drag any selected note to move them all, Delete to remove them, Copy and Paste to repeat them';
+        + 'then drag any selected note to move them all, Delete to remove them, Copy to stamp a copy of them';
     const COPY_LABEL = '\u2398 Copy';
-    const COPY_TITLE = 'Copy the selected notes (Ctrl+C)';
-    const PASTE_LABEL = '\u2397 Paste';
-    const PASTE_TITLE = 'Paste at the playhead — the step cursor, or the play position — else right after the copied phrase (Ctrl+V)';
+    const COPY_TITLE = 'Copy the selected notes: a shadow of them follows the pointer — click where they should go '
+        + '(Ctrl+C; Escape or Copy again to cancel)';
     const mkBtn = (cls, label, title) => {
         const b = document.createElement('button');
         b.className = 'pianoroll-btn ' + cls;
@@ -388,12 +387,9 @@ export function createPianoroll(opts) {
     };
     const selectBtn = mkBtn('pianoroll-select', SELECT_LABEL, SELECT_TITLE);
     const copyBtn = mkBtn('pianoroll-copy', COPY_LABEL, COPY_TITLE);
-    const pasteBtn = mkBtn('pianoroll-paste', PASTE_LABEL, PASTE_TITLE);
     copyBtn.disabled = true;
-    pasteBtn.disabled = true;
     controls.appendChild(selectBtn);
     controls.appendChild(copyBtn);
-    controls.appendChild(pasteBtn);
 
     // Ellipsis menu (mobile)
     const moreBtn = document.createElement('button');
@@ -419,15 +415,12 @@ export function createPianoroll(opts) {
 
     const selectBtnMobile = mkBtn('pianoroll-select', SELECT_LABEL, SELECT_TITLE);
     const copyBtnMobile = mkBtn('pianoroll-copy', COPY_LABEL, COPY_TITLE);
-    const pasteBtnMobile = mkBtn('pianoroll-paste', PASTE_LABEL, PASTE_TITLE);
     copyBtnMobile.disabled = true;
-    pasteBtnMobile.disabled = true;
     moreMenu.appendChild(selectBtnMobile);
     moreMenu.appendChild(copyBtnMobile);
-    moreMenu.appendChild(pasteBtnMobile);
     for (const b of [selectBtn, selectBtnMobile]) b.addEventListener('click', () => setSelectMode(!selectMode));
-    for (const b of [copyBtn, copyBtnMobile]) b.addEventListener('click', () => copySelection());
-    for (const b of [pasteBtn, pasteBtnMobile]) b.addEventListener('click', () => pasteClipboard());
+    // Copy arms the stamp; Copy again while armed cancels it.
+    for (const b of [copyBtn, copyBtnMobile]) b.addEventListener('click', () => { if (placing) cancelPlacement(); else copySelection(); });
 
     const addMeasureBtnMobile = document.createElement('button');
     addMeasureBtnMobile.className = 'pianoroll-btn';
@@ -604,8 +597,11 @@ export function createPianoroll(opts) {
     let selectMode = false;
     let marquee = null;               // {x0, y0, x1, y1} in folded canvas px while dragging one
     let groupMove = null;             // [{note, start, midi}] originals while moving a selection
-    let clipboard = null;             // {notes: [{midi, start (relative), dur}], span, sourceEnd}
-    let pasteCursor = -1;             // where the next Paste lands when no playhead is shown
+    // The stamp: Copy takes the selection off the grid as a shadow that
+    // follows the pointer; a click puts it down. `notes` are relative to
+    // the group's top-left cell (first column, highest row); `col`/`row`
+    // is that cell under the pointer, null while the pointer is off-grid.
+    let placing = null;               // {notes: [{rowOff, start, dur}], span, rows, col, row}
     /**
      * Write the edited pattern(s) back and refresh playback. Only patterns
      * the roll changed are written — a pattern renamed in the Section editor
@@ -820,6 +816,27 @@ export function createPianoroll(opts) {
             ctx.setLineDash([4, 3]);
             ctx.strokeRect(mx + 0.5, my + 0.5, mw, mh);
             ctx.setLineDash([]);
+        }
+
+        // The stamp's shadow, under the pointer.
+        if (placing && placing.col != null) {
+            const color = slotColor(activeTrackIdx >= 0 ? tracks[activeTrackIdx].slot : currentSlot());
+            for (const c of placing.notes) {
+                const r = placing.row + c.rowOff;
+                const start = placing.col + c.start;
+                const w = clampDur(start, c.dur) * COL_W - 1;
+                const x = ox + LABEL_W + start * COL_W;
+                const y = HEADER_H + r * ROW_H;
+                ctx.fillStyle = color;
+                ctx.globalAlpha = 0.45;
+                ctx.fillRect(x + 1, y + 1, w, ROW_H - 2);
+                ctx.globalAlpha = 1.0;
+                ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+                ctx.lineWidth = 1;
+                ctx.setLineDash([3, 2]);
+                ctx.strokeRect(x + 1.5, y + 1.5, w - 1, ROW_H - 3);
+                ctx.setLineDash([]);
+            }
         }
 
         // Playhead: a red line at the leading edge of the current column,
@@ -1073,47 +1090,67 @@ export function createPianoroll(opts) {
         commitNotes();
     }
 
-    /** Copy the selection, positions relative to its first note. */
+    /**
+     * Copy: arm the stamp. The selection is taken as a block relative to its
+     * top-left cell; a shadow of it follows the pointer from here on, and
+     * the next click on the grid puts the copy down (see placeStamp).
+     */
     function copySelection() {
         if (selected.size === 0) return false;
         const list = [...selected];
         const minStart = Math.min(...list.map(n => n.start));
-        const sourceEnd = Math.max(...list.map(n => n.start + n.dur));
-        clipboard = {
-            notes: list.map(n => ({ midi: n.midi, start: n.start - minStart, dur: n.dur })),
-            span: sourceEnd - minStart,
-            sourceEnd,
+        const rowOf = (n) => NOTES.findIndex(nn => nn.midi === n.midi);
+        const minRow = Math.min(...list.map(rowOf));
+        const maxRow = Math.max(...list.map(rowOf));
+        placing = {
+            notes: list.map(n => ({ rowOff: rowOf(n) - minRow, start: n.start - minStart, dur: n.dur })),
+            span: Math.max(...list.map(n => n.start + n.dur)) - minStart,
+            rows: maxRow - minRow + 1,
+            col: null, row: null,
         };
-        pasteCursor = sourceEnd;
-        updateSelectionButtons();
+        // Hovering already: show the shadow at once rather than on the next move.
+        if (lastMousePos) moveStamp(lastMousePos.x, lastMousePos.y);
+        else draw();
         return true;
     }
 
+    /** Put the shadow's top-left cell under a canvas point, kept inside the grid. */
+    function moveStamp(x, y) {
+        if (!placing) return;
+        const col = pixelToCol(foldX(x)), row = pixelToRow(y);
+        placing.col = Math.max(0, Math.min(totalCols() - Math.min(placing.span, totalCols()), col));
+        placing.row = Math.max(0, Math.min(NOTES.length - placing.rows, row));
+        draw();
+    }
+
     /**
-     * Paste at the playhead — the step cursor while a step record is armed,
-     * the play position while the clock runs — else right after the copied
-     * phrase (and after each paste), so Paste, Paste, Paste repeats it along.
-     * Notes that would start past the end are dropped, the rest clamped.
-     * The pasted notes become the selection; the step cursor moves past them.
+     * The click: the shadow becomes notes, which become the selection, and
+     * the stamp is spent — Copy again (they are selected) to stamp once more.
+     * During a step record the cursor moves past what was placed.
      */
-    function pasteClipboard() {
-        if (!clipboard || clipboard.notes.length === 0) return false;
-        const at = stepCol >= 0 ? stepCol : playCol >= 0 ? playCol : pasteCursor >= 0 ? pasteCursor : clipboard.sourceEnd;
-        if (at >= totalCols()) return false;
+    function placeStamp() {
+        if (!placing || placing.col == null) return false;
+        const at = placing.col, top = placing.row;
+        const stamp = placing;
+        placing = null;
         ensureActiveTrack();
         selected.clear();
-        for (const c of clipboard.notes) {
+        for (const c of stamp.notes) {
             const start = at + c.start;
             if (start >= totalCols()) continue;
-            const n = { midi: c.midi, start, dur: clampDur(start, c.dur) };
+            const n = { midi: NOTES[top + c.rowOff].midi, start, dur: clampDur(start, c.dur) };
             notes.push(n);
             selected.add(n);
         }
-        if (selected.size === 0) return false;
-        pasteCursor = at + clipboard.span;
-        if (stepCol >= 0) seekStep(Math.min(totalCols() - 1, at + clipboard.span) % totalCols());
+        if (stepCol >= 0) seekStep(Math.min(totalCols() - 1, at + stamp.span) % totalCols());
         commitNotes();
         return true;
+    }
+
+    function cancelPlacement() {
+        if (!placing) return;
+        placing = null;
+        draw();
     }
 
     function setSelectMode(on) {
@@ -1123,19 +1160,21 @@ export function createPianoroll(opts) {
 
     function updateSelectionButtons() {
         if (!copyBtn) return;
-        for (const b of [copyBtn, copyBtnMobile]) b.disabled = selected.size === 0;
-        for (const b of [pasteBtn, pasteBtnMobile]) b.disabled = !clipboard;
+        for (const b of [copyBtn, copyBtnMobile]) {
+            b.disabled = selected.size === 0 && !placing;
+            b.classList.toggle('active', !!placing);     // lit while the stamp is armed
+        }
     }
 
-    // Keyboard: Delete removes the selection, Escape drops it, Ctrl/Cmd+C
-    // and +V copy and paste — never while typing in a field.
+    // Keyboard: Delete removes the selection, Escape drops it (or cancels an
+    // armed stamp), Ctrl/Cmd+C copies — never while typing in a field.
     function onKeyDown(e) {
         const tag = e.target && e.target.tagName;
         if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
         if (e.target && e.target.isContentEditable) return;
         const mod = e.ctrlKey || e.metaKey;
         if (mod && (e.key === 'c' || e.key === 'C')) { if (copySelection()) e.preventDefault(); return; }
-        if (mod && (e.key === 'v' || e.key === 'V')) { if (pasteClipboard()) e.preventDefault(); return; }
+        if (placing && e.key === 'Escape') { cancelPlacement(); return; }
         if (selected.size === 0) return;
         if (e.key === 'Escape') { clearSelection(); return; }
         if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteSelected(); }
@@ -1175,6 +1214,13 @@ export function createPianoroll(opts) {
                 seekingPlayhead = true;
                 stepSeekTo(x);
             }
+            return;
+        }
+
+        // An armed stamp: the click is where the copy goes, nothing else.
+        if (placing) {
+            moveStamp(x, y);
+            placeStamp();
             return;
         }
 
@@ -1240,6 +1286,12 @@ export function createPianoroll(opts) {
 
         if (seekingPlayhead) {
             stepSeekTo(x);
+            return;
+        }
+
+        if (placing) {
+            canvas.style.cursor = 'copy';
+            if (y > HEADER_H) moveStamp(x, y);
             return;
         }
 
@@ -1379,6 +1431,8 @@ export function createPianoroll(opts) {
         // A seek is already committed as it moves; just stop following.
         // (A live marquee is NOT cancelled: it is a document-level drag.)
         seekingPlayhead = false;
+        // The stamp stays armed; its shadow just leaves with the pointer.
+        if (placing) { placing.col = null; placing.row = null; draw(); }
         if (resizingNote && moveOriginal) {
             resizingNote.dur = moveOriginal.dur;
             resizingNote.start = moveOriginal.start;
@@ -1444,6 +1498,12 @@ export function createPianoroll(opts) {
                 seekingPlayhead = true;
                 stepSeekTo(x);
             }
+            return;
+        }
+
+        // An armed stamp: the finger carries the shadow; lifting it places.
+        if (placing) {
+            moveStamp(x, y);
             return;
         }
 
@@ -1529,6 +1589,11 @@ export function createPianoroll(opts) {
 
         if (seekingPlayhead) {
             stepSeekTo(x);
+            return;
+        }
+
+        if (placing) {
+            if (y > HEADER_H) moveStamp(x, y);
             return;
         }
 
@@ -1633,6 +1698,11 @@ export function createPianoroll(opts) {
 
         if (seekingPlayhead) {
             seekingPlayhead = false;
+            return;
+        }
+
+        if (placing) {
+            placeStamp();
             return;
         }
 
@@ -1923,8 +1993,10 @@ export function createPianoroll(opts) {
         clearSelection() { clearSelection(); },
         deleteSelected() { deleteSelected(); },
         copySelection() { return copySelection(); },
-        pasteClipboard() { return pasteClipboard(); },
-        getClipboard() { return clipboard ? clipboard.notes.map(n => ({ ...n })) : null; },
+        isPlacing() { return !!placing; },
+        /** The shadow's top-left cell, or null while the pointer is off-grid / nothing is armed. */
+        getPlacement() { return placing && placing.col != null ? { col: placing.col, row: placing.row } : null; },
+        cancelPlacement() { cancelPlacement(); },
         setSelectMode(on) { setSelectMode(on); },
         isSelectMode() { return selectMode; },
         setStepCursor(col) {
