@@ -2,6 +2,18 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-05: Desktop bottom pane — Mixer, Edit and Log in a resizable strip
+
+**Full-page Mixer, Edit and Log were mostly empty, so on desktop the three moved into a bottom pane** (~25% tall, drag the handle above it to resize, height persisted) under whichever main tab — Patches, Piano Roll, Section — is open. The layout branches at build time in `toolbar.js` on the 600px media query; mobile keeps one full-page panel per tab, untouched.
+
+**Each pane item folds toward the left into a thin vertical bookmark** showing its label; the bookmark toggles it. The top tabs stay and toggle the same items (active = on screen). The strip on the pane's right edge collapses the whole pane; when all three items are folded individually the pane folds itself, and a top tab reopens it. State (`h`, `paneCollapsed`, per-item) lives in localStorage under `openpatches_bpane`, and `_showMixer`/`_showEdit`/`_showLog` now expand their item instead of switching tabs.
+
+**Edit flows sideways in the pane.** `createEditPanel` split its children into `.edit-left` (modes, status, slots, actions, slider) and `.edit-right` (params, tags) — stacked they render as before, and in the pane they sit side by side with the Params sub-panels (pitch envelope, algorithm/LFO, the six operator `<details>`) flowing horizontally. This also retires the TODO bug about `.edit-panel-inner` stranding its left edge: the panel is width-bound in both remaining homes (pane on desktop, `width:100%` on mobile).
+
+**Fallout fixed along the way:** the global `textarea { max-width: 500px }` capped the pane's log; mixer strips lost their 170px minimum inside the pane so the mute/solo row stops clipping, and gained an 84px *minimum width* because narrower strips let the centred S/M/play/remove row spill left under the bookmark (found as a Playwright "bookmark intercepts pointer events" timeout). Tutorial steps and the demo tour's `ui.tab()` now skip clicking an already-active tab — bottom tabs toggle, and a blind click would fold the thing the step points at.
+
+Tests: `openMixerTab` is idempotent; `layout.spec.js` walks the three full-page tabs plus two new bottom-pane tests (containment; fold/auto-fold/reopen behavior). The `pianoroll-tab` and `mixer-tab` visual baselines are regenerated. 851 unit and 73 e2e pass; the demo tour rehearses clean.
+
 ## 2026-11-05: Generic stranded-edge guard over every dock panel
 
 **`e2e/layout.spec.js` gained one test that walks all six tabs and holds every visible child of the active `.dock-panel` to the panel's own box** (left edge ≥ −1 px, right edge ≤ +1 px, no sideways dock overflow). This closes the TODO audit of `.pianoroll-row`, `.kb-toggle`, `.keyboard-wrapper` and `.dock-log`: rather than four ad-hoc tests, the invariant is generic, so a future wide child in any panel fails the suite instead of silently stranding its left edge. Checked negatively — forcing `.edit-panel-inner` to 3000 px makes it fail with the inner at −835 px — so it does catch the trap it is for.

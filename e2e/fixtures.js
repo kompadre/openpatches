@@ -89,10 +89,15 @@ export async function openRollTab(page) {
     await expect(page.locator('.pianoroll-play')).toBeVisible();
 }
 
-/** Open the Mixer tab — where the voice bank lives on every viewport. */
+/**
+ * Reveal the Mixer — where the voice bank lives on every viewport. A tab
+ * switch on mobile; on desktop the tab *toggles* the Mixer item in the
+ * bottom pane, so only click when the bank is not already on screen.
+ */
 export async function openMixerTab(page) {
-    await page.locator('.dock-tab-mixer').click();
-    await expect(page.locator('.voicebank')).toBeVisible();
+    const bank = page.locator('.voicebank');
+    if (!(await bank.isVisible())) await page.locator('.dock-tab-mixer').click();
+    await expect(bank).toBeVisible();
 }
 
 /**

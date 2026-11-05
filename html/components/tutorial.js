@@ -195,7 +195,9 @@ function showStep(index) {
     // Select tab if specified (e.g. activate Edit tab in toolbar)
     if (step.selectTab) {
         var tab = document.querySelector(step.selectTab);
-        if (tab) tab.click();
+        // Mixer/Edit/Log tabs *toggle* their bottom-pane item; clicking one
+        // that is already active would fold the thing the step points at.
+        if (tab && !tab.classList.contains('active')) tab.click();
     }
 
     // Click an element if specified (e.g. open a patch in Edit slot)

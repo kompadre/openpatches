@@ -2333,6 +2333,230 @@ h1 {
     overflow: hidden;
 }
 
+/* ============================================================
+   Bottom pane (desktop) — Mixer | Edit | Log
+   The three tabs that were mostly empty as full pages live here
+   instead: side by side in a resizable strip under the main panel.
+   Each item folds toward the left into a vertical bookmark; when
+   every item is folded the pane (and its handle) fold with them.
+   ============================================================ */
+
+.bpane-handle {
+    width: 95vw;
+    height: 8px;
+    flex-shrink: 0;
+    cursor: row-resize;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    touch-action: none;
+}
+
+.bpane-handle::before {
+    content: '';
+    width: 64px;
+    height: 3px;
+    border-radius: 2px;
+    background: #333;
+}
+
+.bpane-handle:hover::before { background: #e94560; }
+
+.bpane {
+    display: flex;
+    width: 95vw;
+    height: 25%;
+    /* enough for a usable mixer strip even after a stingy drag */
+    min-height: 140px;
+    flex-shrink: 0;
+    gap: 4px;
+    min-width: 0;
+}
+
+.bpane.collapsed, .bpane-handle.collapsed { display: none; }
+
+.bpane-item {
+    display: flex;
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 0;
+    border: 1px solid #2a2a3e;
+    border-radius: 6px;
+    background: #16162a;
+    overflow: hidden;
+}
+
+/* Params flows wide; give Edit the lion's share. */
+.bpane-item-edit { flex: 2 1 0; }
+
+.bpane-item.collapsed { flex: 0 0 auto; }
+.bpane-item.collapsed .bpane-body { display: none; }
+
+/* The bookmark: a thin strip with the label reading bottom-up. It is the
+   item's left edge whether open or folded; clicking it toggles. */
+.bpane-bookmark {
+    flex: 0 0 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.4rem 0;
+    background: #16213e;
+    color: #999;
+    border: none;
+    border-right: 1px solid #2a2a3e;
+    cursor: pointer;
+    font-size: 0.7rem;
+    letter-spacing: 0.08em;
+}
+
+.bpane-bookmark span {
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+}
+
+.bpane-bookmark:hover { color: #ccc; background: #1a2744; }
+.bpane-item:not(.collapsed) .bpane-bookmark { color: #e94560; }
+.bpane-item.collapsed .bpane-bookmark { border-right: none; }
+
+.bpane-body {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    overflow: auto;
+    padding: 0.4rem;
+}
+
+/* Right edge: fold the whole pane. */
+.bpane-pane-collapse {
+    flex: 0 0 16px;
+    background: transparent;
+    color: #666;
+    border: 1px solid #2a2a3e;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.7rem;
+    padding: 0;
+}
+
+.bpane-pane-collapse:hover { color: #e94560; border-color: #e94560; }
+
+/* --- Content fitted to the pane --- */
+
+.bpane-content { width: 100%; height: 100%; }
+
+/* Mixer: the bank fills the pane and the strips compress with it — their
+   full-page 170px minimum would clip the mute/solo row off the bottom. */
+.bpane .voicebank {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+}
+
+.bpane .voicebank-list {
+    flex: 1;
+    min-height: 0;
+    padding: 4px 8px;
+}
+
+.bpane .voicebank-item {
+    min-height: 0;
+    gap: 2px;
+    padding: 4px;
+    /* room for the S/M/play/remove row — narrower and it spills out of the
+       strip (centred, so to the *left*, under the bookmark). The list
+       overflows the body sideways instead and scrolls. */
+    min-width: 84px;
+}
+
+.bpane .voicebank-fader { min-height: 36px; }
+
+.bpane .dock-log {
+    min-width: 0;
+    width: 100%;
+    /* the global `textarea` rule caps at 500px — the pane is wider */
+    max-width: none;
+    height: 100%;
+    resize: none;
+    box-sizing: border-box;
+}
+
+/* Edit: controls on the left, params/tags flowing to the right. This is the
+   decided look for the pane; it also retires the stranded-left-edge trap the
+   centred 400px-minimum inner carried as a full page. */
+.bpane .edit-panel-inner {
+    min-width: 0;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    display: flex;
+    gap: 0.75rem;
+}
+
+.bpane .edit-left {
+    flex: 0 0 230px;
+    min-height: 0;
+    overflow-y: auto;
+    padding-right: 0.25rem;
+}
+
+.bpane .edit-right {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    overflow: auto;
+}
+
+/* Params mode: the sub-panels flow side by side instead of stacking —
+   pitch/preview column, algorithm/LFO column, then one column per operator —
+   and the whole row scrolls horizontally inside the pane. */
+.bpane .dx7-layout {
+    flex-direction: row;
+    align-items: stretch;
+    height: 100%;
+    margin-bottom: 0;
+    gap: 0.5rem;
+}
+
+.bpane .dx7-top-row {
+    display: flex;
+    flex-direction: row;
+    height: auto;
+    flex-shrink: 0;
+    gap: 0.5rem;
+}
+
+.bpane .dx7-algo-panel,
+.bpane .dx7-global-panel {
+    width: 200px;
+    flex-shrink: 0;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+.bpane .dx7-params-panel {
+    flex-direction: row;
+    align-items: stretch;
+    flex-shrink: 0;
+}
+
+.bpane .dx7-op-section {
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    min-height: 0;
+}
+
+.bpane .dx7-op-section + .dx7-op-section { margin-top: 0; margin-left: 0.25rem; }
+
+.bpane .dx7-op-body {
+    grid-template-columns: 200px 200px;
+    max-height: none;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+}
+
 .dock-panel-log {
     flex-direction: column;
 }

@@ -116,17 +116,16 @@ test.describe('layout invariants', () => {
     });
 
     test('every dock panel keeps every child inside the dock', async ({ page }) => {
-        // The generic form of the two tests above, over every tab. The
-        // Section editor is the panel that has actually broken, but the trap
-        // is in `.dock-panel` itself: a wide child of *any* panel is centred
-        // and its left edge stranded. Nothing in the CSS forbids that — the
-        // other panels merely happen to be width:100% today — so this walks
-        // the tabs and holds each active panel's children to the dock.
+        // The generic form of the two tests above, over every full-page tab.
+        // The Section editor is the panel that has actually broken, but the
+        // trap is in `.dock-panel` itself: a wide child of *any* panel is
+        // centred and its left edge stranded. (Mixer, Edit and Log left the
+        // dock-panel world for the bottom pane — covered below.)
         await openApp(page);
         await openSectionTab(page);
         await seedLongSection(page);
 
-        const tabs = ['Patches', 'Piano Roll', 'Section', 'Mixer', 'Edit', 'Log'];
+        const tabs = ['Patches', 'Piano Roll', 'Section'];
         for (const name of tabs) {
             await page.locator('.dock-tab', { hasText: name }).click();
             await expect(page.locator('.dock-panel.active')).toBeVisible();
@@ -158,5 +157,78 @@ test.describe('layout invariants', () => {
             }
             expect(l.dockOverflow, `${name}: dock scrolls sideways`).toBeLessThanOrEqual(2);
         }
+    });
+
+    test('bottom pane items stay inside the pane, the pane inside the dock', async ({ page }) => {
+        await openApp(page);
+        await expect(page.locator('.bpane')).toBeVisible();
+
+        const l = await page.evaluate(() => {
+            const dock = document.querySelector('#piano-dock');
+            const pane = document.querySelector('.bpane');
+            const pr = pane.getBoundingClientRect();
+            const items = [...pane.querySelectorAll('.bpane-item')].map((el) => {
+                const r = el.getBoundingClientRect();
+                return {
+                    key: el.className,
+                    left: Math.round(r.left - pr.left),
+                    right: Math.round(r.right - pr.right),
+                };
+            });
+            return {
+                paneX: Math.round(pr.x),
+                items,
+                dockOverflow: dock.scrollWidth - dock.clientWidth,
+            };
+        });
+
+        expect(l.paneX, 'pane off the left edge').toBeGreaterThanOrEqual(0);
+        expect(l.items.length).toBe(3);
+        for (const it of l.items) {
+            expect(it.left, `${it.key} starts left of the pane`).toBeGreaterThanOrEqual(-1);
+            expect(it.right, `${it.key} ends right of the pane`).toBeLessThanOrEqual(1);
+        }
+        expect(l.dockOverflow, 'dock scrolls sideways').toBeLessThanOrEqual(2);
+    });
+
+    test('bottom pane: bookmarks fold items, folding all folds the pane, tabs reopen it', async ({ page }) => {
+        await openApp(page);
+        const pane = page.locator('.bpane');
+        await expect(pane).toBeVisible();
+
+        // Fold each item by its bookmark: body hides, bookmark remains.
+        for (const key of ['mixer', 'edit', 'log']) {
+            await page.locator(`.bpane-item-${key} .bpane-bookmark`).click();
+            await expect(page.locator(`.bpane-item-${key} .bpane-body`)).toBeHidden();
+        }
+
+        // All three folded → the pane (and its handle) fold themselves.
+        await expect(pane).toBeHidden();
+        await expect(page.locator('.bpane-handle')).toBeHidden();
+        await expect(page.locator('.dock-tab-log')).not.toHaveClass(/active/);
+
+        // A top tab reopens the pane with just that item expanded.
+        await page.locator('.dock-tab-log').click();
+        await expect(pane).toBeVisible();
+        await expect(page.locator('#log')).toBeVisible();
+        await expect(page.locator('.bpane-item-mixer .bpane-body')).toBeHidden();
+        await expect(page.locator('.dock-tab-log')).toHaveClass(/active/);
+
+        // The same tab toggles its item away again.
+        await page.locator('.dock-tab-log').click();
+        await expect(pane).toBeHidden();
+
+        // The pane-level collapse folds everything at once but the items
+        // remember their state: reopening Edit via its tab must not bring
+        // the others back.
+        await page.locator('.dock-tab-mixer').click();
+        await page.locator('.dock-tab-edit').click();
+        await page.locator('.bpane-pane-collapse').click();
+        await expect(pane).toBeHidden();
+        await page.locator('.dock-tab-edit').click();
+        await expect(pane).toBeVisible();
+        await expect(page.locator('.bpane-item-edit .bpane-body')).toBeVisible();
+        await expect(page.locator('.bpane-item-mixer .bpane-body')).toBeVisible();
+        await expect(page.locator('.bpane-item-log .bpane-body')).toBeHidden();
     });
 });

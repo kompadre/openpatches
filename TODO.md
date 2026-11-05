@@ -7,7 +7,7 @@ Project backlog. Parent tasks with nested subtasks; `[ ]` pending, `[x]` done,
 
 ### Bugs
 
-- [ ] **`.edit-panel-inner` is content-sized and can strand its own left edge.** Same class of bug as the Section-editor one fixed on 2026-10-30: the dock centres its panels, and a centred box wider than the dock overflows on both sides with the start side unreachable. Measured: inject wide content and the inner goes to `x=-2384`. **Latent today** — real Edit content tops out at 526 px (Params mode) against a 1216–1824 px panel, so nothing triggers it. Not a blind fix: the inner is deliberately `min-width: 400px` and centred, so `width: 100%` would change how the panel looks. Decide the intended look first, then pin it with a `e2e/layout.spec.js` case. _(Triaged 2026-11-05: the generic guard in `e2e/layout.spec.js` now catches this the moment it fires; the fix waits on the look decision — see the question in that session.)_
+_(none open)_
 
 ### Features
 
@@ -22,6 +22,6 @@ Project backlog. Parent tasks with nested subtasks; `[ ]` pending, `[x]` done,
 
 - [ ] **Section** tab pattern visualization: paint small dots inside each clip where the pattern's notes are. Generate an image blob, cache it, invalidate the cache when the pattern changes.
 - [ ] **Pianoroll** let the user switch between patterns directly from Pianoroll. Rename Piano Roll tab to Pattern.
-- [ ] **Mixer** tab on desktop is 75% empty. Let's combine Patches with Mixer showing Mixer on the bottom part of Patches canvas and make it collapsable. 
-   - Bonus points if we can drag patches onto Mixer slots. 
+- [-] **Mixer** tab on desktop is 75% empty. _(Superseded 2026-11-05: Mixer, Edit and Log moved into a resizable, collapsible bottom pane under every main tab — a different cut at the same wasted-space complaint.)_
+- [ ] Drag patches from the canvas onto Mixer slots to assign them.
 

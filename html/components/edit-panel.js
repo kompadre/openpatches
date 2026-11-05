@@ -42,6 +42,16 @@ export function createEditPanel(opts) {
     const panel = document.createElement('div');
     panel.className = 'edit-panel-inner';
 
+    // Two halves so the bottom pane can lay them out side by side: the
+    // controls (modes, status, slots, actions, slider) and the flowing
+    // params/tags area. Stacked, they render exactly as before.
+    const leftCol = document.createElement('div');
+    leftCol.className = 'edit-left';
+    const rightCol = document.createElement('div');
+    rightCol.className = 'edit-right';
+    panel.appendChild(leftCol);
+    panel.appendChild(rightCol);
+
     // Mode tabs
     const modes = document.createElement('div');
     modes.className = 'edit-modes';
@@ -54,19 +64,19 @@ export function createEditPanel(opts) {
         btn.addEventListener('click', () => setEditMode(mode));
         modes.appendChild(btn);
     });
-    panel.appendChild(modes);
+    leftCol.appendChild(modes);
 
     // Status (above slot)
     const statusEl = document.createElement('div');
     statusEl.className = 'edit-status';
     statusEl.id = 'edit-status';
     statusEl.textContent = 'Open Edit on any patch to begin';
-    panel.appendChild(statusEl);
+    leftCol.appendChild(statusEl);
 
     // Slot area
     const slotArea = document.createElement('div');
     slotArea.id = 'edit-slot-area';
-    panel.appendChild(slotArea);
+    leftCol.appendChild(slotArea);
 
     // Actions (below slot)
     const actions = document.createElement('div');
@@ -93,7 +103,7 @@ export function createEditPanel(opts) {
     goBtn.textContent = 'Morph';
     goBtn.addEventListener('click', runEditAction);
     actions.appendChild(goBtn);
-    panel.appendChild(actions);
+    leftCol.appendChild(actions);
 
     // Slider row
     const sliderRow = document.createElement('div');
@@ -129,19 +139,19 @@ export function createEditPanel(opts) {
         ticks.appendChild(span);
     });
     sliderRow.appendChild(ticks);
-    panel.appendChild(sliderRow);
+    leftCol.appendChild(sliderRow);
 
     // Params area
     const paramsArea = document.createElement('div');
     paramsArea.id = 'edit-params-area';
     paramsArea.style.display = 'none';
-    panel.appendChild(paramsArea);
+    rightCol.appendChild(paramsArea);
 
     // Tags area (global for active patch)
     const tagsArea = document.createElement('div');
     tagsArea.id = 'edit-tags-area';
     tagsArea.className = 'edit-tags-area';
-    panel.appendChild(tagsArea);
+    rightCol.appendChild(tagsArea);
 
     // Slider input handler
     slider.addEventListener('input', () => {

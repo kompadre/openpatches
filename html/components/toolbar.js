@@ -139,34 +139,178 @@ export function createToolbar(opts) {
     const logPanel = document.createElement('div');
     logPanel.className = 'dock-panel dock-panel-log' + (effectiveInitialTab === 'log' ? ' active' : '');
 
+    // Two layouts, decided at build time like the rest of the mobile/desktop
+    // split. Mobile keeps one full-page panel per tab. Desktop keeps
+    // Patches / Piano Roll / Section as pages and houses Mixer, Edit and Log
+    // in a resizable bottom pane — full-page, each of the three was mostly
+    // empty space.
+    const isMobileLayout = window.matchMedia('(max-width: 600px)').matches;
+
+    const mainTabs = [tabCanvas, tabPianoroll, tabSection];
+    const mainPanels = [canvasPanel, pianorollPanel, sectionPanel];
+    if (isMobileLayout) {
+        mainTabs.push(tabMixer, tabEdit, tabLog);
+        mainPanels.push(mixerPanel, editPanel, logPanel);
+    }
+
     wrapper.appendChild(canvasPanel);
     wrapper.appendChild(pianorollPanel);
     wrapper.appendChild(sectionPanel);
-    wrapper.appendChild(mixerPanel);
-    wrapper.appendChild(editPanel);
-    wrapper.appendChild(logPanel);
+    if (isMobileLayout) {
+        wrapper.appendChild(mixerPanel);
+        wrapper.appendChild(editPanel);
+        wrapper.appendChild(logPanel);
+    }
 
     function activateTab(tab, panel) {
-        [tabCanvas, tabPianoroll, tabSection, tabMixer, tabEdit, tabLog].forEach(t => t.classList.remove('active'));
-        [canvasPanel, pianorollPanel, sectionPanel, mixerPanel, editPanel, logPanel].forEach(p => p.classList.remove('active'));
+        mainTabs.forEach(t => t.classList.remove('active'));
+        mainPanels.forEach(p => p.classList.remove('active'));
         tab.classList.add('active');
         panel.classList.add('active');
     }
 
-    // Every size is a tab layout now: the canvas is the Patches tab rather
-    // than a half of the page the dock shared. The desktop-only collapse
-    // went with it — it existed to get the dock out of the night sky's way,
-    // and with one panel on screen at a time there is nothing behind to
-    // reveal.
     tabCanvas.addEventListener('click', () => activateTab(tabCanvas, canvasPanel));
     tabPianoroll.addEventListener('click', () => {
         activateTab(tabPianoroll, pianorollPanel);
         requestAnimationFrame(positionBlackKeys);
     });
     tabSection.addEventListener('click', () => activateTab(tabSection, sectionPanel));
-    tabMixer.addEventListener('click', () => activateTab(tabMixer, mixerPanel));
-    tabEdit.addEventListener('click', () => activateTab(tabEdit, editPanel));
-    tabLog.addEventListener('click', () => activateTab(tabLog, logPanel));
+
+    // `showBottom(key)` is how the rest of the app reveals Mixer / Edit /
+    // Log: a tab switch on mobile, an expand-in-pane on desktop.
+    let showBottom;
+    if (isMobileLayout) {
+        tabMixer.addEventListener('click', () => activateTab(tabMixer, mixerPanel));
+        tabEdit.addEventListener('click', () => activateTab(tabEdit, editPanel));
+        tabLog.addEventListener('click', () => activateTab(tabLog, logPanel));
+        showBottom = (key) => {
+            if (key === 'mixer') activateTab(tabMixer, mixerPanel);
+            else if (key === 'edit') activateTab(tabEdit, editPanel);
+            else activateTab(tabLog, logPanel);
+        };
+    } else {
+        // --- Bottom pane (desktop) ---
+        // Mixer | Edit | Log side by side under the main panel, ~25% tall and
+        // draggable by its handle. Each item folds toward the left into a
+        // thin vertical bookmark; the top tabs toggle the same items. The
+        // pane as a whole collapses from the strip on its right edge, and
+        // collapses itself when every item inside it is folded.
+        const BPANE_KEY = 'openpatches_bpane';
+        let bpaneState = { h: 0.25, paneCollapsed: false, items: { mixer: true, edit: true, log: true } };
+        try {
+            const saved = JSON.parse(localStorage.getItem(BPANE_KEY));
+            if (saved && saved.items) bpaneState = { ...bpaneState, ...saved, items: { ...bpaneState.items, ...saved.items } };
+        } catch { /* corrupt state: fall back to the default */ }
+
+        mixerPanel.className = 'bpane-content bpane-content-mixer';
+        editPanel.className = 'bpane-content bpane-content-edit';
+        logPanel.className = 'bpane-content bpane-content-log';
+
+        const bpaneHandle = document.createElement('div');
+        bpaneHandle.className = 'bpane-handle';
+        bpaneHandle.title = 'Drag to resize · double-click to collapse';
+
+        const bpane = document.createElement('div');
+        bpane.className = 'bpane';
+
+        const bottomTabs = { mixer: tabMixer, edit: tabEdit, log: tabLog };
+        const bpaneItems = {};
+        const makeItem = (key, label, content) => {
+            const item = document.createElement('div');
+            item.className = `bpane-item bpane-item-${key}`;
+            const bookmark = document.createElement('button');
+            bookmark.className = 'bpane-bookmark';
+            bookmark.innerHTML = `<span>${label}</span>`;
+            bookmark.title = `Collapse/expand ${label}`;
+            bookmark.addEventListener('click', () => toggleItem(key));
+            const body = document.createElement('div');
+            body.className = 'bpane-body';
+            body.appendChild(content);
+            item.appendChild(bookmark);
+            item.appendChild(body);
+            bpaneItems[key] = item;
+            bpane.appendChild(item);
+        };
+        makeItem('mixer', 'Mixer', mixerPanel);
+        makeItem('edit', 'Edit', editPanel);
+        makeItem('log', 'Log', logPanel);
+
+        // Right edge: fold the whole pane away.
+        const paneCollapseBtn = document.createElement('button');
+        paneCollapseBtn.className = 'bpane-pane-collapse';
+        paneCollapseBtn.innerHTML = '<span>▾</span>';
+        paneCollapseBtn.title = 'Collapse the bottom pane';
+        paneCollapseBtn.addEventListener('click', () => { bpaneState.paneCollapsed = true; saveBpane(); syncBpane(); });
+        bpane.appendChild(paneCollapseBtn);
+
+        wrapper.appendChild(bpaneHandle);
+        wrapper.appendChild(bpane);
+
+        const saveBpane = () => {
+            try { localStorage.setItem(BPANE_KEY, JSON.stringify(bpaneState)); } catch { /* storage full/blocked */ }
+        };
+        const syncBpane = () => {
+            let anyOpen = false;
+            for (const key of ['mixer', 'edit', 'log']) {
+                const open = !!bpaneState.items[key];
+                anyOpen = anyOpen || open;
+                bpaneItems[key].classList.toggle('collapsed', !open);
+                // The tab reads as "this is on screen", so pane-collapsed
+                // dims all three even though the items remember their state.
+                bottomTabs[key].classList.toggle('active', open && !bpaneState.paneCollapsed);
+            }
+            // All items folded → nothing to show → the pane folds itself.
+            const paneHidden = bpaneState.paneCollapsed || !anyOpen;
+            bpane.classList.toggle('collapsed', paneHidden);
+            bpaneHandle.classList.toggle('collapsed', paneHidden);
+            bpane.style.height = (bpaneState.h * 100).toFixed(1) + '%';
+        };
+        const toggleItem = (key) => {
+            bpaneState.items[key] = !bpaneState.items[key];
+            saveBpane();
+            syncBpane();
+        };
+        const expandItem = (key) => {
+            bpaneState.items[key] = true;
+            bpaneState.paneCollapsed = false;
+            saveBpane();
+            syncBpane();
+        };
+        // Top tab: reopen when hidden, toggle when the pane is on screen.
+        const tabToggle = (key) => {
+            if (bpaneState.paneCollapsed || !bpaneState.items[key]) expandItem(key);
+            else toggleItem(key);
+        };
+        tabMixer.addEventListener('click', () => tabToggle('mixer'));
+        tabEdit.addEventListener('click', () => tabToggle('edit'));
+        tabLog.addEventListener('click', () => tabToggle('log'));
+        showBottom = expandItem;
+
+        // Resize: drag the handle; the height is a fraction of the dock so
+        // it survives a window resize. Double-click folds the pane.
+        bpaneHandle.addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            bpaneHandle.setPointerCapture(e.pointerId);
+            const startY = e.clientY;
+            const startH = bpane.getBoundingClientRect().height;
+            const total = wrapper.getBoundingClientRect().height || 1;
+            const onMove = (ev) => {
+                const h = startH + (startY - ev.clientY);
+                bpaneState.h = Math.min(0.6, Math.max(0.1, h / total));
+                syncBpane();
+            };
+            const stop = () => {
+                bpaneHandle.removeEventListener('pointermove', onMove);
+                saveBpane();
+            };
+            bpaneHandle.addEventListener('pointermove', onMove);
+            bpaneHandle.addEventListener('pointerup', stop, { once: true });
+            bpaneHandle.addEventListener('pointercancel', stop, { once: true });
+        });
+        bpaneHandle.addEventListener('dblclick', () => { bpaneState.paneCollapsed = true; saveBpane(); syncBpane(); });
+
+        syncBpane();
+    }
 
     // --- VoiceBank + Pianoroll (top section) ---
     const pianorollRow = document.createElement('div');
@@ -999,9 +1143,9 @@ export function createToolbar(opts) {
     wrapper._voiceBank = voiceBank;
     wrapper._showCanvas = () => { activateTab(tabCanvas, canvasPanel); };
     wrapper._showPianoroll = () => { activateTab(tabPianoroll, pianorollPanel); };
-    wrapper._showEdit = () => { activateTab(tabEdit, editPanel); };
-    wrapper._showMixer = () => { activateTab(tabMixer, mixerPanel); };
-    wrapper._showLog = () => { activateTab(tabLog, logPanel); };
+    wrapper._showEdit = () => { showBottom('edit'); };
+    wrapper._showMixer = () => { showBottom('mixer'); };
+    wrapper._showLog = () => { showBottom('log'); };
     wrapper._logPanel = logPanel;
     wrapper._setKeyboardCollapsed = setKeyboardCollapsed;
     wrapper._isKeyboardCollapsed = () => kbWrapper.classList.contains('collapsed');

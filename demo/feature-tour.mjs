@@ -200,9 +200,13 @@ function makeActions(page) {
             await this.click(`#${itemId}`, { after: 0.6 });
         },
 
-        /** Switch dock tabs. Every tab carries its own `dock-tab-<name>`. */
+        /** Switch dock tabs. Every tab carries its own `dock-tab-<name>`.
+            Mixer/Edit/Log toggle their bottom-pane item, so skip the click
+            when the tab is already active — the content is on screen. */
         async tab(name) {
-            await this.click(`.dock-tab-${name}`, { after: 0.6 });
+            const sel = `.dock-tab-${name}`;
+            if (await page.$eval(sel, (el) => el.classList.contains('active'))) return;
+            await this.click(sel, { after: 0.6 });
         },
     };
 }
