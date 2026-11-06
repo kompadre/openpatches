@@ -2,6 +2,7 @@
 // Replaces night-sky.js. Manages free-floating patches, PatchContainers,
 // drag-to-reposition (star handle), and snap-into-container behavior.
 
+import { slotAt, dropOnSlot } from './slot-drop.js';
 import { canvasStore, patchStore, jobStore, createPatch, patchIdFromVoiceData } from './patch-model.js';
 import { createTagEditor } from './tag-editor.js';
 import { createPatchRow, getDraggedPatch, clearDraggedPatch, attachAssignPopover, createSlotBadge } from './patch-row.js';
@@ -510,6 +511,16 @@ function renderFloatingPatch(patchId, entry) {
 
         const clientX = e.changedTouches ? e.changedTouches[0].clientX : e.clientX;
         const clientY = e.changedTouches ? e.changedTouches[0].clientY : e.clientY;
+
+        // Onto a Mixer slot: assign it there, and the patch goes home.
+        const slot = slotAt(clientX, clientY);
+        if (slot >= 0 && dropOnSlot(patchStore.get(patchId), slot)) {
+            entry.left = origLeft;
+            entry.top = origTop;
+            el.style.left = entry.left + 'px';
+            el.style.top = entry.top + 'px';
+            return;
+        }
 
         const hitContainer = findContainerUnder(clientX, clientY);
         if (hitContainer && hitContainer.id) {
@@ -1136,7 +1147,32 @@ function renderContainer(ctr) {
     // Render spectrogram for WAV-import containers (if jobId exists)
     // Insert into headerLeft so it appears between name and buttons
     if (ctr.jobId && optsRef && optsRef.onLoadJobWav) {
+        // An imported project's WAV did not travel with it (see
+        // project-io.js): offer to supply it again. Shown only when the
+        // blob really is absent — `onLoadJobWav` calls back with null then.
+        const offerReupload = () => {
+            const job = jobStore.get(ctr.jobId);
+            if (!job || !optsRef.onReuploadJobWav) return;
+            const btn = document.createElement('button');
+            btn.className = 'sky-container-reupload';
+            btn.textContent = '⤒ WAV';
+            btn.title = `The source audio${job.fileName ? ` (${job.fileName})` : ''} is not in this browser — click to supply it again`;
+            btn.addEventListener('mousedown', (e) => e.stopPropagation());
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.accept = '.wav,audio/wav,audio/x-wav';
+                input.addEventListener('change', () => {
+                    const file = input.files && input.files[0];
+                    if (file) optsRef.onReuploadJobWav(ctr.jobId, file);
+                });
+                input.click();
+            });
+            headerLeft.appendChild(btn);
+        };
         optsRef.onLoadJobWav(ctr.jobId, (arrayBuffer) => {
+            if (!arrayBuffer) { offerReupload(); return; }
             const samples = decodeWavSamples(arrayBuffer);
             if (samples && samples.length > 0) {
                 const specCanvas = document.createElement('canvas');

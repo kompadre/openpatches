@@ -2,6 +2,20 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-06: Patches onto Mixer slots, WAV re-upload, Storage…, Import into This Project
+
+**Drag a patch onto a Mixer slot** to assign it there — from a container row by its star (HTML5 drag, the slot outlines green), a row by touch, or a floating patch by its header (which then goes back where it was). `components/slot-drop.js` is the meeting point: `slotAt(x, y)` reads `elementsFromPoint` (not the topmost element — a dragged floating patch is itself over the slot) and `dropOnSlot()` hands the patch to the voice bank's `assignToSlot`, which swaps if the voice is already in another slot.
+
+**Re-upload a missing WAV.** A container whose job's blob is not in this browser (an imported project's WAVs do not travel) shows `⤒ WAV`, titled with the original file name; picking a file stores it under the job id, clears `sourceMissing`, and the waveform appears. `onLoadJobWav` now calls back with null on a miss; a different file name is accepted and logged.
+
+**File → Storage…**, on demand only: each project's size, the WAV upload total, and the uploads no job in *any* project (or container) references, with a button to delete those. Nothing runs on save; project bodies are never compacted or shared (decided with the user). `components/storage-gc.js` plans, app.js deletes.
+
+**File → Import into This Project…**: read an `.opproj` and choose, per item (with an all/none box per group), which **patches** and **patterns** join the open project. Patches already here (same id, which is derived from the bytes) are listed but disabled; chosen patches land in a new container "From <project>"; patterns come in as new, unplaced patterns with a fresh id, renamed `Name (2)`… past a clash, and show in the library. Tracks and sections stay in the file. `components/project-merge.js` (pure).
+
+TODO: Phase 5 revised to the above; MIDI import/export and a Reaper project export added as Ideas.
+
+Tests: `storage-and-merge.test.js`; `e2e/slot-drop.spec.js`, `e2e/wav-reupload.spec.js`, `e2e/storage-import.spec.js`. 920 unit, 87 e2e pass.
+
 ## 2026-11-06: Play names its scope; library patterns open in the Pattern tab
 
 **Play and its scope are one split button**: `[ ▶ Play Pattern | ▾ ]`. The label names what a press plays; the caret opens the list of scopes (Piece, Section, Pattern — the current one ticked), a pick sets it and folds the list, as do a press elsewhere and Escape. The caret is disabled while the clock runs (a scope change stops it). The segmented switch is gone; e2e picks a scope through the new `chooseScope()` fixture.

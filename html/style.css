@@ -5124,3 +5124,29 @@ footer {
 .section-remove:hover:not(:disabled) { background: #4a1f2a; }
 .section-bpm-start, .section-bpm-end { width: 3.2rem; }
 .section-tempo { color: #999; }
+/* A patch dragged over a Mixer slot. */
+.voicebank-item.drop-target { outline: 2px dashed #4caf50; outline-offset: -2px; }
+.sky-container-reupload {
+    background: #3a2a10; color: #e9a045; border: 1px solid #e9a045; border-radius: 4px;
+    font-size: 0.65rem; padding: 0.1rem 0.4rem; cursor: pointer;
+}
+.sky-container-reupload:hover { background: #4a3615; }
+
+/* --- File → Storage… --- */
+.storage-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-bottom: 0.6rem; }
+.storage-table td { padding: 0.2rem 0.4rem; border-bottom: 1px solid #2a2a3e; }
+.storage-bytes { text-align: right; white-space: nowrap; color: #aaa; }
+.storage-total td { font-weight: 600; color: #ddd; }
+.storage-note { font-size: 0.8rem; color: #bbb; }
+.storage-sweep { background: #4a1f2a; color: #fff; border: 1px solid #e94560; border-radius: 4px; padding: 0.3rem 0.8rem; cursor: pointer; }
+.storage-sweep:disabled { opacity: 0.5; }
+
+/* --- File → Import into This Project… --- */
+.import-into-note { font-size: 0.8rem; color: #bbb; }
+.import-into-group { border: 1px solid #2a2a3e; border-radius: 4px; margin: 0 0 0.6rem; padding: 0.3rem 0.5rem; }
+.import-into-group legend { font-size: 0.8rem; color: #ddd; padding: 0 0.3rem; }
+.import-into-list { max-height: 30vh; overflow-y: auto; display: flex; flex-direction: column; gap: 0.15rem; }
+.import-into-item { font-size: 0.75rem; color: #ccc; cursor: pointer; }
+.import-into-item.present { color: #666; cursor: default; }
+.import-into-go { background: #1b5e20; color: #fff; border: 1px solid #4caf50; border-radius: 4px; padding: 0.3rem 0.8rem; cursor: pointer; }
+.import-into-go:disabled { opacity: 0.5; cursor: not-allowed; }

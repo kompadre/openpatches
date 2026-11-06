@@ -77,7 +77,7 @@ run `node --check` + `node --test` and tick this file only. (Open: AGENTS.md
 "Keep it current ... in the same commit/change" reads per-change; awaiting
 the user's wording if SESSION.md should be deferred too.)
 
-### Plan of 2026-11-06 — Phases 1–4 DONE, Phase 5 next
+### Plan of 2026-11-06 — all five phases DONE
 
 The five-phase plan is in TODO.md. Phase 1 (one transport bar left of
 the tabs, `components/transport-bar.js`) and Phase 2 (thin Section lanes,
@@ -86,8 +86,10 @@ dot thumbnails, the pattern library, the roll's Pattern select, tab
 renamed Pattern; `selection-bus.js` makes the two selections mutually
 exclusive) and Phase 4 (sections row, `piece` transport mode with the
 pane following, `bpmEnd` ramps via `bpmAt`) are done and recorded in
-CHANGELOG.md. Phase 5 is the standalone items: drag patches onto Mixer
-slots, re-upload a missing WAV, dedup across projects (last). Not done in phase 2, deliberately: dragging
+CHANGELOG.md. Phase 5 (revised with the user: no cross-project dedup,
+only an on-demand WAV sweep) is done too: drag onto Mixer slots, WAV
+re-upload, File → Storage…, File → Import into This Project…. Open:
+the Ideas in TODO.md (MIDI, Reaper export). Not done in phase 2, deliberately: dragging
 a multi-selection moves only the clip grabbed (group move left out). Decided with the user: "Patches library" in the
 old TODO meant the **pattern** library (phase 3).
 
@@ -147,8 +149,8 @@ change could trip over, which does not belong in a changelog.
 - **`node --check file.js` parses as a script**, so it misses
   module-level mistakes: a nested function shadowing an import caused
   infinite recursion and passed. Copy to `.mjs` and check that too.
-- Deferred by decision, with the user: **dedup across projects** and
-  **re-uploading a missing WAV** (TODO.md phase 5). The section list,
+- Decided with the user: **no dedup across projects** — only the
+  on-demand WAV sweep in File → Storage…. The section list,
   whole-piece playback and tempo automation landed 2026-11-06 (phase 4).
 
 _(The MIDI clock entry that sat here is finished and recorded in

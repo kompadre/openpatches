@@ -4,7 +4,7 @@
 import { parseSyxFile, voiceRawToBase64 } from './components/syx-parser.js';
 import { batchRenderWaveforms } from './synth/dx7-synth.js';
 import { acquire, shutdownAll, extendIdle, playNoteRealtime, playNoteOnChannel, releaseAllNotes, sendVoiceSnapshot, setChannelVolume, base64ToUint8Array, renderOffline, isReady, getState, setOnStatusChange, setPianorollStop, emergencyStop } from './synth/audio-manager.js';
-import { patchStore, canvasStore, jobStore, createPatch, bindProjectSession } from './components/patch-model.js';
+import { patchStore, canvasStore, jobStore, createPatch, bindProjectSession, loadPatchNames, savePatchNames } from './components/patch-model.js';
 import { initCanvas, addContainer, addPatchToContainer, refreshCanvas } from './components/canvas.js';
 import { createToolbar } from './components/toolbar.js';
 import { updateBankSlots } from './components/patch-row.js';
@@ -21,6 +21,9 @@ import { createProjectStore, takeLostSaveMarker } from './components/project-sto
 import { profileStore } from './components/profile-store.js';
 import { createProjectSession } from './components/project-session.js';
 import { attachSaveIndicator, attachSaveWarning } from './components/save-indicator.js';
+import { openModal, el } from './components/modal.js';
+import { planStorage, formatBytes } from './components/storage-gc.js';
+import { importCandidates, planImport } from './components/project-merge.js';
 
 const fileInput = document.getElementById('wav-input');
 
@@ -129,6 +132,26 @@ async function dbClearUploads() {
     return new Promise((resolve, reject) => {
         const req = tx.objectStore(STORE_NAME).clear();
         req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+    });
+}
+
+/** Every upload's key and size, for the Storage report. */
+async function dbListUploads() {
+    const db = await dbPromise;
+    const tx = db.transaction(STORE_NAME, 'readonly');
+    const store = tx.objectStore(STORE_NAME);
+    return new Promise((resolve, reject) => {
+        const out = [];
+        const req = store.openCursor();
+        req.onsuccess = () => {
+            const cur = req.result;
+            if (!cur) { resolve(out); return; }
+            const v = cur.value;
+            const bytes = v && (v.byteLength != null ? v.byteLength : v.size != null ? v.size : 0);
+            out.push({ key: String(cur.key), bytes: bytes || 0 });
+            cur.continue();
+        };
         req.onerror = () => reject(req.error);
     });
 }
@@ -705,10 +728,26 @@ function getCanvasOpts() {
             const job = Job.restore(jobData);
             job.renderBody(bodyEl, jobOpts);
         },
+        // Called back with null when the blob is absent, so the container
+        // can offer to re-upload it.
         onLoadJobWav: (jobId, callback) => {
             dbGet(jobId).then(arrayBuffer => {
-                if (arrayBuffer) callback(arrayBuffer);
-            }).catch(() => {});
+                callback(arrayBuffer || null);
+            }).catch(() => callback(null));
+        },
+        // The source WAV supplied again (an imported project's did not
+        // travel with it). A different file name is allowed, but said.
+        onReuploadJobWav: async (jobId, file) => {
+            const job = jobStore.get(jobId);
+            if (!job) return;
+            if (!/\.wav$/i.test(file.name)) { appendLog(`[wav] ${file.name} is not a WAV file`); return; }
+            const bytes = await file.arrayBuffer();
+            await dbPut(jobId, bytes);
+            if (job.fileName && job.fileName !== file.name) {
+                appendLog(`[wav] ${file.name} supplied for ${job.fileName}`);
+            }
+            jobStore.put({ ...job, sourceMissing: false, fileName: job.fileName || file.name });
+            refreshCanvas();
         },
         onSortContainer: (ctr) => {
             const sorted = (ctr.patchIds || [])
@@ -1044,11 +1083,97 @@ document.getElementById('menu-export-project').addEventListener('click', async (
 });
 
 document.getElementById('menu-import-project').addEventListener('click', () => {
+    importInto = false;      // a cancelled Import into… must not turn this into a merge
     fileInput.accept = '.' + FILE_EXTENSION;
     fileInput.click();
 });
 
+// --- Import into This Project… : pick patches and patterns from a file ---
+let importInto = false;     // the shared file input: is this pick an import-into?
+document.getElementById('menu-import-into').addEventListener('click', () => {
+    importInto = true;
+    fileInput.accept = '.' + FILE_EXTENSION;
+    fileInput.click();
+});
+
+async function importIntoCurrent(file) {
+    let source;
+    try {
+        source = parseProjectFile(await file.text());
+    } catch (e) {
+        showError(e instanceof ImportError ? e.message : 'Could not read that project: ' + e.message);
+        return;
+    }
+    const target = projectSession.get();
+    if (!target) return;
+    const c = importCandidates(source, target);
+    if (c.patches.length === 0 && c.patterns.length === 0) {
+        showError(`"${source.name}" has no patches or patterns to import.`);
+        return;
+    }
+    openModal(`Import from "${source.name}"`, (body, close) => {
+        body.classList.add('import-into-dialog');
+        body.appendChild(el('p', 'import-into-note',
+            'Choose what joins this project. Patches already here are skipped; patterns come in as new, '
+            + 'unplaced patterns (find them in the pattern library). Tracks and sections stay in the file.'));
+        const boxes = { patch: [], pattern: [] };
+        const group = (title, items, kind, label) => {
+            if (items.length === 0) return;
+            const fs = el('fieldset', 'import-into-group');
+            const legend = el('legend');
+            const all = el('input'); all.type = 'checkbox'; all.checked = true; all.className = 'import-into-all';
+            legend.appendChild(all);
+            legend.appendChild(document.createTextNode(` ${title} (${items.length})`));
+            fs.appendChild(legend);
+            const list = el('div', 'import-into-list');
+            for (const it of items) {
+                const row = el('label', 'import-into-item' + (it.present ? ' present' : ''));
+                const cb = el('input'); cb.type = 'checkbox'; cb.value = it.id;
+                cb.checked = !it.present; cb.disabled = !!it.present;
+                cb.dataset.kind = kind;
+                row.appendChild(cb);
+                row.appendChild(document.createTextNode(' ' + label(it)));
+                list.appendChild(row);
+                if (!it.present) boxes[kind].push(cb);
+            }
+            all.addEventListener('change', () => { for (const cb of boxes[kind]) cb.checked = all.checked; sync(); });
+            fs.appendChild(list);
+            body.appendChild(fs);
+        };
+        group('Patches', c.patches, 'patch', (p) => p.name + (p.present ? ' — already here' : ''));
+        group('Patterns', c.patterns, 'pattern', (p) => `${p.name} — ${p.measures} bar${p.measures > 1 ? 's' : ''}, ${p.notes} note${p.notes === 1 ? '' : 's'}`);
+        const go = el('button', 'import-into-go');
+        const sync = () => {
+            const n = boxes.patch.filter(b => b.checked).length + boxes.pattern.filter(b => b.checked).length;
+            go.textContent = n ? `Import ${n}` : 'Nothing chosen';
+            go.disabled = n === 0;
+        };
+        for (const cb of [...boxes.patch, ...boxes.pattern]) cb.addEventListener('change', sync);
+        sync();
+        go.addEventListener('click', () => {
+            const plan = planImport(source, target, {
+                patchIds: boxes.patch.filter(b => b.checked).map(b => b.value),
+                patternIds: boxes.pattern.filter(b => b.checked).map(b => b.value),
+            });
+            if (plan.patches.length) {
+                patchStore.bulkPut(plan.patches);
+                if (Object.keys(plan.patchNames).length) {
+                    savePatchNames({ ...loadPatchNames(), ...plan.patchNames });
+                }
+                // On the canvas, together, so they can be found.
+                addContainer(`From ${source.name}`, { patchIds: plan.patches.map(p => p.id) });
+                refreshCanvas();
+            }
+            for (const p of plan.patterns) projectSession.createPattern(p, 'import-into');
+            appendLog(`Imported ${plan.patches.length} patch(es) and ${plan.patterns.length} pattern(s) from ${source.name}`);
+            close();
+        });
+        body.appendChild(go);
+    });
+}
+
 async function importProjectFile(file) {
+    if (importInto) { importInto = false; return importIntoCurrent(file); }
     let body;
     try {
         body = parseProjectFile(await file.text());
@@ -1066,11 +1191,69 @@ async function importProjectFile(file) {
 }
 document.getElementById('menu-status').addEventListener('click', renameCurrentProject);
 
+// --- Storage… : a report, and an on-demand sweep of unreferenced WAVs ---
+// Nothing here runs on its own; see storage-gc.js for what counts as unused.
+document.getElementById('menu-storage').addEventListener('click', openStorageDialog);
+
+async function storageReport() {
+    await projectSession.flush();
+    const ids = await projectStore.listIds();
+    const bodies = [];
+    for (const id of ids) {
+        try { bodies.push(await projectStore.read(id)); } catch { /* unreadable: leave it out */ }
+    }
+    const uploads = await dbListUploads().catch(() => []);
+    return planStorage(bodies, uploads);
+}
+
+function openStorageDialog() {
+    openModal('Storage', (body) => {
+        body.classList.add('storage-dialog');
+        const status = el('p', 'storage-status', 'Measuring…');
+        body.appendChild(status);
+        const fill = async () => {
+            const r = await storageReport();
+            body.innerHTML = '';
+            const table = el('table', 'storage-table');
+            const row = (a, b, cls) => {
+                const tr = el('tr', cls);
+                tr.appendChild(el('td', null, a));
+                tr.appendChild(el('td', 'storage-bytes', b));
+                table.appendChild(tr);
+            };
+            for (const p of r.projects) row(p.name, formatBytes(p.bytes));
+            row(`Projects (${r.projects.length})`, formatBytes(r.projectBytes), 'storage-total');
+            row(`WAV uploads (${r.uploads.count})`, formatBytes(r.uploads.bytes), 'storage-total');
+            body.appendChild(table);
+            const note = el('p', 'storage-note');
+            if (r.orphans.length === 0) {
+                note.textContent = 'Every stored WAV belongs to a job in some project. Nothing to clean up.';
+                body.appendChild(note);
+                return;
+            }
+            note.textContent = `${r.orphans.length} WAV upload${r.orphans.length > 1 ? 's' : ''} (${formatBytes(r.orphanBytes)}) `
+                + 'belong to no job in any project — left behind by deleted containers or projects.';
+            body.appendChild(note);
+            const btn = el('button', 'storage-sweep', `Delete ${r.orphans.length} unused WAV${r.orphans.length > 1 ? 's' : ''}`);
+            btn.addEventListener('click', async () => {
+                btn.disabled = true;
+                for (const o of r.orphans) await dbDelete(o.key).catch(() => {});
+                appendLog(`[storage] deleted ${r.orphans.length} unused WAV upload(s), ${formatBytes(r.orphanBytes)}`);
+                fill();
+            });
+            body.appendChild(btn);
+        };
+        fill().catch((e) => { status.textContent = 'Could not measure storage: ' + e.message; });
+    });
+}
+
 document.getElementById('menu-import-wav').addEventListener('click', () => {
+    importInto = false;
     fileInput.accept = '.wav';
     fileInput.click();
 });
 document.getElementById('menu-import-syx').addEventListener('click', () => {
+    importInto = false;
     fileInput.accept = '.syx';
     fileInput.click();
 });

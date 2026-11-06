@@ -4,6 +4,7 @@ import { decodeWavSamples, drawMiniWaveform, wavSampleCache, releaseWavUrl } fro
 import { createTagEditor } from './tag-editor.js';
 import { patchStore, canvasStore, voiceKey } from './patch-model.js';
 import { batchRenderWaveforms } from '../synth/dx7-synth.js';
+import { slotAt, dropOnSlot } from './slot-drop.js';
 
 // Global drag state (shared with canvas.js for drop detection)
 let _draggedPatch = null;
@@ -470,6 +471,13 @@ export function createPatchRow(patch, opts = {}) {
 
                 if (isOutside) {
                     const t = ev.changedTouches[0];
+                    // Onto a Mixer slot: assign it; the row stays where it was.
+                    const slot = slotAt(t.clientX, t.clientY);
+                    if (slot >= 0 && dropOnSlot(patch, slot)) {
+                        _draggedPatch = null;
+                        window._draggedPatch = null;
+                        return;
+                    }
                     const el = document.elementFromPoint(t.clientX, t.clientY);
                     const dropContainer = el ? el.closest('.sky-container') : null;
                     if (dropContainer && dropContainer.dataset.containerId && containerEl &&

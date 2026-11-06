@@ -15,6 +15,8 @@
 // sendVoiceSnapshot speak effectiveVolume, so a snapshot can never un-mute
 // a channel behind the user's back.
 
+import { onPatchDroppedOnSlot } from './slot-drop.js';
+import { getDraggedPatch } from './patch-row.js';
 import { voiceKey } from './patch-model.js';
 import { createTrack } from './project-model.js';
 
@@ -133,6 +135,22 @@ export function createVoiceBank(opts) {
                 + (entry && entry.solo ? ' soloed' : '')
                 + (entry && entry.effectiveVolume === 0 && (entry.volume ?? DEFAULT_VOLUME) > 0 ? ' silenced' : '');
             item.dataset.vbIdx = i;
+            // A patch dragged by its star from a container row lands here.
+            item.addEventListener('dragover', (e) => {
+                if (!getDraggedPatch()) return;
+                e.preventDefault();
+                if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+                item.classList.add('drop-target');
+            });
+            item.addEventListener('dragleave', () => item.classList.remove('drop-target'));
+            item.addEventListener('drop', (e) => {
+                const patch = getDraggedPatch();
+                item.classList.remove('drop-target');
+                if (!patch) return;
+                e.preventDefault();
+                e.stopPropagation();
+                assignPatch(patch, i);
+            });
 
             // Slot number — doubles as the color chip
             const slotNum = document.createElement('span');
@@ -504,6 +522,13 @@ export function createVoiceBank(opts) {
 
     container._addEntry = addEntry;
     container._assignToSlot = assignToSlot;
+
+    /** A canvas patch dropped on slot `idx` — see slot-drop.js. */
+    function assignPatch(patch, idx) {
+        if (!patch || !patch.voice_data) return false;
+        return assignToSlot(idx, { name: patch.name, voiceData: patch.voice_data, patchId: patch.id });
+    }
+    onPatchDroppedOnSlot(assignPatch);
     container._firstEmptySlot = firstEmptySlot;
     container._removeEntry = removeEntry;
     container._toggleMute = toggleMute;
