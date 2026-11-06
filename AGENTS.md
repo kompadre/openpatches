@@ -67,3 +67,10 @@ make -f Makefile.msfa                # Build msfa.wasm (in html/synth/wasm/)
 # Regression tests (no dependencies — uses node:test + test/harness.js)
 node --test test/
 ```
+
+## Pane-Scoped Ports & Server Reuse Guidelines for e2e and browser checks
+- Derive Ports Dynamically: Calculate your port on every turn using the worktree's git dir (git rev-parse --git-dir) and tmux pane ($TMUX_PANE) to stay within the safe 10000–29990 range.
+- Run npm run -s e2e:port to get your exact port.
+- Never fall back to a shared default port if $TMUX_PANE is unset.
+- Safe Server Reuse: any running background server on your derived port is actively serving the correct files. Do not kill it unnecessarily. If a server is already listening on your port, use it.
+- Focus on Playwright Cache: To prevent stale content, rely on Playwright-level cache prevention rather than restarting servers. Ensure Playwright bypasses network caching or blocks Service Workers (e.g., via transparent route pass-through or disabling the cache via CDP) so it always pulls fresh responses from the background server.
