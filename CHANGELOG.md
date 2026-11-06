@@ -2,6 +2,14 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-06: Patch drops that actually land; patches onto Section lanes and new tracks
+
+**Fixed: a container row dragged onto an empty Mixer slot outlined it and did nothing.** The row starts its HTML5 drag with `effectAllowed = 'move'` and the slot answered `dropEffect = 'copy'`; Chromium treats the mismatch as "no drop here" and never fires `drop`. Now `'move'`. My Phase 5 e2e only covered the floating-patch (pointer) drag, which does not go through HTML5 drag at all.
+
+**Patches onto the Section.** Onto a lane or a track head: the patch becomes that track's voice. Onto the grid's empty space: a new track on the first free slot — unless that voice is already in the bank, in which case its slot is selected and nothing is added. All three drags (row star, row touch, floating patch) use one lookup: `slot-drop.js` now has `targetAt(x, y)` → a Mixer slot, a lane/head (`data-slot`), or the grid (`'new'`), `dropAt()`, and `wireDropZone(el)` for HTML5 drags with the hovered target outlined; the voice bank's handler takes `'new'`.
+
+Tests: `e2e/slot-drop.spec.js` rewritten — a row onto an empty Mixer slot makes the track; a row onto a lane re-voices it; a floating patch onto empty grid adds one track, and a second drop of the same patch adds none. 920 unit, 88 e2e pass.
+
 ## 2026-11-06: Patches onto Mixer slots, WAV re-upload, Storage…, Import into This Project
 
 **Drag a patch onto a Mixer slot** to assign it there — from a container row by its star (HTML5 drag, the slot outlines green), a row by touch, or a floating patch by its header (which then goes back where it was). `components/slot-drop.js` is the meeting point: `slotAt(x, y)` reads `elementsFromPoint` (not the topmost element — a dragged floating patch is itself over the slot) and `dropOnSlot()` hands the patch to the voice bank's `assignToSlot`, which swaps if the voice is already in another slot.

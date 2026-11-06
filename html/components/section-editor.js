@@ -41,6 +41,7 @@ import {
 } from './project-model.js';
 import { selectionMade, onSelectionElsewhere } from './selection-bus.js';
 import { thumbURL } from './pattern-thumbs.js';
+import { wireDropZone } from './slot-drop.js';
 
 export const MEASURE_W = 48;      // px per measure in the grid (its height, time runs down), at zoom ×1
 const MIN_GRID_MEASURES = 16;     // never show an empty, zero-height grid
@@ -116,6 +117,9 @@ export function createSectionEditor(opts = {}) {
     toolbar.className = 'section-toolbar';
     const grid = document.createElement('div');
     grid.className = 'section-grid';
+    // A patch dragged here: onto a lane or head, it becomes that track's
+    // voice; onto empty grid, a new track (see slot-drop.js).
+    wireDropZone(grid);
     // Selected-clip actions live under the grid rather than on the clip so
     // they are reachable by touch, where there is no hover and no Delete key.
     const actions = document.createElement('div');
@@ -559,6 +563,7 @@ export function createSectionEditor(opts = {}) {
         const head = document.createElement('div');
         head.className = 'section-track-head' + (current && current.id === track.id ? ' selected' : '');
         head.dataset.trackId = track.id;
+        head.dataset.slot = String(track.slot);
         head.style.borderTopColor = slotColor(track.slot);
         head.title = `${slotLabel(track.slot)} — click to select this track (+ Pattern lands at its end)`;
         head.addEventListener('click', () => { selectedTrackId = track.id; render(); });
@@ -620,6 +625,7 @@ export function createSectionEditor(opts = {}) {
         // bar grid is a background-image on the same element.)
         lane.style.backgroundColor = tint(slotColor(track.slot), 0.16);
         lane.dataset.trackId = track.id;
+        lane.dataset.slot = String(track.slot);
         lane.addEventListener('click', (e) => {
             if (e.target !== lane) return;           // a clip handles its own clicks
             if (swallowClick) { swallowClick = false; return; }

@@ -6,7 +6,7 @@ Welcome to this architectural walkthrough of OpenPatches. This is a browser-base
 
 Let's start from the top and work our way down.
 
-A few recent additions are worth knowing before the tour. Patches can be dragged from the canvas onto a Mixer slot; slot drop dot js is where the three kinds of patch drag meet the voice bank without knowing about it. A container whose source WAV did not come along with an imported project offers to re-upload it. The File menu has a Storage dialog that measures every project and the WAV store and, only when asked, deletes WAVs no project refers to — storage gc dot js plans that. And Import into This Project reads another project file and lets you tick which patches and patterns join the one that is open; project merge dot js plans the merge.
+A few recent additions are worth knowing before the tour. Patches can be dragged from the canvas onto a Mixer slot, onto a Section lane or track head to re-voice that track, or onto the Section's empty grid to start a new track; slot drop dot js is where the three kinds of patch drag meet the voice bank without knowing about it. A container whose source WAV did not come along with an imported project offers to re-upload it. The File menu has a Storage dialog that measures every project and the WAV store and, only when asked, deletes WAVs no project refers to — storage gc dot js plans that. And Import into This Project reads another project file and lets you tick which patches and patterns join the one that is open; project merge dot js plans the merge.
 
 
 Chapter One: The Entry Point and Orchestration

@@ -2,7 +2,7 @@
 // Replaces night-sky.js. Manages free-floating patches, PatchContainers,
 // drag-to-reposition (star handle), and snap-into-container behavior.
 
-import { slotAt, dropOnSlot } from './slot-drop.js';
+import { dropAt } from './slot-drop.js';
 import { canvasStore, patchStore, jobStore, createPatch, patchIdFromVoiceData } from './patch-model.js';
 import { createTagEditor } from './tag-editor.js';
 import { createPatchRow, getDraggedPatch, clearDraggedPatch, attachAssignPopover, createSlotBadge } from './patch-row.js';
@@ -512,9 +512,9 @@ function renderFloatingPatch(patchId, entry) {
         const clientX = e.changedTouches ? e.changedTouches[0].clientX : e.clientX;
         const clientY = e.changedTouches ? e.changedTouches[0].clientY : e.clientY;
 
-        // Onto a Mixer slot: assign it there, and the patch goes home.
-        const slot = slotAt(clientX, clientY);
-        if (slot >= 0 && dropOnSlot(patchStore.get(patchId), slot)) {
+        // Onto a voice (a Mixer slot, a Section lane, or the Section's
+        // empty grid for a new track): assign it, and the patch goes home.
+        if (dropAt(patchStore.get(patchId), clientX, clientY)) {
             entry.left = origLeft;
             entry.top = origTop;
             el.style.left = entry.left + 'px';

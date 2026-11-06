@@ -15,8 +15,7 @@
 // sendVoiceSnapshot speak effectiveVolume, so a snapshot can never un-mute
 // a channel behind the user's back.
 
-import { onPatchDroppedOnSlot } from './slot-drop.js';
-import { getDraggedPatch } from './patch-row.js';
+import { onPatchDroppedOnSlot, wireDropZone } from './slot-drop.js';
 import { voiceKey } from './patch-model.js';
 import { createTrack } from './project-model.js';
 
@@ -53,6 +52,7 @@ export function createVoiceBank(opts) {
 
     const list = document.createElement('div');
     list.className = 'voicebank-list';
+    wireDropZone(list);      // a patch row dragged by its star onto a slot
     container.appendChild(list);
 
     function fireSelect() {
@@ -135,22 +135,6 @@ export function createVoiceBank(opts) {
                 + (entry && entry.solo ? ' soloed' : '')
                 + (entry && entry.effectiveVolume === 0 && (entry.volume ?? DEFAULT_VOLUME) > 0 ? ' silenced' : '');
             item.dataset.vbIdx = i;
-            // A patch dragged by its star from a container row lands here.
-            item.addEventListener('dragover', (e) => {
-                if (!getDraggedPatch()) return;
-                e.preventDefault();
-                if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
-                item.classList.add('drop-target');
-            });
-            item.addEventListener('dragleave', () => item.classList.remove('drop-target'));
-            item.addEventListener('drop', (e) => {
-                const patch = getDraggedPatch();
-                item.classList.remove('drop-target');
-                if (!patch) return;
-                e.preventDefault();
-                e.stopPropagation();
-                assignPatch(patch, i);
-            });
 
             // Slot number — doubles as the color chip
             const slotNum = document.createElement('span');
@@ -523,9 +507,25 @@ export function createVoiceBank(opts) {
     container._addEntry = addEntry;
     container._assignToSlot = assignToSlot;
 
-    /** A canvas patch dropped on slot `idx` — see slot-drop.js. */
+    /**
+     * A canvas patch dropped on a voice — see slot-drop.js. `idx` is a slot,
+     * or 'new': a new track on the first free slot, unless this voice is
+     * already in the bank, in which case that slot is simply selected.
+     */
     function assignPatch(patch, idx) {
         if (!patch || !patch.voice_data) return false;
+        if (idx === 'new') {
+            const already = findSlotByKey(voiceKey(copyVoice(patch.voice_data)));
+            if (already >= 0) {
+                activeId = entries[already].id;
+                render();
+                fireSelect();
+                saveState();
+                return true;
+            }
+            idx = entries.findIndex(e => !e);
+            if (idx < 0) return false;            // all eight voices taken
+        }
         return assignToSlot(idx, { name: patch.name, voiceData: patch.voice_data, patchId: patch.id });
     }
     onPatchDroppedOnSlot(assignPatch);
