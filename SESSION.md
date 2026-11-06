@@ -4,66 +4,6 @@ Living project state. Agents own this file: update it as the codebase and the
 work-in-progress change. AGENTS.md holds the durable rules; everything that
 drifts belongs here.
 
-## Proposed AGENTS.md rule — Pane-scoped ports and paths
-
-_(Written 2026-10-31 at the user's request, in AGENTS.md voice and ready to
-move there verbatim. Until it moves, treat it as binding anyway.)_
-
-### Pane-scoped ports and external paths
-
-The user works in the same repo at the same time, on their own tmux pane, and
-runs the same `server.py`. Two agents (or an agent and the user) binding the
-same port fight over it: one process fails to bind, or — worse — a stale
-server from the other pane keeps serving a **different worktree** and the
-tests silently pass against the wrong files. Both have happened.
-
-- **Derive every port you bind from the worktree's *git dir* and
-  `$TMUX_PANE`.** The git dir separates sibling checkouts even inside one
-  pane; the pane keeps your last-digit convention: **the port's last digit
-  must equal the pane number's last digit** (`TMUX_PANE` is `%N`). The
-  project convention, implemented in `playwright.config.js`
-  (`derivePort()`): `h = djb2(git rev-parse --git-dir)`;
-  `port = 10000 + (h % 2000) * 10 + (N % 10)` — range **10000–29990**, with
-  `h % 10` standing in for the pane digit when `$TMUX_PANE` is unset.
-  `npm run e2e:port` prints it. This worktree → `29633`.
-- **Key on the git dir, not the path.** A worktree can appear at a
-  *different path* from one session to the next. Hashing the path meant the
-  port moved with it, so a server left running from a previous session sat
-  on a port nothing would ever look for again — and the "your own orphan is
-  on your own port" rule below was unenforceable, because it wasn't.
-  `git rev-parse --git-dir` returns `…/.git/worktrees/<name>`, keyed on the
-  worktree's *name*, which survives the checkout moving.
-- **Five digits, and below 32768.** Linux's ephemeral range here is
-  32768–60999 (`/proc/sys/net/ipv4/ip_local_port_range`); a listener inside
-  it can collide with the source port of an unrelated outgoing connection.
-  8000 remains the hand-run dev server's.
-- **Never kill a process you did not start.** A server on someone else's
-  port is theirs. If your port is busy, that is your own orphan: find it
-  with `pgrep -af "server.py $(npm run -s e2e:port)"` and kill only that.
-- **Check `pwd` and re-derive the port before every use of the e2e or
-  scratch server — even when the conversation plainly records which
-  server you started and on which port.** The worktree can be *swapped
-  underneath you between tool calls*: this session began in
-  `…/-home-alex-Projects-openpatches/**oak**` (branch `…/oak`) and
-  continued in `…/**elm**` (branch `…/elm`). A server you started earlier
-  is then still serving the **other** worktree's files, on a port your
-  current worktree no longer derives — and the symptom is maddening: an
-  edit that is unquestionably on disk appears not to exist in the
-  browser. It cost real time on 2026-11-02 before the user spotted it.
-  So: never reuse a port you remember. Run `pwd`, run
-  `npm run -s e2e:port`, and trust those over the chat log.
-- **Restart your scratch server after editing `index.html`** (or anything
-  else served statically), and kill it the moment the check is done.
-  Orphans accumulate fast when every check starts its own server, and
-  each one is a future stale-content trap.
-- **Same rule for anything you create outside the project working
-  directory** — a file, a directory, a socket, a lock. Put the pane number
-  in the name (`/tmp/op-smoke-%2.mjs`), so two panes cannot collide or
-  clobber each other's output. This should be rare: prefer a path inside
-  the worktree, and prefer no file at all.
-- If `$TMUX_PANE` is unset, say so; the git-dir hash alone still gives a
-  worktree-stable port — never fall back to a shared fixed default.
-
 ## Current Tasks & Goals
 
 _(Keep a short list of what is in flight, what is done, and what is blocked.
@@ -76,6 +16,59 @@ reconciliation happen only on a task's **last** phase. Intermediate phases
 run `node --check` + `node --test` and tick this file only. (Open: AGENTS.md
 "Keep it current ... in the same commit/change" reads per-change; awaiting
 the user's wording if SESSION.md should be deferred too.)
+
+### Track effects — Phase 1 DONE 2026-11-07, phases 2-4 in TODO.md
+
+Effects run **in WASM**, between the FM engine's per-channel sum and the
+global ResoFilter in `SynthUnit::GetSamples`. New files:
+`external/msfa-wasm/fx.{h,cc}` (FxRack), `external/msfa-wasm/fx_params.h`,
+`html/synth/fx-params.js`. Chain per channel: delay -> drive -> compressor
+-> reverb send, then one **shared** reverb and one ducker. Not wired to any
+UI yet — phase 2.
+
+- **The FM engine is fixed-point; the effects stage is float.** `audiobuf`
+  is 28-bit full scale at that point (the output stage does `>> 4` then
+  clips against `1 << 24`), so `FX_IN_SCALE` is `2^-28`. Anything added to
+  the stage works at +/- 1.0 and must not assume the engine's Q format.
+- **Bypass is exact and tested.** With every channel mask 0 and ducking
+  off, `GetSamples` takes the old path and the output is identical sample
+  for sample — `test/wasm-fx.test.js` asserts that even after every
+  parameter has been set. Do not add anything to the stage that runs
+  before the `fx_active` check.
+- **`FxRack` is a process-wide global, not a SynthUnit member**, so
+  `reset_engine()` does not forget the user's settings — the same reasoning
+  that keeps channel volumes static. `reset_engine()` calls `ClearState()`,
+  which drops delay lines and reverb tails (the stop has to be silent) and
+  keeps the parameters. A **fresh worklet** is a different matter: it has
+  engine defaults, so phase 2 must push an fx snapshot next to the voice
+  snapshot.
+- **`fx_params.h` and `fx-params.js` are one contract in two languages.**
+  `test/fx-params-sync.test.js` parses the header and compares. Append new
+  parameters at the END of the enums — renumbering silently repoints every
+  saved project's parameters at something else.
+- **`channel_outputs_` was 12.8 MB for a diagnostic nothing reads.**
+  `get_channel_samples` has no caller outside tests, so the capture buffer
+  is now 8192 samples, not 200000. Steady-state WASM memory went **30.3 MB
+  -> 19.3 MB** *with* the effects' 1.3 MB of delay lines in it.
+- **Shrinking it exposed a latent overrun:** `GetSamples` memset the
+  capture to `n_samples`, unclamped, and only ever survived because the
+  buffer was wider than any render. An 800 ms offline render walked off the
+  end of WASM memory. Fixed and guarded by a test; `GetChannelSamples` now
+  zero-fills past the capture window rather than returning stale samples.
+- **Silent channels are skipped** via a per-block `touched` bitmask, unless
+  they own a tail (delay or reverb send). Drive and compression of silence
+  are silence, so the skip is exact, not an approximation. This is what
+  keeps the stage cheap on a project using three tracks of eight.
+- **Measured cost** (Node/V8 on this machine, not a phone's AudioWorklet):
+  three tracks playing with every effect on is **0.83% of realtime**,
+  against 0.35% bypassed. The relative figure is large (+137%) only because
+  the FM baseline is small; the FM engine's cost scales with voice count
+  while the effects' is roughly fixed. Eight busy voices: 1.30% vs 0.79%.
+- Deliberately **one shared reverb on a send bus**, not eight instances.
+  It is the one effect here whose per-track cost would actually matter.
+- **Delay time changes crossfade over one block** rather than
+  interpolating a fractional read head; the compressor envelope is
+  block-rate (1.3 ms at 48 k). Glue and ducking, not a brickwall limiter.
 
 ### Plan of 2026-11-06 — all five phases DONE
 

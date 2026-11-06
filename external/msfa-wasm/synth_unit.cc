@@ -311,11 +311,21 @@ void SynthUnit::GetSamples(int n_samples, int16_t *buffer) {
   }
   ConsumeInput(input_offset);
 
-  // Reset per-channel accumulator at start of each GetSamples call
+  // Reset per-channel accumulator at start of each GetSamples call.
+  // CLAMP: the capture buffer is shorter than a long offline render, so
+  // n_samples must never be used as its length. (It was, and the only
+  // reason it never overran was that the buffer used to be 4.5 s wide.)
   channel_samples_written_ = 0;
+  int capture = n_samples < max_channel_samples ? n_samples
+                                                : max_channel_samples;
   for (int ch = 0; ch < 16; ch++) {
-    memset(channel_outputs_[ch], 0, n_samples * sizeof(int32_t));
+    memset(channel_outputs_[ch], 0, capture * sizeof(int32_t));
   }
+
+  // The effects stage is skipped entirely unless something is switched on,
+  // and then the signal path below is bit-identical to a build without it.
+  FxRack &fx = fx_rack();
+  const bool fx_active = fx.Active();
 
   int i;
   for (i = 0; i < n_samples && i < extra_buf_size_; i++) {
@@ -334,6 +344,14 @@ void SynthUnit::GetSamples(int n_samples, int16_t *buffer) {
     AlignedBuf<int32_t, N> audiobuf2;
     for (int j = 0; j < N; ++j) {
       audiobuf.get()[j] = 0;
+    }
+    // Which effect channels a note actually touched this block. Silent
+    // channels with no time-based effect can be skipped outright, which is
+    // what keeps the stage cheap on a project using two tracks out of eight.
+    unsigned fx_touched = 0;
+    if (fx_active) {
+      memset(fx_blk_, 0, sizeof(fx_blk_));
+      memset(fx_rest_, 0, sizeof(fx_rest_));
     }
 
     int32_t lfovalues[16];
@@ -361,6 +379,17 @@ void SynthUnit::GetSamples(int n_samples, int16_t *buffer) {
           &controllers_, SynthUnit::GetChannelVolume(active_note_[note].channel));
         // Diff = this note's contribution, apply fade, accumulate into channel buffer
         int fadeRemaining = active_note_[note].fadeSamplesRemaining;
+        // Hoist the effects routing out of the per-sample loop.
+        float *fx_dst = nullptr;
+        int32_t *rest_dst = nullptr;
+        if (fx_active) {
+          if (ch < FX_CHANNELS) {
+            fx_dst = fx_blk_[ch];
+            fx_touched |= 1u << ch;
+          } else {
+            rest_dst = fx_rest_;
+          }
+        }
         for (int j = 0; j < N; ++j) {
           int32_t diff = audiobuf.get()[j] - saved[j];
           // Apply per-voice fade envelope (linear ramp to zero)
@@ -376,6 +405,8 @@ void SynthUnit::GetSamples(int n_samples, int16_t *buffer) {
           if (blockOffset + j < max_channel_samples) {
             channel_outputs_[ch][blockOffset + j] += diff;
           }
+          if (fx_dst) fx_dst[j] += diff * FX_IN_SCALE;
+          else if (rest_dst) rest_dst[j] += diff;
         }
         // Decrement fade counter, kill voice when fade completes
         if (fadeRemaining > 0) {
@@ -386,6 +417,18 @@ void SynthUnit::GetSamples(int n_samples, int16_t *buffer) {
         }
       }
     }
+    if (fx_active) {
+      fx.ProcessBlock(fx_blk_, fx_mix_, fx_touched);
+      // Rebuild the block as effected-mix + whatever channels 8..15 (the
+      // preview) contributed, which never goes through the effects.
+      for (int j = 0; j < N; ++j) {
+        float v = fx_mix_[j];
+        if (v > 7.99f) v = 7.99f;
+        if (v < -7.99f) v = -7.99f;
+        audiobuf.get()[j] = (int32_t)(v * FX_OUT_SCALE) + fx_rest_[j];
+      }
+    }
+
     const int32_t *bufs[] = { audiobuf.get() };
     int32_t *bufs2[] = { audiobuf2.get() };
     filter_.process(bufs, filter_control_, filter_control_, bufs2);
@@ -408,10 +451,18 @@ void SynthUnit::GetSamples(int n_samples, int16_t *buffer) {
 
 void SynthUnit::GetChannelSamples(int channel, int n_samples, int32_t *buffer) {
   if (channel < 0 || channel >= 16) return;
-  int avail = channel_samples_written_;
-  if (n_samples > avail) n_samples = avail;
-  for (int j = 0; j < n_samples; ++j) {
+  // channel_samples_written_ counts the whole render; the capture only
+  // covers its first max_channel_samples.
+  int avail = channel_samples_written_ < max_channel_samples
+      ? channel_samples_written_ : max_channel_samples;
+  if (avail > n_samples) avail = n_samples;
+  for (int j = 0; j < avail; ++j) {
     buffer[j] = channel_outputs_[channel][j];
+  }
+  // Past the capture window the caller would otherwise read whatever the
+  // previous call left behind.
+  for (int j = avail; j < n_samples; ++j) {
+    buffer[j] = 0;
   }
 }
 

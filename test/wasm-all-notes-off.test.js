@@ -101,6 +101,20 @@ describe('get_channel_samples', () => {
         assert.equal(typeof exp.get_channel_samples, 'function');
     });
 
+    // The capture buffer is deliberately shorter than a long offline render
+    // (it was 4.5 s wide, which cost 12.8 MB and hid this). GetSamples used
+    // to memset it to n_samples, so a render longer than the buffer walked
+    // off the end of WASM memory.
+    test('a render longer than the capture buffer does not overrun', () => {
+        exp.reset_engine();
+        loadFirstVoice();
+        exp.note_on(60, 100);
+        assert.ok(renderPeak(44100) > 0, '1 s render survives');
+        // Past the capture window the readout is zero-filled, not stale.
+        assert.equal(channelPeak(0, 44100), channelPeak(0, 8192),
+            'nothing beyond the capture window should be reported');
+    });
+
     test('captures the playing channel, silence elsewhere', () => {
         exp.reset_engine();
         loadFirstVoice(); // slot 0 → channel 0

@@ -16,6 +16,7 @@
 
 #include "controllers.h"
 #include "dx7note.h"
+#include "fx.h"
 #include "lfo.h"
 #include "ringbuffer.h"
 #include "resofilter.h"
@@ -87,11 +88,24 @@ class SynthUnit {
   int current_patch_[16];
   static int32_t channel_volumes_[16];
 
-  // Per-channel pre-filter output buffers (16 channels × max_samples).
-  // Accumulated across all blocks within a single GetSamples call.
-  static const int max_channel_samples = 200000; // ~4.5s at 44100
+  // Per-channel PRE-EFFECTS, pre-filter output buffers, accumulated across
+  // the blocks of a single GetSamples call. This is a diagnostic read by
+  // get_channel_samples(); nothing in the app mixes from it, so it is sized
+  // for a test-sized render rather than for a whole offline chunk. It used
+  // to be 200000 (12.8 MB of .bss) and the delay lines in FxRack are paid
+  // for several times over by the reduction.
+  static const int max_channel_samples = 8192; // ~0.19s at 44100
   int32_t channel_outputs_[16][max_channel_samples];
   int channel_samples_written_;
+
+  // Scratch for the effects stage, one block wide. fx_rest_ holds what came
+  // from channels 8..15 (in practice just the preview on 15), which the
+  // effects never see; audiobuf is rebuilt as effected-mix + fx_rest_.
+  // Accumulating the *rest* rather than the effected part keeps the extra
+  // add out of the hot per-note inner loop in the common case.
+  float fx_blk_[FX_CHANNELS][N];
+  float fx_mix_[N];
+  int32_t fx_rest_[N];
   char unpacked_patch_[16][156];
 
   // The original DX7 had one single LFO. Later units had an LFO per note.

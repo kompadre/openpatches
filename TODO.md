@@ -37,6 +37,33 @@ Project backlog. Parent tasks with nested subtasks; `[ ]` pending, `[x]` done,
 - [x] **Storage garbage collection, on demand only** (File → Storage…): report usage per project and for WAVs, delete WAV blobs no job references. No compaction or sharing at project level, and nothing on save.
 - [x] **Import from another project into the current one**: like Import Project, with a step to opt in/out of what comes in (patches, patterns).
 
+### Plan (agreed 2026-11-07) — track effects; each phase moves to SESSION.md when started
+
+Decided with the user: effects live in **WASM**, not in a WebAudio graph of
+eight per-channel outputs. Two reasons settled it — `DynamicsCompressorNode`
+has no sidechain input, so "one track boosted, everybody else ducks" is not
+expressible in the native graph without main-thread envelope following; and
+a future piece mixdown renders through the same `render_audio` the live
+worklet uses, so the export matches what was heard by construction.
+
+**Phase 1 — WASM effects engine.** _Done 2026-11-07._
+
+**Phase 2 — Model and plumbing.**
+- [ ] `track.fx` and `project.fx` in `project-model.js`, with defaults and
+      clamps from `FX_RANGES`/`FX_GLOBAL_RANGES` in `html/synth/fx-params.js`.
+      Every new numeric field needs the explicit `clampInt(null, …)` guard.
+- [ ] `setFxParam`/`setFxEnabled`/`pushFxSnapshot` in `audio-manager.js`,
+      `fx-param`/`fx-global`/`fx-snapshot` messages in `dx7-processor.js`.
+- [ ] Re-push the snapshot after `reinit`, next to the voice snapshot —
+      `reset_engine` keeps fx parameters but a fresh worklet would not.
+- [ ] `project-session.js` fires on `tracks` updates.
+
+**Phase 3 — Mixer UI.** A compact FX section per strip; a global Reverb and
+Duck panel naming the boosted track.
+
+**Phase 4 — Finish.** Playwright, `HEARME.tts`, `CHANGELOG.md`, TODO
+reconciliation.
+
 ### Ideas
 
 - [ ] Import and export **MIDI** (patterns ↔ MIDI files; a section or the piece as a multi-track SMF).

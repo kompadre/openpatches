@@ -2,6 +2,7 @@
 // Based on MSFA by Google (Apache 2.0), patched for fmguessr
 
 #include "synth_unit.h"
+#include "fx.h"
 #include "ringbuffer.h"
 #include "patch.h"
 #include "freqlut.h"
@@ -30,13 +31,16 @@ extern "C" {
 
 // Replace the engine with a fresh one: silences every voice, forgets every
 // loaded patch, and drops any MIDI still queued in the ring buffer. Lookup
-// tables and channel volumes are untouched. Cheap enough to call before every
-// offline render — this is how renders are kept independent of one another.
+// tables, channel volumes and effect PARAMETERS are untouched; the effects'
+// delay lines and reverb tails are dropped, because this is the emergency
+// stop and it has to be silent. Cheap enough to call before every offline
+// render — this is how renders are kept independent of one another.
 void reset_engine() {
-  delete synth;   // SynthUnit owns 16 Dx7Notes and ~13 MB of channel buffers
+  delete synth;   // SynthUnit owns 16 Dx7Notes and the channel buffers
   synth = nullptr;
   rb.Reset();
   synth = new SynthUnit(&rb);
+  fx_rack().ClearState();
 }
 
 void init_engine(int sample_rate) {
@@ -46,10 +50,31 @@ void init_engine(int sample_rate) {
   Lfo::init(sample_rate);
   PitchEnv::init(sample_rate);
   reset_engine();
+  fx_rack().Init(sample_rate);
   // Default all channels to volume 100 (out of 127)
   for (int ch = 0; ch < 16; ch++) {
     SynthUnit::SetChannelVolume(ch, 100 * 256 / 127);
   }
+}
+
+// --- Effects ---
+//
+// Three exports carry every parameter, so adding an effect never means
+// touching Makefile.msfa. The IDs live in fx_params.h, mirrored by
+// html/synth/fx-params.js and guarded by test/fx-params-sync.test.js.
+
+// Which effects run on a channel (FxEnable bitmask). All zero on every
+// channel, with ducking off, is what puts the renderer on the bypass path.
+void set_fx_enabled(int channel, int mask) {
+  fx_rack().SetEnabled(channel, mask);
+}
+
+void set_fx_param(int channel, int param, float value) {
+  fx_rack().SetParam(channel, param, value);
+}
+
+void set_global_fx_param(int param, float value) {
+  fx_rack().SetGlobalParam(param, value);
 }
 
 // --- Static patch buffer accessors ---
