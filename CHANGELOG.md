@@ -2,6 +2,16 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-06: Play names its scope; library patterns open in the Pattern tab
+
+**Play and its scope are one split button**: `[ ▶ Play Pattern | ▾ ]`. The label names what a press plays; the caret opens the list of scopes (Piece, Section, Pattern — the current one ticked), a pick sets it and folds the list, as do a press elsewhere and Escape. The caret is disabled while the clock runs (a scope change stops it). The segmented switch is gone; e2e picks a scope through the new `chooseScope()` fixture.
+
+**Library patterns open in the Pattern tab** — by a hold on the item (LONG_PRESS_MS, as a clip's hold opens it), or by dragging it onto the Pattern editor while that tab is on screen (instead of placing it). Through the section editor's new `onShowPattern(patternId)` / `isOverPatternEditor(x, y)` options; the toolbar opens it with the roll's `switchToPattern`, which places an unplaced pattern at the end of the current track first.
+
+**The section select has a "Section" label**, on desktop and mobile alike.
+
+Tests: the split button (label, list, disabled while running) in `transport-bar.test.js`; hold, tap and drop-on-editor in `section-editor.test.js`. 914 unit, 83 e2e pass.
+
 ## 2026-11-06: Many sections, the piece played end to end, tempo ramps
 
 **Sections.** The Section pane's toolbar opens with the piece's sections in order: a select to pick the one on screen, ▲/▼ to move it earlier or later, `+ Section` (new, empty, at the end, becomes the edited one) and ✕ (never the last; removing the edited one moves the edit to its neighbour). `session.addSection/removeSection/moveSection/setSectionTempo`; `moveSection` and `pieceLayout` in the model. Selections and an armed stamp are dropped on a switch.

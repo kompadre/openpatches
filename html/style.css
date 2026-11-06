@@ -2270,12 +2270,38 @@ h1 {
     animation: rec-pulse 1s infinite;
 }
 
-/* What Play and Record act on: one lit segment. */
-.transport-modes { display: inline-flex; }
-.transport-modes .transport-mode { border-radius: 0; margin-left: -1px; }
-.transport-modes .transport-mode:first-child { border-radius: 4px 0 0 4px; margin-left: 0; }
-.transport-modes .transport-mode:last-child { border-radius: 0 4px 4px 0; }
-.transport-mode.active { background: #e94560; color: #fff; border-color: #e94560; position: relative; }
+/* Play fused with its scope: [ ▶ Play Pattern | ▾ ], the list under the caret. */
+.transport-split { position: relative; display: inline-flex; }
+.transport-split .transport-play { border-radius: 4px 0 0 4px; min-width: 7.5rem; text-align: left; }
+.transport-scope {
+    border-radius: 0 4px 4px 0;
+    margin-left: -1px;
+    padding: 0.25rem 0.4rem;
+    background: #1b5e20;
+    border-color: #4caf50;
+    color: #fff;
+}
+.transport-scope:hover:not(:disabled), .transport-scope.open { background: #2e7d32; }
+.transport-scope:disabled { background: #1b5e20; }
+.transport-scope-menu {
+    position: absolute;
+    top: calc(100% + 2px);
+    left: 0;
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    min-width: 100%;
+    padding: 2px;
+    background: #12122a;
+    border: 1px solid #333;
+    border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+}
+.transport-scope-menu[hidden] { display: none; }
+.transport-scope-menu .transport-mode { text-align: left; border: none; border-radius: 3px; background: transparent; }
+.transport-scope-menu .transport-mode:hover { background: #1a2744; }
+.transport-scope-menu .transport-mode.active { color: #4caf50; }
+.transport-scope-menu .transport-mode.active::before { content: '✓ '; }
 
 .transport-field {
     display: inline-flex;
@@ -5083,6 +5109,15 @@ footer {
 
 /* --- Section: the piece's sections, and the section tempo --- */
 .section-pick-row { display: flex; align-items: center; gap: 0.25rem; width: 100%; }
+.section-pick-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    color: #999;
+    font-size: 0.7rem;
+}
 .section-pick { flex: 1 1 auto; min-width: 0; }
 .section-move-up, .section-move-down { padding: 0.15rem 0.35rem; font-size: 0.6rem; }
 .section-remove { color: #e9a0a0; }

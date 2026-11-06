@@ -604,6 +604,20 @@ export function createToolbar(opts) {
             activateTab(tabPianoroll, pianorollPanel);
             requestAnimationFrame(positionBlackKeys);
         },
+        // The library: open a pattern by id (the roll's own switch picks
+        // the clip, placing it first if it is placed nowhere), show the tab.
+        onShowPattern: (patternId) => {
+            pianorollRef.switchToPattern(patternId);
+            activateTab(tabPianoroll, pianorollPanel);
+            requestAnimationFrame(positionBlackKeys);
+        },
+        // A library drag released here opens the pattern instead of placing
+        // it. Only while the Pattern tab is on screen.
+        isOverPatternEditor: (x, y) => {
+            if (!pianorollPanel.classList.contains('active')) return false;
+            const r = pianorollRef.element.getBoundingClientRect();
+            return x >= r.left && x < r.right && y >= r.top && y < r.bottom;
+        },
     });
     sectionPanel.appendChild(sectionEditor.element);
     // The voice bank's names and colours are read at render time; re-render

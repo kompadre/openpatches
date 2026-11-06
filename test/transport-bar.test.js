@@ -165,3 +165,26 @@ describe('in the dock', () => {
         assert.equal(transport.isPlaying(), false);
     });
 });
+
+describe('Play fused with its scope', () => {
+    test('the label names the scope; the caret opens the list, a pick sets it and folds the list', () => {
+        const h = build();
+        assert.equal(h.play().textContent, '▶ Play Section');
+        const menu = h.q('transport-scope-menu');
+        assert.equal(menu.hidden, true);
+        h.q('transport-scope').dispatch('click', ev());
+        assert.equal(menu.hidden, false);
+        h.bar.element.querySelectorAll('.transport-mode')[2].dispatch('click', ev());
+        assert.equal(h.transport.getMode(), 'pattern');
+        assert.equal(h.play().textContent, '▶ Play Pattern');
+        assert.equal(menu.hidden, true);
+    });
+
+    test('while running the caret is disabled — changing scope would stop the clock', () => {
+        const h = build();
+        h.play().dispatch('click', ev());
+        assert.equal(h.q('transport-scope').disabled, true);
+        h.stop().dispatch('click', ev());
+        assert.equal(h.q('transport-scope').disabled, false);
+    });
+});

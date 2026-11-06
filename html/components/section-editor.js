@@ -251,6 +251,9 @@ export function createSectionEditor(opts = {}) {
         // more than one.
         const row = document.createElement('div');
         row.className = 'section-pick-row';
+        const pickLabel = document.createElement('label');
+        pickLabel.className = 'section-pick-label';
+        pickLabel.textContent = 'Section';
         const pickSel = document.createElement('select');
         pickSel.className = 'section-pick';
         pickSel.title = 'The section on screen — pick another to edit it';
@@ -267,7 +270,8 @@ export function createSectionEditor(opts = {}) {
             if (stamp) cancelStamp();
             session.setSection(pickSel.value, 'section-editor');
         });
-        row.appendChild(pickSel);
+        pickLabel.appendChild(pickSel);
+        row.appendChild(pickLabel);
         const idx = project.sections.findIndex(s => s.id === sec().id);
         const up = button('▲', 'Move this section earlier in the piece',
             () => session.moveSection(sec().id, -1, 'section-editor'), 'section-btn section-move-up');
@@ -1263,7 +1267,8 @@ export function createSectionEditor(opts = {}) {
         item.className = 'section-library-item' + (pattern.id === selectedPatternId ? ' selected' : '');
         item.dataset.patternId = pattern.id;
         item.title = `${pattern.name} — ${pattern.measures} bar${pattern.measures > 1 ? 's' : ''}, `
-            + (n ? `placed ${n}×` : 'not placed') + '. Click to select (then click a lane), or drag onto a lane.';
+            + (n ? `placed ${n}×` : 'not placed') + '. Click to select (then click a lane), drag onto a lane to place it, '
+            + 'hold — or drag onto the Pattern editor — to edit it.';
 
         const thumb = document.createElement('div');
         thumb.className = 'section-library-thumb';
@@ -1290,6 +1295,13 @@ export function createSectionEditor(opts = {}) {
         return item;
     }
 
+    /** Open a library pattern in the Pattern tab (the toolbar's job). */
+    function showPattern(pattern) {
+        selectedPatternId = pattern.id;
+        render();
+        if (opts.onShowPattern) opts.onShowPattern(pattern.id);
+    }
+
     /** Select a library pattern: the next lane click places it. */
     function selectLibraryPattern(pattern) {
         pick(null);
@@ -1299,19 +1311,27 @@ export function createSectionEditor(opts = {}) {
     }
 
     /**
-     * Press on a library item: a tap selects the pattern; a drag carries a
-     * ghost of it and drops a clip where it is released over a lane (the
-     * snap cell under the pointer). Released anywhere else, nothing.
+     * Press on a library item: a tap selects the pattern; a hold opens it
+     * in the Pattern tab; a drag carries a ghost of it and drops a clip
+     * where it is released over a lane (the snap cell under the pointer),
+     * or opens it when released over the Pattern editor. Released anywhere
+     * else, nothing.
      */
     function startLibraryDrag(e, pattern, item) {
         if (e.cancelable && e.preventDefault) e.preventDefault();
         if (stamp) cancelStamp();
         const origin = pointer(e);
         let ghost = null;
+        let hold = opts.onShowPattern ? setTimeout(() => {
+            hold = null;
+            cancel();
+            showPattern(pattern);
+        }, LONG_PRESS_MS) : null;
         const onMove = (ev) => {
             const pt = pointer(ev);
             if (!ghost && Math.abs(pt.x - origin.x) < DRAG_THRESHOLD && Math.abs(pt.y - origin.y) < DRAG_THRESHOLD) return;
             if (ev.cancelable && ev.preventDefault) ev.preventDefault();
+            if (hold) { clearTimeout(hold); hold = null; }
             if (!ghost) {
                 ghost = document.createElement('div');
                 ghost.className = 'section-library-ghost';
@@ -1328,9 +1348,11 @@ export function createSectionEditor(opts = {}) {
             document.removeEventListener('touchmove', onMove);
             document.removeEventListener('touchend', finish);
             document.removeEventListener('touchcancel', cancel);
+            if (hold) { clearTimeout(hold); hold = null; }
             if (!ghost) { selectLibraryPattern(pattern); return; }
             if (ghost.parentNode) ghost.parentNode.removeChild(ghost);
             const pt = pointer(ev);
+            if (opts.isOverPatternEditor && opts.isOverPatternEditor(pt.x, pt.y)) { showPattern(pattern); return; }
             const hit = laneAt(pt.x);
             const r = grid.getBoundingClientRect();
             if (!hit || pt.y < r.top || pt.y >= r.bottom) return;
@@ -1345,6 +1367,7 @@ export function createSectionEditor(opts = {}) {
             render();
         };
         const cancel = () => {
+            if (hold) { clearTimeout(hold); hold = null; }
             document.removeEventListener('mousemove', onMove);
             document.removeEventListener('mouseup', finish);
             document.removeEventListener('touchmove', onMove);

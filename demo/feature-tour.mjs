@@ -409,6 +409,7 @@ async function main() {
             await sleep(0.3);
         }
 
+        await ui.click('.transport-scope', { after: 0.3 });
         await ui.click('.transport-mode[data-mode="section"]', { after: 0.3 });
         await ui.click('.transport-play', { after: 0.3 });
     });

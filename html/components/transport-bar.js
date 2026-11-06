@@ -48,30 +48,53 @@ export function createTransportBar(opts) {
         return b;
     };
 
-    const PLAY_TITLE = 'Play';
     const WAIT_TITLE = 'Waiting for the external MIDI clock to start';
-    const playBtn = button('transport-play', '▶ Play', PLAY_TITLE, onPlay);
+    const playBtn = button('transport-play', '▶ Play', 'Play', onPlay);
     const stopBtn = button('transport-stop', '■ Stop', 'Stop', onStop);
     stopBtn.disabled = true;
 
-    // What Play and Record act on. One lit segment, like the roll's
-    // With section / Pattern only pair — but that one changes what is
-    // *heard* inside the pattern window, this one changes the window.
-    const modes = document.createElement('div');
-    modes.className = 'transport-modes';
-    modes.title = 'What Play and Record act on';
+    // Play and its scope are one control: [ ▶ Play Pattern | ▾ ]. The
+    // label says what a press plays; the caret opens the list of scopes
+    // (the transport's modes). Record follows the same scope.
+    const split = document.createElement('div');
+    split.className = 'transport-split';
+    const caret = button('transport-scope', '▾', 'What Play and Record act on', () => {
+        menu.hidden ? openMenu() : closeMenu();
+    });
+    const menu = document.createElement('div');
+    menu.className = 'transport-scope-menu';
+    menu.hidden = true;
     const modeBtns = {};
     for (const mode of MODES) {
         const m = MODE_LABELS[mode] || { label: mode, title: mode };
-        const b = button('transport-mode', m.label, m.title, () => transport.setMode(mode));
+        const b = button('transport-mode', m.label, m.title, () => { transport.setMode(mode); closeMenu(); });
         b.dataset.mode = mode;
         modeBtns[mode] = b;
-        modes.appendChild(b);
+        menu.appendChild(b);
     }
-    // First, so it reads as "Section ▶ Play": the scope, then the verb.
-    el.appendChild(modes);
-    el.appendChild(playBtn);
+    split.appendChild(playBtn);
+    split.appendChild(caret);
+    split.appendChild(menu);
+    el.appendChild(split);
     el.appendChild(stopBtn);
+
+    // A press anywhere else, or Escape, folds the list.
+    const outside = (e) => { if (!split.contains(e.target)) closeMenu(); };
+    const onEsc = (e) => { if (e.key === 'Escape') closeMenu(); };
+    function openMenu() {
+        menu.hidden = false;
+        caret.classList.add('open');
+        document.addEventListener('mousedown', outside);
+        document.addEventListener('touchstart', outside);
+        document.addEventListener('keydown', onEsc);
+    }
+    function closeMenu() {
+        menu.hidden = true;
+        caret.classList.remove('open');
+        document.removeEventListener('mousedown', outside);
+        document.removeEventListener('touchstart', outside);
+        document.removeEventListener('keydown', onEsc);
+    }
 
     // The project's tempo. A section can override it (the Section editor
     // owns that), so what plays may differ from this box; it stays the
@@ -110,10 +133,15 @@ export function createTransportBar(opts) {
         // going for the buttons — Stop is how you take it back.
         const running = !!(pos.playing || pos.recording || pos.waiting || pos.pending);
         playBtn.disabled = running;
+        caret.disabled = running;      // a scope change stops the clock; Stop is the way to do that
+        if (running) closeMenu();
         stopBtn.disabled = !running;
         playBtn.classList.toggle('active', !!pos.playing);
         playBtn.classList.toggle('waiting', !!pos.waiting);
-        playBtn.title = pos.waiting ? WAIT_TITLE : PLAY_TITLE;
+        const m = MODE_LABELS[pos.mode] || { label: pos.mode, title: '' };
+        playBtn.textContent = '▶ Play ' + m.label;
+        playBtn.dataset.mode = pos.mode;
+        playBtn.title = pos.waiting ? WAIT_TITLE : m.title;
         for (const [mode, b] of Object.entries(modeBtns)) b.classList.toggle('active', pos.mode === mode);
     }
 
@@ -135,6 +163,7 @@ export function createTransportBar(opts) {
             el.insertBefore(control, stopBtn.nextSibling);
         },
         destroy() {
+            closeMenu();
             if (unsubTransport) unsubTransport();
             if (unsubSession) unsubSession();
         },

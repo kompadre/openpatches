@@ -78,7 +78,7 @@ const STEPS = [
             '3. <strong>Click+drag</strong> on the grid to draw notes (snaps to pitch and timing)<br>' +
             '4. <strong>Double-click</strong> a note to remove it<br>' +
             '5. <strong>Drag</strong> a note to move it<br>' +
-            '6. Press <strong>▶ Play</strong> on the transport bar (top left) to hear it — with the bar\'s switch on <strong>Pattern</strong> it loops this pattern, on <strong>Section</strong> it plays the whole section<br><br>' +
+            '6. Press <strong>▶ Play</strong> on the transport bar (top left) to hear it — its <strong>▾</strong> picks what it plays: this <strong>Pattern</strong>, the <strong>Section</strong>, or the whole <strong>Piece</strong><br><br>' +
             'The other voices\' patterns show dimmed behind, so you can see how the parts fit; only the selected one can be edited. ' +
             'The <strong>♫ With section / ▭ Pattern only</strong> button decides whether the rest of the section is heard while you loop this pattern.',
     },
@@ -98,7 +98,7 @@ const STEPS = [
             '4. <strong>Hold</strong> a clip, or press ✎ Open, to edit its pattern in the Pattern tab<br>' +
             '5. Each track\'s <strong>number</strong> square picks the voice it plays, with <strong>✕</strong> remove, <strong>M</strong>ute and <strong>S</strong>olo<br>' +
             '6. <strong>⬚ Select</strong> (or Shift-drag) to select clips, then <strong>⎘ Copy</strong> and click where the copy goes<br>' +
-            '7. <strong>▶ Play</strong> on the transport bar, switched to <strong>Section</strong>, plays the arrangement; <strong>BPM</strong> is there too<br><br>' +
+            '7. <strong>▶ Play Section</strong> on the transport bar (pick the scope with its <strong>▾</strong>) plays the arrangement, <strong>Play Piece</strong> every section in order; <strong>BPM</strong> is there too. Hold a pattern in the library, or drag it onto the Pattern editor, to edit it<br><br>' +
             'The same pattern can be placed as many times as you like — that is the point of patterns.<br><br>' +
             'Everything saves as you go. A whole <strong>project</strong> — its sections, patterns, tracks and patches — '
             + 'is made, opened and exported from the <strong>File</strong> menu.',

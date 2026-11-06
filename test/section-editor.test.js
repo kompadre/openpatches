@@ -1298,3 +1298,47 @@ describe('the piece\'s sections', () => {
         assert.equal(h.section().bpmEnd, M.MAX_BPM, 'the other field is untouched');
     });
 });
+
+describe('opening a pattern from the library', () => {
+    function withHooks(over = () => false) {
+        const shown = [];
+        session = makeProjectSession();
+        const a = session.createPattern({ name: 'A' }, 'test');
+        session.update((p) => { p.tracks.push(M.createTrack({ slot: 0 })); }, 'test');
+        const editor = createSectionEditor({
+            session, getSlotData: () => null,
+            onShowPattern: (id) => shown.push(id),
+            isOverPatternEditor: over,
+        });
+        const root = editor.element;
+        return { a, shown, root, item: () => root.querySelector('.section-library-item'), editor };
+    }
+    const doc = (type, e) => (env.document._listeners[type] || []).slice().forEach(fn => fn(e));
+
+    test('a hold opens it in the Pattern tab', async () => {
+        const h = withHooks();
+        h.item().dispatch('mousedown', ev({ clientX: 5, clientY: 5 }));
+        await new Promise(r => setTimeout(r, 650));
+        assert.deepEqual(h.shown, [h.a.id]);
+        doc('mouseup', ev({ clientX: 5, clientY: 5 }));
+        assert.deepEqual(h.shown, [h.a.id], 'the release after a hold does nothing more');
+        assert.equal(session.getSection().clips.length, 0);
+    });
+
+    test('a tap does not open it', async () => {
+        const h = withHooks();
+        h.item().dispatch('mousedown', ev({ clientX: 5, clientY: 5 }));
+        doc('mouseup', ev({ clientX: 5, clientY: 5 }));
+        await new Promise(r => setTimeout(r, 650));
+        assert.deepEqual(h.shown, []);
+    });
+
+    test('dropped on the Pattern editor, it opens there instead of being placed', () => {
+        const h = withHooks((x) => x > 500);
+        h.item().dispatch('mousedown', ev({ clientX: 5, clientY: 5 }));
+        doc('mousemove', ev({ clientX: 600, clientY: 50 }));
+        doc('mouseup', ev({ clientX: 600, clientY: 50 }));
+        assert.deepEqual(h.shown, [h.a.id]);
+        assert.equal(session.getSection().clips.length, 0);
+    });
+});

@@ -89,9 +89,15 @@ export async function openRollTab(page) {
     await expect(page.locator('.transport-play')).toBeVisible();
 }
 
+/** Pick what Play acts on from the list under Play's caret. */
+export async function chooseScope(page, mode) {
+    await page.locator('.transport-scope').click();
+    await page.locator(`.transport-mode[data-mode="${mode}"]`).click();
+}
+
 /** Make Play loop the pattern on screen — what the roll's own Play used to do. */
 export async function patternMode(page) {
-    await page.locator('.transport-mode[data-mode="pattern"]').click();
+    await chooseScope(page, 'pattern');
 }
 
 /**

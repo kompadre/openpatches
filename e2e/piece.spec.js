@@ -1,5 +1,5 @@
 // Phase 4: more than one section, played end to end, with a tempo ramp.
-import { test, expect, openApp, openSectionPane } from './fixtures.js';
+import { test, expect, openApp, openSectionPane, chooseScope } from './fixtures.js';
 
 test('sections: add, pick, reorder; piece playback follows the playhead', async ({ page }) => {
     await openApp(page);
@@ -22,7 +22,8 @@ test('sections: add, pick, reorder; piece playback follows the playhead', async 
     await page.screenshot({ path: '/tmp/probe-oak/p4.png', clip: { x: 30, y: 30, width: 390, height: 200 } });
 
     // Piece: 2 one-bar sections at 120 → ~1 s each. The pane follows.
-    await page.locator('.transport-mode[data-mode="piece"]').click();
+    await chooseScope(page, 'piece');
+    await expect(page.locator('.transport-play')).toHaveText('▶ Play Piece');
     await page.locator('.section-pick').selectOption({ label: '1. Section 2' });
     await page.locator('.transport-play').click();
     await expect.poll(() => page.evaluate(() => window.__opProject.getSection().name), { timeout: 5000 }).toBe('Section 1');
