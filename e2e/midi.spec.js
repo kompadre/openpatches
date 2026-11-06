@@ -112,9 +112,9 @@ test.describe('MIDI panel', () => {
         await page.evaluate(() => {
             window.__opDock._pianoroll.addNote({ midi: 60, start: 0, dur: 2 });
         });
-        await page.locator('.pianoroll-play').click();
+        await page.locator('.transport-play').click();
         await page.waitForTimeout(1000);
-        await page.locator('.pianoroll-stop').click();
+        await page.locator('.transport-stop').click();
 
         const sent = await page.evaluate(() => window.__midiFake.outputs[0].sent);
         const bytes = sent.map((m) => m.data[0]);
@@ -196,9 +196,9 @@ test.describe('MIDI panel', () => {
         await page.evaluate(() => {
             window.__opDock._pianoroll.addNote({ midi: 60, start: 0, dur: 2 });
         });
-        await page.locator('.pianoroll-play').click();
+        await page.locator('.transport-play').click();
         await page.waitForTimeout(600);
-        await page.locator('.pianoroll-stop').click();
+        await page.locator('.transport-stop').click();
 
         const bytes = await page.evaluate(() =>
             window.__midiFake.outputs[0].sent.map((m) => m.data[0]));

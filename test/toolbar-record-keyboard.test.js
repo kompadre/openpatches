@@ -1,9 +1,9 @@
-// Desktop transport: the Record button and the collapsible keyboard.
+// The Record button and the collapsible keyboard.
 //
-// The kb-controls row (Undo / Record / Play / voice) is mobile-only — CSS
-// hides it on desktop — which is how Record quietly disappeared for desktop
-// users. It now also lives in the piano roll's transport row, and both
-// buttons drive the same recording session.
+// Record sits on the transport bar above the tabs, on every viewport. It
+// used to live in the mobile-only kb-controls row (which is how it quietly
+// disappeared for desktop users) and then also in the piano roll's control
+// row; the bar is the one place now.
 
 import { test, before, beforeEach, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -51,9 +51,9 @@ function build() {
         tickWorker,
         roll: dock._pianoroll,
         controls,
-        recDesktop: controls.querySelector('.pianoroll-record'),
-        recMobile: dock.querySelector('.kb-btn-record'),
-        playRoll: controls.querySelector('.pianoroll-play'),
+        bar: dock.querySelector('.transport-bar'),
+        recDesktop: dock.querySelector('.transport-record'),
+        playRoll: dock.querySelector('.transport-play'),
         kbToggle: dock.querySelector('.kb-toggle'),
         kbWrapper: dock.querySelector('.keyboard-wrapper'),
     };
@@ -67,17 +67,17 @@ beforeEach(() => {
 });
 
 describe('desktop Record button', () => {
-    test('sits in the piano roll transport row, right after Stop', () => {
-        const { controls, recDesktop } = build();
-        assert.ok(recDesktop, 'a Record button in the row desktop users actually see');
-        const kids = controls.children;
-        const stopIdx = kids.findIndex(k => k.classList.contains('pianoroll-stop'));
+    test('sits in the transport bar, right after Stop', () => {
+        const { bar, recDesktop } = build();
+        assert.ok(recDesktop, 'a Record button in the bar desktop users actually see');
+        const kids = bar.children;
+        const stopIdx = kids.findIndex(k => k.classList.contains('transport-stop'));
         assert.ok(stopIdx >= 0);
         assert.equal(kids[stopIdx + 1], recDesktop);
     });
 
     test('starts a recording session and stops it again', () => {
-        const { recDesktop, recMobile, playRoll, roll } = build();
+        const { recDesktop, playRoll, roll } = build();
         // With the clock stopped, Rec is a step record (toolbar-step-record
         // test); a live take is Rec over a running clock.
         roll.addNote({ midi: 60, start: 0, dur: 1, slot: 0 });
@@ -87,14 +87,12 @@ describe('desktop Record button', () => {
         assert.deepEqual(started, [{ bpm: 120, col: 0 }], 'the tick worker is restarted for the recorder');
         assert.ok(recDesktop.classList.contains('active'));
         assert.match(recDesktop.textContent, /Stop/);
-        assert.equal(recMobile.textContent, 'Stop ■', 'the mobile button mirrors it');
         assert.equal(playRoll.disabled, true, 'Play would be a silent no-op meanwhile');
 
         recDesktop.dispatch('click');
         assert.ok(stopped >= 1);
         assert.equal(recDesktop.classList.contains('active'), false);
         assert.match(recDesktop.textContent, /Rec$/);
-        assert.equal(recMobile.textContent, 'Record ●');
         assert.equal(playRoll.disabled, false);
         assert.equal(roll.isPlaying(), false);
     });
@@ -117,15 +115,6 @@ describe('desktop Record button', () => {
         const notes = roll.getNotes();
         assert.equal(notes.length, 2);
         assert.equal(notes[1].midi, 36);
-    });
-
-    test('either button ends a session the other one started', () => {
-        const { recDesktop, recMobile } = build();
-        recMobile.dispatch('click');
-        assert.ok(recDesktop.classList.contains('active'));
-        recDesktop.dispatch('click');
-        assert.equal(recMobile.classList.contains('active'), false);
-        assert.equal(recMobile.textContent, 'Record ●');
     });
 
     test('recording replaces running playback instead of stacking on it', () => {

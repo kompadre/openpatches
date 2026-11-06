@@ -21,7 +21,7 @@ test.describe('persistence', () => {
         await page.evaluate(() => {
             window.__opDock._pianoroll.addNote({ midi: 62, start: 4, dur: 3 });
         });
-        const bpm = page.locator('.pianoroll-bpm');
+        const bpm = page.locator('.transport-bpm');
         await bpm.fill('97');
         await bpm.dispatchEvent('change');
 
@@ -30,7 +30,7 @@ test.describe('persistence', () => {
         await openRollTab(page);
 
         expect(await getNotes(page)).toEqual([{ midi: 62, start: 4, dur: 3 }]);
-        await expect(page.locator('.pianoroll-bpm')).toHaveValue('97');
+        await expect(page.locator('.transport-bpm')).toHaveValue('97');
     });
 
     test('a legacy piano-roll blob is ignored — Project is a clean break', async ({ page }) => {
@@ -49,7 +49,7 @@ test.describe('persistence', () => {
         await openRollTab(page);
 
         expect(await getNotes(page)).toEqual([]);
-        await expect(page.locator('.pianoroll-bpm')).toHaveValue('120');
+        await expect(page.locator('.transport-bpm')).toHaveValue('120');
         // And it is left where it is rather than deleted — not ours to bin.
         expect(await page.evaluate((k) => !!localStorage.getItem(k), LEGACY_ROLL_KEY)).toBe(true);
     });

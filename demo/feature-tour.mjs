@@ -376,7 +376,7 @@ async function main() {
                 await sleep(0.22);
             }
         }
-        await ui.click('.pianoroll-play', { after: 0.3 });
+        await ui.click('.transport-play', { after: 0.3 });
     });
 
     // --- 7. clips across a section
@@ -384,7 +384,7 @@ async function main() {
         // Stop the piano roll first. Left running, its playhead re-renders
         // the Section on every tick and Playwright's "element is stable"
         // check never passes — every click in here times out.
-        await ui.click('.pianoroll-stop', { after: 0.3 });
+        await ui.click('.transport-stop', { after: 0.3 });
         await ui.tab('section');
 
         // The real placing gesture: select a clip (that selects its
@@ -409,12 +409,13 @@ async function main() {
             await sleep(0.3);
         }
 
-        await ui.click('.section-play', { after: 0.3 });
+        await ui.click('.transport-mode[data-mode="section"]', { after: 0.3 });
+        await ui.click('.transport-play', { after: 0.3 });
     });
 
     // --- 8. the project
     await run('project', async () => {
-        await ui.click('.section-stop', { after: 0.3 }).catch(() => {});
+        await ui.click('.transport-stop', { after: 0.3 }).catch(() => {});
         await ui.click('.menu-item[data-menu="file"] .menu-label', { after: 0.5 });
         await ui.point('#menu-export-project', { dwell: 1.4 });
         await page.keyboard.press('Escape');

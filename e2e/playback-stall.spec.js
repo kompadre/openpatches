@@ -16,7 +16,7 @@ test('ticks held back by a stalled page do not play as a burst on return', async
   await page.evaluate(() => window.__opProject.update(p => {
     const pat = Object.values(p.patterns)[0]; pat.notes = Array.from({length:16}, (_, i) => ({ midi: 60, start: i, dur: 1, slot: 0 }));
   }, 'e2e'));
-  await page.locator('.pianoroll-play').click();
+  await page.locator('.transport-play').click();
   await page.waitForTimeout(600);
   const r = await page.evaluate(() => new Promise(res => {
     const before = window.__notes.length; const t = performance.now();

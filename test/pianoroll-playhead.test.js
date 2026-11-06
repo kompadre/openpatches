@@ -191,14 +191,11 @@ describe('per-tick cost', () => {
         assert.equal(sets, 1, 'and it is still assigned when the width really changes');
     });
 
-    test('Play is disabled while recording, since it would be a silent no-op', () => {
+    test('Play while recording is a silent no-op — the recorder owns the worker', () => {
         const { roll } = build();
-        const playBtn = roll.element.querySelector('.pianoroll-play');
         roll.startRecording();
-        assert.equal(playBtn.disabled, true);
         roll.startPlayback();
-        assert.equal(roll.isPlaying(), false, 'the recorder owns the worker');
+        assert.equal(roll.isPlaying(), false);
         roll.stopRecording();
-        assert.equal(playBtn.disabled, false);
     });
 });

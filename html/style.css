@@ -2081,21 +2081,14 @@ h1 {
     100% { opacity: 1; }
 }
 
-.pianoroll-record.active {
+.transport-record.active {
     background: #e94560;
     color: #fff;
     border-color: #ff6b8a;
     animation: rec-pulse 1s infinite;
 }
 /* A step record is armed, not running: lit, but no pulse. */
-.pianoroll-record.step { animation: none; }
-/* Armed for an external MIDI clock: Play is taken, nothing runs yet. */
-.pianoroll-play.waiting, .section-play.waiting {
-    opacity: 1;
-    border-color: #e9a045;
-    color: #e9a045;
-    animation: rec-pulse 1s infinite;
-}
+.transport-record.step { animation: none; }
 
 .pianoroll-accompany.active {
     /* Pattern only: the rest of the song is muted inside the loop. */
@@ -2119,67 +2112,10 @@ h1 {
     cursor: not-allowed;
 }
 
-.pianoroll-play {
-    background: #1b5e20;
-    border-color: #4caf50;
-    color: #fff;
-}
-
-.pianoroll-play:hover {
-    background: #2e7d32;
-}
-
-.pianoroll-play:disabled {
-    background: #1b5e20;
-}
-
-.pianoroll-stop {
-    background: #b71c1c;
-    border-color: #e94560;
-    color: #fff;
-}
-
-.pianoroll-stop:hover {
-    background: #c62828;
-}
-
 .pianoroll-hint {
     color: #666;
     font-size: 0.7rem;
     margin-left: 0.5rem;
-}
-
-.pianoroll-bpm-label {
-    color: #555;
-    font-size: 0.7rem;
-    margin-left: 0.5rem;
-}
-
-/* Step length picker — only on screen while a step record is armed. */
-.pianoroll-step-len {
-    padding: 0.15rem 0.3rem;
-    background: #0f0f23;
-    border: 1px solid #e94560;
-    border-radius: 4px;
-    color: #ccc;
-    font-size: 0.75rem;
-    cursor: pointer;
-}
-
-.pianoroll-bpm {
-    width: 3.2rem;
-    padding: 0.15rem 0.3rem;
-    background: #0f0f23;
-    border: 1px solid #333;
-    border-radius: 4px;
-    color: #ccc;
-    font-size: 0.75rem;
-    text-align: center;
-}
-
-.pianoroll-bpm:focus {
-    outline: none;
-    border-color: #4caf50;
 }
 
 .pianoroll-canvas {
@@ -2272,16 +2208,101 @@ h1 {
     pointer-events: none;
 }
 
+.dock-top {
+    /* The top strip: transport bar on the left, tabs centred under the menu
+       bar — a three-column grid with an empty right column the width of
+       the left one, so the tabs stay centred whatever the bar's width. */
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: end;
+    width: 95vw;
+    margin-bottom: 0.3rem;
+    flex-shrink: 0;
+}
+
 .dock-tabs {
+    grid-column: 2;
     display: flex;
     gap: 0.25rem;
-    margin-bottom: 0.3rem;
-    width: 95vw;
-    /* Centred under the menu bar. The strip is the top of the page now, not
-       a label on a drawer at the bottom. */
     justify-content: center;
     flex-wrap: wrap;
     flex-shrink: 0;
+}
+
+/* --- Transport bar: the one Play / Stop / Record / BPM --- */
+.transport-bar {
+    grid-column: 1;
+    justify-self: start;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding-bottom: 0.15rem;
+}
+
+.transport-btn {
+    background: #16213e;
+    color: #ccc;
+    border: 1px solid #333;
+    border-radius: 4px;
+    padding: 0.25rem 0.6rem;
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+.transport-btn:hover { background: #1a2744; color: #fff; }
+.transport-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.transport-play { background: #1b5e20; border-color: #4caf50; color: #fff; }
+.transport-play:hover { background: #2e7d32; }
+.transport-play:disabled { background: #1b5e20; }
+.transport-stop { background: #b71c1c; border-color: #e94560; color: #fff; }
+.transport-stop:hover { background: #c62828; }
+
+/* Armed for an external MIDI clock: Play is taken, nothing runs yet. */
+.transport-play.waiting {
+    opacity: 1;
+    border-color: #e9a045;
+    color: #e9a045;
+    animation: rec-pulse 1s infinite;
+}
+
+/* What Play and Record act on: one lit segment. */
+.transport-modes { display: inline-flex; }
+.transport-modes .transport-mode { border-radius: 0; margin-left: -1px; }
+.transport-modes .transport-mode:first-child { border-radius: 4px 0 0 4px; margin-left: 0; }
+.transport-modes .transport-mode:last-child { border-radius: 0 4px 4px 0; }
+.transport-mode.active { background: #e94560; color: #fff; border-color: #e94560; position: relative; }
+
+.transport-field {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    white-space: nowrap;
+    color: #777;
+    font-size: 0.7rem;
+}
+
+.transport-bpm {
+    width: 3.2rem;
+    padding: 0.15rem 0.3rem;
+    background: #0f0f23;
+    border: 1px solid #333;
+    border-radius: 4px;
+    color: #ccc;
+    font-size: 0.75rem;
+    text-align: center;
+}
+.transport-bpm:focus { outline: none; border-color: #4caf50; }
+
+/* Step length picker — only on screen while a step record is armed. */
+.transport-step-len {
+    padding: 0.15rem 0.3rem;
+    background: #0f0f23;
+    border: 1px solid #e94560;
+    border-radius: 4px;
+    color: #ccc;
+    font-size: 0.75rem;
+    cursor: pointer;
 }
 
 .dock-tab {
@@ -4419,7 +4440,30 @@ footer {
         overflow: auto !important;
     }
     
-    /* Tab bar: bottom navigation */
+    /* The top strip stacks: the icon tabs, then the transport bar as a
+       full-width row under them. */
+    .dock-top {
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        margin: 0;
+    }
+    .transport-bar {
+        order: 2;
+        width: 100%;
+        box-sizing: border-box;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: 4px;
+        padding: 5px 3px;
+        background: #16213e;
+        border-bottom: 1px solid #333;
+    }
+    .transport-btn { padding: 0.3rem 0.45rem; font-size: 0.72rem; }
+    .transport-field { font-size: 0.65rem; }
+    .transport-bpm { width: 2.8rem; }
+
+    /* Tab bar: a strip of icons */
     .dock-tabs {
         flex-shrink: 0;
         gap: 0;
@@ -4542,12 +4586,6 @@ footer {
         opacity: 0.4;
         cursor: default;
     }
-    .kb-btn-record.active {
-        animation: rec-pulse 1s infinite;
-    }
-    .kb-btn-record.step {
-        animation: none;
-    }
     @keyframes rec-pulse {
         0% { opacity: 1; }
         50% { opacity: 0.5; }
@@ -4626,11 +4664,9 @@ footer {
     .edit-row label { width: auto; margin-bottom: 2px; }
 
     /* Pianoroll controls: hide non-essential on mobile */
-    .pianoroll-controls .pianoroll-btn:not(.pianoroll-play):not(.pianoroll-stop):not(.pianoroll-more) {
+    .pianoroll-controls .pianoroll-btn:not(.pianoroll-more) {
         display: none;
     }
-    .pianoroll-bpm-label { display: none; }
-    .pianoroll-bpm { width: 50px; font-size: 0.75rem; }
     .pianoroll-controls {
         flex-wrap: wrap;
         gap: 4px;
@@ -4716,7 +4752,6 @@ footer {
     font-size: 0.75rem;
 }
 .section-name { width: 7rem; }
-.section-bpm { width: 3.5rem; }
 .section-loop-start, .section-loop-end { width: 3rem; }
 .section-field { display: inline-flex; align-items: center; gap: 0.25rem; white-space: nowrap; }
 

@@ -71,8 +71,7 @@ function build() {
         roll,
         session: dock._session,
         transport: roll.getTransport(),
-        rec: controls.querySelector('.pianoroll-record'),
-        recMobile: dock.querySelector('.kb-btn-record'),
+        rec: dock.querySelector('.transport-record'),
         undo: dock.querySelector('.kb-btn-undo'),
         scroll: dock.querySelector('.pianoroll-scroll'),
         down(midi) { keys[midi - 36].dispatch('mousedown', ev); },
@@ -103,7 +102,7 @@ beforeEach(() => {
 
 describe('arming', () => {
     test('Rec with the clock stopped arms a step record, not a take', () => {
-        const { rec, recMobile, roll, transport } = build();
+        const { rec, roll, transport } = build();
         rec.dispatch('click');
         assert.deepEqual(started, [], 'no clock');
         assert.equal(transport.isRunning(), false);
@@ -111,7 +110,6 @@ describe('arming', () => {
         assert.ok(rec.classList.contains('active'));
         assert.ok(rec.classList.contains('step'), 'lit but marked as a step record');
         assert.match(rec.textContent, /Stop/);
-        assert.equal(recMobile.textContent, 'Stop ■');
         assert.equal(roll.getStepCursor(), 0, 'the cursor starts at the top of the pattern');
     });
 
@@ -271,7 +269,7 @@ describe('rests are made by hand', () => {
 });
 
 describe('step length', () => {
-    const select = (h) => h.dock.querySelector('.pianoroll-step-len');
+    const select = (h) => h.dock.querySelector('.transport-step-len');
 
     test('the picker is only on screen while a step record is armed', () => {
         const h = build();
@@ -322,7 +320,7 @@ describe('the mobile step nudge buttons', () => {
         const [back, fwd] = h.dock.querySelectorAll('.kb-btn-step-nudge');
         return { back, fwd };
     };
-    const select = (h) => h.dock.querySelector('.pianoroll-step-len');
+    const select = (h) => h.dock.querySelector('.transport-step-len');
 
     test('they sit in the mobile row and are live only while a step record is armed', () => {
         const h = build();
@@ -439,13 +437,13 @@ describe('handing over to the clock', () => {
         assert.equal(roll.getStepCursor(), -1, 'the playhead takes over');
     });
 
-    test('the mobile Play does the same', () => {
+    test('Play on the transport bar does the same', () => {
         const { dock, rec, transport } = build();
         rec.dispatch('click');
-        const play = dock.querySelector('.kb-btn-play');
-        play.dispatch('click');
+        const play = dock.querySelector('.transport-play');
+        play.dispatch('click', { stopPropagation() {} });
         assert.equal(transport.isRecording(), true);
-        assert.equal(play.textContent, 'Stop ■');
+        assert.equal(play.disabled, true);
     });
 
     test('the clock starting elsewhere ends the step record', async () => {

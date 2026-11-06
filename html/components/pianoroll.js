@@ -214,7 +214,6 @@ export function createPianoroll(opts) {
                 pattern: clip ? livePattern(clip.patternId) : null,
             };
         }).sort((a, b) => a.slot - b.slot);
-        bpmInput.value = String(project.bpm);
         selectSlot(currentSlot());
         // Nothing to edit on this voice: size the grid to the project's longest
         // pattern so a freshly loaded project looks its length straight away.
@@ -262,8 +261,10 @@ export function createPianoroll(opts) {
         return out;
     }
 
+    /** The project's tempo — the transport bar's BPM box writes it. */
     function getBpm() {
-        const v = parseInt(bpmInput.value);
+        const project = session.get();
+        const v = project ? parseInt(project.bpm) : NaN;
         return Number.isFinite(v) ? Math.max(MIN_BPM, Math.min(MAX_BPM, v)) : DEFAULT_BPM;
     }
 
@@ -306,31 +307,8 @@ export function createPianoroll(opts) {
     const controls = document.createElement('div');
     controls.className = 'pianoroll-controls';
 
-    const playBtn = document.createElement('button');
-    playBtn.className = 'pianoroll-btn pianoroll-play';
-    playBtn.textContent = '\u25B6 Play';
-    const playBtnTitle = playBtn.title || '';
-    controls.appendChild(playBtn);
-
-    const stopBtn = document.createElement('button');
-    stopBtn.className = 'pianoroll-btn pianoroll-stop';
-    stopBtn.textContent = '\u25A0 Stop';
-    stopBtn.disabled = true;
-    controls.appendChild(stopBtn);
-
-    const bpmLabel = document.createElement('span');
-    bpmLabel.className = 'pianoroll-bpm-label';
-    bpmLabel.textContent = 'BPM';
-    controls.appendChild(bpmLabel);
-
-    const bpmInput = document.createElement('input');
-    bpmInput.type = 'number';
-    bpmInput.className = 'pianoroll-bpm';
-    bpmInput.value = String(DEFAULT_BPM);
-    bpmInput.min = '32';
-    bpmInput.max = '255';
-    bpmInput.step = '1';
-    controls.appendChild(bpmInput);
+    // Play, Stop and BPM used to open this row; they are the transport
+    // bar's now (components/transport-bar.js), above every panel.
 
     const FOLLOW_LABEL = '\u21E5 Follow';
     const FOLLOW_TITLE = 'Scroll the roll to keep the playhead in view while playing. ' +
@@ -1371,7 +1349,7 @@ export function createPianoroll(opts) {
                 // Click preview
                 const entry = getSlotData(currentSlot());
                 const voiceData = entry ? entry.voiceData : null;
-                const bpm = Math.max(32, Math.min(255, parseInt(bpmInput.value) || 120));
+                const bpm = getBpm();
                 const msPerSixteenth = 60000 / bpm / 4;
                 playNoteFn(resizingNote.midi, resizingNote.dur * msPerSixteenth, voiceData, currentSlot());
             }
@@ -1390,7 +1368,7 @@ export function createPianoroll(opts) {
                 // Click preview — look up voice data from slot
                 const entry = getSlotData(currentSlot());
                 const voiceData = entry ? entry.voiceData : null;
-                const bpm = Math.max(32, Math.min(255, parseInt(bpmInput.value) || 120));
+                const bpm = getBpm();
                 const msPerSixteenth = 60000 / bpm / 4;
                 playNoteFn(movingNote.midi, movingNote.dur * msPerSixteenth, voiceData, currentSlot());
             }
@@ -1791,10 +1769,6 @@ export function createPianoroll(opts) {
         looping = pos.playing || pos.recording;
         // Armed for an external clock counts as "going" for the buttons —
         // Stop is how you take it back — but not for the drawing.
-        playBtn.disabled = looping || waitingForClock;
-        stopBtn.disabled = !(looping || waitingForClock);
-        playBtn.classList.toggle('waiting', waitingForClock);
-        playBtn.title = waitingForClock ? 'Waiting for the external MIDI clock to start' : playBtnTitle;
         playCol = pos.edit ? pos.edit.patternCol : -1;
 
         if (!looping) {
@@ -1813,8 +1787,6 @@ export function createPianoroll(opts) {
     // --- Tick Worker Handler ---
     // (gone: the transport owns the worker subscription now)
 
-    playBtn.addEventListener('click', startPlayback);
-    stopBtn.addEventListener('click', stopPlayback);
     clearBtn.addEventListener('click', clearPattern);
     clearBtnDesktop.addEventListener('click', clearPattern);
 
@@ -1831,13 +1803,6 @@ export function createPianoroll(opts) {
         onNotesChange();
         saveState();
     }
-
-    bpmInput.addEventListener('change', () => {
-        // The project's tempo. A section can override it, but the roll's
-        // box is the project's — the Section editor owns the override.
-        session.update((project) => { project.bpm = getBpm(); }, 'roll');
-        refreshSequence();
-    });
 
     function renderLegend() {
         legend.innerHTML = '';
@@ -1911,14 +1876,6 @@ export function createPianoroll(opts) {
         isPlaying() { return playing || waitingForClock; },
         isFollowing() { return followPlayhead; },
         setFollowPlayhead,
-        /**
-         * Place a caller-owned button in the transport row, right after
-         * Stop. The toolbar uses this for Record: its logic lives there,
-         * but on desktop the piano roll's row is the only visible transport.
-         */
-        insertControl(el) {
-            controls.insertBefore(el, stopBtn.nextSibling);
-        },
         /** Select the voice slot being edited — its track becomes active. */
         setActiveSlot(slot) {
             opts.activeSlot = slot;
@@ -2114,7 +2071,7 @@ export function createPianoroll(opts) {
         setMode(m) { transport.setMode(m); },
         getAccompany() { return transport.getAccompany(); },
         setAccompany(on) { transport.setAccompany(on); updateAccompanyButton(); },
-        getBpm() { return parseInt(bpmInput.value) || DEFAULT_BPM; },
+        getBpm,
         /**
          * Every note across every track, flattened and slot-tagged.
          * Nothing in the app needs this — the tests do, for assertions

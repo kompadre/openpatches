@@ -308,7 +308,7 @@ describe('the transport follows', () => {
 });
 
 describe('what the buttons show', () => {
-    test('the Section tab\'s Play pulses while waiting, and Stop is live', async () => {
+    test('the transport bar\'s Play pulses while waiting, and Stop is live', async () => {
         await slaved();
         const session = makeProjectSession();
         const pattern = session.createPattern({ name: 'A', measures: 1, notes: [{ midi: 60, start: 0, dur: 1 }] });
@@ -321,9 +321,10 @@ describe('what the buttons show', () => {
             session, tickWorker: { postMessage() {}, addEventListener() {} }, startWorker: () => {}, stopWorker: () => {},
             playNote: () => {}, getSlotData: () => null, getPattern: (id) => session.getPattern(id), getEditTarget: () => null,
         });
-        const editor = createSectionEditor({ session, transport, getSlotData: () => null });
-        const play = () => editor.element.querySelector('.section-play');
-        const stop = () => editor.element.querySelector('.section-stop');
+        const { createTransportBar } = await import('../html/components/transport-bar.js');
+        const bar = createTransportBar({ transport, session });
+        const play = () => bar.element.querySelector('.transport-play');
+        const stop = () => bar.element.querySelector('.transport-stop');
         const click = (el) => el.dispatch('click', { stopPropagation() {} });
         click(play());
         assert.equal(play().classList.contains('waiting'), true);
@@ -365,7 +366,7 @@ describe('recording under an external clock', () => {
         // playback, and Rec then turns the arm into a take.
         roll.addNote({ midi: 48, start: 0, dur: 1, slot: 0 });
         roll.startPlayback();
-        dock.querySelector('.pianoroll-record').dispatch('click');
+        dock.querySelector('.transport-record').dispatch('click');
         assert.equal(transport.isWaiting(), true, 'armed for a take');
         clock += 3000;                                 // the device takes its time
         clocks(port, 24, 60000 / 60 / 24);             // and runs at 60 BPM

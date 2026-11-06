@@ -77,6 +77,15 @@ run `node --check` + `node --test` and tick this file only. (Open: AGENTS.md
 "Keep it current ... in the same commit/change" reads per-change; awaiting
 the user's wording if SESSION.md should be deferred too.)
 
+### Plan of 2026-11-06 — Phase 1 DONE, Phase 2 next
+
+The five-phase plan is in TODO.md. Phase 1 (one transport bar left of
+the tabs, `components/transport-bar.js`) is done and recorded in
+CHANGELOG.md. Phase 2 is thinner Section lanes (two-row heads: number +
+delete, Mute + Solo) plus clip selection and stamp paste reusing the
+roll's marquee/stamp. Decided with the user: "Patches library" in the
+old TODO meant the **pattern** library (phase 3).
+
 ### Desktop full-page tabs — DONE 2026-11-04
 
 Tabs at the top centred, canvas is the Patches tab. See CHANGELOG.md. Live

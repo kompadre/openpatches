@@ -4,6 +4,7 @@
 
 import { createPianoroll } from './pianoroll.js';
 import { createSectionEditor } from './section-editor.js';
+import { createTransportBar } from './transport-bar.js';
 import { createVoiceBank } from './voicebank.js';
 import { createEditPanel } from './edit-panel.js';
 // Namespaced as midiManager, not midi: `midi` is the note-number parameter
@@ -118,7 +119,12 @@ export function createToolbar(opts) {
     tabBar.appendChild(tabEdit);
     tabBar.appendChild(tabLog);
     tabBar.appendChild(tabStop);
-    wrapper.appendChild(tabBar);
+    // The top strip: the transport bar on the left, the tabs centred. The
+    // bar is mounted once the clock exists, below.
+    const dockTop = document.createElement('div');
+    dockTop.className = 'dock-top';
+    dockTop.appendChild(tabBar);
+    wrapper.appendChild(dockTop);
 
     // Panels
     const canvasPanel = document.createElement('div');
@@ -514,6 +520,27 @@ export function createToolbar(opts) {
     // takes with it and the Section editor draws its playhead from it.
     const transport = pianorollRef.getTransport();
 
+    // The one Play / Stop / Record / BPM, left of the tabs. Play acts on
+    // the mode its switch shows: the roll's own start for the pattern (it
+    // rewinds a following view), the transport's for the section. Either
+    // way a press during a step record turns it into a live take. Stop
+    // ends whatever is going — a take, a step record, or playback.
+    const transportBar = createTransportBar({
+        transport,
+        session,
+        onPlay: () => {
+            if (stepping) { startTake(); return; }
+            if (transport.getMode() === 'pattern') pianorollRef.startPlayback();
+            else transport.play();
+        },
+        onStop: () => {
+            if (recording || stepping) stopAll();
+            else transport.stop();
+        },
+    });
+    dockTop.insertBefore(transportBar.element, tabBar);
+    wrapper._transportBar = transportBar;
+
     // Recording: the transport runs the clock and sounds the arrangement;
     // the toolbar only has to finalise notes held across the loop seam.
     transport.subscribe((pos) => {
@@ -578,16 +605,11 @@ export function createToolbar(opts) {
     const kbControls = document.createElement('div');
     kbControls.className = 'kb-controls';
 
-    const btnRecord = document.createElement('button');
-    btnRecord.className = 'kb-btn kb-btn-record';
-    btnRecord.textContent = 'Record ●';
-
-    // The kb-controls row above is mobile-only (hidden on desktop by CSS),
-    // which is how Record disappeared from desktop. The piano roll's own
-    // transport row is what desktop users see, so a second button lives
-    // there; both drive the same toggleRecording() below.
+    // Record lives on the transport bar, on every viewport. (This row
+    // used to carry a mobile twin of it, and a Play, when the only other
+    // transport was the piano roll's desktop-only control row.)
     const btnRecordDesktop = document.createElement('button');
-    btnRecordDesktop.className = 'pianoroll-btn pianoroll-record';
+    btnRecordDesktop.className = 'transport-btn transport-record';
     btnRecordDesktop.textContent = '\u25CF Rec';
     btnRecordDesktop.title = 'Record from the on-screen keyboard or a MIDI controller into the piano roll. '
         + 'Stopped: step by step — a tap places a note of the chosen length at the cursor the moment the key goes down, '
@@ -601,7 +623,7 @@ export function createToolbar(opts) {
     // Stop | Rec | step length.
     const STEP_LEN_KEY = 'openpatches_step_len';
     const stepLenSelect = document.createElement('select');
-    stepLenSelect.className = 'pianoroll-step-len';
+    stepLenSelect.className = 'transport-step-len';
     stepLenSelect.title = 'Step length: the note each step places';
     for (const [label, cols] of [['1/16', 1], ['1/8', 2], ['1/4', 4], ['1/2', 8], ['1/1', 16]]) {
         const opt = document.createElement('option');
@@ -614,10 +636,8 @@ export function createToolbar(opts) {
     stepLenSelect.addEventListener('change', () => {
         localStorage.setItem(STEP_LEN_KEY, stepLenSelect.value);
     });
-    if (pianorollRef && pianorollRef.insertControl) {
-        pianorollRef.insertControl(stepLenSelect);
-        pianorollRef.insertControl(btnRecordDesktop);
-    }
+    transportBar.insertControl(stepLenSelect);
+    transportBar.insertControl(btnRecordDesktop);
 
     function stepLen() {
         return parseInt(stepLenSelect.value) || 1;
@@ -642,19 +662,12 @@ export function createToolbar(opts) {
 
     function syncRecordButtons() {
         const on = recording || stepping;
-        for (const b of [btnRecord, btnRecordDesktop]) {
-            b.classList.toggle('active', on);
-            b.classList.toggle('step', stepping);   // lit but not pulsing: no clock
-        }
-        btnRecord.textContent = on ? 'Stop ■' : 'Record ●';
+        btnRecordDesktop.classList.toggle('active', on);
+        btnRecordDesktop.classList.toggle('step', stepping);   // lit but not pulsing: no clock
         btnRecordDesktop.textContent = on ? '\u25A0 Stop Rec' : '\u25CF Rec';
         stepLenSelect.style.display = stepping ? '' : 'none';
         btnStepBack.disabled = btnStepFwd.disabled = !stepping;
     }
-
-    const btnPlayStop = document.createElement('button');
-    btnPlayStop.className = 'kb-btn kb-btn-play';
-    btnPlayStop.textContent = 'Play ▶';
 
     const kbVoices = document.createElement('div');
     kbVoices.className = 'kb-voices';
@@ -696,10 +709,8 @@ export function createToolbar(opts) {
     }
 
     kbControls.appendChild(btnUndo);
-    kbControls.appendChild(btnRecord);
     kbControls.appendChild(btnStepBack);
     kbControls.appendChild(btnStepFwd);
-    kbControls.appendChild(btnPlayStop);
     kbControls.appendChild(kbVoices);
     kbControls.appendChild(midiIndicator);
     pianorollPanel.appendChild(kbControls);
@@ -865,8 +876,6 @@ export function createToolbar(opts) {
         recording = false;
         undoStack.length = 0;
         syncRecordButtons();
-        btnPlayStop.textContent = 'Play ▶';
-        btnPlayStop.classList.remove('active');
         // One stop: the transport owns the worker and releases the notes.
         if (pianorollRef && pianorollRef.stopRecording) pianorollRef.stopRecording();
     }
@@ -887,7 +896,6 @@ export function createToolbar(opts) {
         recording = true;
         recordStartTime = performance.now();
         syncRecordButtons();
-        btnPlayStop.textContent = 'Stop ■';
         undoStack.length = 0;
         // Starting a take stops any playback first — the transport refuses
         // to run two things on one clock.
@@ -1016,23 +1024,7 @@ export function createToolbar(opts) {
     btnStepBack.addEventListener('click', () => nudgeStep(-1));
     btnStepFwd.addEventListener('click', () => nudgeStep(1));
 
-    btnRecord.addEventListener('click', toggleRecording);
     btnRecordDesktop.addEventListener('click', toggleRecording);
-
-    btnPlayStop.addEventListener('click', () => {
-        if (recording || (pianorollRef && pianorollRef.isPlaying && pianorollRef.isPlaying())) {
-            stopAll();
-        } else {
-            if (pianorollRef && pianorollRef.startPlayback) {
-                pianorollRef.startPlayback();
-                // startPlayback is a no-op on an empty roll (and while
-                // recording) — only show Stop if it actually started.
-                if (pianorollRef.isPlaying && pianorollRef.isPlaying()) {
-                    btnPlayStop.textContent = 'Stop ■';
-                }
-            }
-        }
-    });
 
     // --- Keyboard (bottom section) ---
     const kb = document.createElement('div');

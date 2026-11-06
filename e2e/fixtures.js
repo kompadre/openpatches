@@ -80,13 +80,18 @@ export async function openApp(page) {
 }
 
 /**
- * Open the Piano Roll tab. Its own Play/Stop pair is the desktop control —
- * `.kb-btn-play` on the keyboard is mobile-only and is not clickable at this
- * viewport, so UI-level transport and roll tests have to go through here.
+ * Open the Piano Roll tab. Play/Stop are on the transport bar above the
+ * tabs, on every viewport, and act on the transport's mode — a test that
+ * wants the pattern loop sets the mode first (see `patternMode`).
  */
 export async function openRollTab(page) {
     await page.locator('.dock-tab', { hasText: 'Piano Roll' }).click();
-    await expect(page.locator('.pianoroll-play')).toBeVisible();
+    await expect(page.locator('.transport-play')).toBeVisible();
+}
+
+/** Make Play loop the pattern on screen — what the roll's own Play used to do. */
+export async function patternMode(page) {
+    await page.locator('.transport-mode[data-mode="pattern"]').click();
 }
 
 /**

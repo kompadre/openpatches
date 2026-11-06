@@ -616,13 +616,8 @@ describe('section toolbar', () => {
         assert.equal(name.value, before);
     });
 
-    test('tempo and loop range write through', () => {
+    test('loop range writes through', () => {
         const h = build({ patterns: [{ name: 'A', measures: 2 }], tracks: [{ slot: 0 }], clips: [{ track: 0, pattern: 0, at: 0, repeats: 2 }] });
-
-        const bpm = h.btn('section-bpm');
-        bpm.value = '9999';
-        bpm.dispatch('change');
-        assert.equal(h.project().bpm, M.MAX_BPM, 'clamped');
 
         h.btn('section-loop-on').checked = true;
         h.btn('section-loop-start').value = '2';
@@ -729,27 +724,6 @@ describe('playhead (phase 5)', () => {
         const top0 = parseFloat(head().style.top);
         h.tickWorker.tick(16);
         assert.equal(parseFloat(head().style.top) - top0, MEASURE_W);
-    });
-
-    test('Play and Stop in the toolbar drive the transport, in section mode', async () => {
-        const h = await withTransport();
-        h.transport.setMode('pattern');
-        const play = () => h.root.querySelector('.section-play');
-        const stop = () => h.root.querySelector('.section-stop');
-        assert.equal(play().disabled, false);
-        assert.equal(stop().disabled, true);
-
-        play().dispatch('click', ev());
-        assert.equal(h.transport.isPlaying(), true);
-        assert.equal(h.transport.getMode(), 'section', 'Play here is the whole section');
-        assert.equal(play().disabled, true);
-        assert.ok(play().classList.contains('active'));
-        assert.equal(stop().disabled, false);
-
-        stop().dispatch('click', ev());
-        assert.equal(h.transport.isPlaying(), false);
-        assert.equal(play().disabled, false);
-        assert.equal(stop().disabled, true);
     });
 
     test('opening a clip parks the section position on it, so that placement is what loops', async () => {

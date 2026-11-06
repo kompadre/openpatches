@@ -2,6 +2,14 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-06: One transport bar, left of the tabs
+
+**Play, Stop, Record and BPM are on one bar now** (`components/transport-bar.js`), mounted in the top strip to the left of the global tabs — a `.dock-top` grid with an empty right column the width of the left, so the tabs stay centred. On mobile the strip stacks: icon tabs, then the bar as a full-width row. The bar carries a **Section / Pattern switch** saying what Play and Record act on (the transport's two modes, lit from its broadcast; a third, the whole piece, is the plan's phase 4). Play in pattern mode goes through the roll's own `startPlayback` (the empty-roll check, the follow-view rewind); Play during a step record still turns it into a take; Stop ends a take, a step record or playback alike. The BPM box reads and writes the project tempo and hands a mid-playback change to the worker.
+
+Gone: the Section toolbar's Play/Stop/BPM, the piano roll's Play/Stop/BPM (its control row now opens with Follow), and the mobile keyboard row's Record and Play twins. Record and the step-length picker are inserted into the bar by the toolbar, as they were into the roll (`transport-record`, `transport-step-len`). The roll's `getBpm()` reads the session; `insertControl` left its API. Phase 1 of the plan in TODO.md.
+
+Tests: `test/transport-bar.test.js` (Play/Stop in the shown mode, caller-routed presses, the switch, BPM write-through and follow, the bar's place in the dock, pattern-mode Play through the roll); `toolbar-play-empty.test.js` went with the mobile Play; the Section/roll button tests moved here; e2e selectors renamed, `patternMode()` fixture added, the mixer visual baseline retaken (the strip is 2px shorter). 874 unit, 80 e2e pass. HEARME.tts and the tutorial updated.
+
 ## 2026-11-06: Three bugs — the stall burst, the mixer's short frame, the hidden Snap
 
 **Ticks held back by a stalled page no longer play as a burst.** Chrome drops focus to its download bubble when a project is exported mid-playback; the clock worker kept ticking but the page's handler ran only when the window came back, and then ran every queued tick at once — every missed note in one cluster (17 notes in 100 ms in the e2e reproduction). The worker now stamps each tick with the epoch time it was *due* (`at`, `performance.timeOrigin + target`, since worker and page have different origins), and `transport.onTick` treats a tick more than `STALE_TICK_MS` (150) late as a playhead move only: no notes, no MIDI clock to a device. Playback picks up with the next fresh tick; the notes due during the gap are skipped, not played late. `test/transport-stale-tick.test.js` (unit) and `e2e/playback-stall.spec.js` (freezes the main thread 2 s mid-playback and counts notes on return).

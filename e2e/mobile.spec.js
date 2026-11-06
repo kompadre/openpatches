@@ -175,7 +175,7 @@ test.describe('mobile', () => {
         await expect(fwd).toBeDisabled();
 
         const cursor = () => page.evaluate(() => window.__opDock._pianoroll.getStepCursor());
-        await page.locator('.kb-btn-record').tap();     // clock stopped: a step record
+        await page.locator('.transport-record').tap();  // clock stopped: a step record
         await expect(fwd).toBeEnabled();
         expect(await cursor()).toBe(0);
 

@@ -37,7 +37,7 @@
 import {
     addClip, updateClip, removeClip, removeTrack, setTrackSlot,
     clipCols, clipRepeats, sectionLength, createTrack,
-    COLS_PER_MEASURE, MAX_SLOTS, MIN_BPM, MAX_BPM,
+    COLS_PER_MEASURE, MAX_SLOTS,
 } from './project-model.js';
 
 export const MEASURE_W = 48;      // px per measure in the grid (its height, time runs down), at zoom ×1
@@ -80,8 +80,6 @@ export function createSectionEditor(opts = {}) {
     let selectedPatternId = null;
     let selectedClipId = null;
     let selectedTrackId = null;  // where `+ Pattern` lands; a clip's track when one is selected
-    let playBtn = null;        // transport buttons, re-created by renderToolbar, synced per tick
-    let stopBtn = null;
     let lastPress = { clipId: null, at: 0 };   // last body press, for double-tap removal
     let unsubscribe = null;
     let unsubscribeTransport = null;
@@ -222,24 +220,8 @@ export function createSectionEditor(opts = {}) {
     function renderToolbar(project) {
         toolbar.innerHTML = '';
 
-        // Play here is the whole section; the roll's Play loops one pattern.
-        if (transport) {
-            playBtn = button('▶ Play', 'Play the section from the start of its loop', () => {
-                transport.play({ mode: 'section' });
-            }, 'section-btn section-play');
-            // Armed for an external clock: Play is taken but nothing runs
-            // until the device starts us. The pulse says so; Stop disarms.
-            const waitTitle = 'Waiting for the external MIDI clock to start';
-            playBtn.dataset.waitTitle = waitTitle;
-            stopBtn = button('■ Stop', 'Stop', () => transport.stop(), 'section-btn section-stop');
-            toolbar.appendChild(playBtn);
-            toolbar.appendChild(stopBtn);
-            syncTransportButtons({
-                playing: transport.isPlaying(), recording: transport.isRecording(), mode: transport.getMode(),
-                waiting: transport.isWaiting ? transport.isWaiting() : false,
-            });
-        }
-
+        // Play, Stop and BPM used to be here too; they are the transport
+        // bar's now, above every panel, with a Section/Pattern switch.
         // The pattern library has no list of its own any more: new patterns
         // are born in place, on the selected track.
         toolbar.appendChild(button('+ Pattern', 'New pattern at the end of the selected track',
@@ -260,23 +242,6 @@ export function createSectionEditor(opts = {}) {
             session.renameSection(v, 'section-editor');
         });
         toolbar.appendChild(name);
-
-        const bpmLabel = document.createElement('label');
-        bpmLabel.className = 'section-field';
-        bpmLabel.textContent = 'BPM ';
-        const bpm = document.createElement('input');
-        bpm.className = 'section-bpm';
-        bpm.type = 'number';
-        bpm.min = String(MIN_BPM);
-        bpm.max = String(MAX_BPM);
-        bpm.value = String(project.bpm);
-        bpm.addEventListener('change', () => {
-            const v = parseInt(bpm.value);
-            const clamped = Number.isFinite(v) ? Math.max(MIN_BPM, Math.min(MAX_BPM, v)) : project.bpm;
-            change((s) => { s.bpm = clamped; });
-        });
-        bpmLabel.appendChild(bpm);
-        toolbar.appendChild(bpmLabel);
 
         // Loop range, shown as inclusive 1-based bars ("bars 1 to 4"),
         // stored as a 0-based half-open range ({start: 0, end: 4}).
@@ -784,16 +749,6 @@ export function createSectionEditor(opts = {}) {
         if (selectedClipId === clipId) selectedClipId = null;
     }
 
-    function syncTransportButtons(pos) {
-        if (!playBtn) return;
-        const running = pos.playing || pos.recording || !!pos.waiting;
-        playBtn.disabled = running;
-        stopBtn.disabled = !running;
-        playBtn.classList.toggle('active', !!pos.playing && pos.mode === 'section');
-        playBtn.classList.toggle('waiting', !!pos.waiting);
-        playBtn.title = pos.waiting ? playBtn.dataset.waitTitle : 'Play the section from the start of its loop';
-    }
-
     function openClip(clipId) {
         const clip = sec().clips.find(c => c.id === clipId);
         if (!clip) return;
@@ -834,7 +789,6 @@ export function createSectionEditor(opts = {}) {
     if (transport) {
         unsubscribeTransport = transport.subscribe((pos) => {
             movePlayhead(pos.sectionCol != null ? pos.sectionCol : pos.col);
-            syncTransportButtons(pos);
         });
     }
     render();

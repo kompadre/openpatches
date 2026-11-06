@@ -132,16 +132,16 @@ test.describe('step record UI', () => {
     });
 
     test('the step-length picker appears with the step record and is honoured', async ({ page }) => {
-        const picker = page.locator('.pianoroll-step-len');
+        const picker = page.locator('.transport-step-len');
         await expect(picker).toBeHidden();
 
-        await page.locator('.pianoroll-record').click();
+        await page.locator('.transport-record').click();
         await expect(picker).toBeVisible();
         await picker.selectOption('4');
 
         // Stepping itself is covered by the unit suite; the browser-only
         // part is the picker's visibility and that the choice persists.
-        await page.locator('.pianoroll-record').click();
+        await page.locator('.transport-record').click();
         await expect(picker).toBeHidden();
         await page.reload();
         await expect(page.locator('.keyboard .key').first()).toBeVisible();
@@ -149,7 +149,7 @@ test.describe('step record UI', () => {
     });
 
     test('dragging the header marker moves the step cursor', async ({ page }) => {
-        await page.locator('.pianoroll-record').click();
+        await page.locator('.transport-record').click();
         expect(await page.evaluate(() => window.__opDock._pianoroll.getStepCursor())).toBe(0);
 
         // Drag along the header strip from column 0 to column 9.
@@ -161,7 +161,7 @@ test.describe('step record UI', () => {
     });
 
     test('the playhead is dragged by its line too, anywhere below the header', async ({ page }) => {
-        await page.locator('.pianoroll-record').click();
+        await page.locator('.transport-record').click();
         // Grab the line of the step cursor (column 0) in the empty middle of
         // the grid and pull it to column 7.
         const o = await canvasOrigin(page);
@@ -176,7 +176,7 @@ test.describe('step record UI', () => {
     });
 
     test('a key down is a note at once, doubled per second held; a rest is a nudge', async ({ page }) => {
-        await page.locator('.pianoroll-record').click();
+        await page.locator('.transport-record').click();
         const key = page.locator('.keyboard .key[title="C4"]').first();
         const box = await key.boundingBox();
         await page.mouse.move(box.x + box.width / 2, box.y + box.height - 8);

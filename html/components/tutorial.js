@@ -78,7 +78,7 @@ const STEPS = [
             '3. <strong>Click+drag</strong> on the grid to draw notes (snaps to pitch and timing)<br>' +
             '4. <strong>Double-click</strong> a note to remove it<br>' +
             '5. <strong>Drag</strong> a note to move it<br>' +
-            '6. Press <strong>▶ Play</strong> to hear it<br><br>' +
+            '6. Press <strong>▶ Play</strong> on the transport bar (top left) to hear it — with the bar\'s switch on <strong>Pattern</strong> it loops this pattern, on <strong>Section</strong> it plays the whole section<br><br>' +
             'The other voices\' patterns show dimmed behind, so you can see how the parts fit; only the selected one can be edited. ' +
             'The <strong>♫ With section / ▭ Pattern only</strong> button decides whether the rest of the section is heard while you loop this pattern.',
     },
@@ -96,7 +96,8 @@ const STEPS = [
             '2. <strong>Click a clip</strong> to select it and its pattern, then <strong>click a lane</strong> to place that pattern again<br>' +
             '3. <strong>Drag</strong> a clip to move it (sideways onto another track too), drag its <strong>bottom edge</strong> to repeat it<br>' +
             '4. <strong>Hold</strong> a clip, or press ✎ Open, to edit its pattern in the Piano Roll<br>' +
-            '5. Each track picks the <strong>voice</strong> it plays, with <strong>M</strong>ute and <strong>S</strong>olo<br><br>' +
+            '5. Each track picks the <strong>voice</strong> it plays, with <strong>M</strong>ute and <strong>S</strong>olo<br>' +
+            '6. <strong>▶ Play</strong> on the transport bar, switched to <strong>Section</strong>, plays the arrangement; <strong>BPM</strong> is there too<br><br>' +
             'The same pattern can be placed as many times as you like — that is the point of patterns.<br><br>' +
             'Everything saves as you go. A whole <strong>project</strong> — its sections, patterns, tracks and patches — '
             + 'is made, opened and exported from the <strong>File</strong> menu.',

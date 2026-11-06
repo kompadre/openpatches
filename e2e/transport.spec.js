@@ -50,8 +50,8 @@ test.describe('transport', () => {
         await openRollTab(page);
         await seedNote(page);
 
-        const playBtn = page.locator('.pianoroll-play');
-        const stopBtn = page.locator('.pianoroll-stop');
+        const playBtn = page.locator('.transport-play');
+        const stopBtn = page.locator('.transport-stop');
 
         await playBtn.click();
         await expect
@@ -71,7 +71,7 @@ test.describe('transport', () => {
         // The browser-side twin of test/toolbar-play-empty.test.js: pressing
         // Play on an empty roll must leave the transport alone rather than
         // leaving the UI claiming it is running.
-        await page.locator('.pianoroll-play').click();
+        await page.locator('.transport-play').click();
         await page.waitForTimeout(300);
 
         expect(await page.evaluate(() => window.__opDock._pianoroll.isPlaying())).toBe(false);
@@ -134,7 +134,7 @@ test.describe('transport', () => {
             await new Promise((r) => setTimeout(r, 1200));
 
             // Through the input the user actually types in, change event and all.
-            const input = document.querySelector('.pianoroll-bpm');
+            const input = document.querySelector('.transport-bpm');
             input.value = String(before * 2);
             input.dispatchEvent(new Event('change', { bubbles: true }));
             const changedAt = performance.now();
