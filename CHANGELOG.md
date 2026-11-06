@@ -2,6 +2,14 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-06: Three bugs — the stall burst, the mixer's short frame, the hidden Snap
+
+**Ticks held back by a stalled page no longer play as a burst.** Chrome drops focus to its download bubble when a project is exported mid-playback; the clock worker kept ticking but the page's handler ran only when the window came back, and then ran every queued tick at once — every missed note in one cluster (17 notes in 100 ms in the e2e reproduction). The worker now stamps each tick with the epoch time it was *due* (`at`, `performance.timeOrigin + target`, since worker and page have different origins), and `transport.onTick` treats a tick more than `STALE_TICK_MS` (150) late as a playhead move only: no notes, no MIDI clock to a device. Playback picks up with the next fresh tick; the notes due during the gap are skipped, not played late. `test/transport-stale-tick.test.js` (unit) and `e2e/playback-stall.spec.js` (freezes the main thread 2 s mid-playback and counts notes on return).
+
+**The Mixer's frame ended at the pane's viewport.** `.bpane-content` is `width: 100%`; the bank's eight strips are wider, so scrolling the pane right showed strips past the end of the content's background. `.bpane-content-mixer` is now `max-content` with a `100%` minimum. The mixer visual baseline is retaken from the pane's viewport rather than the bank (whose own box reached into the neighbouring panes).
+
+**Sub-bar placement was never lost — Snap defaulted to Bar and nobody found the selector.** `DEFAULT_SNAP` is now 8 (1/2): the half-bar lines show at once that the grid goes below the bar. A stored choice still wins. Two unit tests that asserted the Bar default follow.
+
 ## 2026-11-05: Copy is a stamp — the Paste button goes
 
 **Paste-ahead-of-the-selection was clunky; Copy now arms a stamp.** Clicking `⎘ Copy` (or Ctrl/Cmd+C) takes the selection as a block relative to its top-left cell and a **shadow** of it follows the pointer over the grid (semi-transparent, dashed outline, clamped so the block never hangs off the right edge or the bottom row). A **click** on the grid places the copy there; the placed notes become the selection and the stamp is spent — Copy, click, Copy, click repeats a phrase along the pattern. Copy stays lit while armed; Copy again or Escape cancels; leaving the canvas hides the shadow without disarming. On touch the finger carries the shadow and lifting it places. During a step record, placing moves the cursor past the copy. The Paste button, Ctrl+V, `pasteClipboard`/`getClipboard` are gone; `isPlacing`/`getPlacement`/`cancelPlacement` join the roll's API.

@@ -7,7 +7,9 @@ Project backlog. Parent tasks with nested subtasks; `[ ]` pending, `[x]` done,
 
 ### Bugs
 
-_(none open)_
+- [x] Pattern sub-measure placement in Section has been lost to recent changes. _(Not lost: Snap defaulted to Bar and was easy to miss. Default is now 1/2.)_
+- [x] div.bpane-content.bpane-content-mixer is limited to .bpane-body viewport width. If .bpane-body scrolls to the right .bpane-content ends abruptly and doesn't cover the rest of Tracks.
+- [x] In Chrome, when exporting a project while playing, the page's window looses its focus (the downloaded file list shows in the upper right corner). While the window is inactive the internal clock is still ticking. All the notes that should have played while the window was inactive play the instance it regains focus resulting in cocophonous cluster.
 
 ### Features
 
@@ -20,8 +22,15 @@ _(none open)_
 
 ### Ideas
 
-- [ ] **Section** tab pattern visualization: paint small dots inside each clip where the pattern's notes are. Generate an image blob, cache it, invalidate the cache when the pattern changes.
+- [ ] **Section** tab pattern visualization: paint small dots inside each clip where the pattern's notes are. 
+   Generate an image blob, cache it, invalidate the cache when the pattern changes.
 - [ ] **Pianoroll** let the user switch between patterns directly from Pianoroll. Rename Piano Roll tab to Pattern.
-- [-] **Mixer** tab on desktop is 75% empty. _(Superseded 2026-11-05: Mixer, Edit and Log moved into a resizable, collapsible bottom pane under every main tab — a different cut at the same wasted-space complaint.)_
 - [ ] Drag patches from the canvas onto Mixer slots to assign them.
+- [ ] Patches library - a collapsable sub-pane on the bottom of "Section" pane containing all patterns created so far. Draggable into Section tracks.
+- [ ] Section: make the lanes (Tracks) thinner. 
+   - Header with two rows with two squares each: top number of the track ([1]) and delete [x]. Second row - Mute and Solo
+   - Add selection mode and stamp paste 
+- [ ] Unify transport interface (Play, Stop, Record and BPM) putting it to the left of global tabs (Patches, Piano Roll...)
+
+
 

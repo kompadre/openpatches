@@ -239,18 +239,28 @@ export function createTransport(opts) {
         return true;
     }
 
-    function onTick(rawCol) {
+    /**
+     * How late a worker tick may arrive and still sound. A window that loses
+     * focus mid-playback (Chrome's download bubble, say) can have its ticks
+     * held back and then delivered all at once; sounding them would play
+     * every missed note in one cluster. Late ticks only move the playhead.
+     */
+    const STALE_TICK_MS = 150;
+
+    function onTick(rawCol, stale = false) {
         if (!playing && !recording) return;
         if (!sequence || !sequence.range) return;
         // First, before any note work: these are timestamps for the device.
-        midiManager.clockColumn(rawCol, getBpm());
+        // A stale tick (see STALE_TICK_MS) moves the playhead and nothing
+        // else: no clock burst to the device, no notes.
+        if (!stale) midiManager.clockColumn(rawCol, getBpm());
         const col = sequence.columnForTick(rawCol);
         // The seam is the wrap back to the first column of the range; the
         // recorder finalises notes held across it.
         const seam = rawCol > 0 && col === sequence.range.startCol;
         lastCol = col;
         if (sequence.kind === 'section') sectionPos = col;
-        if (!fire(col)) return;
+        if (!stale && !fire(col)) return;
         notify({ col, rawCol, seam });
     }
 
@@ -258,7 +268,8 @@ export function createTransport(opts) {
         tickWorker.addEventListener('message', (e) => {
             if (!e.data || e.data.type !== 'tick') return;
             if (armed) return;             // following a device: its clock, not the worker's
-            onTick(e.data.col);
+            const at = e.data.at;
+            onTick(e.data.col, typeof at === 'number' && Date.now() - at > STALE_TICK_MS);
         });
     }
 

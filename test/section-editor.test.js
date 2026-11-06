@@ -135,7 +135,7 @@ describe('placing clips', () => {
         h.click(h.lanes()[0], 3 * MEASURE_W + 5);
         const section = h.section();
         assert.equal(section.clips.length, 1);
-        assert.equal(section.clips[0].startCol, 3 * COLS, 'bars are the default snap');
+        assert.equal(section.clips[0].startCol, 3 * COLS, 'a click at a bar line lands on it');
         assert.equal(section.clips[0].patternId, h.patterns[0].id);
         assert.equal(session.isDirty(), true, 'the edit reached the store, to be written');
         assert.equal(h.editor.getSelectedClipId(), section.clips[0].id, 'the new clip is selected');
@@ -185,7 +185,7 @@ describe('moving and lengthening clips', () => {
         });
     }
 
-    test('a drag down moves by whole bars at the default snap', () => {
+    test('a whole-bar drag down moves by whole bars at the default snap', () => {
         const h = one();
         const clip = h.clips()[0];
         clip.dispatch('mousedown', ev({ clientY: 10 }));
@@ -255,7 +255,7 @@ describe('moving and lengthening clips', () => {
         handle.dispatch('mousedown', ev({ clientY: 100 }));
         h.doc('mousemove', ev({ clientY: -500 }));
         h.doc('mouseup', ev({ clientY: -500 }));
-        assert.equal(h.section().clips[0].lengthCols, COLS, 'one bar, the default snap');
+        assert.equal(h.section().clips[0].lengthCols, COLS / 2, 'half a bar, the default snap');
     });
 
     test('touchcancel abandons the drag', () => {
@@ -921,9 +921,9 @@ describe('sub-bar placement and length', () => {
         sel.dispatch('change');
     };
 
-    test('the toolbar offers a snap and a zoom, defaulting to bars at ×1', () => {
+    test('the toolbar offers a snap and a zoom, defaulting to half bars at ×1', () => {
         const h = one({ clips: [] });
-        assert.equal(h.btn('section-snap').value, String(COLS));
+        assert.equal(h.btn('section-snap').value, String(COLS / 2));
         assert.equal(h.btn('section-zoom').value, '1');
         assert.deepEqual(
             Array.from(h.btn('section-snap').children).map(o => o.textContent),

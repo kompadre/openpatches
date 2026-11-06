@@ -48,8 +48,9 @@ const DOUBLE_TAP_MS = 400;        // two presses on one clip within this remove 
 
 const SNAP_KEY = 'openpatches_song_snap';
 const ZOOM_KEY = 'openpatches_song_zoom';
-// Grid resolutions, in columns. A bar is the default, so the grid behaves
-// exactly as it always did until the user asks for something finer.
+// Grid resolutions, in columns. Half a bar is the default: one step finer
+// than whole bars, so the faint half-bar lines show that the grid goes
+// below the bar and the Snap selector is worth finding.
 export const SNAPS = [
     { cols: COLS_PER_MEASURE, label: 'Bar' },
     { cols: 8, label: '1/2' },
@@ -57,6 +58,7 @@ export const SNAPS = [
     { cols: 2, label: '1/8' },
     { cols: 1, label: '1/16' },
 ];
+export const DEFAULT_SNAP = 8;   // 1/2
 export const ZOOMS = [1, 2, 4, 8];
 
 function loadNum(key, allowed, fallback) {
@@ -84,7 +86,7 @@ export function createSectionEditor(opts = {}) {
     let unsubscribe = null;
     let unsubscribeTransport = null;
     let playheadEl = null;
-    let snapCols = loadNum(SNAP_KEY, SNAPS.map(s => s.cols), COLS_PER_MEASURE);
+    let snapCols = loadNum(SNAP_KEY, SNAPS.map(s => s.cols), DEFAULT_SNAP);
     let zoom = loadNum(ZOOM_KEY, ZOOMS, 1);
 
     /** Grid scale. One bar is MEASURE_W tall at zoom ×1; a column is 1/16 of it. */

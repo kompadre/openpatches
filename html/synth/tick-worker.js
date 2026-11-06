@@ -10,7 +10,7 @@
 //   { type: 'stop' }                                  — stop (fallback path only)
 //
 // Messages OUT:
-//   { type: 'tick', col }
+//   { type: 'tick', col, at? }                       — at: epoch ms the tick was due
 //   { type: 'stopped' }
 //
 // Both paths are driven by a *generation counter*: every start or stop on the
@@ -75,6 +75,13 @@ self.onmessage = function (e) {
         gen++;
     }
 };
+
+// `at` on a tick is when it was *due*, as epoch millis (timeOrigin differs
+// between the worker and the page, so performance.now() alone would not
+// compare). The page drops the notes of a tick that arrives long after it
+// was due — a throttled or unfocused window gets its queued ticks in one
+// burst, and playing them all at once is a cacophony, not catching up.
+var wall = function (t) { return performance.timeOrigin + t; };
 
 var msPerSixteenth = function (bpm) { return 60000 / bpm / 4; };
 
@@ -146,7 +153,7 @@ function startAtomics(bpm, startCol, myGen) {
         // Final check before emitting
         if (Atomics.load(i32, 0) !== myGen) break;
 
-        self.postMessage({ type: 'tick', col: col });
+        self.postMessage({ type: 'tick', col: col, at: wall(target) });
         lastAt = target;
         col++;
     }
@@ -185,7 +192,7 @@ function startTimeout(bpm, startCol) {
             self.postMessage({ type: 'stopped' });
             return;
         }
-        self.postMessage({ type: 'tick', col: col });
+        self.postMessage({ type: 'tick', col: col, at: wall(at) });
         lastAt = at;
         col++;
         tick();

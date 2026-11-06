@@ -54,7 +54,11 @@ test.describe('visual regression', () => {
         await openMixerTab(page);
 
         // Every strip state in one frame: plain, muted, soloed, empty.
-        await expect(page.locator('.voicebank')).toHaveScreenshot('mixer-tab.png', SHOT);
+        // The pane's viewport, not the bank: the bank is as wide as all
+        // eight strips and scrolls inside it, so its own box would include
+        // the clipped part — pixels belonging to the neighbouring panes.
+        await expect(page.locator('.bpane-content-mixer').locator('xpath=..'))
+            .toHaveScreenshot('mixer-tab.png', SHOT);
     });
 
     test('MIDI settings modal', async ({ page }) => {
