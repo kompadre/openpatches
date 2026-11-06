@@ -60,6 +60,7 @@ const NOTES = [
     { midi: 36, name: 'C2',  white: true },
 ];
 
+import { claimKeys, ownsKeys } from './key-owner.js';
 import {
     COLS_PER_MEASURE, createTrack, addClip,
     MIN_BPM, MAX_BPM,
@@ -302,6 +303,9 @@ export function createPianoroll(opts) {
 
     const container = document.createElement('div');
     container.className = 'pianoroll-container';
+    // A press in the roll makes the selection keys its own (key-owner.js).
+    container.addEventListener('mousedown', () => claimKeys('roll'), true);
+    container.addEventListener('touchstart', () => claimKeys('roll'), { passive: true, capture: true });
 
     // Controls row
     const controls = document.createElement('div');
@@ -1150,6 +1154,7 @@ export function createPianoroll(opts) {
         const tag = e.target && e.target.tagName;
         if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
         if (e.target && e.target.isContentEditable) return;
+        if (!ownsKeys('roll')) return;         // the Section was pressed last (key-owner.js)
         const mod = e.ctrlKey || e.metaKey;
         if (mod && (e.key === 'c' || e.key === 'C')) { if (copySelection()) e.preventDefault(); return; }
         if (placing && e.key === 'Escape') { cancelPlacement(); return; }

@@ -52,8 +52,6 @@ export function createTransportBar(opts) {
     const playBtn = button('transport-play', '▶ Play', PLAY_TITLE, onPlay);
     const stopBtn = button('transport-stop', '■ Stop', 'Stop', onStop);
     stopBtn.disabled = true;
-    el.appendChild(playBtn);
-    el.appendChild(stopBtn);
 
     // What Play and Record act on. One lit segment, like the roll's
     // With section / Pattern only pair — but that one changes what is
@@ -69,7 +67,10 @@ export function createTransportBar(opts) {
         modeBtns[mode] = b;
         modes.appendChild(b);
     }
+    // First, so it reads as "Section ▶ Play": the scope, then the verb.
     el.appendChild(modes);
+    el.appendChild(playBtn);
+    el.appendChild(stopBtn);
 
     // The project's tempo. A section can override it (the Section editor
     // owns that), so what plays may differ from this box; it stays the

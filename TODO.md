@@ -15,9 +15,9 @@ Project backlog. Parent tasks with nested subtasks; `[ ]` pending, `[x]` done,
 
 **Phase 1 — Unified transport.** _Done 2026-11-06._ Play, Stop, Record and BPM once, to the left of the global tabs, with a Section/Pattern switch; the Section and Piano Roll toolbars and the mobile keyboard row lost their copies.
 
-**Phase 2 — Thinner Section lanes, selection and stamp paste.**
-- [ ] Head of two rows with two squares each: track number ([1]) and delete [x]; then Mute and Solo.
-- [ ] Selection mode and stamp paste for clips, reusing the roll's marquee and stamp.
+**Phase 2 — Thinner Section lanes, selection and stamp paste.** _Done 2026-11-06._
+- [x] Head of two rows with two squares each: track number ([1]) and delete [x]; then Mute and Solo.
+- [x] Selection mode and stamp paste for clips, reusing the roll's marquee and stamp.
 
 **Phase 3 — Working with patterns.**
 - [ ] Pattern thumbnails: small dots inside each clip where the pattern's notes are. One cached image blob per pattern, invalidated when the pattern changes. Thin lanes cramp the clip name; the dots are how a clip is recognised.

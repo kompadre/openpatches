@@ -988,3 +988,192 @@ describe('sub-bar placement and length', () => {
         assert.equal(h.status(), 'Clip overlaps');
     });
 });
+
+// Phase 2 of the 2026-11-06 plan: narrow lanes with two-row heads, and the
+// roll's selection gestures for clips — a marquee (Select mode or Shift),
+// Shift-click, Delete, and Copy as a stamp that follows the pointer.
+describe('track heads', () => {
+    test('two rows of two squares: number and remove, then Mute and Solo', () => {
+        const h = build({ tracks: [{ slot: 1 }] });
+        const head = h.heads()[0];
+        const kids = Array.from(head.children).map(k => k.className);
+        assert.equal(kids.length, 4);
+        assert.match(kids[0], /section-track-num/);
+        assert.match(kids[1], /section-track-remove/);
+        assert.match(kids[2], /section-track-mute/);
+        assert.match(kids[3], /section-track-solo/);
+        const num = head.children[0];
+        assert.equal(num.children[0].textContent, '2', 'the voice slot, 1-based');
+        assert.match(num.title, /2\. Bass/, 'the full name is in the tooltip');
+        assert.ok(num.querySelector('.section-track-slot'), 'the voice picker sits under the number');
+    });
+});
+
+describe('selecting and stamping clips', () => {
+    const LANE_W = 60;
+    /** The harness has no layout: rectangles from the lanes' order and the clips' style. */
+    function layout(h) {
+        h.lanes().forEach((lane, i) => {
+            lane.getBoundingClientRect = () => ({ left: i * LANE_W, right: (i + 1) * LANE_W, top: 0, bottom: 5000 });
+            for (const c of lane.querySelectorAll('.section-clip')) {
+                const top = parseFloat(c.style.top), height = parseFloat(c.style.height);
+                c.getBoundingClientRect = () => ({ left: i * LANE_W + 3, right: (i + 1) * LANE_W - 3, top, bottom: top + height });
+            }
+        });
+        h.root.querySelector('.section-lanes').getBoundingClientRect = () => ({ left: 0, top: 0, right: 1000, bottom: 5000 });
+        h.root.querySelector('.section-grid').getBoundingClientRect = () => ({ left: 0, top: 0, right: 1000, bottom: 5000 });
+    }
+    function three(clips) {
+        const h = build({
+            patterns: [{ name: 'A', measures: 1 }, { name: 'B', measures: 2 }],
+            tracks: [{ slot: 0 }, { slot: 1 }, { slot: 2 }],
+            clips,
+        });
+        layout(h);
+        return h;
+    }
+    const key = (h, k, extra = {}) => h.doc('keydown', { key: k, target: { tagName: 'DIV' }, preventDefault() {}, ...extra });
+    const pickedIds = (h) => Array.from(h.clips()).filter(c => c.classList.contains('picked')).map(c => c.dataset.clipId);
+    const marquee = (h, from, to, extra = {}) => {
+        layout(h);
+        const lane = h.lanes()[0];
+        lane.dispatch('mousedown', ev({ target: lane, ...from, ...extra }));
+        h.doc('mousemove', ev(to));
+        h.doc('mouseup', ev(to));
+        lane.dispatch('click', { target: lane, clientX: to.clientX, clientY: to.clientY, stopPropagation() {} });
+    };
+
+    test('Shift-click adds and removes; a plain click selects one again', () => {
+        const h = three([{ track: 0, pattern: 0, at: 0 }, { track: 1, pattern: 0, at: 2 }]);
+        const [a, b] = h.section().clips.map(c => c.id);
+        h.click(h.clips()[0]);
+        h.clips()[1].dispatch('click', { shiftKey: true, stopPropagation() {} });
+        assert.deepEqual(pickedIds(h).sort(), [a, b].sort());
+        h.clips()[0].dispatch('click', { shiftKey: true, stopPropagation() {} });
+        assert.deepEqual(pickedIds(h), [b]);
+        h.click(h.clips()[0]);
+        assert.deepEqual(pickedIds(h), [a]);
+    });
+
+    test('Delete removes the whole selection', () => {
+        const h = three([{ track: 0, pattern: 0, at: 0 }, { track: 1, pattern: 0, at: 2 }, { track: 2, pattern: 0, at: 4 }]);
+        h.click(h.clips()[0]);
+        h.clips()[2].dispatch('click', { shiftKey: true, stopPropagation() {} });
+        key(h, 'Delete');
+        assert.deepEqual(h.section().clips.map(c => c.trackId), [h.project().tracks[1].id]);
+    });
+
+    test('in Select mode a drag over the lanes selects every clip it touches, and places nothing', () => {
+        const h = three([
+            { track: 0, pattern: 0, at: 0 },                    // bar 1, lane 1
+            { track: 1, pattern: 1, at: 1 },                    // bars 2–3, lane 2
+            { track: 2, pattern: 0, at: 6 },                    // bar 7, lane 3: outside
+        ]);
+        h.click(h.clips()[0]);                                  // a pattern is selected: a plain click would place it
+        h.btn('section-select-mode').dispatch('click', ev());
+        assert.ok(h.btn('section-select-mode').classList.contains('active'));
+        const n = h.section().clips.length;
+        // From the middle of bar 1 in lane 1 to a touch of bar 3 in lane 2.
+        marquee(h, { clientX: 20, clientY: MEASURE_W / 2 }, { clientX: LANE_W + 10, clientY: 2 * MEASURE_W + 5 });
+        assert.equal(h.section().clips.length, n, 'the click ending the marquee placed nothing');
+        const ids = h.section().clips.map(c => c.id);
+        assert.deepEqual(pickedIds(h).sort(), [ids[0], ids[1]].sort());
+        assert.match(h.status(), /2 clips selected/);
+    });
+
+    test('Shift-drag does it without the mode, and adds to the selection', () => {
+        const h = three([{ track: 0, pattern: 0, at: 0 }, { track: 2, pattern: 0, at: 4 }]);
+        const ids = h.section().clips.map(c => c.id);
+        h.click(h.clips()[1]);
+        marquee(h, { clientX: 5, clientY: 5 }, { clientX: 10, clientY: 10 }, { shiftKey: true });
+        assert.deepEqual(pickedIds(h).sort(), [...ids].sort());
+    });
+
+    test('without the mode or Shift, a press on a lane is still a placement', () => {
+        const h = three([{ track: 0, pattern: 0, at: 0 }]);
+        h.click(h.clips()[0]);
+        marquee(h, { clientX: 70, clientY: 3 * MEASURE_W + 2 }, { clientX: 72, clientY: 3 * MEASURE_W + 2 });
+        assert.equal(h.section().clips.length, 2);
+    });
+
+    test('Copy arms a stamp whose shadow follows the pointer; a press places the block there', () => {
+        const h = three([{ track: 0, pattern: 0, at: 0 }, { track: 1, pattern: 1, at: 1 }]);
+        h.click(h.clips()[0]);
+        h.clips()[1].dispatch('click', { shiftKey: true, stopPropagation() {} });
+        assert.equal(h.btn('section-copy').disabled, false);
+        h.btn('section-copy').dispatch('click', ev());
+        assert.ok(h.btn('section-copy').classList.contains('active'), 'lit while armed');
+        layout(h);
+
+        // Over lane 2, bar 5: the block's first lane lands there.
+        const at = { clientX: LANE_W + 10, clientY: 4 * MEASURE_W + 5 };
+        h.doc('mousemove', ev(at));
+        const ghosts = h.root.querySelectorAll('.section-stamp-ghost');
+        assert.equal(ghosts.length, 2);
+        assert.equal(ghosts[0].parentNode, h.lanes()[1]);
+        assert.equal(ghosts[0].style.top, (4 * MEASURE_W) + 'px');
+        assert.equal(ghosts[1].parentNode, h.lanes()[2], 'the second clip keeps its lane offset');
+        assert.equal(ghosts[1].style.top, (5 * MEASURE_W) + 'px', 'and its time offset');
+
+        h.lanes()[1].dispatch('mousedown', ev({ target: h.lanes()[1], ...at }));
+        const t = h.project().tracks.map(x => x.id);
+        const copies = h.section().clips.slice(2);
+        assert.deepEqual(copies.map(c => [t.indexOf(c.trackId), c.startCol, c.patternId]),
+            [[1, 4 * COLS, h.patterns[0].id], [2, 5 * COLS, h.patterns[1].id]]);
+        assert.deepEqual(pickedIds(h).sort(), copies.map(c => c.id).sort(), 'the copies are the selection');
+        assert.equal(h.root.querySelectorAll('.section-stamp-ghost').length, 0, 'the stamp is spent');
+        assert.equal(h.btn('section-copy').classList.contains('active'), false);
+    });
+
+    test('the block never hangs off the last track', () => {
+        const h = three([{ track: 0, pattern: 0, at: 0 }, { track: 1, pattern: 0, at: 0 }]);
+        h.click(h.clips()[0]);
+        h.clips()[1].dispatch('click', { shiftKey: true, stopPropagation() {} });
+        key(h, 'c', { ctrlKey: true });
+        layout(h);
+        const at = { clientX: 2 * LANE_W + 10, clientY: 3 * MEASURE_W + 5 };   // over the last lane
+        h.lanes()[2].dispatch('mousedown', ev({ target: h.lanes()[2], ...at }));
+        const t = h.project().tracks.map(x => x.id);
+        assert.deepEqual(h.section().clips.slice(2).map(c => t.indexOf(c.trackId)), [1, 2], 'pulled back one lane');
+    });
+
+    test('a copy that would overlap is refused whole, and the stamp stays armed', () => {
+        const h = three([{ track: 0, pattern: 0, at: 0 }, { track: 1, pattern: 0, at: 0 }, { track: 1, pattern: 0, at: 4 }]);
+        h.click(h.clips()[0]);
+        h.clips()[1].dispatch('click', { shiftKey: true, stopPropagation() {} });
+        h.btn('section-copy').dispatch('click', ev());
+        layout(h);
+        const at = { clientX: 10, clientY: 4 * MEASURE_W + 5 };   // lane 1 is free at bar 5, lane 2 is not
+        h.lanes()[0].dispatch('mousedown', ev({ target: h.lanes()[0], ...at }));
+        assert.equal(h.section().clips.length, 3, 'not even the copy that fitted');
+        assert.match(h.status(), /overlap/);
+        assert.ok(h.btn('section-copy').classList.contains('active'));
+    });
+
+    test('Escape cancels the stamp, then drops the selection', () => {
+        const h = three([{ track: 0, pattern: 0, at: 0 }]);
+        h.click(h.clips()[0]);
+        h.btn('section-copy').dispatch('click', ev());
+        key(h, 'Escape');
+        assert.equal(h.btn('section-copy').classList.contains('active'), false);
+        assert.equal(pickedIds(h).length + h.root.querySelectorAll('.section-clip.selected').length, 1);
+        key(h, 'Escape');
+        assert.equal(h.root.querySelectorAll('.section-clip.selected').length, 0);
+        assert.equal(h.btn('section-copy').disabled, true, 'nothing to copy');
+    });
+});
+
+describe('the selection keys belong to the editor pressed last', () => {
+    test('a press in the piano roll makes Delete the roll\'s, not the Section\'s', async () => {
+        const { claimKeys, _resetKeyOwner } = await import('../html/components/key-owner.js');
+        const h = build({ patterns: [{ name: 'A' }], tracks: [{ slot: 0 }], clips: [{ track: 0, pattern: 0, at: 0 }] });
+        h.click(h.clips()[0]);
+        claimKeys('roll');
+        h.doc('keydown', { key: 'Delete', target: { tagName: 'DIV' }, preventDefault() {} });
+        assert.equal(h.section().clips.length, 1, 'the clip survives');
+        h.root.dispatch('mousedown', ev());
+        h.doc('keydown', { key: 'Delete', target: { tagName: 'DIV' }, preventDefault() {} });
+        assert.equal(h.section().clips.length, 0, 'a press back in the Section takes them back');
+        _resetKeyOwner();
+    });
+});

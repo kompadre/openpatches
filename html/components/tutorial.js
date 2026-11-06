@@ -96,8 +96,9 @@ const STEPS = [
             '2. <strong>Click a clip</strong> to select it and its pattern, then <strong>click a lane</strong> to place that pattern again<br>' +
             '3. <strong>Drag</strong> a clip to move it (sideways onto another track too), drag its <strong>bottom edge</strong> to repeat it<br>' +
             '4. <strong>Hold</strong> a clip, or press ✎ Open, to edit its pattern in the Piano Roll<br>' +
-            '5. Each track picks the <strong>voice</strong> it plays, with <strong>M</strong>ute and <strong>S</strong>olo<br>' +
-            '6. <strong>▶ Play</strong> on the transport bar, switched to <strong>Section</strong>, plays the arrangement; <strong>BPM</strong> is there too<br><br>' +
+            '5. Each track\'s <strong>number</strong> square picks the voice it plays, with <strong>✕</strong> remove, <strong>M</strong>ute and <strong>S</strong>olo<br>' +
+            '6. <strong>⬚ Select</strong> (or Shift-drag) to select clips, then <strong>⎘ Copy</strong> and click where the copy goes<br>' +
+            '7. <strong>▶ Play</strong> on the transport bar, switched to <strong>Section</strong>, plays the arrangement; <strong>BPM</strong> is there too<br><br>' +
             'The same pattern can be placed as many times as you like — that is the point of patterns.<br><br>' +
             'Everything saves as you go. A whole <strong>project</strong> — its sections, patterns, tracks and patches — '
             + 'is made, opened and exported from the <strong>File</strong> menu.',

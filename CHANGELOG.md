@@ -2,6 +2,18 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-06: Section lanes go thin; clips select and stamp like notes
+
+**Thin lanes, two-row heads.** A lane is 3.4rem (3.6 on mobile), down from 6.5. Its head is a 2×2 grid: the track's **number** — coloured by its voice, with the voice `<select>` stretched invisibly over it, so the closed control shows `1` and the open list the full names — and **✕**; then **M** and **S**.
+
+**Selection and stamp paste, after the roll's.** `⬚ Select` makes a drag on an empty lane a marquee (Shift-drag without the mode; Shift adds to the selection), on the document so it survives leaving the grid, selecting every clip it *touches*. Shift-click toggles one clip. Picked clips wear a dashed ring; the last clicked keeps the solid one and the action bar. Delete removes the selection. `⎘ Copy` (or Ctrl/Cmd+C) arms a **stamp**: dashed ghosts follow the pointer, lane and snap cell, the block clamped so it never hangs off the last track; a press places it — **all or nothing**, every copy checked against the section and the other copies first, since `session.update` has no rollback — the copies become the selection and the stamp is spent. Escape cancels the stamp, then drops the selection. Touch: Select mode marquees, the finger carries the stamp.
+
+**The selection keys belong to the editor pressed last** (`components/key-owner.js`). The roll and the Section both answer Delete/Escape/Ctrl+C on the document; with both on screen, one Delete took notes *and* clips. Each claims the keys on a press inside it (capture phase — a clip's press stops propagation).
+
+**Transport bar:** the Section/Pattern switch moved left of Play, so it reads as the scope of Play and Record.
+
+Phase 2 of the plan. Tests: ten in `section-editor.test.js` (head layout, Shift-click, Delete, marquee in the mode / with Shift / not without either, the stamp's ghosts, offsets and edge clamp, the all-or-nothing refusal, Escape) and one for key ownership; `e2e/section-select.spec.js` drives marquee → Copy → stamp in Chromium. 885 unit, 81 e2e pass.
+
 ## 2026-11-06: One transport bar, left of the tabs
 
 **Play, Stop, Record and BPM are on one bar now** (`components/transport-bar.js`), mounted in the top strip to the left of the global tabs — a `.dock-top` grid with an empty right column the width of the left, so the tabs stay centred. On mobile the strip stacks: icon tabs, then the bar as a full-width row. The bar carries a **Section / Pattern switch** saying what Play and Record act on (the transport's two modes, lit from its broadcast; a third, the whole piece, is the plan's phase 4). Play in pattern mode goes through the roll's own `startPlayback` (the empty-roll check, the follow-view rewind); Play during a step record still turns it into a take; Stop ends a take, a step record or playback alike. The BPM box reads and writes the project tempo and hands a mid-playback change to the worker.

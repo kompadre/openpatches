@@ -4774,7 +4774,7 @@ footer {
    the top row and stick while it scrolls down. */
 .section-grid {
     --section-ruler-w: 2rem;    /* the sticky ruler; the playhead starts after it */
-    --section-track-w: 6.5rem;  /* one lane and its head */
+    --section-track-w: 3.4rem;  /* one lane and its head: two 1.4rem squares a row */
     flex: 1 1 auto;
     min-width: 0;
     min-height: 0;
@@ -4814,10 +4814,12 @@ footer {
 .section-track-head {
     flex: 0 0 var(--section-track-w);
     box-sizing: border-box;
-    display: flex;
-    flex-direction: column;
+    /* Two rows of two squares: number | ✕, then M | S. */
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-auto-rows: 1.4rem;
     gap: 0.2rem;
-    padding: 0.25rem 0.3rem;
+    padding: 0.25rem;
     background: #12122a;
     border-top: 3px solid transparent;
     border-right: 1px solid #1f1f33;
@@ -4825,18 +4827,36 @@ footer {
 }
 .section-track-head:hover { background: #161a36; }
 .section-track-head.selected { background: #1a2744; }
-.section-track-slot {
-    width: 100%;
-    min-width: 0;
-    background: #0f0f23;
-    color: #ddd;
-    border: 1px solid #333;
+.section-track-num {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(255,255,255,0.25);
     border-radius: 4px;
-    font-size: 0.65rem;
-    padding: 0.1rem;
+    color: #fff;
+    font-size: 0.7rem;
+    font-weight: 600;
+    cursor: pointer;
 }
-.section-track-controls { display: flex; gap: 0.2rem; justify-content: center; }
-.section-track-head .section-btn { padding: 0.05rem 0.35rem; font-size: 0.65rem; }
+/* Invisible, over the number: the open list shows the voices' names. */
+.section-track-slot {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
+    font-size: 0.75rem;
+}
+.section-track-head .section-track-sq {
+    padding: 0;
+    font-size: 0.65rem;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
 .section-add-track-cell { flex: 0 0 auto; display: flex; align-items: center; padding: 0.25rem 0.4rem; }
 
 .section-lanes {
@@ -4898,6 +4918,26 @@ footer {
 }
 .section-clip:active { cursor: grabbing; }
 .section-clip.selected { opacity: 1; box-shadow: 0 0 0 2px #fff, inset 0 0 0 1px rgba(0,0,0,0.3); z-index: 1; }
+/* In a multi-selection: a dashed ring; the action bar's clip keeps the solid one. */
+.section-clip.picked:not(.selected) { opacity: 1; outline: 2px dashed #fff; outline-offset: 1px; z-index: 1; }
+.section-marquee {
+    position: absolute;
+    z-index: 5;
+    border: 1px dashed #e94560;
+    background: rgba(233,69,96,0.12);
+    pointer-events: none;
+}
+/* The armed stamp's shadow, one per copied clip. */
+.section-stamp-ghost {
+    position: absolute;
+    left: 3px;
+    right: 3px;
+    border: 1px dashed;
+    border-radius: 3px;
+    pointer-events: none;
+    z-index: 2;
+}
+.section-copy:disabled { opacity: 0.4; cursor: not-allowed; }
 .section-clip-label { padding: 0.15rem 0.3rem; max-width: 100%; font-size: 0.65rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 1px rgba(0,0,0,0.6); }
 .section-clip-handle { position: absolute; left: 0; right: 0; bottom: 0; height: 8px; cursor: ns-resize; background: rgba(255,255,255,0.35); }
 
@@ -4934,5 +4974,5 @@ footer {
     /* Six tabs: icons only, labels in the title attribute. */
     .dock-tab span:last-child { display: none; }
     .dock-tab { padding: 0.25rem 0.6rem; font-size: 0.9rem; }
-    .section-grid { --section-track-w: 5.5rem; }
+    .section-grid { --section-track-w: 3.6rem; }
 }

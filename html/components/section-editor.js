@@ -35,10 +35,11 @@
 // pattern to the piano roll via opts.onOpenPattern.
 
 import {
-    addClip, updateClip, removeClip, removeTrack, setTrackSlot,
+    addClip, updateClip, removeClip, removeTrack, setTrackSlot, createClip, findClipOverlap,
     clipCols, clipRepeats, sectionLength, createTrack,
     COLS_PER_MEASURE, MAX_SLOTS,
 } from './project-model.js';
+import { claimKeys, ownsKeys } from './key-owner.js';
 
 export const MEASURE_W = 48;      // px per measure in the grid (its height, time runs down), at zoom ×1
 const MIN_GRID_MEASURES = 16;     // never show an empty, zero-height grid
@@ -81,6 +82,17 @@ export function createSectionEditor(opts = {}) {
     let selectedClipId = null;
     let selectedTrackId = null;  // where `+ Pattern` lands; a clip's track when one is selected
     let lastPress = { clipId: null, at: 0 };   // last body press, for double-tap removal
+    // The selection: the clips a marquee or Shift-click took. `selectedClipId`
+    // stays the one the action bar shows (the last clicked); `picked` is
+    // every clip Delete removes and Copy stamps. A plain click makes them
+    // the same single clip.
+    const picked = new Set();
+    let selectMode = false;     // a drag on an empty lane is a marquee, not a placement
+    let swallowClick = false;   // the click that ends a marquee must not place a clip
+    // Copy arms a stamp: the picked clips as a block, relative to its top
+    // and its first lane. `at` is where the shadow is ({ laneIdx, col }),
+    // null while the pointer is off the grid.
+    let stamp = null;
     let unsubscribe = null;
     let unsubscribeTransport = null;
     let playheadEl = null;
@@ -106,6 +118,10 @@ export function createSectionEditor(opts = {}) {
     actions.className = 'section-clip-actions';
     const status = document.createElement('div');
     status.className = 'section-status';
+    // A press anywhere in here makes the selection keys this editor's —
+    // in the capture phase, since a clip's press stops propagation.
+    root.addEventListener('mousedown', () => claimKeys('section'), true);
+    root.addEventListener('touchstart', () => claimKeys('section'), { passive: true, capture: true });
     root.appendChild(toolbar);
     root.appendChild(grid);
     root.appendChild(actions);
@@ -226,6 +242,20 @@ export function createSectionEditor(opts = {}) {
         // are born in place, on the selected track.
         toolbar.appendChild(button('+ Pattern', 'New pattern at the end of the selected track',
             newPatternOnTrack, 'section-btn section-pattern-new'));
+
+        // Selection, as in the roll: Select mode makes a drag on an empty
+        // lane a marquee (Shift-drag does it without the mode); Copy turns
+        // the selection into a stamp that follows the pointer.
+        const sel = button('⬚ Select', 'Select mode: drag over clips to select them (Shift-drag works too, '
+            + 'Shift-click adds or removes one); Delete removes them, Copy stamps a copy',
+            () => { selectMode = !selectMode; render(); }, 'section-btn section-select-mode' + (selectMode ? ' active' : ''));
+        toolbar.appendChild(sel);
+        const copy = button('⎘ Copy', 'Copy the selected clips: a shadow of them follows the pointer — '
+            + 'click where they should go (Ctrl+C; Escape or Copy again to cancel)',
+            () => { if (stamp) cancelStamp(); else armStamp(); },
+            'section-btn section-copy' + (stamp ? ' active' : ''));
+        copy.disabled = !stamp && picked.size === 0;
+        toolbar.appendChild(copy);
 
         // This toolbar edits the **section** on screen. Choosing, creating
         // and deleting *projects* used to live here too — a project is the
@@ -423,17 +453,32 @@ export function createSectionEditor(opts = {}) {
         renderActions(project);
     }
 
+    /**
+     * A track's head: two rows of two squares. Top: the track's number —
+     * coloured by its voice, a voice picker under it — and remove. Bottom:
+     * Mute and Solo. Narrow on purpose: the lanes are what the pane is for.
+     */
     function renderTrackHead(project, track, current) {
         const head = document.createElement('div');
         head.className = 'section-track-head' + (current && current.id === track.id ? ' selected' : '');
         head.dataset.trackId = track.id;
         head.style.borderTopColor = slotColor(track.slot);
-        head.title = 'Click to select this track — + Pattern lands at its end';
+        head.title = `${slotLabel(track.slot)} — click to select this track (+ Pattern lands at its end)`;
         head.addEventListener('click', () => { selectedTrackId = track.id; render(); });
 
+        // The number square is a label with an invisible <select> stretched
+        // over it: the closed select would show the whole "1. BRASS", which
+        // does not fit, while its open list should.
+        const num = document.createElement('label');
+        num.className = 'section-track-num';
+        num.style.background = tint(slotColor(track.slot), 0.55);
+        num.title = 'Voice this track plays: ' + slotLabel(track.slot);
+        const numText = document.createElement('span');
+        numText.textContent = String(track.slot + 1);
+        num.appendChild(numText);
         const slotSel = document.createElement('select');
         slotSel.className = 'section-track-slot';
-        slotSel.title = 'Voice this track plays';
+        slotSel.title = num.title;
         for (let i = 0; i < MAX_SLOTS; i++) {
             const opt = document.createElement('option');
             opt.value = String(i);
@@ -450,24 +495,22 @@ export function createSectionEditor(opts = {}) {
             // dropping one — with its clips, in every section.
             change((project) => { setTrackSlot(project, track.id, slot); });
         });
-        head.appendChild(slotSel);
+        num.appendChild(slotSel);
+        head.appendChild(num);
 
-        const controls = document.createElement('div');
-        controls.className = 'section-track-controls';
-        controls.appendChild(button('M', 'Mute', () => {
-            change((s) => { const t = s.tracks.find(x => x.id === track.id); t.mute = !t.mute; });
-        }, 'section-btn section-track-mute' + (track.mute ? ' active' : '')));
-        controls.appendChild(button('S', 'Solo', () => {
-            change((s) => { const t = s.tracks.find(x => x.id === track.id); t.solo = !t.solo; });
-        }, 'section-btn section-track-solo' + (track.solo ? ' active' : '')));
-        controls.appendChild(button('✕', 'Remove track', () => {
+        head.appendChild(button('✕', 'Remove track', () => {
             const n = sec().clips.filter(c => c.trackId === track.id).length;
             if (n > 0 && !confirm(`Remove this track and its ${n} clip${n > 1 ? 's' : ''}?`)) return;
             if (selectedClipId && sec().clips.some(c => c.id === selectedClipId && c.trackId === track.id)) selectedClipId = null;
             if (selectedTrackId === track.id) selectedTrackId = null;
             change((project) => { removeTrack(project, track.id); });
-        }, 'section-btn section-track-remove'));
-        head.appendChild(controls);
+        }, 'section-btn section-track-sq section-track-remove'));
+        head.appendChild(button('M', 'Mute', () => {
+            change((s) => { const t = s.tracks.find(x => x.id === track.id); t.mute = !t.mute; });
+        }, 'section-btn section-track-sq section-track-mute' + (track.mute ? ' active' : '')));
+        head.appendChild(button('S', 'Solo', () => {
+            change((s) => { const t = s.tracks.find(x => x.id === track.id); t.solo = !t.solo; });
+        }, 'section-btn section-track-sq section-track-solo' + (track.solo ? ' active' : '')));
         return head;
     }
 
@@ -482,6 +525,8 @@ export function createSectionEditor(opts = {}) {
         lane.dataset.trackId = track.id;
         lane.addEventListener('click', (e) => {
             if (e.target !== lane) return;           // a clip handles its own clicks
+            if (swallowClick) { swallowClick = false; return; }
+            if (stamp) return;                       // the stamp places on mousedown
             selectedTrackId = track.id;
             if (!selectedPatternId) {
                 selectedClipId = null;
@@ -492,9 +537,19 @@ export function createSectionEditor(opts = {}) {
             const startCol = colAt(lane, e.clientY);
             change((project, section) => {
                 const clip = addClip(project, section, { trackId: track.id, patternId: selectedPatternId, startCol });
-                selectedClipId = clip.id;
+                pick(clip.id);
             });
         });
+        // An empty spot pressed in Select mode, or with Shift, starts a
+        // marquee; with a stamp armed, the press places it.
+        const press = (e) => {
+            if (e.target !== lane) return;
+            if (stamp) { placeStamp(e); return; }
+            if (!selectMode && !e.shiftKey) return;
+            startMarquee(e);
+        };
+        lane.addEventListener('mousedown', press);
+        lane.addEventListener('touchstart', press, { passive: false });
 
         for (const clip of sec().clips) {
             if (clip.trackId !== track.id) continue;
@@ -515,7 +570,8 @@ export function createSectionEditor(opts = {}) {
 
     function renderClip(clip, pattern, span, track, lane) {
         const el = document.createElement('div');
-        el.className = 'section-clip' + (clip.id === selectedClipId ? ' selected' : '');
+        el.className = 'section-clip' + (clip.id === selectedClipId ? ' selected' : '')
+            + (picked.has(clip.id) ? ' picked' : '');
         el.dataset.clipId = clip.id;
         el.style.top = (span.startCol * colH()) + 'px';
         el.style.height = ((span.endCol - span.startCol) * colH() - 2) + 'px';
@@ -538,7 +594,8 @@ export function createSectionEditor(opts = {}) {
             // The click after a double-tap's second press arrives for a clip
             // that press just removed; it must not re-select a ghost.
             if (!sec().clips.some(c => c.id === clip.id)) return;
-            selectedClipId = clip.id;
+            if (e.shiftKey) { togglePick(clip); return; }
+            pick(clip.id);
             selectedPatternId = clip.patternId;
             selectedTrackId = clip.trackId;
             render();
@@ -564,6 +621,10 @@ export function createSectionEditor(opts = {}) {
         const startDrag = (e, mode) => {
             e.stopPropagation();
             if (e.cancelable && e.preventDefault) e.preventDefault();
+            // An armed stamp places wherever it is pressed, over a clip too
+            // (and is refused there, with the reason, if it would overlap).
+            if (stamp) { placeStamp(e); return; }
+            if (e.shiftKey) return;                  // Shift-click toggles; the click does it
             if (mode === 'move' && lastPress.clipId === clip.id && Date.now() - lastPress.at < DOUBLE_TAP_MS) {
                 lastPress = { clipId: null, at: 0 };
                 deleteClip(clip.id);
@@ -621,7 +682,7 @@ export function createSectionEditor(opts = {}) {
                     if (mode === 'move') {
                         lastPress = { clipId: clip.id, at: Date.now() };
                         if (isTouch && sec().clips.some(c => c.id === clip.id)) {
-                            selectedClipId = clip.id;
+                            pick(clip.id);
                             selectedPatternId = clip.patternId;
                             selectedTrackId = clip.trackId;
                             render();
@@ -630,7 +691,7 @@ export function createSectionEditor(opts = {}) {
                     return;
                 }
                 const dCols = snap((pointer(ev).y - origin.y) / colH());
-                selectedClipId = clip.id;
+                pick(clip.id);
                 if (mode === 'move') {
                     const startCol = Math.max(0, span.startCol + dCols);
                     const trackId = targetLane.dataset.trackId || clip.trackId;
@@ -745,8 +806,247 @@ export function createSectionEditor(opts = {}) {
     }
 
     function deleteClip(clipId) {
-        change((project, section) => { removeClip(section, clipId); });
+        picked.delete(clipId);
         if (selectedClipId === clipId) selectedClipId = null;
+        change((project, section) => { removeClip(section, clipId); });
+    }
+
+    // --- Selection: marquee, Shift-click, Delete, Copy → stamp ---
+
+    /** Select exactly this clip (or nothing). */
+    function pick(clipId) {
+        picked.clear();
+        if (clipId) picked.add(clipId);
+        selectedClipId = clipId || null;
+    }
+
+    function togglePick(clip) {
+        if (picked.has(clip.id)) {
+            picked.delete(clip.id);
+            if (selectedClipId === clip.id) selectedClipId = picked.size ? [...picked][picked.size - 1] : null;
+        } else {
+            picked.add(clip.id);
+            selectedClipId = clip.id;
+            selectedPatternId = clip.patternId;
+            selectedTrackId = clip.trackId;
+        }
+        render();
+    }
+
+    /** Drop clips that no longer exist (removed, undone, another section). */
+    function prunePicked() {
+        const live = new Set(sec().clips.map(c => c.id));
+        for (const id of [...picked]) if (!live.has(id)) picked.delete(id);
+        if (selectedClipId && !live.has(selectedClipId)) selectedClipId = null;
+    }
+
+    function deletePicked() {
+        const ids = [...picked];
+        if (ids.length === 0) return;
+        picked.clear();
+        selectedClipId = null;
+        change((project, section) => { for (const id of ids) removeClip(section, id); });
+    }
+
+    /** The lane under a viewport x, and its index among the tracks. */
+    function laneAt(clientX) {
+        const all = Array.from(grid.querySelectorAll('.section-lane'));
+        for (let i = 0; i < all.length; i++) {
+            const r = all[i].getBoundingClientRect();
+            if (clientX >= r.left && clientX < r.right) return { lane: all[i], idx: i };
+        }
+        return null;
+    }
+
+    /**
+     * A rubber band over the lanes, on the document (as the clip drags are)
+     * so it survives leaving the grid. Every clip it touches is selected —
+     * touched, not only enclosed, as in the roll. Shift adds to what was
+     * selected; a plain marquee replaces it.
+     */
+    function startMarquee(e) {
+        if (e.cancelable && e.preventDefault) e.preventDefault();
+        const lanesEl = grid.querySelector('.section-lanes');
+        if (!lanesEl) return;
+        const origin = pointer(e);
+        const keep = e.shiftKey ? new Set(picked) : new Set();
+        const box = document.createElement('div');
+        box.className = 'section-marquee';
+        lanesEl.appendChild(box);
+        let moved = false;
+        let rect = null;
+        const update = (pt) => {
+            const base = lanesEl.getBoundingClientRect();
+            const x0 = Math.min(origin.x, pt.x), x1 = Math.max(origin.x, pt.x);
+            const y0 = Math.min(origin.y, pt.y), y1 = Math.max(origin.y, pt.y);
+            rect = { left: x0, right: x1, top: y0, bottom: y1 };
+            box.style.left = (x0 - base.left) + 'px';
+            box.style.top = (y0 - base.top) + 'px';
+            box.style.width = (x1 - x0) + 'px';
+            box.style.height = (y1 - y0) + 'px';
+        };
+        const onMove = (ev) => {
+            const pt = pointer(ev);
+            if (!moved && Math.abs(pt.x - origin.x) < DRAG_THRESHOLD && Math.abs(pt.y - origin.y) < DRAG_THRESHOLD) return;
+            if (ev.cancelable && ev.preventDefault) ev.preventDefault();
+            moved = true;
+            update(pt);
+        };
+        const finish = () => {
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', finish);
+            document.removeEventListener('touchmove', onMove);
+            document.removeEventListener('touchend', finish);
+            document.removeEventListener('touchcancel', finish);
+            if (box.parentNode) box.parentNode.removeChild(box);
+            if (!moved) return;                  // a plain press: the click places, as ever
+            swallowClick = true;
+            picked.clear();
+            for (const id of keep) picked.add(id);
+            for (const el of Array.from(grid.querySelectorAll('.section-clip'))) {
+                const r = el.getBoundingClientRect();
+                if (r.left < rect.right && rect.left < r.right && r.top < rect.bottom && rect.top < r.bottom) {
+                    picked.add(el.dataset.clipId);
+                }
+            }
+            selectedClipId = picked.size ? [...picked][picked.size - 1] : null;
+            say(picked.size ? `${picked.size} clip${picked.size > 1 ? 's' : ''} selected` : '');
+            render();
+            // A touch sends no click to swallow; don't let the flag linger.
+            setTimeout(() => { swallowClick = false; }, 0);
+        };
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', finish);
+        document.addEventListener('touchmove', onMove, { passive: false });
+        document.addEventListener('touchend', finish);
+        document.addEventListener('touchcancel', finish);
+    }
+
+    /** Copy: the picked clips become a stamp that follows the pointer. */
+    function armStamp() {
+        prunePicked();
+        const project = session.get();
+        const order = project.tracks.map(t => t.id);
+        const clips = sec().clips.filter(c => picked.has(c.id) && order.includes(c.trackId));
+        if (clips.length === 0) { say('Select clips first: Select, then drag over them (or Shift-click)'); return; }
+        const top = Math.min(...clips.map(c => c.startCol));
+        const first = Math.min(...clips.map(c => order.indexOf(c.trackId)));
+        stamp = {
+            items: clips.map(c => ({
+                patternId: c.patternId,
+                dCol: c.startCol - top,
+                dLane: order.indexOf(c.trackId) - first,
+                lengthCols: c.lengthCols != null ? c.lengthCols : null,
+                repeats: c.repeats,
+            })),
+            at: null,
+        };
+        stamp.width = Math.max(...stamp.items.map(i => i.dLane)) + 1;
+        document.addEventListener('mousemove', followStamp);
+        document.addEventListener('touchmove', followStamp, { passive: false });
+        say('Click where the copy should go — Escape or Copy again to cancel');
+        render();
+    }
+
+    function cancelStamp() {
+        if (!stamp) return;
+        stamp = null;
+        document.removeEventListener('mousemove', followStamp);
+        document.removeEventListener('touchmove', followStamp);
+        say('');
+        render();
+    }
+
+    /**
+     * Where the stamp lands for a pointer: the lane under it (clamped so
+     * the block never hangs off the last track) and the snap cell.
+     */
+    function stampTarget(pt) {
+        const hit = laneAt(pt.x);
+        if (!hit) return null;
+        const lanes = grid.querySelectorAll('.section-lane').length;
+        const laneIdx = Math.max(0, Math.min(hit.idx, lanes - stamp.width));
+        return { laneIdx, col: colAt(hit.lane, pt.y) };
+    }
+
+    function followStamp(e) {
+        if (!stamp) return;
+        const pt = pointer(e);
+        const r = grid.getBoundingClientRect();
+        const inside = pt.x >= r.left && pt.x < r.right && pt.y >= r.top && pt.y < r.bottom;
+        if (e.touches && inside && e.cancelable) e.preventDefault();   // the finger carries it, no scroll
+        const at = inside ? stampTarget(pt) : null;
+        const same = at && stamp.at && at.laneIdx === stamp.at.laneIdx && at.col === stamp.at.col;
+        if (same || (!at && !stamp.at)) return;
+        stamp.at = at;
+        drawStamp();
+    }
+
+    /** The shadows: one dashed ghost per stamped clip, in its target lane. */
+    function drawStamp() {
+        for (const g of Array.from(grid.querySelectorAll('.section-stamp-ghost'))) g.parentNode.removeChild(g);
+        if (!stamp || !stamp.at) return;
+        const lanes = Array.from(grid.querySelectorAll('.section-lane'));
+        for (const item of stamp.items) {
+            const lane = lanes[stamp.at.laneIdx + item.dLane];
+            const pattern = getPattern(item.patternId);
+            if (!lane || !pattern) continue;
+            const span = { startCol: stamp.at.col + item.dCol };
+            span.endCol = span.startCol + (item.lengthCols != null ? item.lengthCols : pattern.measures * COLS_PER_MEASURE * item.repeats);
+            const g = document.createElement('div');
+            g.className = 'section-stamp-ghost';
+            g.style.top = (span.startCol * colH()) + 'px';
+            g.style.height = ((span.endCol - span.startCol) * colH() - 2) + 'px';
+            g.style.background = tint(pattern.color, 0.35);
+            g.style.borderColor = pattern.color;
+            lane.appendChild(g);
+        }
+    }
+
+    /**
+     * Put the copy down. All or nothing: every copy is checked against the
+     * section and against the others first, because a mutator that threw
+     * half-way would leave the half it had done. The copies become the
+     * selection and the stamp is spent — Copy, click, Copy, click repeats.
+     */
+    function placeStamp(e) {
+        if (e.cancelable && e.preventDefault) e.preventDefault();
+        if (e.stopPropagation) e.stopPropagation();
+        const at = stampTarget(pointer(e));
+        if (!at) return;
+        const project = session.get();
+        const section = sec();
+        const made = [];
+        for (const item of stamp.items) {
+            const track = project.tracks[at.laneIdx + item.dLane];
+            if (!track) continue;
+            const partial = { trackId: track.id, patternId: item.patternId, startCol: at.col + item.dCol };
+            if (item.lengthCols != null) partial.lengthCols = item.lengthCols;
+            else partial.repeats = item.repeats;
+            made.push(createClip(partial));
+        }
+        const trial = { ...section, clips: [...section.clips] };
+        for (const clip of made) {
+            if (findClipOverlap(project, trial, clip)) {
+                say('The copy would overlap a clip there — pick another spot, or Escape');
+                return;
+            }
+            trial.clips.push(clip);
+        }
+        swallowClick = true;
+        setTimeout(() => { swallowClick = false; }, 0);
+        const spent = stamp;
+        stamp = null;
+        document.removeEventListener('mousemove', followStamp);
+        document.removeEventListener('touchmove', followStamp);
+        picked.clear();
+        const ok = change((project, section) => {
+            for (const clip of made) section.clips.push(clip);
+        });
+        if (!ok) { stamp = spent; return; }
+        for (const clip of made) picked.add(clip.id);
+        selectedClipId = made.length ? made[made.length - 1].id : null;
+        render();
     }
 
     function openClip(clipId) {
@@ -763,22 +1063,41 @@ export function createSectionEditor(opts = {}) {
     }
 
     // Delete/Backspace removes the selected clip — unless the user is typing.
+    // Delete/Backspace removes the selection; Escape drops a stamp, then
+    // the selection; Ctrl/Cmd+C copies. Never while typing in a field. The
+    // roll listens to the same keys for its own selection, so these only
+    // act when this editor has something selected or armed.
     function onKey(e) {
-        if (!selectedClipId) return;
-        if (e.key !== 'Delete' && e.key !== 'Backspace') return;
         const tag = e.target && e.target.tagName;
         if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
         if (e.target && e.target.contentEditable === 'true') return;
+        if (!ownsKeys('section')) return;      // the roll was pressed last
+        if (e.key === 'Escape') {
+            if (stamp) { cancelStamp(); return; }
+            if (picked.size) { pick(null); render(); }
+            return;
+        }
+        if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C')) {
+            if (!picked.size) return;
+            e.preventDefault();
+            armStamp();
+            return;
+        }
+        if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+        if (!picked.size && !selectedClipId) return;
         e.preventDefault();
-        deleteClip(selectedClipId);
+        if (picked.size) deletePicked();
+        else deleteClip(selectedClipId);
     }
     document.addEventListener('keydown', onKey);
 
     function render() {
         const project = session.get();
         if (!project) return;
+        prunePicked();
         renderToolbar(project);
         renderGrid(project);
+        drawStamp();
     }
 
     unsubscribe = session.subscribe((ev) => {
