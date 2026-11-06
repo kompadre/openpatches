@@ -1237,3 +1237,20 @@ describe('the pattern library', () => {
         assert.equal(h.section().clips.length, 0);
     });
 });
+
+describe('the library filter', () => {
+    const names = (h) => Array.from(h.root.querySelectorAll('.section-library-item')).map(i => i.querySelector('.section-library-name').textContent);
+    const scope = (h, i) => h.root.querySelectorAll('.section-library-scope')[i];
+    test('Global lists every pattern; Section only those placed here; the choice is remembered', () => {
+        const h = build({ patterns: [{ name: 'A' }, { name: 'B' }], tracks: [{ slot: 0 }], clips: [{ track: 0, pattern: 1, at: 0 }] });
+        assert.deepEqual(names(h), ['A', 'B'], 'Global by default');
+        assert.ok(scope(h, 1).classList.contains('active'));
+        scope(h, 0).dispatch('click', ev());
+        assert.deepEqual(names(h), ['B']);
+        assert.equal(localStorage.getItem('openpatches_section_library_scope'), 'section');
+        h.editor.destroy();
+        const again = build({ patterns: [{ name: 'A' }], tracks: [{ slot: 0 }] });
+        assert.deepEqual(names(again), [], 'still Section after a rebuild');
+        assert.match(again.root.querySelector('.section-library-empty').textContent, /Global lists them all/);
+    });
+});

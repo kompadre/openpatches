@@ -5067,3 +5067,12 @@ footer {
     color: #ccc;
     font-size: 0.75rem;
 }
+.section-library-bar { display: flex; align-items: center; justify-content: space-between; gap: 0.3rem; padding-right: 0.3rem; }
+.section-library-scopes { display: inline-flex; }
+.section-library-scope {
+    background: #16213e; color: #aaa; border: 1px solid #333; padding: 0.05rem 0.4rem;
+    font-size: 0.6rem; cursor: pointer; margin-left: -1px;
+}
+.section-library-scope:first-child { border-radius: 4px 0 0 4px; margin-left: 0; }
+.section-library-scope:last-child { border-radius: 0 4px 4px 0; }
+.section-library-scope.active { background: #e94560; border-color: #e94560; color: #fff; position: relative; }

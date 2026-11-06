@@ -52,6 +52,7 @@ const DOUBLE_TAP_MS = 400;        // two presses on one clip within this remove 
 const SNAP_KEY = 'openpatches_song_snap';
 const ZOOM_KEY = 'openpatches_song_zoom';
 const LIBRARY_KEY = 'openpatches_section_library';   // '1' while the library is folded
+const LIBRARY_SCOPE_KEY = 'openpatches_section_library_scope';   // 'section' | 'global'
 // Grid resolutions, in columns. Half a bar is the default: one step finer
 // than whole bars, so the faint half-bar lines show that the grid goes
 // below the bar and the Snap selector is worth finding.
@@ -131,6 +132,8 @@ export function createSectionEditor(opts = {}) {
     const library = document.createElement('div');
     library.className = 'section-library';
     root.appendChild(library);
+    // Which patterns the library lists: those placed in this section, or all.
+    let libraryScope = (() => { try { return localStorage.getItem(LIBRARY_SCOPE_KEY) === 'section' ? 'section' : 'global'; } catch { return 'global'; } })();
     let libraryFolded = (() => { try { return localStorage.getItem(LIBRARY_KEY) === '1'; } catch { return false; } })();
 
     function say(msg) {
@@ -1122,9 +1125,10 @@ export function createSectionEditor(opts = {}) {
 
     function renderLibrary(project) {
         library.innerHTML = '';
-        const patterns = session.listPatterns();
         const uses = new Map();
         for (const c of sec().clips) uses.set(c.patternId, (uses.get(c.patternId) || 0) + 1);
+        const all = session.listPatterns();
+        const patterns = libraryScope === 'section' ? all.filter(p => uses.has(p.id)) : all;
 
         const head = button((libraryFolded ? '▸' : '▾') + ' Patterns (' + patterns.length + ')',
             libraryFolded ? 'Show the pattern library' : 'Fold the pattern library away', () => {
@@ -1132,7 +1136,25 @@ export function createSectionEditor(opts = {}) {
                 try { localStorage.setItem(LIBRARY_KEY, libraryFolded ? '1' : '0'); } catch { /* ignore */ }
                 render();
             }, 'section-library-head');
-        library.appendChild(head);
+        const bar = document.createElement('div');
+        bar.className = 'section-library-bar';
+        bar.appendChild(head);
+        if (!libraryFolded) {
+            const scopes = document.createElement('div');
+            scopes.className = 'section-library-scopes';
+            for (const [scope, label, title] of [
+                ['section', 'Section', 'Only the patterns placed in this section'],
+                ['global', 'Global', 'Every pattern in the project'],
+            ]) {
+                scopes.appendChild(button(label, title, () => {
+                    libraryScope = scope;
+                    try { localStorage.setItem(LIBRARY_SCOPE_KEY, scope); } catch { /* ignore */ }
+                    render();
+                }, 'section-library-scope' + (libraryScope === scope ? ' active' : '')));
+            }
+            bar.appendChild(scopes);
+        }
+        library.appendChild(bar);
         library.classList.toggle('folded', libraryFolded);
         if (libraryFolded) return;
 
@@ -1141,7 +1163,9 @@ export function createSectionEditor(opts = {}) {
         if (patterns.length === 0) {
             const empty = document.createElement('div');
             empty.className = 'section-library-empty';
-            empty.textContent = 'No patterns yet — + Pattern makes one.';
+            empty.textContent = all.length && libraryScope === 'section'
+                ? 'None placed in this section — Global lists them all.'
+                : 'No patterns yet — + Pattern makes one.';
             list.appendChild(empty);
         }
         for (const pattern of patterns) list.appendChild(renderLibraryItem(pattern, uses.get(pattern.id) || 0));

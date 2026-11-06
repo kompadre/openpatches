@@ -2,6 +2,10 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-06: The pattern library filters by Section or Global
+
+A two-way switch on the library's header: **Section** lists only the patterns placed in the section on screen, **Global** every pattern in the project (the default). Remembered under `openpatches_section_library_scope`; an empty Section view says Global lists them all. Test in `section-editor.test.js`.
+
 ## 2026-11-06: Clips show their notes; a pattern library; the roll switches patterns
 
 **One selection on screen.** Phase 2's "the editor pressed last owns the keys" (`key-owner.js`) is replaced, at the user's preference, by mutual deselection (`selection-bus.js`): selecting clips in the Section drops the roll's note selection and armed stamp, selecting notes drops the clips' — so Delete/Escape/Ctrl+C never have two targets.
