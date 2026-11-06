@@ -82,12 +82,12 @@ describe('the mode switch', () => {
     test('offers the transport\'s modes, lights the current one, and sets it', () => {
         const h = build();
         const btns = Array.from(h.bar.element.querySelectorAll('.transport-mode'));
-        assert.deepEqual(btns.map(b => b.dataset.mode), ['section', 'pattern']);
-        assert.deepEqual(btns.map(b => b.classList.contains('active')), [true, false]);
+        assert.deepEqual(btns.map(b => b.dataset.mode), ['piece', 'section', 'pattern']);
+        assert.deepEqual(btns.map(b => b.classList.contains('active')), [false, true, false]);
 
-        btns[1].dispatch('click', ev());
+        btns[2].dispatch('click', ev());
         assert.equal(h.transport.getMode(), 'pattern');
-        assert.deepEqual(btns.map(b => b.classList.contains('active')), [false, true]);
+        assert.deepEqual(btns.map(b => b.classList.contains('active')), [false, false, true]);
 
         h.play().dispatch('click', ev());
         assert.equal(h.transport.isPlaying(), true);
@@ -98,7 +98,7 @@ describe('the mode switch', () => {
         const h = build();
         h.transport.setMode('pattern');
         const btns = Array.from(h.bar.element.querySelectorAll('.transport-mode'));
-        assert.deepEqual(btns.map(b => b.classList.contains('active')), [false, true]);
+        assert.deepEqual(btns.map(b => b.classList.contains('active')), [false, false, true]);
     });
 });
 

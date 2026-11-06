@@ -77,15 +77,17 @@ run `node --check` + `node --test` and tick this file only. (Open: AGENTS.md
 "Keep it current ... in the same commit/change" reads per-change; awaiting
 the user's wording if SESSION.md should be deferred too.)
 
-### Plan of 2026-11-06 — Phases 1–3 DONE, Phase 4 next
+### Plan of 2026-11-06 — Phases 1–4 DONE, Phase 5 next
 
 The five-phase plan is in TODO.md. Phase 1 (one transport bar left of
 the tabs, `components/transport-bar.js`) and Phase 2 (thin Section lanes,
 clip marquee/Shift-click/Delete/Copy-stamp) and Phase 3 (beat × octave
 dot thumbnails, the pattern library, the roll's Pattern select, tab
 renamed Pattern; `selection-bus.js` makes the two selections mutually
-exclusive) are done and recorded in CHANGELOG.md. Phase 4: a section
-list, whole-piece playback (third transport mode), tempo automation. Not done in phase 2, deliberately: dragging
+exclusive) and Phase 4 (sections row, `piece` transport mode with the
+pane following, `bpmEnd` ramps via `bpmAt`) are done and recorded in
+CHANGELOG.md. Phase 5 is the standalone items: drag patches onto Mixer
+slots, re-upload a missing WAV, dedup across projects (last). Not done in phase 2, deliberately: dragging
 a multi-selection moves only the clip grabbed (group move left out). Decided with the user: "Patches library" in the
 old TODO meant the **pattern** library (phase 3).
 
@@ -145,10 +147,9 @@ change could trip over, which does not belong in a changelog.
 - **`node --check file.js` parses as a script**, so it misses
   module-level mistakes: a nested function shadowing an import caused
   infinite recursion and passed. Copy to `.mjs` and check that too.
-- Deferred by decision, with the user: a **section list** (the model
-  carries N sections, the UI edits one), **whole-piece playback**,
-  **tempo automation** (`effectiveBpm` is the seam), **dedup across
-  projects**, and **re-uploading a missing WAV**. All are in TODO.md.
+- Deferred by decision, with the user: **dedup across projects** and
+  **re-uploading a missing WAV** (TODO.md phase 5). The section list,
+  whole-piece playback and tempo automation landed 2026-11-06 (phase 4).
 
 _(The MIDI clock entry that sat here is finished and recorded in
 CHANGELOG.md 2026-11-01; its standing limits are in the midi-manager

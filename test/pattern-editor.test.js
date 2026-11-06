@@ -796,8 +796,11 @@ describe('the Pattern select', () => {
         });
         roll.renderLegend();
         const sel = roll.element.querySelector('.pianoroll-pattern');
-        const labels = Array.from(sel.children).map(o => o.textContent);
-        assert.deepEqual(labels, ['A', 'B', 'C (not placed)']);
+        const labels = Array.from(sel.querySelectorAll('option')).map(o => o.textContent);
+        assert.deepEqual(labels, ['A', 'B', 'C']);
+        const groups = Array.from(sel.querySelectorAll('optgroup')).map(g => g.label);
+        assert.deepEqual(groups, ['Not placed'], 'one section: the placed ones are a flat list, the unplaced grouped');
+        assert.equal(sel.querySelector('optgroup').children[0].textContent, 'C');
         assert.equal(sel.value, a.id);
 
         sel.value = b.id;

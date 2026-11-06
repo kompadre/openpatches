@@ -6,8 +6,11 @@
 // used to route ticks to the wrong handler. Now the worker is subscribed to
 // here, exactly once, and everything else listens to this.
 //
-// Two modes:
-//   section — play the arrangement (what the Section tab's Play does).
+// Three modes:
+//   piece   — play every section in order, end to end. The Section pane
+//             follows: as the playhead enters a section, that section
+//             becomes the edited one, so what is on screen is what sounds.
+//   section — play the arrangement of the edited section.
 //   pattern — loop the pattern being edited (the roll's Play and Record):
 //             one placement of that pattern, from its start to its end, and
 //             never longer — a take is always one pattern long. A pattern
@@ -39,15 +42,15 @@
 // known.
 
 import {
-    createSectionSequence, createPatternSequence, msPerColumn,
+    createSectionSequence, createPatternSequence, createPieceSequence, msPerColumn,
     patternPlacements, nearestPlacement,
 } from './section-sequencer.js';
-import { COLS_PER_MEASURE, clipCols, effectiveBpm as sectionBpm } from '../components/project-model.js';
+import { COLS_PER_MEASURE, clipCols, bpmAt } from '../components/project-model.js';
 import * as midiManager from './midi-manager.js';
 
 const MODE_KEY = 'openpatches_transport_mode';
 const ACCOMPANY_KEY = 'openpatches_transport_accompany';
-export const MODES = ['section', 'pattern'];
+export const MODES = ['piece', 'section', 'pattern'];
 const MAX_CONSECUTIVE_ERRORS = 3;
 
 function loadAccompany() {
@@ -103,6 +106,7 @@ export function createTransport(opts) {
         const project = session.get();
         const section = project && session.getSection();
         if (!project || !section) return createPatternSequence(null, 0);
+        if (mode === 'piece') return createPieceSequence(project);
         if (mode === 'pattern') {
             const t = editTarget();
             if (!t || !t.pattern) return createPatternSequence(null, 0);
@@ -140,16 +144,42 @@ export function createTransport(opts) {
     function retempo() {
         if (!playing && !recording) return false;
         if (armed || !tempoWorker) return false;
+        sentTempo = Math.round(getBpm() * 1000);
         tempoWorker(tickWorker, getBpm());
         return true;
     }
 
     /**
-     * The project's tempo, or the edited section's override. One seam, so
-     * the later rit./accel. automation has one place to grow from.
+     * The tempo *here*: the project's, or the section's override, ramped
+     * towards the section's end tempo by where the playhead is (`bpmAt`).
+     * In piece mode "the section" is the one the playhead is in. At rest
+     * (no column) it is the edited section's start tempo.
      */
     function getBpm() {
-        return sectionBpm(session.get(), session.getSection());
+        const project = session.get();
+        const here = whereInSection(lastCol);
+        return bpmAt(project, here.section, here.col);
+    }
+
+    /** The section a transport column is in, and the column inside it. */
+    function whereInSection(col) {
+        if (col >= 0 && sequence && sequence.kind === 'piece') return sequence.localize(col);
+        const section = session.getSection();
+        return { section, sectionId: section ? section.id : null, col: col >= 0 ? col : 0 };
+    }
+
+    /**
+     * Hand a ramp's tempo on, every tick it changes. The worker re-anchors
+     * on its last tick, so each step is seamless; the tempo is an integer
+     * of milli-BPM across the buffer, which is what is compared here.
+     */
+    let sentTempo = 0;
+    function rampTempo() {
+        if (!tempoWorker || armed) return;
+        const t = Math.round(getBpm() * 1000);
+        if (t === sentTempo) return;
+        sentTempo = t;
+        tempoWorker(tickWorker, t / 1000);
     }
 
     /**
@@ -191,10 +221,12 @@ export function createTransport(opts) {
                 }
             }
         }
-        // `sectionCol` is the position on the section's timeline, for the
-        // Section tab's playhead: the same as `col` whenever the sequence
-        // is the section (both modes, except a lone pattern), -1 otherwise.
-        const sectionCol = col >= 0 && sequence && sequence.kind === 'section' ? col : -1;
+        // `sectionCol` is the position on the edited section's timeline,
+        // for the Section pane's playhead: the same as `col` whenever the
+        // sequence is the section (both modes, except a lone pattern); in
+        // piece mode the column inside the section the playhead is in, if
+        // that is the edited one; -1 otherwise.
+        const sectionCol = sectionColumn(col);
         const pos = {
             playing, recording, mode, col, sectionCol, edit, seam: false, rawCol: -1,
             waiting: waiting(), pending: pendingStart, bpm: playbackBpm(),
@@ -205,8 +237,20 @@ export function createTransport(opts) {
         }
     }
 
+    function sectionColumn(col) {
+        if (col < 0 || !sequence) return -1;
+        if (sequence.kind === 'section') return col;
+        if (sequence.kind === 'piece') {
+            const here = sequence.localize(col);
+            const edited = session.getSection();
+            return edited && here.sectionId === edited.id ? here.col : -1;
+        }
+        return -1;
+    }
+
     function startWorkerAt(startCol) {
         const bpm = getBpm();
+        sentTempo = Math.round(bpm * 1000);
         if (startWorker) startWorker(tickWorker, bpm, startCol);
         else if (tickWorker) tickWorker.postMessage({ type: 'start', bpm, startCol });
     }
@@ -260,8 +304,25 @@ export function createTransport(opts) {
         const seam = rawCol > 0 && col === sequence.range.startCol;
         lastCol = col;
         if (sequence.kind === 'section') sectionPos = col;
+        if (sequence.kind === 'piece') followPiece(col);
+        if (!stale) rampTempo();
         if (!stale && !fire(col)) return;
         notify({ col, rawCol, seam });
+    }
+
+    /**
+     * Piece mode: the Section pane shows the section being played. Switching
+     * the edited section announces a 'section' change, which the editors
+     * re-render on; this sequence is not rebuilt by it (nothing here listens
+     * to the session), so the position is kept.
+     */
+    function followPiece(col) {
+        const here = sequence.localize(col);
+        const edited = session.getSection();
+        if (edited && here.sectionId !== edited.id) {
+            session.setSection(here.sectionId, 'transport');
+        }
+        if (edited && here.sectionId === edited.id) sectionPos = here.col;
     }
 
     if (tickWorker && tickWorker.addEventListener) {
@@ -335,10 +396,11 @@ export function createTransport(opts) {
                     && span.startCol < endCol && span.endCol > startCol;
             });
         }
-        return clipsHere().some(c => {
+        const sections = mode === 'piece' ? (session.get() || { sections: [] }).sections : [session.getSection()];
+        return sections.some(sec => sec && sec.clips.some(c => {
             const p = getPattern(c.patternId);
             return !!p && p.notes.length > 0;
-        });
+        }));
     }
 
     /**
@@ -426,6 +488,10 @@ export function createTransport(opts) {
     /** Start a take. `mode` names the scope, as for play(). */
     function startRecording({ mode: wanted } = {}) {
         if (wanted) api.setMode(wanted);
+        // A take is into one section: the piece has no single pattern
+        // window to write into, so recording from piece mode records the
+        // edited section.
+        if (mode === 'piece') api.setMode('section');
         if (playing || armed) stop();
         refresh();
         if (!sequence.range) {
@@ -500,6 +566,8 @@ export function createTransport(opts) {
         getEffectiveBpm() { return playbackBpm(); },
         getSequence() { return sequence; },
         getColumn() { return lastCol; },
+        /** The playhead on the edited section's timeline, -1 when it is not there. */
+        getSectionColumn() { return sectionColumn(lastCol); },
         hasAnythingToPlay() { return hasAnythingToPlay(); },
 
         subscribe(fn) {

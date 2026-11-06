@@ -29,6 +29,7 @@
 
 import {
     createProject, createPattern, getSection, effectiveBpm,
+    addSection as addSectionTo, removeSection as removeSectionFrom, moveSection as moveSectionIn,
     addPattern, removePattern, patternUsage,
 } from './project-model.js';
 import { profileStore } from './profile-store.js';
@@ -302,6 +303,51 @@ export function createProjectSession(store) {
             if (!wanted || wanted === project.name) return project;
             project.name = profileStore.uniqueName(wanted, { ignoreId: project.id });
             return changed('project', source);
+        },
+
+        /** A new section at the end of the piece; it becomes the edited one. */
+        addSection(partial, source) {
+            const project = store.get();
+            if (!project) return null;
+            const made = addSectionTo(project, partial || {});
+            sectionId = made.id;
+            changed('section', source, { sectionId: made.id });
+            return made;
+        },
+
+        /**
+         * Remove a section — never the last. Removing the edited one moves
+         * the edit to its neighbour (the one before, else the one after).
+         */
+        removeSection(id, source) {
+            const project = store.get();
+            if (!project) return false;
+            const i = project.sections.findIndex(s => s.id === id);
+            if (i < 0 || !removeSectionFrom(project, id)) return false;
+            if (sectionId === id) sectionId = project.sections[Math.max(0, i - 1)].id;
+            changed('section', source, { sectionId });
+            return true;
+        },
+
+        /** Move a section earlier (−1) or later (+1) in the piece. */
+        moveSection(id, delta, source) {
+            const project = store.get();
+            if (!project || !moveSectionIn(project, id, delta)) return false;
+            changed('section', source, { sectionId });
+            return true;
+        },
+
+        /**
+         * The edited section's tempo: `bpm` its own (null — the project's),
+         * `bpmEnd` what it ramps to (null — holds). Either may be omitted.
+         */
+        setSectionTempo({ bpm, bpmEnd }, source) {
+            const target = section();
+            if (!target) return null;
+            if (bpm !== undefined) target.bpm = bpm == null ? null : bpm;
+            if (bpmEnd !== undefined) target.bpmEnd = bpmEnd == null ? null : bpmEnd;
+            changed('section', source);
+            return target;
         },
 
         /** Rename the section being edited. */

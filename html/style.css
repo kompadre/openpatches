@@ -2213,7 +2213,10 @@ h1 {
        bar — a three-column grid with an empty right column the width of
        the left one, so the tabs stay centred whatever the bar's width. */
     display: grid;
-    grid-template-columns: 1fr auto 1fr;
+    /* The left column is at least the bar's width: with three mode buttons
+       the bar can outgrow a strict half, and squeezing it wrapped Play's
+       label onto two lines. The tabs then sit a little right of centre. */
+    grid-template-columns: minmax(max-content, 1fr) auto 1fr;
     align-items: end;
     width: 95vw;
     margin-bottom: 0.3rem;
@@ -2247,6 +2250,7 @@ h1 {
     padding: 0.25rem 0.6rem;
     font-size: 0.75rem;
     cursor: pointer;
+    white-space: nowrap;
     transition: background 0.15s;
 }
 .transport-btn:hover { background: #1a2744; color: #fff; }
@@ -5076,3 +5080,12 @@ footer {
 .section-library-scope:first-child { border-radius: 4px 0 0 4px; margin-left: 0; }
 .section-library-scope:last-child { border-radius: 0 4px 4px 0; }
 .section-library-scope.active { background: #e94560; border-color: #e94560; color: #fff; position: relative; }
+
+/* --- Section: the piece's sections, and the section tempo --- */
+.section-pick-row { display: flex; align-items: center; gap: 0.25rem; width: 100%; }
+.section-pick { flex: 1 1 auto; min-width: 0; }
+.section-move-up, .section-move-down { padding: 0.15rem 0.35rem; font-size: 0.6rem; }
+.section-remove { color: #e9a0a0; }
+.section-remove:hover:not(:disabled) { background: #4a1f2a; }
+.section-bpm-start, .section-bpm-end { width: 3.2rem; }
+.section-tempo { color: #999; }

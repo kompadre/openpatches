@@ -19,6 +19,7 @@ import {
     COLS_PER_MEASURE, MAX_SLOTS, MIN_BPM, MAX_BPM, DEFAULT_BPM, SCHEMA_VERSION,
     MAX_VOLUME, DEFAULT_VOLUME,
 } from '../html/components/project-model.js';
+import * as M from '../html/components/project-model.js';
 
 /** A project with `n` tracks, one pattern, and a clip at column 0. */
 function build({ tracks = 2, measures = 1 } = {}) {
@@ -439,5 +440,59 @@ describe('tags', () => {
     test('only the tags the project uses, deduped and sorted', () => {
         const p = createProject({ tags: ['warm', 'bass', 'warm', '  ', 'pad'] });
         assert.deepEqual(p.tags, ['bass', 'pad', 'warm']);
+    });
+});
+
+// Phase 4: more than one section — order, the piece's layout, tempo ramps.
+describe('sections in a piece', () => {
+    const { createProject, createPattern, createTrack, addClip, addSection, moveSection, pieceLayout, bpmAt, effectiveBpm, COLS_PER_MEASURE } = M;
+    function piece() {
+        const p = createProject({ name: 'P', bpm: 100 });
+        const pat = createPattern({ name: 'A', measures: 2 });
+        p.patterns[pat.id] = pat;
+        const t = createTrack({ slot: 0 });
+        p.tracks.push(t);
+        addClip(p, p.sections[0], { trackId: t.id, patternId: pat.id, startCol: 0 });              // 2 bars
+        const s2 = addSection(p, { name: 'Two' });
+        addClip(p, s2, { trackId: t.id, patternId: pat.id, startCol: 0, lengthCols: 20 });        // 1¼ bars → 2
+        const s3 = addSection(p, { name: 'Empty' });
+        return { p, s1: p.sections[0], s2, s3, t, pat };
+    }
+
+    test('pieceLayout lays the sections end to end on bar lines; an empty one takes no room', () => {
+        const { p, s1, s2, s3 } = piece();
+        const L = pieceLayout(p);
+        assert.deepEqual(L.parts.map(x => [x.section.id, x.startCol, x.endCol]),
+            [[s1.id, 0, 32], [s2.id, 32, 64], [s3.id, 64, 64]]);
+        assert.equal(L.total, 64);
+    });
+
+    test('moveSection reorders and refuses to fall off either end', () => {
+        const { p, s1, s2, s3 } = piece();
+        assert.equal(moveSection(p, s3.id, -1), true);
+        assert.deepEqual(p.sections.map(s => s.id), [s1.id, s3.id, s2.id]);
+        assert.equal(moveSection(p, s1.id, -1), false);
+        assert.equal(moveSection(p, s2.id, +1), false);
+        assert.equal(moveSection(p, 'nope', +1), false);
+    });
+
+    test('bpmAt ramps from the start tempo to bpmEnd over the section, and holds past it', () => {
+        const { p, s1 } = piece();                                   // 32 columns
+        assert.equal(bpmAt(p, s1, 0), 100, 'no bpmEnd: the project tempo throughout');
+        assert.equal(bpmAt(p, s1, 31), 100);
+        s1.bpmEnd = 162;
+        assert.equal(bpmAt(p, s1, 0), 100);
+        assert.equal(bpmAt(p, s1, 31), 162, 'the last column is at the end tempo');
+        assert.equal(bpmAt(p, s1, 99), 162, 'and anything past the end holds it');
+        assert.ok(Math.abs(bpmAt(p, s1, 15.5) - 131) < 0.01, 'half-way is half-way');
+        s1.bpm = 120;
+        assert.equal(effectiveBpm(p, s1), 120, 'the section\'s own start tempo');
+        assert.equal(bpmAt(p, s1, 0), 120);
+    });
+
+    test('bpmEnd survives createSection and is clamped', () => {
+        const s = M.createSection({ bpmEnd: 9999 });
+        assert.equal(s.bpmEnd, M.MAX_BPM);
+        assert.equal(M.createSection({}).bpmEnd, null);
     });
 });

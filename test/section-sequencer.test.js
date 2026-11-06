@@ -295,3 +295,35 @@ describe('msPerColumn', () => {
         assert.equal(msPerColumn(60), 250);
     });
 });
+
+describe('the piece sequence', () => {
+    test('plays the sections in order, each in its own columns, and names where it is', async () => {
+        const M = await import('../html/components/project-model.js');
+        const { createPieceSequence } = await import('../html/synth/section-sequencer.js');
+        const p = M.createProject({ name: 'P' });
+        const a = M.createPattern({ name: 'A', measures: 1, notes: [{ midi: 60, start: 0, dur: 1 }] });
+        const b = M.createPattern({ name: 'B', measures: 1, notes: [{ midi: 72, start: 4, dur: 1 }] });
+        p.patterns[a.id] = a; p.patterns[b.id] = b;
+        const t = M.createTrack({ slot: 0 }); p.tracks.push(t);
+        M.addClip(p, p.sections[0], { trackId: t.id, patternId: a.id, startCol: 0 });
+        p.sections[0].loop = { start: 0, end: 1 };                 // a section's loop is ignored by the piece
+        const s2 = M.addSection(p, { name: 'Two' });
+        M.addClip(p, s2, { trackId: t.id, patternId: b.id, startCol: 16 });   // bar 2 of section 2 → piece bar 3
+        const seq = createPieceSequence(p);
+        assert.equal(seq.kind, 'piece');
+        assert.deepEqual(seq.range, { startCol: 0, endCol: 48 });
+        assert.deepEqual(seq.eventsAt(0).map(e => e.midi), [60]);
+        assert.deepEqual(seq.eventsAt(16), [], 'section 2, bar 1: nothing');
+        assert.deepEqual(seq.eventsAt(36).map(e => e.midi), [72], 'section 2, bar 2, beat 2');
+        assert.deepEqual([seq.localize(0).sectionId, seq.localize(40).sectionId], [p.sections[0].id, s2.id]);
+        assert.equal(seq.localize(40).col, 24);
+        assert.equal(seq.locate(36).tracks[t.id].patternCol, 4);
+        assert.equal(seq.columnForTick(49), 1, 'wraps round the whole piece');
+    });
+
+    test('an empty project has nothing to play', async () => {
+        const M = await import('../html/components/project-model.js');
+        const { createPieceSequence } = await import('../html/synth/section-sequencer.js');
+        assert.equal(createPieceSequence(M.createProject({ name: 'P' })).range, null);
+    });
+});

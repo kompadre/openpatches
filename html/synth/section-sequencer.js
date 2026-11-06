@@ -21,7 +21,7 @@
 
 import {
     COLS_PER_MEASURE, clipCols, patternCols as patternColsOf,
-    audibleTracks, getPattern as getProjectPattern,
+    audibleTracks, getPattern as getProjectPattern, pieceLayout,
 } from '../components/project-model.js';
 
 /**
@@ -236,6 +236,52 @@ export function createSectionSequence(project, section, opts = {}) {
                 colInMeasure: col % COLS_PER_MEASURE,
                 tracks,
             };
+        },
+    };
+}
+
+/**
+ * The whole piece: every section in order, end to end (`pieceLayout`), each
+ * compiled as a section sequence over its full length — a section's own
+ * loop is for working on it, not for the piece. A column is handed to the
+ * section it falls in, shifted into that section's own columns, so the
+ * events, the playhead and the tempo are each section's own.
+ */
+export function createPieceSequence(project) {
+    const layout = pieceLayout(project);
+    const parts = layout.parts
+        .filter(p => p.endCol > p.startCol)
+        .map(p => ({
+            ...p,
+            seq: createSectionSequence(project, p.section, { range: { startCol: 0, endCol: p.endCol - p.startCol } }),
+        }));
+    if (parts.length === 0 || layout.total <= 0) return emptySequence('piece');
+    const range = { startCol: 0, endCol: layout.total };
+
+    /** The part a piece column falls in (the last one for the end column). */
+    function partAt(col) {
+        for (const p of parts) if (col >= p.startCol && col < p.endCol) return p;
+        return parts[parts.length - 1];
+    }
+
+    return {
+        kind: 'piece',
+        length: layout.total,
+        range,
+        columnForTick(rawCol) { return wrapToRange(rawCol, range); },
+        eventsAt(col) {
+            const p = partAt(col);
+            return p.seq.eventsAt(col - p.startCol);
+        },
+        locate(col) {
+            const p = partAt(col);
+            const here = p.seq.locate(col - p.startCol);
+            return { ...here, sectionId: p.section.id, sectionCol: col - p.startCol };
+        },
+        /** Which section a piece column is in, and the column inside it. */
+        localize(col) {
+            const p = partAt(col);
+            return { section: p.section, sectionId: p.section.id, col: col - p.startCol };
         },
     };
 }

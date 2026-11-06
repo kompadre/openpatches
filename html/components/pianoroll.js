@@ -326,10 +326,12 @@ export function createPianoroll(opts) {
     controls.appendChild(patternLabel);
     patternSel.addEventListener('change', () => switchToPattern(patternSel.value));
 
+    // Grouped, so the list stays readable as patterns accumulate: the ones
+    // placed in this section first, then those placed elsewhere in the
+    // piece, then the unplaced. Within a group, by name.
     function renderPatternSelect() {
         const project = session.get();
         const section = session.getSection();
-        const placed = new Set(section ? section.clips.map(c => c.patternId) : []);
         const current = activePattern();
         patternSel.innerHTML = '';
         if (!current) {
@@ -340,12 +342,34 @@ export function createPianoroll(opts) {
             none.selected = true;
             patternSel.appendChild(none);
         }
-        for (const p of (project ? session.listPatterns() : [])) {
-            const opt = document.createElement('option');
-            opt.value = p.id;
-            opt.textContent = p.name + (placed.has(p.id) ? '' : ' (not placed)');
-            if (current && p.id === current.id) opt.selected = true;
-            patternSel.appendChild(opt);
+        if (!project) return;
+        const here = new Set(section ? section.clips.map(c => c.patternId) : []);
+        const elsewhere = new Set();
+        for (const s of project.sections) {
+            if (section && s.id === section.id) continue;
+            for (const c of s.clips) elsewhere.add(c.patternId);
+        }
+        const groups = [
+            { label: 'In this section', test: (p) => here.has(p.id) },
+            { label: 'In other sections', test: (p) => !here.has(p.id) && elsewhere.has(p.id) },
+            { label: 'Not placed', test: (p) => !here.has(p.id) && !elsewhere.has(p.id) },
+        ];
+        const all = session.listPatterns();
+        const several = project.sections.length > 1;
+        for (const g of groups) {
+            const members = all.filter(g.test);
+            if (members.length === 0) continue;
+            // One section: "elsewhere" is empty and the two groups left need
+            // no headings — a flat list reads better than two of one.
+            const parent = several || g.label === 'Not placed' ? document.createElement('optgroup') : patternSel;
+            if (parent !== patternSel) { parent.label = g.label; patternSel.appendChild(parent); }
+            for (const p of members) {
+                const opt = document.createElement('option');
+                opt.value = p.id;
+                opt.textContent = p.name;
+                if (current && p.id === current.id) opt.selected = true;
+                parent.appendChild(opt);
+            }
         }
         if (current) patternSel.value = current.id;
     }

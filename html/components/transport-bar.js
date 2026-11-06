@@ -19,7 +19,8 @@ import { MIN_BPM, MAX_BPM, DEFAULT_BPM } from './project-model.js';
 import { MODES } from '../synth/transport.js';
 
 export const MODE_LABELS = {
-    section: { label: 'Section', title: 'Play and Record act on the whole section' },
+    piece: { label: 'Piece', title: 'Play runs every section in order; Record records the section on screen' },
+    section: { label: 'Section', title: 'Play and Record act on the section on screen' },
     pattern: { label: 'Pattern', title: 'Play and Record loop the pattern open in the piano roll' },
 };
 

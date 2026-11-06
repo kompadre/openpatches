@@ -37,7 +37,7 @@
 import {
     addClip, updateClip, removeClip, removeTrack, setTrackSlot, createClip, findClipOverlap,
     clipCols, clipRepeats, sectionLength, createTrack,
-    COLS_PER_MEASURE, MAX_SLOTS,
+    COLS_PER_MEASURE, MAX_SLOTS, MIN_BPM, MAX_BPM,
 } from './project-model.js';
 import { selectionMade, onSelectionElsewhere } from './selection-bus.js';
 import { thumbURL } from './pattern-thumbs.js';
@@ -245,6 +245,53 @@ export function createSectionEditor(opts = {}) {
     function renderToolbar(project) {
         toolbar.innerHTML = '';
 
+        // The piece's sections, in order: pick one to edit, add, remove,
+        // move it earlier or later. The model has carried many sections
+        // since the project arrived; this row is what lets the user have
+        // more than one.
+        const row = document.createElement('div');
+        row.className = 'section-pick-row';
+        const pickSel = document.createElement('select');
+        pickSel.className = 'section-pick';
+        pickSel.title = 'The section on screen — pick another to edit it';
+        project.sections.forEach((s, i) => {
+            const opt = document.createElement('option');
+            opt.value = s.id;
+            opt.textContent = `${i + 1}. ${s.name}`;
+            if (s.id === sec().id) opt.selected = true;
+            pickSel.appendChild(opt);
+        });
+        pickSel.value = sec().id;
+        pickSel.addEventListener('change', () => {
+            pick(null);
+            if (stamp) cancelStamp();
+            session.setSection(pickSel.value, 'section-editor');
+        });
+        row.appendChild(pickSel);
+        const idx = project.sections.findIndex(s => s.id === sec().id);
+        const up = button('▲', 'Move this section earlier in the piece',
+            () => session.moveSection(sec().id, -1, 'section-editor'), 'section-btn section-move-up');
+        up.disabled = idx <= 0;
+        const down = button('▼', 'Move this section later in the piece',
+            () => session.moveSection(sec().id, +1, 'section-editor'), 'section-btn section-move-down');
+        down.disabled = idx >= project.sections.length - 1;
+        row.appendChild(up);
+        row.appendChild(down);
+        row.appendChild(button('+ Section', 'A new, empty section at the end of the piece', () => {
+            pick(null);
+            session.addSection({}, 'section-editor');
+        }, 'section-btn section-add'));
+        const del = button('✕', 'Remove this section', () => {
+            const n = sec().clips.length;
+            if (n > 0 && !confirm(`Remove "${sec().name}" and its ${n} clip${n > 1 ? 's' : ''}?`)) return;
+            pick(null);
+            session.removeSection(sec().id, 'section-editor');
+        }, 'section-btn section-remove');
+        del.disabled = project.sections.length <= 1;
+        del.title = del.disabled ? 'A project keeps at least one section' : 'Remove this section';
+        row.appendChild(del);
+        toolbar.appendChild(row);
+
         // Play, Stop and BPM used to be here too; they are the transport
         // bar's now, above every panel, with a Section/Pattern switch.
         // The pattern library has no list of its own any more: new patterns
@@ -318,6 +365,43 @@ export function createSectionEditor(opts = {}) {
         loopStart.addEventListener('change', applyLoop);
         loopEnd.addEventListener('change', applyLoop);
         toolbar.appendChild(loopLabel);
+
+        // The section's tempo: its own start tempo (blank — the project's,
+        // shown as the placeholder) and, optionally, the tempo it ramps to
+        // by its end — a rit. or an accel. (blank — holds).
+        const tempoLabel = document.createElement('label');
+        tempoLabel.className = 'section-field section-tempo';
+        tempoLabel.title = 'This section\'s tempo: blank is the project\'s. "→" is the tempo it reaches by its last bar — blank holds the tempo';
+        tempoLabel.appendChild(document.createTextNode('Tempo '));
+        const bpmStart = document.createElement('input');
+        bpmStart.type = 'number';
+        bpmStart.className = 'section-bpm-start';
+        bpmStart.min = String(MIN_BPM);
+        bpmStart.max = String(MAX_BPM);
+        bpmStart.placeholder = String(project.bpm);
+        bpmStart.value = sec().bpm == null ? '' : String(sec().bpm);
+        const bpmEnd = document.createElement('input');
+        bpmEnd.type = 'number';
+        bpmEnd.className = 'section-bpm-end';
+        bpmEnd.min = String(MIN_BPM);
+        bpmEnd.max = String(MAX_BPM);
+        bpmEnd.placeholder = 'holds';
+        bpmEnd.value = sec().bpmEnd == null ? '' : String(sec().bpmEnd);
+        const readTempo = (el) => {
+            if (String(el.value).trim() === '') return null;
+            const v = parseInt(el.value);
+            return Number.isFinite(v) ? Math.max(MIN_BPM, Math.min(MAX_BPM, v)) : null;
+        };
+        const applyTempo = () => {
+            session.setSectionTempo({ bpm: readTempo(bpmStart), bpmEnd: readTempo(bpmEnd) }, 'section-editor');
+            if (transport && transport.refresh) transport.refresh();
+        };
+        bpmStart.addEventListener('change', applyTempo);
+        bpmEnd.addEventListener('change', applyTempo);
+        tempoLabel.appendChild(bpmStart);
+        tempoLabel.appendChild(document.createTextNode(' → '));
+        tempoLabel.appendChild(bpmEnd);
+        toolbar.appendChild(tempoLabel);
 
         // Snap and zoom are view settings, not part of the project: they are
         // persisted on their own and a re-render reads them back.
@@ -448,7 +532,7 @@ export function createSectionEditor(opts = {}) {
         playheadEl.className = 'section-playhead';
         playheadEl.style.display = 'none';
         lanes.appendChild(playheadEl);
-        if (transport) movePlayhead(transport.isRunning() ? transport.getColumn() : -1);
+        if (transport) movePlayhead(transport.isRunning() && transport.getSectionColumn ? transport.getSectionColumn() : -1);
 
         grid.appendChild(lanes);
 

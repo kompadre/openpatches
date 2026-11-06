@@ -2,6 +2,20 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-06: Many sections, the piece played end to end, tempo ramps
+
+**Sections.** The Section pane's toolbar opens with the piece's sections in order: a select to pick the one on screen, ▲/▼ to move it earlier or later, `+ Section` (new, empty, at the end, becomes the edited one) and ✕ (never the last; removing the edited one moves the edit to its neighbour). `session.addSection/removeSection/moveSection/setSectionTempo`; `moveSection` and `pieceLayout` in the model. Selections and an armed stamp are dropped on a switch.
+
+**Piece mode** — a third transport mode, first on the bar (`Piece | Section | Pattern`). `createPieceSequence(project)` lays the sections end to end on bar lines (`pieceLayout`; an empty section takes no room) and compiles each over its full length — a section's own loop is for working on it — delegating `eventsAt`/`locate` to the section a column falls in and adding `localize(col)` → which section, and the column inside it. The **Section pane follows**: as the playhead enters a section the transport makes it the edited one (`session.setSection`, source `transport`), so what is on screen is what sounds; nothing in the transport listens to the session, so the sequence is not rebuilt by the switch. `sectionCol` in the position broadcast (and `getSectionColumn()`, which the editor now uses) is the column on the *edited* section's timeline, -1 while the piece is elsewhere. Record from piece mode records the edited section (the mode switches to `section`).
+
+**Tempo ramps.** `section.bpmEnd` (nullable; clamped; round-trips) is the tempo a section reaches by its last column; `bpmAt(project, section, col)` is the straight line from `effectiveBpm` to it, held past the end. The transport's `getBpm()` is now `bpmAt` at the playhead (in piece mode, in the section the playhead is in), and `rampTempo()` hands a changed tempo to the worker on the tick it changes (integer milli-BPM compared, so a flat section sends nothing); the worker re-anchors on its last tick, so a ramp is seamless. The Section toolbar's **Tempo** pair: start (blank — the project's, shown as placeholder) → end (blank — holds).
+
+**The roll's Pattern select is grouped** as patterns accumulate: *In this section*, *In other sections*, *Not placed* (with one section the placed ones are a flat list and only *Not placed* is a group). The "(not placed)" suffix goes.
+
+Also: the top strip's left column is `minmax(max-content, 1fr)` and transport buttons `nowrap` — three mode buttons had squeezed Play's label onto two lines; the tabs sit a little right of centre when the bar is wider than half.
+
+Phase 4 of the plan. Tests: `sections in a piece` (model), `the piece sequence` (sequencer), `transport-piece.test.js` (follows, records the section, nothing-to-play, ramps per section), the sections row and tempo fields (section editor), the grouped select (pattern editor); `e2e/piece.spec.js` plays two sections end to end in Chromium and watches the pane follow. The visual baselines held once the bar stopped wrapping. 909 unit, 83 e2e pass.
+
 ## 2026-11-06: The pattern library filters by Section or Global
 
 A two-way switch on the library's header: **Section** lists only the patterns placed in the section on screen, **Global** every pattern in the project (the default). Remembered under `openpatches_section_library_scope`; an empty Section view says Global lists them all. Test in `section-editor.test.js`.

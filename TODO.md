@@ -26,10 +26,10 @@ Project backlog. Parent tasks with nested subtasks; `[ ]` pending, `[x]` done,
 - [x] Pattern library: a collapsible sub-pane at the bottom of the Section pane with every pattern so far (thumbnails), draggable onto tracks. The list `+ Pattern` replaced, in a smaller form.
 - [x] Piano Roll: switch patterns directly from the roll (the library's list again); rename the tab to Pattern.
 
-**Phase 4 — More than one section.**
-- [ ] A **section list** in the left pane, sibling of the library: the model carries an ordered sequence of sections and `addSection`/`removeSection` exist, but the UI edits exactly one and offers no way to add, reorder or switch. Deferred with the user on 2026-11-02.
-- [ ] **Whole-piece playback** — section by section. The transport's modes are `section` and `pattern`; a third scope, chosen from the unified transport.
-- [ ] **Tempo automation** (gradual rit./accel.). `effectiveBpm(project, section)` is the seam it grows from; the per-section override is the step-change case already working.
+**Phase 4 — More than one section.** _Done 2026-11-06._
+- [x] A **section list** in the left pane, sibling of the library: the model carries an ordered sequence of sections and `addSection`/`removeSection` exist, but the UI edits exactly one and offers no way to add, reorder or switch. Deferred with the user on 2026-11-02.
+- [x] **Whole-piece playback** — section by section. The transport's modes are `section` and `pattern`; a third scope, chosen from the unified transport.
+- [x] **Tempo automation** (gradual rit./accel.). `effectiveBpm(project, section)` is the seam it grows from; the per-section override is the step-change case already working.
 
 **Phase 5 — Standalone, any time.**
 - [ ] Drag patches from the canvas onto Mixer slots to assign them (after phase 3's drag code).

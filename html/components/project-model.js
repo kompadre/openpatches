@@ -243,7 +243,10 @@ export function createClip(partial = {}) {
  * `bpm` is **nullable on purpose** — null means "the project's tempo", a
  * number overrides it. That is the difference between a project whose tempo
  * is edited in one place and one where a section was deliberately marked
- * slower, and collapsing the two would lose the distinction.
+ * slower, and collapsing the two would lose the distinction. `bpmEnd`,
+ * also nullable, is the tempo the section *arrives at*: set, the section
+ * ramps linearly from its start tempo to it over its length (a rit. or an
+ * accel.); null means it holds its tempo. See `bpmAt()`.
  *
  * Clips are validated for shape but not for their references: a section does
  * not know the project's tracks or patterns. `normalizeProject()` is where
@@ -254,6 +257,7 @@ export function createSection(partial = {}) {
         id: partial.id || uid('sec'),
         name: nonEmptyName(partial.name, 'Section'),
         bpm: partial.bpm == null ? null : clampInt(partial.bpm, MIN_BPM, MAX_BPM, DEFAULT_BPM),
+        bpmEnd: partial.bpmEnd == null ? null : clampInt(partial.bpmEnd, MIN_BPM, MAX_BPM, DEFAULT_BPM),
         clips: (Array.isArray(partial.clips) ? partial.clips : []).map(createClip),
         loop: normalizeLoop(partial.loop),
         created: partial.created || Date.now(),
@@ -366,6 +370,22 @@ export function normalizeProject(project) {
 export function effectiveBpm(project, section) {
     if (section && section.bpm != null) return section.bpm;
     return project ? project.bpm : DEFAULT_BPM;
+}
+
+/**
+ * The tempo at column `col` of a section: a straight line from its start
+ * tempo (`effectiveBpm`) to `bpmEnd` over the section's length, so the
+ * last column plays at `bpmEnd` and anything past the end holds it. A
+ * section without `bpmEnd` — or without length — is its start tempo
+ * throughout. Not rounded: the clock takes fractional BPM.
+ */
+export function bpmAt(project, section, col) {
+    const start = effectiveBpm(project, section);
+    if (!section || section.bpmEnd == null) return start;
+    const len = sectionLengthCols(project, section);
+    if (len <= 1) return start;
+    const t = Math.max(0, Math.min(1, (col || 0) / (len - 1)));
+    return start + (section.bpmEnd - start) * t;
 }
 
 // --- Lookups ---
@@ -581,6 +601,33 @@ export function addSection(project, partial = {}) {
     });
     project.sections.push(section);
     return section;
+}
+
+/** Move a section `delta` places along the piece (−1 earlier, +1 later). */
+export function moveSection(project, sectionId, delta) {
+    const i = project.sections.findIndex(s => s.id === sectionId);
+    const j = i + delta;
+    if (i < 0 || j < 0 || j >= project.sections.length) return false;
+    const [s] = project.sections.splice(i, 1);
+    project.sections.splice(j, 0, s);
+    return true;
+}
+
+/**
+ * The piece: every section end to end, each starting on the bar after the
+ * previous one ends (sections are whole bars long when played, as a section
+ * alone is). Empty sections take no room. `startCol` is where each begins
+ * in the piece; `total` is the piece's length.
+ */
+export function pieceLayout(project) {
+    const parts = [];
+    let at = 0;
+    for (const section of project.sections) {
+        const cols = Math.ceil(sectionLengthCols(project, section) / COLS_PER_MEASURE) * COLS_PER_MEASURE;
+        parts.push({ section, startCol: at, endCol: at + cols });
+        at += cols;
+    }
+    return { parts, total: at };
 }
 
 /** A project always has a section, so the last one cannot be removed. */

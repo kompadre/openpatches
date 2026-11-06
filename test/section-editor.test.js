@@ -1254,3 +1254,47 @@ describe('the library filter', () => {
         assert.match(again.root.querySelector('.section-library-empty').textContent, /Global lists them all/);
     });
 });
+
+describe('the piece\'s sections', () => {
+    const opts = (h) => Array.from(h.btn('section-pick').querySelectorAll('option')).map(o => o.textContent);
+    test('the row lists them in order; pick, add, remove and move write through', () => {
+        const h = build({ patterns: [{ name: 'A' }], tracks: [{ slot: 0 }], clips: [{ track: 0, pattern: 0, at: 0 }] });
+        assert.deepEqual(opts(h), ['1. Section 1']);
+        assert.equal(h.btn('section-remove').disabled, true, 'the last section stays');
+        assert.equal(h.btn('section-move-up').disabled, true);
+
+        h.btn('section-add').dispatch('click', ev());
+        assert.deepEqual(opts(h), ['1. Section 1', '2. Section 2']);
+        assert.equal(h.section().name, 'Section 2', 'the new one is on screen');
+        assert.equal(h.clips().length, 0, 'and empty');
+        assert.equal(h.btn('section-move-down').disabled, true);
+
+        h.btn('section-move-up').dispatch('click', ev());
+        assert.deepEqual(h.project().sections.map(s => s.name), ['Section 2', 'Section 1']);
+        assert.deepEqual(opts(h), ['1. Section 2', '2. Section 1']);
+
+        const pick = h.btn('section-pick');
+        pick.value = h.project().sections[1].id;
+        pick.dispatch('change');
+        assert.equal(h.section().name, 'Section 1');
+        assert.equal(h.clips().length, 1);
+
+        h.btn('section-remove').dispatch('click', ev());             // confirm() is stubbed true
+        assert.deepEqual(h.project().sections.map(s => s.name), ['Section 2']);
+        assert.equal(h.section().name, 'Section 2');
+    });
+
+    test('the tempo fields: blank is the project\'s, the arrow is the end tempo', () => {
+        const h = build({ patterns: [{ name: 'A' }], tracks: [{ slot: 0 }], clips: [{ track: 0, pattern: 0, at: 0 }] });
+        const start = h.btn('section-bpm-start'), end = h.btn('section-bpm-end');
+        assert.equal(start.value, '');
+        assert.equal(start.placeholder, String(h.project().bpm));
+        start.value = '90'; start.dispatch('change');
+        assert.equal(h.section().bpm, 90);
+        h.btn('section-bpm-end').value = '9999'; h.btn('section-bpm-end').dispatch('change');
+        assert.equal(h.section().bpmEnd, M.MAX_BPM, 'clamped');
+        h.btn('section-bpm-start').value = ''; h.btn('section-bpm-start').dispatch('change');
+        assert.equal(h.section().bpm, null, 'back to the project\'s');
+        assert.equal(h.section().bpmEnd, M.MAX_BPM, 'the other field is untouched');
+    });
+});
