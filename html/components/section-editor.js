@@ -39,16 +39,19 @@ import {
     clipCols, clipRepeats, sectionLength, createTrack,
     COLS_PER_MEASURE, MAX_SLOTS,
 } from './project-model.js';
-import { claimKeys, ownsKeys } from './key-owner.js';
+import { selectionMade, onSelectionElsewhere } from './selection-bus.js';
+import { thumbURL } from './pattern-thumbs.js';
 
 export const MEASURE_W = 48;      // px per measure in the grid (its height, time runs down), at zoom ×1
 const MIN_GRID_MEASURES = 16;     // never show an empty, zero-height grid
 const DRAG_THRESHOLD = 4;         // px before a press becomes a drag
 const LONG_PRESS_MS = 600;        // a still press this long opens the clip in the roll
+const THUMB_W = 48;               // px a clip's dot map is drawn at; CSS stretches it to the lane
 const DOUBLE_TAP_MS = 400;        // two presses on one clip within this remove it (as in the roll)
 
 const SNAP_KEY = 'openpatches_song_snap';
 const ZOOM_KEY = 'openpatches_song_zoom';
+const LIBRARY_KEY = 'openpatches_section_library';   // '1' while the library is folded
 // Grid resolutions, in columns. Half a bar is the default: one step finer
 // than whole bars, so the faint half-bar lines show that the grid goes
 // below the bar and the Snap selector is worth finding.
@@ -118,14 +121,17 @@ export function createSectionEditor(opts = {}) {
     actions.className = 'section-clip-actions';
     const status = document.createElement('div');
     status.className = 'section-status';
-    // A press anywhere in here makes the selection keys this editor's —
-    // in the capture phase, since a clip's press stops propagation.
-    root.addEventListener('mousedown', () => claimKeys('section'), true);
-    root.addEventListener('touchstart', () => claimKeys('section'), { passive: true, capture: true });
     root.appendChild(toolbar);
     root.appendChild(grid);
     root.appendChild(actions);
     root.appendChild(status);
+    // The pattern library: every pattern so far, under the grid, folded
+    // or not (remembered). Click one to select it — a lane click then
+    // places it — or drag it onto a lane.
+    const library = document.createElement('div');
+    library.className = 'section-library';
+    root.appendChild(library);
+    let libraryFolded = (() => { try { return localStorage.getItem(LIBRARY_KEY) === '1'; } catch { return false; } })();
 
     function say(msg) {
         status.textContent = msg || '';
@@ -576,6 +582,15 @@ export function createSectionEditor(opts = {}) {
         el.style.top = (span.startCol * colH()) + 'px';
         el.style.height = ((span.endCol - span.startCol) * colH() - 2) + 'px';
         el.style.background = pattern.color;
+        // The notes as dots, one beat × one octave a cell (pattern-thumbs.js),
+        // drawn for one pass of the pattern and repeated down the clip.
+        const passH = pattern.measures * measureH();
+        const thumb = thumbURL(pattern, THUMB_W, passH);
+        if (thumb) {
+            el.style.backgroundImage = `url(${thumb})`;
+            el.style.backgroundSize = `100% ${passH}px`;
+            el.style.backgroundRepeat = 'repeat-y';
+        }
         const reps = repeatLabel(clip, pattern);
         el.title = `${pattern.name}${reps} at ${positionLabel(span.startCol)} — drag to move (onto another track too), `
             + 'drag the bottom edge to lengthen, hold to open, double-click to remove';
@@ -1071,7 +1086,6 @@ export function createSectionEditor(opts = {}) {
         const tag = e.target && e.target.tagName;
         if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
         if (e.target && e.target.contentEditable === 'true') return;
-        if (!ownsKeys('section')) return;      // the roll was pressed last
         if (e.key === 'Escape') {
             if (stamp) { cancelStamp(); return; }
             if (picked.size) { pick(null); render(); }
@@ -1095,10 +1109,158 @@ export function createSectionEditor(opts = {}) {
         const project = session.get();
         if (!project) return;
         prunePicked();
+        // Notes selected in the roll go when clips are selected here (see
+        // selection-bus.js) — and ours go when the roll selects.
+        if (picked.size || stamp) selectionMade('section');
         renderToolbar(project);
         renderGrid(project);
         drawStamp();
+        renderLibrary(project);
     }
+
+    // --- The pattern library ---
+
+    function renderLibrary(project) {
+        library.innerHTML = '';
+        const patterns = session.listPatterns();
+        const uses = new Map();
+        for (const c of sec().clips) uses.set(c.patternId, (uses.get(c.patternId) || 0) + 1);
+
+        const head = button((libraryFolded ? '▸' : '▾') + ' Patterns (' + patterns.length + ')',
+            libraryFolded ? 'Show the pattern library' : 'Fold the pattern library away', () => {
+                libraryFolded = !libraryFolded;
+                try { localStorage.setItem(LIBRARY_KEY, libraryFolded ? '1' : '0'); } catch { /* ignore */ }
+                render();
+            }, 'section-library-head');
+        library.appendChild(head);
+        library.classList.toggle('folded', libraryFolded);
+        if (libraryFolded) return;
+
+        const list = document.createElement('div');
+        list.className = 'section-library-list';
+        if (patterns.length === 0) {
+            const empty = document.createElement('div');
+            empty.className = 'section-library-empty';
+            empty.textContent = 'No patterns yet — + Pattern makes one.';
+            list.appendChild(empty);
+        }
+        for (const pattern of patterns) list.appendChild(renderLibraryItem(pattern, uses.get(pattern.id) || 0));
+        library.appendChild(list);
+    }
+
+    const LIB_THUMB_W = 28, LIB_THUMB_H = 40;
+
+    function renderLibraryItem(pattern, n) {
+        const item = document.createElement('div');
+        item.className = 'section-library-item' + (pattern.id === selectedPatternId ? ' selected' : '');
+        item.dataset.patternId = pattern.id;
+        item.title = `${pattern.name} — ${pattern.measures} bar${pattern.measures > 1 ? 's' : ''}, `
+            + (n ? `placed ${n}×` : 'not placed') + '. Click to select (then click a lane), or drag onto a lane.';
+
+        const thumb = document.createElement('div');
+        thumb.className = 'section-library-thumb';
+        thumb.style.background = pattern.color;
+        const url = thumbURL(pattern, LIB_THUMB_W, LIB_THUMB_H);
+        if (url) {
+            thumb.style.backgroundImage = `url(${url})`;
+            thumb.style.backgroundSize = '100% 100%';
+        }
+        item.appendChild(thumb);
+
+        const name = document.createElement('span');
+        name.className = 'section-library-name';
+        name.textContent = pattern.name;
+        item.appendChild(name);
+        const count = document.createElement('span');
+        count.className = 'section-library-uses';
+        count.textContent = n ? '×' + n : '—';
+        item.appendChild(count);
+
+        const press = (e) => startLibraryDrag(e, pattern, item);
+        item.addEventListener('mousedown', press);
+        item.addEventListener('touchstart', press, { passive: false });
+        return item;
+    }
+
+    /** Select a library pattern: the next lane click places it. */
+    function selectLibraryPattern(pattern) {
+        pick(null);
+        selectedPatternId = pattern.id;
+        say(`${pattern.name} selected — click a lane to place it, or drag it there`);
+        render();
+    }
+
+    /**
+     * Press on a library item: a tap selects the pattern; a drag carries a
+     * ghost of it and drops a clip where it is released over a lane (the
+     * snap cell under the pointer). Released anywhere else, nothing.
+     */
+    function startLibraryDrag(e, pattern, item) {
+        if (e.cancelable && e.preventDefault) e.preventDefault();
+        if (stamp) cancelStamp();
+        const origin = pointer(e);
+        let ghost = null;
+        const onMove = (ev) => {
+            const pt = pointer(ev);
+            if (!ghost && Math.abs(pt.x - origin.x) < DRAG_THRESHOLD && Math.abs(pt.y - origin.y) < DRAG_THRESHOLD) return;
+            if (ev.cancelable && ev.preventDefault) ev.preventDefault();
+            if (!ghost) {
+                ghost = document.createElement('div');
+                ghost.className = 'section-library-ghost';
+                ghost.style.background = pattern.color;
+                ghost.textContent = pattern.name;
+                document.body.appendChild(ghost);
+            }
+            ghost.style.left = (pt.x + 8) + 'px';
+            ghost.style.top = (pt.y + 8) + 'px';
+        };
+        const finish = (ev) => {
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', finish);
+            document.removeEventListener('touchmove', onMove);
+            document.removeEventListener('touchend', finish);
+            document.removeEventListener('touchcancel', cancel);
+            if (!ghost) { selectLibraryPattern(pattern); return; }
+            if (ghost.parentNode) ghost.parentNode.removeChild(ghost);
+            const pt = pointer(ev);
+            const hit = laneAt(pt.x);
+            const r = grid.getBoundingClientRect();
+            if (!hit || pt.y < r.top || pt.y >= r.bottom) return;
+            const trackId = hit.lane.dataset.trackId;
+            const startCol = colAt(hit.lane, pt.y);
+            change((project, section) => {
+                const clip = addClip(project, section, { trackId, patternId: pattern.id, startCol });
+                pick(clip.id);
+            });
+            selectedPatternId = pattern.id;
+            selectedTrackId = trackId;
+            render();
+        };
+        const cancel = () => {
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', finish);
+            document.removeEventListener('touchmove', onMove);
+            document.removeEventListener('touchend', finish);
+            document.removeEventListener('touchcancel', cancel);
+            if (ghost && ghost.parentNode) ghost.parentNode.removeChild(ghost);
+        };
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', finish);
+        document.addEventListener('touchmove', onMove, { passive: false });
+        document.addEventListener('touchend', finish);
+        document.addEventListener('touchcancel', cancel);
+    }
+
+    const unsubscribeBus = onSelectionElsewhere('section', () => {
+        if (!picked.size && !stamp && !selectedClipId) return;
+        if (stamp) {
+            stamp = null;
+            document.removeEventListener('mousemove', followStamp);
+            document.removeEventListener('touchmove', followStamp);
+        }
+        pick(null);
+        render();
+    });
 
     unsubscribe = session.subscribe((ev) => {
         // Patch and canvas edits belong to the other half of the app.
@@ -1121,6 +1283,7 @@ export function createSectionEditor(opts = {}) {
         selectPattern(id) { selectedPatternId = id; render(); },
         destroy() {
             document.removeEventListener('keydown', onKey);
+            unsubscribeBus();
             if (unsubscribe) unsubscribe();
             if (unsubscribeTransport) unsubscribeTransport();
         },

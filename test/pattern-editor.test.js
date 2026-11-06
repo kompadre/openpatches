@@ -772,3 +772,45 @@ describe('selection, copy and paste', () => {
         assert.equal(roll.getNotes()[0].start, 11, 'the note moved');
     });
 });
+
+// Phase 3: the roll switches patterns itself.
+describe('the Pattern select', () => {
+    test('lists the patterns, shows the one on screen, and switches', async () => {
+        const { createPianoroll } = await import('../html/components/pianoroll.js');
+        const { makeProjectSession } = await import('./project-fixture.js');
+        const M = await import('../html/components/project-model.js');
+        const session = makeProjectSession();
+        const a = session.createPattern({ name: 'A', notes: [{ midi: 60, start: 0, dur: 1 }] }, 'test');
+        const b = session.createPattern({ name: 'B', notes: [{ midi: 72, start: 0, dur: 1 }] }, 'test');
+        const loose = session.createPattern({ name: 'C' }, 'test');
+        session.update((p, s) => {
+            const t0 = M.createTrack({ slot: 0 }), t1 = M.createTrack({ slot: 1 });
+            p.tracks.push(t0, t1);
+            M.addClip(p, s, { trackId: t0.id, patternId: a.id, startCol: 0 });
+            M.addClip(p, s, { trackId: t1.id, patternId: b.id, startCol: 0 });
+        }, 'test');
+        const roll = createPianoroll({
+            session, playNoteFn: () => {}, onNotesChange: () => {}, activeSlot: 0,
+            tickWorker: { postMessage() {}, addEventListener() {} }, startWorker: () => {}, stopWorker: () => {},
+            getSlotData: () => null,
+        });
+        roll.renderLegend();
+        const sel = roll.element.querySelector('.pianoroll-pattern');
+        const labels = Array.from(sel.children).map(o => o.textContent);
+        assert.deepEqual(labels, ['A', 'B', 'C (not placed)']);
+        assert.equal(sel.value, a.id);
+
+        sel.value = b.id;
+        sel.dispatch('change');
+        assert.deepEqual(roll.getNotes().map(n => n.midi), [72], 'B is on screen — on its own voice');
+        assert.equal(sel.value, b.id);
+
+        roll.switchToPattern(loose.id);
+        const s = session.getSection();
+        const placed = s.clips.find(c => c.patternId === loose.id);
+        assert.ok(placed, 'a pattern placed nowhere is placed first');
+        assert.equal(placed.trackId, session.get().tracks[1].id, 'at the end of the current track');
+        assert.equal(placed.startCol, 16);
+        assert.equal(sel.value, loose.id);
+    });
+});

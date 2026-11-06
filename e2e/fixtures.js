@@ -85,7 +85,7 @@ export async function openApp(page) {
  * wants the pattern loop sets the mode first (see `patternMode`).
  */
 export async function openRollTab(page) {
-    await page.locator('.dock-tab', { hasText: 'Piano Roll' }).click();
+    await page.locator('.dock-tab-pianoroll').click();
     await expect(page.locator('.transport-play')).toBeVisible();
 }
 

@@ -140,7 +140,7 @@ test.describe('mobile', () => {
 
     test('the one-octave keyboard is a piano, not an inversion of one', async ({ page }) => {
         await openMobile(page);
-        await page.locator('.dock-tab', { hasText: 'Piano Roll' }).click();
+        await page.locator('.dock-tab-pianoroll').click();
 
         // White keys were height:100% against a min-height-only (indefinite)
         // parent, so they collapsed to 20px while the black keys stood 50px —
@@ -161,7 +161,7 @@ test.describe('mobile', () => {
     // mobile row has two buttons that move the step-record cursor instead.
     test('the step nudge buttons fit the row and move the record cursor', async ({ page }) => {
         await openMobile(page);
-        await page.locator('.dock-tab', { hasText: 'Piano Roll' }).click();
+        await page.locator('.dock-tab-pianoroll').click();
 
         const back = page.locator('.kb-btn-step-nudge', { hasText: '« Step' });
         const fwd = page.locator('.kb-btn-step-nudge', { hasText: 'Step »' });

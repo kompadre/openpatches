@@ -85,7 +85,9 @@ export function createToolbar(opts) {
 
     const tabPianoroll = document.createElement('button');
     tabPianoroll.className = 'dock-tab dock-tab-pianoroll' + (effectiveInitialTab === 'pianoroll' ? ' active' : '');
-    tabPianoroll.innerHTML = '<span>🎹</span><span>Piano Roll</span>';
+    // Named for what it edits; the component inside is still the piano roll.
+    tabPianoroll.innerHTML = '<span>🎹</span><span>Pattern</span>';
+    tabPianoroll.title = 'Pattern — the piano roll';
 
     const tabSection = document.createElement('button');
     tabSection.className = 'dock-tab dock-tab-section' + (effectiveInitialTab === 'section' ? ' active' : '');
@@ -489,6 +491,16 @@ export function createToolbar(opts) {
 
     pianorollRef = createPianoroll({
         session,
+        // The roll's Pattern select: open the clip the way the Section's
+        // Open does — its voice becomes the active one, the clip's place
+        // is what the pattern loop plays.
+        onOpenClip: (clipId, trackId) => {
+            const track = session.get().tracks.find(t => t.id === trackId);
+            if (track && voiceBank._setActiveSlot) voiceBank._setActiveSlot(track.slot);
+            pianorollRef.openClip(clipId);
+            const clip = session.getSection().clips.find(c => c.id === clipId);
+            if (clip && transport && transport.setSectionPosition) transport.setSectionPosition(clip.startCol);
+        },
         playNoteFn: pianorollPlayFn,
         onNotesChange: updateHighlights,
         activeSlot: null,

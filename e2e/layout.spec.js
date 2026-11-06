@@ -118,7 +118,7 @@ test.describe('layout invariants', () => {
         // the dock-panel world for the side panes — covered separately.)
         await openApp(page);
 
-        const tabs = ['Patches', 'Piano Roll'];
+        const tabs = ['Patches', 'Pattern'];
         for (const name of tabs) {
             await page.locator('.dock-tab', { hasText: name }).click();
             await expect(page.locator('.dock-panel.active')).toBeVisible();

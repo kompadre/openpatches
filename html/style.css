@@ -4976,3 +4976,94 @@ footer {
     .dock-tab { padding: 0.25rem 0.6rem; font-size: 0.9rem; }
     .section-grid { --section-track-w: 3.6rem; }
 }
+
+/* --- Section: the pattern library under the grid --- */
+.section-library {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    max-height: 30%;
+    min-height: 0;
+    border-top: 1px solid #2a2a3e;
+    margin-top: 0.2rem;
+}
+.section-library-head {
+    align-self: flex-start;
+    background: transparent;
+    border: none;
+    color: #999;
+    font-size: 0.7rem;
+    padding: 0.2rem 0.3rem;
+    cursor: pointer;
+}
+.section-library-head:hover { color: #fff; }
+.section-library-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    padding: 0 0.3rem 0.3rem;
+    overflow-y: auto;
+    min-height: 0;
+}
+.section-library-empty { color: #777; font-size: 0.7rem; font-style: italic; }
+.section-library-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 3.6rem;
+    padding: 0.2rem;
+    border: 1px solid #2a2a3e;
+    border-radius: 4px;
+    background: #12122a;
+    cursor: grab;
+    user-select: none;
+    touch-action: none;
+}
+.section-library-item:hover { background: #161a36; }
+.section-library-item.selected { border-color: #fff; background: #1a2744; }
+.section-library-thumb {
+    width: 28px;
+    height: 40px;
+    border-radius: 3px;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.25);
+    background-repeat: no-repeat;
+}
+.section-library-name {
+    max-width: 100%;
+    font-size: 0.6rem;
+    color: #ddd;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.section-library-uses { font-size: 0.55rem; color: #888; }
+.section-library-ghost {
+    position: fixed;
+    z-index: 1000;
+    pointer-events: none;
+    padding: 0.2rem 0.4rem;
+    border-radius: 3px;
+    color: #fff;
+    font-size: 0.65rem;
+    opacity: 0.85;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+}
+
+/* The roll's Pattern select: which pattern is on screen, and a switch. */
+.pianoroll-pattern-field {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    color: #777;
+    font-size: 0.7rem;
+    white-space: nowrap;
+}
+.pianoroll-pattern {
+    max-width: 9rem;
+    padding: 0.15rem 0.3rem;
+    background: #0f0f23;
+    border: 1px solid #333;
+    border-radius: 4px;
+    color: #ccc;
+    font-size: 0.75rem;
+}

@@ -60,9 +60,9 @@ const NOTES = [
     { midi: 36, name: 'C2',  white: true },
 ];
 
-import { claimKeys, ownsKeys } from './key-owner.js';
+import { selectionMade, onSelectionElsewhere } from './selection-bus.js';
 import {
-    COLS_PER_MEASURE, createTrack, addClip,
+    COLS_PER_MEASURE, createTrack, addClip, clipCols,
     MIN_BPM, MAX_BPM,
 } from './project-model.js';
 import { msPerColumn } from '../synth/section-sequencer.js';
@@ -303,9 +303,6 @@ export function createPianoroll(opts) {
 
     const container = document.createElement('div');
     container.className = 'pianoroll-container';
-    // A press in the roll makes the selection keys its own (key-owner.js).
-    container.addEventListener('mousedown', () => claimKeys('roll'), true);
-    container.addEventListener('touchstart', () => claimKeys('roll'), { passive: true, capture: true });
 
     // Controls row
     const controls = document.createElement('div');
@@ -313,6 +310,69 @@ export function createPianoroll(opts) {
 
     // Play, Stop and BPM used to open this row; they are the transport
     // bar's now (components/transport-bar.js), above every panel.
+
+    // Which pattern is on screen — and a switch to any other, without a
+    // trip to the Section pane. A pattern placed on the current voice's
+    // track opens there; else wherever it is placed (its voice becomes the
+    // active one); a pattern placed nowhere is placed at the end of the
+    // current track first, since the roll edits clips, not loose patterns.
+    const patternLabel = document.createElement('label');
+    patternLabel.className = 'pianoroll-pattern-field';
+    patternLabel.textContent = 'Pattern ';
+    const patternSel = document.createElement('select');
+    patternSel.className = 'pianoroll-pattern';
+    patternSel.title = 'The pattern being edited — pick another to switch to it';
+    patternLabel.appendChild(patternSel);
+    controls.appendChild(patternLabel);
+    patternSel.addEventListener('change', () => switchToPattern(patternSel.value));
+
+    function renderPatternSelect() {
+        const project = session.get();
+        const section = session.getSection();
+        const placed = new Set(section ? section.clips.map(c => c.patternId) : []);
+        const current = activePattern();
+        patternSel.innerHTML = '';
+        if (!current) {
+            const none = document.createElement('option');
+            none.value = '';
+            none.textContent = '— none —';
+            none.disabled = true;
+            none.selected = true;
+            patternSel.appendChild(none);
+        }
+        for (const p of (project ? session.listPatterns() : [])) {
+            const opt = document.createElement('option');
+            opt.value = p.id;
+            opt.textContent = p.name + (placed.has(p.id) ? '' : ' (not placed)');
+            if (current && p.id === current.id) opt.selected = true;
+            patternSel.appendChild(opt);
+        }
+        if (current) patternSel.value = current.id;
+    }
+
+    function switchToPattern(patternId) {
+        const project = session.get();
+        const section = session.getSection();
+        if (!project || !section || !patternId) return false;
+        const here = project.tracks.find(t => t.slot === currentSlot()) || project.tracks[0] || null;
+        const clips = section.clips.filter(c => c.patternId === patternId)
+            .sort((a, b) => a.startCol - b.startCol);
+        let clip = (here && clips.find(c => c.trackId === here.id)) || clips[0] || null;
+        if (!clip) {
+            if (!here) { renderPatternSelect(); return false; }
+            let end = 0;
+            for (const c of section.clips) {
+                if (c.trackId !== here.id) continue;
+                const span = clipCols(c, session.getPattern(c.patternId));
+                if (span && span.endCol > end) end = span.endCol;
+            }
+            session.update((p, s) => { clip = addClip(p, s, { trackId: here.id, patternId, startCol: end }); }, 'roll');
+        }
+        if (opts.onOpenClip) opts.onOpenClip(clip.id, clip.trackId);
+        else api.openClip(clip.id);
+        return true;
+    }
+
 
     const FOLLOW_LABEL = '\u21E5 Follow';
     const FOLLOW_TITLE = 'Scroll the roll to keep the playhead in view while playing. ' +
@@ -1129,6 +1189,13 @@ export function createPianoroll(opts) {
         return true;
     }
 
+    onSelectionElsewhere('roll', () => {
+        if (!selected.size && !placing) return;
+        selected.clear();
+        placing = null;
+        draw();
+    });
+
     function cancelPlacement() {
         if (!placing) return;
         placing = null;
@@ -1141,6 +1208,9 @@ export function createPianoroll(opts) {
     }
 
     function updateSelectionButtons() {
+        // Called from every draw: holding a selection deselects the
+        // Section's clips (selection-bus.js), and the reverse is below.
+        if (selected.size || placing) selectionMade('roll');
         if (!copyBtn) return;
         for (const b of [copyBtn, copyBtnMobile]) {
             b.disabled = selected.size === 0 && !placing;
@@ -1154,7 +1224,6 @@ export function createPianoroll(opts) {
         const tag = e.target && e.target.tagName;
         if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
         if (e.target && e.target.isContentEditable) return;
-        if (!ownsKeys('roll')) return;         // the Section was pressed last (key-owner.js)
         const mod = e.ctrlKey || e.metaKey;
         if (mod && (e.key === 'c' || e.key === 'C')) { if (copySelection()) e.preventDefault(); return; }
         if (placing && e.key === 'Escape') { cancelPlacement(); return; }
@@ -1810,6 +1879,7 @@ export function createPianoroll(opts) {
     }
 
     function renderLegend() {
+        renderPatternSelect();
         legend.innerHTML = '';
         if (tracks.length === 0) {
             legend.style.display = 'none';
@@ -1872,7 +1942,7 @@ export function createPianoroll(opts) {
     draw();
     renderLegend();
 
-    return {
+    const api = {
         element: container,
         draw,
         startPlayback,
@@ -2077,6 +2147,8 @@ export function createPianoroll(opts) {
         getAccompany() { return transport.getAccompany(); },
         setAccompany(on) { transport.setAccompany(on); updateAccompanyButton(); },
         getBpm,
+        /** Switch the roll to a pattern by id (see the Pattern select). */
+        switchToPattern,
         /**
          * Every note across every track, flattened and slot-tagged.
          * Nothing in the app needs this — the tests do, for assertions
@@ -2101,4 +2173,5 @@ export function createPianoroll(opts) {
         renderLegend,
         saveState,
     };
+    return api;
 }

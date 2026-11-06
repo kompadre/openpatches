@@ -2,6 +2,18 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-06: Clips show their notes; a pattern library; the roll switches patterns
+
+**One selection on screen.** Phase 2's "the editor pressed last owns the keys" (`key-owner.js`) is replaced, at the user's preference, by mutual deselection (`selection-bus.js`): selecting clips in the Section drops the roll's note selection and armed stamp, selecting notes drops the clips' — so Delete/Escape/Ctrl+C never have two targets.
+
+**Clip thumbnails** (`pattern-thumbs.js`). Exact notes would be unreadable at clip size, so the map rounds up: one cell per **beat** per **octave** (rows down, octaves across, low to high, over the octaves the pattern uses); a cell shows when any note sounds there — a held note marks every beat it covers — and its dot is more opaque the more notes touch it (`0.3 + 0.7 × count/max`). Drawn once per pattern state and size and cached; a data URL rather than a blob URL so it is synchronous (the clip's first render has its dots) and needs no revoking. One pass is drawn and repeated down the clip per repeat.
+
+**Pattern library**, a foldable strip under the Section grid (folded state remembered, `openpatches_section_library`): every pattern by name with its thumbnail and use count. A tap selects it (the next lane click places it); a drag carries a ghost and drops a clip into the snap cell under the pointer; dropped off the grid, nothing.
+
+**The roll switches patterns; its tab is "Pattern".** A Pattern select opens the control row: the pattern's clip on the current voice's track, else wherever it is placed (its voice becomes active and the loop parks there, via the toolbar's new `onOpenClip`), and a pattern placed nowhere is first placed at the end of the current track — the roll edits clips. New roll API: `switchToPattern`.
+
+Phase 3 of the plan. Tests: `pattern-thumbs.test.js`; library and cross-editor deselection cases in `section-editor.test.js` (and an Escape test whose compound selector the harness cannot match, so it passed vacuously, fixed); the Pattern select in `pattern-editor.test.js`; `e2e/patterns.spec.js`. 895 unit, 82 e2e pass. Known flake, older than this: `pattern colours` can fail when two random ids hash to one hue.
+
 ## 2026-11-06: Section lanes go thin; clips select and stamp like notes
 
 **Thin lanes, two-row heads.** A lane is 3.4rem (3.6 on mobile), down from 6.5. Its head is a 2×2 grid: the track's **number** — coloured by its voice, with the voice `<select>` stretched invisibly over it, so the closed control shows `1` and the open list the full names — and **✕**; then **M** and **S**.

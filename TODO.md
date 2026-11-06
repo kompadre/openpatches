@@ -7,6 +7,8 @@ Project backlog. Parent tasks with nested subtasks; `[ ]` pending, `[x]` done,
 
 ### Bugs
 
+- [ ] Flaky unit test `pattern colours` (section-editor.test.js): two random pattern ids can hash to the same hue, failing "two patterns, two hues".
+
 - [x] Pattern sub-measure placement in Section has been lost to recent changes. _(Not lost: Snap defaulted to Bar and was easy to miss. Default is now 1/2.)_
 - [x] div.bpane-content.bpane-content-mixer is limited to .bpane-body viewport width. If .bpane-body scrolls to the right .bpane-content ends abruptly and doesn't cover the rest of Tracks.
 - [x] In Chrome, when exporting a project while playing, the page's window looses its focus (the downloaded file list shows in the upper right corner). While the window is inactive the internal clock is still ticking. All the notes that should have played while the window was inactive play the instance it regains focus resulting in cocophonous cluster.
@@ -19,10 +21,10 @@ Project backlog. Parent tasks with nested subtasks; `[ ]` pending, `[x]` done,
 - [x] Head of two rows with two squares each: track number ([1]) and delete [x]; then Mute and Solo.
 - [x] Selection mode and stamp paste for clips, reusing the roll's marquee and stamp.
 
-**Phase 3 — Working with patterns.**
-- [ ] Pattern thumbnails: small dots inside each clip where the pattern's notes are. One cached image blob per pattern, invalidated when the pattern changes. Thin lanes cramp the clip name; the dots are how a clip is recognised.
-- [ ] Pattern library: a collapsible sub-pane at the bottom of the Section pane with every pattern so far (thumbnails), draggable onto tracks. The list `+ Pattern` replaced, in a smaller form.
-- [ ] Piano Roll: switch patterns directly from the roll (the library's list again); rename the tab to Pattern.
+**Phase 3 — Working with patterns.** _Done 2026-11-06._
+- [x] Pattern thumbnails: small dots inside each clip where the pattern's notes are. One cached image blob per pattern, invalidated when the pattern changes. Thin lanes cramp the clip name; the dots are how a clip is recognised.
+- [x] Pattern library: a collapsible sub-pane at the bottom of the Section pane with every pattern so far (thumbnails), draggable onto tracks. The list `+ Pattern` replaced, in a smaller form.
+- [x] Piano Roll: switch patterns directly from the roll (the library's list again); rename the tab to Pattern.
 
 **Phase 4 — More than one section.**
 - [ ] A **section list** in the left pane, sibling of the library: the model carries an ordered sequence of sections and `addSection`/`removeSection` exist, but the UI edits exactly one and offers no way to add, reorder or switch. Deferred with the user on 2026-11-02.

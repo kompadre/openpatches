@@ -1156,24 +1156,84 @@ describe('selecting and stamping clips', () => {
         h.btn('section-copy').dispatch('click', ev());
         key(h, 'Escape');
         assert.equal(h.btn('section-copy').classList.contains('active'), false);
-        assert.equal(pickedIds(h).length + h.root.querySelectorAll('.section-clip.selected').length, 1);
+        assert.equal(pickedIds(h).length, 1, 'the clip is still selected');
         key(h, 'Escape');
-        assert.equal(h.root.querySelectorAll('.section-clip.selected').length, 0);
+        assert.equal(pickedIds(h).length, 0);
+        assert.equal(Array.from(h.clips()).filter(c => c.classList.contains('selected')).length, 0);
         assert.equal(h.btn('section-copy').disabled, true, 'nothing to copy');
     });
 });
 
-describe('the selection keys belong to the editor pressed last', () => {
-    test('a press in the piano roll makes Delete the roll\'s, not the Section\'s', async () => {
-        const { claimKeys, _resetKeyOwner } = await import('../html/components/key-owner.js');
-        const h = build({ patterns: [{ name: 'A' }], tracks: [{ slot: 0 }], clips: [{ track: 0, pattern: 0, at: 0 }] });
+describe('one selection on screen: clips here, or notes in the roll', () => {
+    test('selecting a clip deselects the roll\'s notes, and selecting notes deselects the clips', async () => {
+        const { createPianoroll } = await import('../html/components/pianoroll.js');
+        const h = build({ patterns: [{ name: 'A', notes: [{ midi: 60, start: 0, dur: 1 }] }], tracks: [{ slot: 0 }], clips: [{ track: 0, pattern: 0, at: 0 }] });
+        const roll = createPianoroll({
+            session, playNoteFn: () => {}, onNotesChange: () => {}, activeSlot: 0,
+            tickWorker: { postMessage() {}, addEventListener() {} }, startWorker: () => {}, stopWorker: () => {},
+            getSlotData: () => null,
+        });
+        roll.openClip(h.section().clips[0].id);
+        roll.selectNotes(roll.getNotes().filter(n => n.midi === 60));
+        assert.equal(roll.getSelectedNotes().length, 1);
+
         h.click(h.clips()[0]);
-        claimKeys('roll');
+        assert.equal(roll.getSelectedNotes().length, 0, 'the clip took the selection');
+        assert.equal(Array.from(h.clips()).filter(c => c.classList.contains('selected')).length, 1);
+
+        roll.selectNotes(roll.getNotes().filter(n => n.midi === 60));
+        assert.equal(roll.getSelectedNotes().length, 1);
+        assert.equal(Array.from(h.clips()).filter(c => c.classList.contains('selected')).length, 0, 'and the notes took it back');
         h.doc('keydown', { key: 'Delete', target: { tagName: 'DIV' }, preventDefault() {} });
-        assert.equal(h.section().clips.length, 1, 'the clip survives');
-        h.root.dispatch('mousedown', ev());
-        h.doc('keydown', { key: 'Delete', target: { tagName: 'DIV' }, preventDefault() {} });
-        assert.equal(h.section().clips.length, 0, 'a press back in the Section takes them back');
-        _resetKeyOwner();
+        assert.equal(h.section().clips.length, 1, 'so Delete is the roll\'s alone');
+        roll.destroy && roll.destroy();
+    });
+});
+
+describe('the pattern library', () => {
+    const lib = (h) => h.root.querySelectorAll('.section-library-item');
+    test('lists every pattern with its use count, and folds away (remembered)', () => {
+        const h = build({ patterns: [{ name: 'B' }, { name: 'A' }], tracks: [{ slot: 0 }], clips: [{ track: 0, pattern: 0, at: 0 }, { track: 0, pattern: 0, at: 2 }] });
+        const items = Array.from(lib(h));
+        assert.deepEqual(items.map(i => i.querySelector('.section-library-name').textContent), ['A', 'B'], 'by name');
+        assert.deepEqual(items.map(i => i.querySelector('.section-library-uses').textContent), ['—', '×2']);
+        h.btn('section-library-head').dispatch('click', ev());
+        assert.equal(lib(h).length, 0);
+        assert.equal(localStorage.getItem('openpatches_section_library'), '1');
+        h.btn('section-library-head').dispatch('click', ev());
+        assert.equal(lib(h).length, 2);
+    });
+
+    test('a tap selects the pattern; a lane click then places it', () => {
+        const h = build({ patterns: [{ name: 'A' }], tracks: [{ slot: 0 }] });
+        lib(h)[0].dispatch('mousedown', ev({ clientX: 5, clientY: 5 }));
+        h.doc('mouseup', ev({ clientX: 5, clientY: 5 }));
+        assert.ok(lib(h)[0].classList.contains('selected'));
+        h.click(h.lanes()[0], 2 * MEASURE_W + 3);
+        assert.deepEqual(h.section().clips.map(c => c.startCol), [2 * COLS]);
+    });
+
+    test('dragged onto a lane, it is placed in the snap cell under the pointer', () => {
+        const h = build({ patterns: [{ name: 'A' }], tracks: [{ slot: 0 }, { slot: 1 }] });
+        h.lanes().forEach((lane, i) => { lane.getBoundingClientRect = () => ({ left: i * 60, right: (i + 1) * 60, top: 0, bottom: 5000 }); });
+        h.root.querySelector('.section-grid').getBoundingClientRect = () => ({ left: 0, top: 0, right: 1000, bottom: 5000 });
+        lib(h)[0].dispatch('mousedown', ev({ clientX: 5, clientY: 900 }));
+        h.doc('mousemove', ev({ clientX: 70, clientY: 3 * MEASURE_W + MEASURE_W / 2 + 2 }));
+        assert.ok(document.body.querySelector('.section-library-ghost'), 'a ghost follows the pointer');
+        h.doc('mouseup', ev({ clientX: 70, clientY: 3 * MEASURE_W + MEASURE_W / 2 + 2 }));
+        const c = h.section().clips[0];
+        assert.equal(c.trackId, h.project().tracks[1].id);
+        assert.equal(c.startCol, 3 * COLS + COLS / 2, 'half-bar snap: bar 4, beat 3');
+        assert.equal(document.body.querySelector('.section-library-ghost'), null);
+    });
+
+    test('dropped outside the grid, nothing is placed', () => {
+        const h = build({ patterns: [{ name: 'A' }], tracks: [{ slot: 0 }] });
+        h.lanes()[0].getBoundingClientRect = () => ({ left: 0, right: 60, top: 0, bottom: 5000 });
+        h.root.querySelector('.section-grid').getBoundingClientRect = () => ({ left: 0, top: 0, right: 1000, bottom: 400 });
+        lib(h)[0].dispatch('mousedown', ev({ clientX: 5, clientY: 900 }));
+        h.doc('mousemove', ev({ clientX: 10, clientY: 800 }));
+        h.doc('mouseup', ev({ clientX: 10, clientY: 800 }));
+        assert.equal(h.section().clips.length, 0);
     });
 });

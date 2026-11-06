@@ -77,14 +77,15 @@ run `node --check` + `node --test` and tick this file only. (Open: AGENTS.md
 "Keep it current ... in the same commit/change" reads per-change; awaiting
 the user's wording if SESSION.md should be deferred too.)
 
-### Plan of 2026-11-06 — Phases 1–2 DONE, Phase 3 next
+### Plan of 2026-11-06 — Phases 1–3 DONE, Phase 4 next
 
 The five-phase plan is in TODO.md. Phase 1 (one transport bar left of
 the tabs, `components/transport-bar.js`) and Phase 2 (thin Section lanes,
-clip marquee/Shift-click/Delete/Copy-stamp, `key-owner.js`) are done and
-recorded in CHANGELOG.md. Phase 3: pattern thumbnails (dots, a cached
-blob per pattern), the pattern library sub-pane, the roll's pattern
-switcher and the tab rename. Not done in phase 2, deliberately: dragging
+clip marquee/Shift-click/Delete/Copy-stamp) and Phase 3 (beat × octave
+dot thumbnails, the pattern library, the roll's Pattern select, tab
+renamed Pattern; `selection-bus.js` makes the two selections mutually
+exclusive) are done and recorded in CHANGELOG.md. Phase 4: a section
+list, whole-piece playback (third transport mode), tempo automation. Not done in phase 2, deliberately: dragging
 a multi-selection moves only the clip grabbed (group move left out). Decided with the user: "Patches library" in the
 old TODO meant the **pattern** library (phase 3).
 

@@ -65,13 +65,13 @@ const STEPS = [
     },
     {
         id: 'pianoroll',
-        title: 'Piano Roll',
+        title: 'Pattern',
         highlight: '#piano-dock .dock-tabs',
         selectTab: '#piano-dock .dock-tab-pianoroll',
         noBlur: true,
         illustration: null,
         description:
-            'The <strong>Piano Roll</strong> edits one <strong>pattern</strong> — a reusable bar or more of notes, played by one voice.<br><br>' +
+            'The <strong>Pattern</strong> tab is a piano roll that edits one <strong>pattern</strong> — a reusable bar or more of notes, played by one voice. Its <strong>Pattern</strong> select switches to any other pattern.<br><br>' +
             '<strong>Getting started:</strong><br>' +
             '1. Assign patches from a container using the <strong>♫</strong> button (up to 8 voices)<br>' +
             '2. Select a voice in the voice bank on the left — you are now editing that voice\'s pattern<br>' +
@@ -95,7 +95,7 @@ const STEPS = [
             '1. <strong>Click a track head</strong> to select it, then <strong>+ Pattern</strong> — a new pattern appears as a <strong>clip</strong> at the end of that track<br>' +
             '2. <strong>Click a clip</strong> to select it and its pattern, then <strong>click a lane</strong> to place that pattern again<br>' +
             '3. <strong>Drag</strong> a clip to move it (sideways onto another track too), drag its <strong>bottom edge</strong> to repeat it<br>' +
-            '4. <strong>Hold</strong> a clip, or press ✎ Open, to edit its pattern in the Piano Roll<br>' +
+            '4. <strong>Hold</strong> a clip, or press ✎ Open, to edit its pattern in the Pattern tab<br>' +
             '5. Each track\'s <strong>number</strong> square picks the voice it plays, with <strong>✕</strong> remove, <strong>M</strong>ute and <strong>S</strong>olo<br>' +
             '6. <strong>⬚ Select</strong> (or Shift-drag) to select clips, then <strong>⎘ Copy</strong> and click where the copy goes<br>' +
             '7. <strong>▶ Play</strong> on the transport bar, switched to <strong>Section</strong>, plays the arrangement; <strong>BPM</strong> is there too<br><br>' +
