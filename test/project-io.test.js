@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 
 import {
     exportProject, importProject, parseProjectFile, usedTags,
-    ImportError, FILE_KIND, FILE_EXTENSION, exportFilename,
+    ImportError, FILE_KIND, exportFilename,
 } from '../html/components/project-io.js';
 import {
     createProject, addTrack, addPattern, addClip, addSection, SCHEMA_VERSION,
@@ -59,9 +59,11 @@ describe('the document', () => {
         assert.deepEqual(JSON.parse(JSON.stringify(doc)), doc);
     });
 
-    test('the filename carries the project name', () => {
-        assert.equal(exportFilename({ name: 'Nocturne' }), 'Nocturne.' + FILE_EXTENSION);
-        assert.equal(exportFilename(null), 'project.' + FILE_EXTENSION);
+    test('the filename carries the project name and the double extension', () => {
+        // .opproj.json on every platform — Android renamed a bare .opproj
+        // to this anyway, so the name no longer mutates in transit.
+        assert.equal(exportFilename({ name: 'Nocturne' }), 'Nocturne.opproj.json');
+        assert.equal(exportFilename(null), 'project.opproj.json');
     });
 
     test('no id travels — the importer mints one', () => {

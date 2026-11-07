@@ -17,7 +17,7 @@ import { openMidiSettings, sendBankToDevice } from './components/midi-panel.js';
 import { openProjectsDialog } from './components/project-menu.js';
 import { makeInitVoice, buildBulkDump, VOICE_COUNT } from './components/syx-builder.js';
 import { downloadBytes, downloadJson, safeFilename } from './components/download.js';
-import { exportProject, parseProjectFile, ImportError, FILE_EXTENSION } from './components/project-io.js';
+import { exportProject, parseProjectFile, ImportError, FILE_EXTENSION, FILE_SUFFIX } from './components/project-io.js';
 import { createProjectStore, takeLostSaveMarker } from './components/project-store.js';
 import { profileStore } from './components/profile-store.js';
 import { createProjectSession } from './components/project-session.js';
@@ -575,11 +575,11 @@ jobManager.setOpts(jobOpts);
 
 // --- File input handler ---
 //
-// Android's download manager renames an exported `name.opproj` (served as
-// application/json) to `name.opproj.json`, so the file the user gets back
-// no longer ends in the extension we gave it. That rename is deterministic,
-// so `.opproj.json` is recognised as a project alongside `.opproj` — a bare
-// `.json` is not, it could be anything. The menu option that opened the
+// Projects are exported as `name.opproj.json` on every platform (see
+// FILE_SUFFIX in project-io.js: Android's download manager renamed a bare
+// `.opproj` to that anyway), so the double extension is what routing looks
+// for — alongside plain `.opproj`, which older exports carry. A bare
+// `.json` is neither: it could be anything. The menu option that opened the
 // picker is remembered too: a recognised extension still wins (the file is
 // unambiguous), the intent decides only when the extension says nothing.
 let pickKind = null; // 'project' | 'wav' | 'syx', or null when nothing was clicked
@@ -592,7 +592,7 @@ fileInput.addEventListener('change', async () => {
 
     const lower = file.name.toLowerCase();
     const extSays =
-        lower.endsWith('.' + FILE_EXTENSION) || lower.endsWith('.' + FILE_EXTENSION + '.json') ? 'project'
+        lower.endsWith('.' + FILE_EXTENSION) || lower.endsWith('.' + FILE_SUFFIX) ? 'project'
         : lower.endsWith('.syx') ? 'syx'
         : lower.endsWith('.wav') ? 'wav'
         : null;
@@ -1128,8 +1128,10 @@ document.getElementById('menu-export-project').addEventListener('click', async (
     await projectSession.flush();
     try {
         const doc = exportProject(project);
-        const name = safeFilename(project.name, { fallback: 'project', strip: FILE_EXTENSION });
-        if (!downloadJson(`${name}.${FILE_EXTENSION}`, doc)) {
+        // Strip either form, so re-exporting a project named after its own
+        // file doesn't stack up extensions.
+        const name = safeFilename(project.name, { fallback: 'project', strip: FILE_EXTENSION + '(\\.json)?' });
+        if (!downloadJson(`${name}.${FILE_SUFFIX}`, doc)) {
             appendLog('This browser cannot download files');
             return;
         }

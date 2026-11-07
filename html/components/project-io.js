@@ -33,9 +33,15 @@
 
 import { createProject, SCHEMA_VERSION } from './project-model.js';
 
-/** What `.opproj` files say they are, so a stray JSON is caught early. */
+/** What project files say they are, so a stray JSON is caught early. */
 export const FILE_KIND = 'openpatches.project';
 export const FILE_EXTENSION = 'opproj';
+// Exports are offered as `name.opproj.json` on every platform. The file is
+// JSON and says so; it is also what Android's download manager would have
+// renamed a bare `.opproj` (served as application/json) to anyway, so the
+// name is the same everywhere instead of mutating in transit. A bare
+// `.opproj` is still accepted on import — older exports carry it.
+export const FILE_SUFFIX = FILE_EXTENSION + '.json';
 
 /**
  * Every tag actually used by the project's patches.
@@ -106,7 +112,7 @@ export function exportProject(project) {
 
 /** The filename an export is offered under. */
 export function exportFilename(project) {
-    return `${project && project.name ? project.name : 'project'}.${FILE_EXTENSION}`;
+    return `${project && project.name ? project.name : 'project'}.${FILE_SUFFIX}`;
 }
 
 /**
@@ -154,7 +160,7 @@ export function importProject(doc) {
     return createProject({ ...body, id: undefined });
 }
 
-/** Parse the text of a `.opproj` file, with a readable error for bad JSON. */
+/** Parse the text of a project file, with a readable error for bad JSON. */
 export function parseProjectFile(text) {
     let doc;
     try {

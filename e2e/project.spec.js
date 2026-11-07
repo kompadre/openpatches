@@ -165,7 +165,7 @@ test.describe('export and import', () => {
         });
 
         const { file, doc } = await exportAndRead(page);
-        expect(file.suggestedFilename()).toBe('Nocturne.opproj');
+        expect(file.suggestedFilename()).toBe('Nocturne.opproj.json');
         expect(doc.kind).toBe('openpatches.project');
         expect(doc.project.name).toBe('Nocturne');
         expect(doc.project.bpm).toBe(96);
@@ -181,7 +181,8 @@ test.describe('export and import', () => {
         });
         const { doc } = await exportAndRead(page);
 
-        // Feed the file back through the same input the menu item opens.
+        // Feed the file back through the same input the menu item opens,
+        // under the bare .opproj name older exports carry.
         await page.setInputFiles('#wav-input', {
             name: 'Nocturne.opproj',
             mimeType: 'application/json',
@@ -197,17 +198,17 @@ test.describe('export and import', () => {
         expect(names).toEqual(['Nocturne', 'Nocturne 2']);
     });
 
-    test('a file Android renamed to .opproj.json is still a project import', async ({ page }) => {
+    test('the canonical .opproj.json name round-trips as a project import', async ({ page }) => {
         await openApp(page);
         await page.evaluate(() => {
             window.__opProject.rename('Nocturne', 'e2e');
         });
         const { doc } = await exportAndRead(page);
 
-        // Android's download manager appends .json to a downloaded file
-        // whose extension does not match its application/json MIME type.
-        // Routed by extension alone, this went down the WAV path and the
-        // probe server answered "not a valid WAV file".
+        // .opproj.json is the exported name on every platform — chosen
+        // because Android's download manager renamed a bare .opproj (served
+        // as application/json) to exactly this, which routing by extension
+        // once sent down the WAV path ("not a valid WAV file").
         await page.setInputFiles('#wav-input', {
             name: 'Nocturne.opproj.json',
             mimeType: 'application/json',
