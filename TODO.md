@@ -78,10 +78,11 @@ note would be a lie about what plays):
   per track with the `+n` cells and tooltip, the ✎ popover (repeats,
   + Bar), active-track sync with the Mixer/roll, playhead + follow-scroll,
   the viewport rectangle in Section.
-- [ ] **Phase 3 — Editing.** Cursor, FT2 key entry (Z/Q rows, `1` = OFF),
+- [x] **Phase 3 — Editing.** Cursor, FT2 key entry (Z/Q rows, `1` = OFF),
   octave and edit step, delete, audition on entry, refusal outside a clip,
   note-drag past the pattern end adds a bar, the 3 s re-derivation
-  debounce (dirty patterns).
+  debounce (dirty patterns). The pattern name moved to the gap under the ✎,
+  reading downward.
 - [ ] **Phase 4 — Mobile** (later): tap-to-cursor and an entry pad.
 
 ### Ideas

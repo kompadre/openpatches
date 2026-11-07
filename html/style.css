@@ -5295,7 +5295,18 @@ footer {
 .tracker-btn:hover { border-color: #888; }
 .tracker-btn.active { border-color: #e94560; color: #e94560; }
 
-.tracker-status { font-size: 0.72rem; color: #777; }
+.tracker-status { font-size: 0.72rem; color: #e9a045; }
+
+.tracker-field { font-size: 0.72rem; color: #999; }
+.tracker-field select {
+    background: #1e1e36;
+    color: #ddd;
+    border: 1px solid #3a3a55;
+    border-radius: 4px;
+    font-size: 0.72rem;
+}
+
+.tracker-canvas:focus { outline: none; }
 
 .tracker-scroll {
     flex: 1;

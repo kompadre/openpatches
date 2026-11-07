@@ -11,7 +11,7 @@ import {
 } from '../html/components/project-model.js';
 import {
     noteName, deriveLanes, applyLanes, relane, trackLaneCount, expandTrack, compactCells, locate,
-    putNote, putOff, clearCell,
+    putNote, putOff, clearCell, growBlocker, measuresFor, moveNote,
 } from '../html/components/tracker-model.js';
 
 const N = (midi, start, dur, lane) => (lane == null ? { midi, start, dur } : { midi, start, dur, lane });
@@ -257,5 +257,51 @@ describe('editing, tracker-style', () => {
         const p = pat([N(60, 0, 8), N(64, 0, 8), N(67, 0, 8)]);
         putOff(p, 4, 1);
         assert.deepEqual(view(p), [[60, 0, 8, 0], [64, 0, 4, 1], [67, 0, 8, 2]]);
+    });
+});
+
+describe('commit-time helpers', () => {
+    test('relane fresh packs lanes down; plain relane keeps them', () => {
+        const p = pat([N(60, 0, 4, 2), N(62, 8, 4, 3)]);
+        relane(p);
+        assert.deepEqual(p.notes.map(n => n.lane || 0), [2, 3], 'honoured while free');
+        assert.equal(relane(p, { fresh: true }), 2);
+        assert.deepEqual(p.notes.map(n => n.lane || 0), [0, 0], 'a melody needs one lane');
+    });
+
+    test('relane fresh orders a chord low to high', () => {
+        const p = pat([N(67, 0, 4), N(60, 0, 4, 1)]);
+        relane(p, { fresh: true });
+        assert.deepEqual(p.notes.map(n => [n.midi, n.lane || 0]), [[60, 0], [67, 1]]);
+    });
+
+    test('measuresFor', () => {
+        assert.equal(measuresFor(0), 1);
+        assert.equal(measuresFor(15), 1);
+        assert.equal(measuresFor(16), 2);
+        assert.equal(measuresFor(40), 3);
+    });
+
+    test('moveNote keeps the lane and trims to fit; refuses outside', () => {
+        const p = pat([N(60, 2, 8, 1)]);
+        assert.equal(moveNote(p, p.notes[0], 12), true);
+        assert.deepEqual(view(p), [[60, 12, 4, 1]]);
+        assert.equal(moveNote(p, p.notes[0], 16), false);
+        assert.equal(moveNote(p, p.notes[0], -1), false);
+    });
+
+    test('growBlocker: room below grows, a neighbour clip blocks, cut clips do not grow', () => {
+        const project = createProject({
+            tracks: [{ id: 't', slot: 0 }],
+            patterns: { p: { id: 'p', name: 'Riff' }, q: { id: 'q', name: 'Next' } },
+            sections: [{ id: 's', name: 'A', clips: [
+                { id: 'c1', trackId: 't', patternId: 'p', startCol: 0, repeats: 1 },
+                { id: 'c2', trackId: 't', patternId: 'q', startCol: 32, repeats: 1 },
+            ] }],
+        });
+        assert.equal(growBlocker(project, 'p', 2), null, 'bar 2 is free');
+        assert.match(growBlocker(project, 'p', 3), /run into the next clip in "A"/);
+        project.sections[0].clips[0] = { id: 'c1', trackId: 't', patternId: 'p', startCol: 0, lengthCols: 16 };
+        assert.equal(growBlocker(project, 'p', 8), null, 'a clip cut to a length keeps it');
     });
 });

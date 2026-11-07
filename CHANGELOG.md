@@ -2,6 +2,20 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-07: Tracker phase 3 — editing; the pattern name moves to the margin
+
+**Pattern name in the gap** (user's change to phase 2): the clip's name is no longer drawn in the lanes; it reads **downward in the gap right of the track, under the ✎**, on a strip of the pattern's colour spanning the clip. The lanes keep only a 2px start line, so the clip's first row is free for notes.
+
+**Editing, FT2-style** (`tracker.js`). The grid is focusable; a click places the cursor (and makes the track the active voice). Z-row / Q-row piano by physical key (`e.code`, so any layout), `1` = OFF, Delete/Backspace clears, arrows / PgUp/PgDn / Home/End / Tab move, Numpad ± and the Octave select change octave, Step (0–16) advances the cursor after each entry. Handled keys stop propagation, so the Section's Delete and the roll's shortcuts don't fire while the tracker has focus. Each note is heard on its track's voice as it goes in. **Typing where the track has no clip refuses** with a message pointing at Section and the ✎. The active track shows **one spare sub-lane** when expanded, so a chord is typed a note at a time. Compact tracks edit lane 0.
+
+**Debounced commit.** An edit changes the pattern object at once (the tracker redraws — every placement follows — and the transport re-snapshots, so it is heard) and marks the pattern dirty; the commit — **`relane(p, { fresh: true })`** (lanes repacked to the minimum, low to high) and `touchPattern(…, 'tracker')`, which the roll, Section and autosave hear — waits for **3 s of quiet**, so lanes never reshuffle under the cursor mid-entry. Leaving the tab, a foreign edit, or `pagehide` commits at once.
+
+**Growing patterns.** Dragging a note's start cell up/down moves it within its pattern; **past the end, the pattern gains the bars it needs** and the note lands there. That and the ✎'s `+ Bar` both check **`growBlocker`** first: a pattern placed (in repeats) right above another clip in any section cannot grow into it — refused with a message naming the section. New model helpers: `growBlocker`, `measuresFor`, `moveNote`, `relane({fresh})`.
+
+**Fixed while testing:** focusing the canvas on click scrolled it into view and tucked rows 00–01 under the sticky heads; now `focus({ preventScroll: true })` (e2e fails without it: scrolled 26px).
+
+Tests: `tracker-model` +5 (fresh relane packs and orders, `measuresFor`, `moveNote`, `growBlocker` incl. cut clips), `tracker-view` +8 (FT2 entry with audition and step, OFF/Delete, refusal outside a clip without stepping, spare-lane chord, one session event on commit with lanes packed, leaving the tab commits, drag-past-end adds a bar, blocked growth); e2e `tracker` +3 (real keyboard entry + refusal, keys don't leak to Section's Delete with a clip selected, click doesn't scroll). 1083 unit, 114 e2e.
+
 ## 2026-11-07: Tracker phase 2 — the tab, read-only, with compact/expanded tracks
 
 **Stealing is gone from the model** (user: marking a stolen note is a lie — the engine plays the full note). `deriveLanes` now grows to what the busiest chord needs; lanes past the storable cap (`note.lane` ≤ 3) re-derive identically each time. In its place, **two view modes per track**: *expanded* (a sub-lane per concurrent note) and *compact* (one column; a cell with several events shows `C-5 +2`, the full list in a tooltip — `compactCells`, with OFFs swallowed by a note starting in the same cell and lane). `track.compact` replaces `track.lanes`, stored only when true.

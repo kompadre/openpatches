@@ -78,3 +78,55 @@ test('clicking a column makes that voice active in the Mixer', async ({ page }) 
     });
     expect(active).toBe(0);
 });
+
+test('typing FT2 keys writes notes; the roll and the Section learn after the commit', async ({ page }) => {
+    await openApp(page);
+    await seed(page);
+    await page.locator('.dock-tab-tracker').click();
+
+    const canvas = page.locator('.tracker-canvas');
+    const box = await canvas.boundingBox();
+    // Row 4 of lane 0 (ruler is 36px, rows 16px).
+    await canvas.click({ position: { x: 40, y: 4 * 16 + 8 } });
+    await page.keyboard.press('KeyQ');      // C-5
+    await page.keyboard.press('Digit1');    // OFF on row 5
+    // Outside the one-bar clip: refused with a message.
+    await canvas.click({ position: { x: 40, y: 20 * 16 + 8 } });
+    await page.keyboard.press('KeyZ');
+    await expect(page.locator('.tracker-status')).toContainText('No pattern here');
+
+    await page.evaluate(() => window.__opDock._tracker.flush());
+    const notes = await page.evaluate(() => {
+        const p = Object.values(window.__opProject.get().patterns)[0];
+        return p.notes.map((n) => [n.midi, n.start, n.dur]);
+    });
+    expect(notes).toContainEqual([72, 4, 1]);
+    expect(box.width).toBeGreaterThan(0);
+});
+
+test('typing does not leak to the page shortcuts (Delete keeps the Section clip)', async ({ page }) => {
+    await openApp(page);
+    await seed(page);
+    // Select the clip in Section: from there, Delete would remove it.
+    await page.locator('.section-clip').first().click();
+    await expect(page.locator('.section-clip.selected')).toHaveCount(1);
+    await page.locator('.dock-tab-tracker').click();
+    await page.locator('.tracker-canvas').click({ position: { x: 40, y: 8 } });
+    await page.keyboard.press('Delete');
+    expect(await page.evaluate(() => window.__opProject.getSection().clips.length)).toBe(1);
+    // ...and the tracker took the key: the C-4 at row 0 is cleared.
+    await page.evaluate(() => window.__opDock._tracker.flush());
+    // (Row 0 holds a chord: lane 0's C-4 goes, lane 1's E-4 stays.)
+    const notes = await page.evaluate(() =>
+        Object.values(window.__opProject.get().patterns)[0].notes.map((n) => [n.midi, n.start]));
+    expect(notes).not.toContainEqual([60, 0]);
+    expect(notes).toContainEqual([64, 0]);
+});
+
+test('clicking the grid does not scroll it (focus would tuck rows under the heads)', async ({ page }) => {
+    await openApp(page);
+    await seed(page);
+    await page.locator('.dock-tab-tracker').click();
+    await page.locator('.tracker-canvas').click({ position: { x: 40, y: 3 * 16 + 8 } });
+    expect(await page.locator('.tracker-scroll').evaluate((el) => el.scrollTop)).toBe(0);
+});

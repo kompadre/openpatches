@@ -32,7 +32,9 @@
 // pattern's `notes` array in place, the way the piano roll does, and leave
 // committing to the caller (session.touchPattern).
 
-import { MAX_LANES, clipCols, patternCols, getPattern } from './project-model.js';
+import {
+    MAX_LANES, COLS_PER_MEASURE, clipCols, patternCols, getPattern, findClipOverlap,
+} from './project-model.js';
 
 export { MAX_LANES };
 
@@ -102,9 +104,60 @@ export function applyLanes(notes, derived) {
     return changed;
 }
 
-/** Derive and store in one go; what the tracker does after the edit debounce. */
-export function relane(pattern) {
+/**
+ * Derive and store in one go. `fresh` forgets the stored lanes first, so
+ * the pattern packs into the fewest lanes it can — what the tracker does
+ * once the user has stopped typing (lanes must not move under the cursor
+ * mid-entry, but should not stay sparse for ever either).
+ */
+export function relane(pattern, { fresh = false } = {}) {
+    if (fresh) {
+        const before = pattern.notes.map(storedLane);
+        for (const n of pattern.notes) delete n.lane;
+        applyLanes(pattern.notes, deriveLanes(pattern.notes));
+        return pattern.notes.filter((n, i) => storedLane(n) !== before[i]).length;
+    }
     return applyLanes(pattern.notes, deriveLanes(pattern.notes));
+}
+
+/**
+ * Can `patternId` grow to `measures` without any clip playing it running
+ * into the next clip on its track, in any section? A clip spelled in
+ * repeats grows with its pattern; one cut to a column count does not.
+ * @returns {string|null} why not, or null when it can
+ */
+export function growBlocker(project, patternId, measures) {
+    const pattern = getPattern(project, patternId);
+    if (!pattern) return 'the pattern is gone';
+    const shadow = { ...project, patterns: { ...project.patterns, [patternId]: { ...pattern, measures } } };
+    for (const section of project.sections || []) {
+        for (const clip of section.clips) {
+            if (clip.patternId !== patternId) continue;
+            if (findClipOverlap(shadow, section, clip, clip.id)) {
+                return `a longer "${pattern.name}" would run into the next clip in "${section.name}"`;
+            }
+        }
+    }
+    return null;
+}
+
+/** Measures a pattern needs so that column `col` is inside it. */
+export function measuresFor(col) {
+    return Math.floor(col / COLS_PER_MEASURE) + 1;
+}
+
+/**
+ * Move a note to start at `start` in its pattern, keeping its lane and as
+ * much of its length as still fits.
+ * @returns {boolean} false when `start` is outside the pattern
+ */
+export function moveNote(pattern, note, start) {
+    const len = patternCols(pattern);
+    if (!(start >= 0 && start < len)) return false;
+    note.start = start;
+    note.dur = Math.max(1, Math.min(note.dur, len - start));
+    sortNotes(pattern);
+    return true;
 }
 
 // --- The section, as the tracker shows it ---

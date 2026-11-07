@@ -677,6 +677,8 @@ export function createToolbar(opts) {
         onSelectTrack: (slot) => {
             if (voiceBank._setActiveSlot) voiceBank._setActiveSlot(slot);
         },
+        // A note typed into the tracker is heard on its track's voice.
+        playNote: (midi, slot) => pianorollPlayFn(midi, 300, null, slot),
         // The Section pane outlines the rows the tracker has on screen.
         onViewport: (range) => {
             if (sectionEditor.setTrackerViewport) sectionEditor.setTrackerViewport(range);
