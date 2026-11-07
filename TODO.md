@@ -38,6 +38,43 @@ Project backlog. Parent tasks with nested subtasks; `[ ]` pending, `[x]` done,
 - [x] **Storage garbage collection, on demand only** (File → Storage…): report usage per project and for WAVs, delete WAV blobs no job references. No compaction or sharing at project level, and nothing on save.
 - [x] **Import from another project into the current one**: like Import Project, with a step to opt in/out of what comes in (patches, patterns).
 
+### Tracker (agreed 2026-11-07) — phases in order
+
+A **Tracker** tab after Pattern: the Section editor on steroids. Rows are the
+edited section's sixteenths (time runs down, as in the Section pane), the
+columns are the 8 tracks, and each track splits into 1–4 monophonic
+**sub-lanes**. Clips show as their pattern's colour, subdued, with a small
+header (the pattern's name) on the row the clip starts. Note-ons and
+note-offs only — no velocity, no effect column. Entering a note inside a
+clip edits its *pattern* (every placement and repeat follows). Keys are
+FT2-style (Z-row / Q-row piano, `1` = OFF). Mobile later.
+
+Decisions (with the user):
+- **Lanes are derived and stored on the notes** (`note.lane`, omitted when
+  0 to keep files small). Derivation honours a stored lane while it is free,
+  so notes do not hop. While a track is being edited, re-derivation of its
+  patterns waits for **3 s of inactivity**. More than 4 notes at once cannot
+  fit: the oldest sounding note is stolen, and a note cut short that way is
+  **marked** in the view (the model keeps its full length).
+- **Lane count per track** is stored (`track.lanes`, omitted when 1): the
+  user can add empty lanes for entry; the view never shows fewer than the
+  notes need.
+- **Viewport rectangle**: the Section pane outlines the rows the tracker
+  shows.
+
+- [x] **Phase 1 — Pure model.** `tracker-model.js`: lane derivation with
+  stealing, expansion of a track's clips into rows (notes, OFFs, held
+  spans, clip blocks), and the tracker edit operations (note, OFF, clear)
+  on a pattern. `note.lane` and `track.lanes` in the project model.
+- [ ] **Phase 2 — Read-only view.** The tab, the canvas grid, track heads
+  with lane +/−, clip blocks and headers, stolen-note marks, active-track
+  sync with the Mixer/roll, per-track playheads (the transport reports
+  per-track positions), follow-scroll, the viewport rectangle in Section.
+- [ ] **Phase 3 — Editing.** Cursor, FT2 key entry, octave and edit step,
+  OFF, delete, audition on entry, entry where no clip is, the 3 s
+  re-derivation debounce.
+- [ ] **Phase 4 — Mobile** (later): tap-to-cursor and an entry pad.
+
 ### Ideas
 
 - [ ] Import and export **MIDI** (patterns ↔ MIDI files; a section or the piece as a multi-track SMF).

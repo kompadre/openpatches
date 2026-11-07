@@ -2,6 +2,16 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-07: Tracker phase 1 — lanes on notes, the pure tracker model
+
+**The plan** (agreed with the user, recorded in TODO.md › Tracker): a Tracker tab that is the Section editor on steroids — rows are the section's sixteenths, columns the 8 tracks, each split into 1–4 monophonic sub-lanes; clips shown in their pattern's colour with a name header; note-on/off only; FT2 keys; mobile later; the Section pane outlines the tracker's viewport.
+
+**Model.** `note.lane` (1–3; **omitted for 0**, so plain patterns store exactly what they did) and `track.lanes` (**omitted for 1**), both through the existing factories; `MAX_LANES = 4`. No schema bump: an older reader drops the fields, which is a loss of layout, not a misreading.
+
+**`tracker-model.js`** (pure). `deriveLanes` spreads notes over lanes in time order, honouring a stored lane while it is free (so notes do not hop), else the lowest free one; past four the **oldest sounding note is stolen** and reported in `stolenAt` for the view to mark — the model keeps its full length. `applyLanes`/`relane` store a derivation. `expandTrack` lays out a track of the section: clip blocks, and every note of every repeat at its absolute column with its lane, its cut end (clip end, steal) and whether an OFF shows (not at the pattern or clip end, not before a legato note, not on a steal). `locate` maps a row into the clip's pattern. Edits — `putNote` (over silence: holds to the lane's next note; inside a held note: cuts it and inherits its OFF), `putOff` (refused over silence: not storable), `clearCell` (a cleared note gives its time back to the note it cut; a cleared OFF holds on) — freeze the visible derivation first, so the notes around an edit keep their lanes. The mapping to `{midi,start,dur}` is exact both ways.
+
+Tests: `tracker-model` (30). 1061 unit, 107 e2e.
+
 ## 2026-11-07: Device panel — the external MIDI-out synth in the bottom pane
 
 **New `Device` item between Edit and Log** (desktop bottom pane, a fixed 12rem column; a tab of its own on mobile, also between Edit and Log). It shows the resolved profile name (`(auto)` when detected), the output port or `Not connected`, the device channel, the **current patch** — the name of the voice last loaded into the edit buffer by audition or a guided bank send, decoded from bytes 118–127; `—` when unknown, `Audition off` (with a pointer to the setting in the title) when nothing was ever sent *and* auditioning is off — a dash would sit there forever with no hint why — and forgotten when the output changes — and the Output mode in short form (long form in the title). `MIDI…` opens MIDI › Devices. `html/components/device-panel.js`.

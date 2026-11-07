@@ -53,6 +53,8 @@ import {
 
 export const COLS_PER_MEASURE = 16;
 export const MAX_SLOTS = 8;      // slot IS the channel, so this is the track limit
+/** Tracker sub-lanes per track: monophonic columns a track's notes are spread over. */
+export const MAX_LANES = 4;
 export const MIN_BPM = 32;
 export const MAX_BPM = 255;
 export const DEFAULT_BPM = 120;
@@ -134,7 +136,7 @@ export function defaultPatternColor(id) {
 
 /**
  * @param {object} partial
- * @returns {{id, name, kind, color, measures, notes: Array<{midi,start,dur}>, created}}
+ * @returns {{id, name, kind, color, measures, notes: Array<{midi,start,dur,lane?}>, created}}
  */
 export function createPattern(partial = {}) {
     const measures = clampInt(partial.measures, 1, 256, 1);
@@ -169,7 +171,12 @@ function normalizeNote(n, cols) {
     if (!Number.isFinite(midi) || midi < 0 || midi > 127) return null;
     if (!Number.isFinite(start) || start < 0 || start >= cols) return null;
     const dur = clampInt(n.dur, 1, cols - start, 1);
-    return { midi, start, dur };
+    const note = { midi, start, dur };
+    // The tracker sub-lane. Omitted when 0 — most notes are — so a pattern
+    // of plain notes stores exactly what it did before lanes existed.
+    const lane = Math.round(Number(n.lane));
+    if (Number.isFinite(lane) && lane > 0 && lane < MAX_LANES) note.lane = lane;
+    return note;
 }
 
 /**
@@ -194,6 +201,10 @@ export function createTrack(partial = {}) {
         mute: partial.mute === true,
         solo: partial.solo === true,
         fx: createTrackFx(partial.fx),
+        // Tracker sub-lanes shown for this track, at least. Omitted when 1
+        // (the default) so a project that never opened the tracker is
+        // unchanged; the view widens past it when the notes need more.
+        ...(clampInt(partial.lanes, 1, MAX_LANES, 1) > 1 ? { lanes: clampInt(partial.lanes, 1, MAX_LANES, 1) } : {}),
     };
 }
 
