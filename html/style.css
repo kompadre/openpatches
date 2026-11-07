@@ -5254,6 +5254,162 @@ footer {
     z-index: 2;
 }
 
+/* The rows the Tracker tab has on screen, as a band over the lanes. */
+.section-tracker-viewport {
+    position: absolute;
+    left: var(--section-ruler-w);
+    right: 0;
+    top: 0;
+    border: 1px dashed rgba(154, 187, 255, 0.45);
+    background: rgba(154, 187, 255, 0.05);
+    pointer-events: none;
+    z-index: 1;
+}
+
+/* --- Tracker: the section, row by row --- */
+
+.tracker-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+}
+
+.tracker-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.3rem 0.5rem;
+    flex-shrink: 0;
+}
+
+.tracker-btn {
+    padding: 0.2rem 0.5rem;
+    font-size: 0.72rem;
+    background: #1e1e36;
+    color: #ccc;
+    border: 1px solid #3a3a55;
+    border-radius: 4px;
+    cursor: pointer;
+}
+.tracker-btn:hover { border-color: #888; }
+.tracker-btn.active { border-color: #e94560; color: #e94560; }
+
+.tracker-status { font-size: 0.72rem; color: #777; }
+
+.tracker-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    position: relative;
+}
+
+.tracker-inner { position: relative; }
+
+.tracker-heads {
+    position: sticky;
+    top: 0;
+    height: 26px;
+    z-index: 3;
+    background: #0d0d1a;
+    border-bottom: 1px solid #2a2a3e;
+}
+
+.tracker-corner {
+    position: absolute;
+    left: 0;
+    width: 36px;
+    line-height: 26px;
+    font-size: 0.6rem;
+    color: #666;
+    text-transform: uppercase;
+    padding-left: 4px;
+    box-sizing: border-box;
+}
+
+.tracker-head {
+    position: absolute;
+    top: 0;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    overflow: hidden;
+    border-bottom: 2px solid transparent;
+    box-sizing: border-box;
+}
+.tracker-head.active { border-bottom-color: #e94560; }
+
+.tracker-head-name {
+    flex: 1;
+    min-width: 0;
+    background: none;
+    border: none;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-align: left;
+    padding: 0 2px;
+    cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tracker-mode {
+    flex-shrink: 0;
+    background: none;
+    border: 1px solid #3a3a55;
+    border-radius: 3px;
+    color: #9ab;
+    font-size: 0.65rem;
+    line-height: 1;
+    padding: 2px 3px;
+    cursor: pointer;
+}
+.tracker-mode:hover { border-color: #888; color: #ddd; }
+
+.tracker-canvas {
+    position: absolute;
+    left: 0;
+    display: block;
+}
+
+.tracker-playhead {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: #ff3b3b;
+    pointer-events: none;
+    z-index: 2;
+}
+
+.tracker-popover {
+    position: absolute;
+    z-index: 4;
+    background: #16162a;
+    border: 1px solid #3a3a55;
+    border-radius: 6px;
+    padding: 0.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    min-width: 9rem;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+}
+
+.tracker-popover-title { font-size: 0.75rem; font-weight: 600; color: #eee; }
+
+.tracker-popover-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.72rem;
+    color: #aaa;
+}
+.tracker-popover-row span:first-child { flex: 1; }
+.tracker-popover-count { color: #ddd; }
+
 /* Under the grid: the selected clip's pattern (colour, name) and what to do with it. */
 .section-clip-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; padding: 0.2rem 0.3rem; }
 .section-pattern-name { width: 7rem; }
@@ -5273,7 +5429,7 @@ footer {
 .section-status { min-height: 1em; padding: 0 0.4rem; color: #e9a045; font-size: 0.7rem; }
 
 @media (max-width: 600px) {
-    /* Eight tabs: icons only, labels in the title attribute. */
+    /* Nine tabs: icons only, labels in the title attribute. */
     .dock-tab span:last-child { display: none; }
     .dock-tab { padding: 0.25rem 0.6rem; font-size: 0.9rem; }
     .section-grid { --section-track-w: 3.6rem; }

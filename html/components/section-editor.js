@@ -542,6 +542,14 @@ export function createSectionEditor(opts = {}) {
         lanes.appendChild(playheadEl);
         if (transport) movePlayhead(transport.isRunning() && transport.getSectionColumn ? transport.getSectionColumn() : -1);
 
+        // The tracker's viewport, as a band over the lanes: the rows that
+        // tab has on screen right now. Recreated with the grid, like the
+        // playhead, then only moved.
+        trackerViewEl = document.createElement('div');
+        trackerViewEl.className = 'section-tracker-viewport';
+        lanes.appendChild(trackerViewEl);
+        placeTrackerViewport();
+
         grid.appendChild(lanes);
 
         if (project.tracks.length === 0) {
@@ -904,6 +912,17 @@ export function createSectionEditor(opts = {}) {
      * mode loops a window of the project — except a pattern placed nowhere,
      * which reports no project column and so hides it.
      */
+    let trackerViewEl = null;
+    let trackerViewport = null;     // { startCol, endCol } or null (tab hidden)
+
+    function placeTrackerViewport() {
+        if (!trackerViewEl) return;
+        if (!trackerViewport) { trackerViewEl.style.display = 'none'; return; }
+        trackerViewEl.style.display = '';
+        trackerViewEl.style.top = ((trackerViewport.startCol / COLS_PER_MEASURE) * measureH()) + 'px';
+        trackerViewEl.style.height = (((trackerViewport.endCol - trackerViewport.startCol) / COLS_PER_MEASURE) * measureH()) + 'px';
+    }
+
     function movePlayhead(col) {
         if (!playheadEl) return;
         if (!(col >= 0)) {
@@ -1418,6 +1437,11 @@ export function createSectionEditor(opts = {}) {
         getSelectedClipId() { return selectedClipId; },
         getSelectedTrackId() { const t = currentTrack(session.get()); return t ? t.id : null; },
         selectPattern(id) { selectedPatternId = id; render(); },
+        /** The rows the Tracker tab shows, outlined over the lanes; null hides it. */
+        setTrackerViewport(range) {
+            trackerViewport = range && range.endCol > range.startCol ? range : null;
+            placeTrackerViewport();
+        },
         destroy() {
             document.removeEventListener('keydown', onKey);
             unsubscribeBus();

@@ -2,6 +2,16 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-07: Tracker phase 2 — the tab, read-only, with compact/expanded tracks
+
+**Stealing is gone from the model** (user: marking a stolen note is a lie — the engine plays the full note). `deriveLanes` now grows to what the busiest chord needs; lanes past the storable cap (`note.lane` ≤ 3) re-derive identically each time. In its place, **two view modes per track**: *expanded* (a sub-lane per concurrent note) and *compact* (one column; a cell with several events shows `C-5 +2`, the full list in a tooltip — `compactCells`, with OFFs swallowed by a note starting in the same cell and lane). `track.compact` replaces `track.lanes`, stored only when true.
+
+**The Tracker tab** (`components/tracker.js`), after Pattern on every viewport: one canvas (hundreds of rows × 8 tracks of text cells; DOM at that scale is what the roll already refused) with a row ruler (bar numbers, row-in-bar, every 4th row lifted), clip blocks in the pattern's colour (subdued) with a name header on the first row (`×n` for repeats) and repeat seams, notes as `C-4`, `OFF` rows per the model's rules. The playhead is a DOM line moved per tick (no redraw), with a Follow toggle. Heads carry the voice colour, a click makes the track the active voice (through the bank's `onSelect`, so the roll and keyboard follow; the bank's selection comes back via `setActiveSlot` without echo), and the ▥/▣ toggle writes `track.compact` through the session. A **✎ in the gap** at each clip's start opens a popover: the clip's repeats (−/+, overlap refused via `updateClip`) and `+ Bar to pattern` (`measures + 1`; every clip follows). **The Section pane outlines the tracker's viewport** (`setTrackerViewport`, a dashed band over the lanes, hidden when the tab is), reported on draw and scroll.
+
+Read-only beyond the ✎; typing notes is phase 3 (TODO updated with the revised decisions).
+
+Tests: `tracker-model` reworked (no steal; cap-overflow derivation; `compactCells`), `tracker-view` (heads, mode toggle packs, selection both ways, ✎ popover writes clip and pattern, viewport reported and cleared); e2e `tracker` (tab after Pattern, chord widens the head, compact folds and stores, the Section band follows the tab, a column click drives the Mixer). 1070 unit, 111 e2e.
+
 ## 2026-11-07: Tracker phase 1 — lanes on notes, the pure tracker model
 
 **The plan** (agreed with the user, recorded in TODO.md › Tracker): a Tracker tab that is the Section editor on steroids — rows are the section's sixteenths, columns the 8 tracks, each split into 1–4 monophonic sub-lanes; clips shown in their pattern's colour with a name header; note-on/off only; FT2 keys; mobile later; the Section pane outlines the tracker's viewport.

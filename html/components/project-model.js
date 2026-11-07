@@ -53,7 +53,11 @@ import {
 
 export const COLS_PER_MEASURE = 16;
 export const MAX_SLOTS = 8;      // slot IS the channel, so this is the track limit
-/** Tracker sub-lanes per track: monophonic columns a track's notes are spread over. */
+/**
+ * Highest tracker sub-lane a note can *store* (`note.lane` 1–3; 0 is
+ * omitted). The view is not capped: a bigger chord derives lanes past this
+ * on the fly, they are just not remembered.
+ */
 export const MAX_LANES = 4;
 export const MIN_BPM = 32;
 export const MAX_BPM = 255;
@@ -201,10 +205,11 @@ export function createTrack(partial = {}) {
         mute: partial.mute === true,
         solo: partial.solo === true,
         fx: createTrackFx(partial.fx),
-        // Tracker sub-lanes shown for this track, at least. Omitted when 1
-        // (the default) so a project that never opened the tracker is
-        // unchanged; the view widens past it when the notes need more.
-        ...(clampInt(partial.lanes, 1, MAX_LANES, 1) > 1 ? { lanes: clampInt(partial.lanes, 1, MAX_LANES, 1) } : {}),
+        // The tracker's view of this track: compact (one column, chords
+        // folded into a cell) or expanded (a sub-lane per concurrent note).
+        // Omitted unless compact, so a project that never opened the
+        // tracker stores exactly what it did before.
+        ...(partial.compact === true ? { compact: true } : {}),
     };
 }
 

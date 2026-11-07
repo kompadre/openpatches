@@ -49,30 +49,39 @@ note-offs only — no velocity, no effect column. Entering a note inside a
 clip edits its *pattern* (every placement and repeat follows). Keys are
 FT2-style (Z-row / Q-row piano, `1` = OFF). Mobile later.
 
-Decisions (with the user):
+Decisions (with the user; stealing dropped 2026-11-07 — marking a stolen
+note would be a lie about what plays):
 - **Lanes are derived and stored on the notes** (`note.lane`, omitted when
-  0 to keep files small). Derivation honours a stored lane while it is free,
-  so notes do not hop. While a track is being edited, re-derivation of its
-  patterns waits for **3 s of inactivity**. More than 4 notes at once cannot
-  fit: the oldest sounding note is stolen, and a note cut short that way is
-  **marked** in the view (the model keeps its full length).
-- **Lane count per track** is stored (`track.lanes`, omitted when 1): the
-  user can add empty lanes for entry; the view never shows fewer than the
-  notes need.
+  0 to keep files small; lanes past 3 derive on the fly and are not
+  stored). Derivation honours a stored lane while it is free, so notes do
+  not hop. While a track is being edited, re-derivation of its patterns
+  waits for **3 s of inactivity** (edits mark the pattern dirty; the
+  debounce applies).
+- **Per-track view mode, stored packed** (`track.compact`, omitted unless
+  true): *expanded* shows a sub-lane per concurrent note (as many as the
+  busiest moment needs), *compact* folds the track to one column — a cell
+  with several events shows the first plus `+n`, the rest in a tooltip.
+- **Typing outside a pattern bails with a message.** Growing room is
+  explicit: a ✎ in the gap between tracks at a clip's start offers the
+  clip's repeats (×2 → ×3) and `+ Bar to pattern`; dragging a note past
+  its pattern's end (phase 3) adds the bar itself.
 - **Viewport rectangle**: the Section pane outlines the rows the tracker
   shows.
 
-- [x] **Phase 1 — Pure model.** `tracker-model.js`: lane derivation with
-  stealing, expansion of a track's clips into rows (notes, OFFs, held
-  spans, clip blocks), and the tracker edit operations (note, OFF, clear)
-  on a pattern. `note.lane` and `track.lanes` in the project model.
-- [ ] **Phase 2 — Read-only view.** The tab, the canvas grid, track heads
-  with lane +/−, clip blocks and headers, stolen-note marks, active-track
-  sync with the Mixer/roll, per-track playheads (the transport reports
-  per-track positions), follow-scroll, the viewport rectangle in Section.
-- [ ] **Phase 3 — Editing.** Cursor, FT2 key entry, octave and edit step,
-  OFF, delete, audition on entry, entry where no clip is, the 3 s
-  re-derivation debounce.
+- [x] **Phase 1 — Pure model.** `tracker-model.js`: stable lane
+  derivation, expansion of a track's clips into rows (notes, OFFs, clip
+  blocks), and the tracker edit operations (note, OFF, clear) on a
+  pattern. `note.lane` in the project model.
+- [x] **Phase 2 — Read-only view.** The Tracker tab after Pattern (every
+  viewport), the canvas grid (ruler, bar/beat shading, clip blocks in the
+  pattern's colour with name headers and repeat seams), compact/expanded
+  per track with the `+n` cells and tooltip, the ✎ popover (repeats,
+  + Bar), active-track sync with the Mixer/roll, playhead + follow-scroll,
+  the viewport rectangle in Section.
+- [ ] **Phase 3 — Editing.** Cursor, FT2 key entry (Z/Q rows, `1` = OFF),
+  octave and edit step, delete, audition on entry, refusal outside a clip,
+  note-drag past the pattern end adds a bar, the 3 s re-derivation
+  debounce (dirty patterns).
 - [ ] **Phase 4 — Mobile** (later): tap-to-cursor and an entry pad.
 
 ### Ideas

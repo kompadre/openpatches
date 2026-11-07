@@ -8,6 +8,7 @@ import { createTransportBar } from './transport-bar.js';
 import { createVoiceBank } from './voicebank.js';
 import { createEditPanel } from './edit-panel.js';
 import { createDevicePanel } from './device-panel.js';
+import { createTracker } from './tracker.js';
 // Namespaced as midiManager, not midi: `midi` is the note-number parameter
 // name throughout this file and would shadow the import.
 import * as midiManager from '../synth/midi-manager.js';
@@ -90,6 +91,11 @@ export function createToolbar(opts) {
     tabPianoroll.innerHTML = '<span>🎹</span><span>Pattern</span>';
     tabPianoroll.title = 'Pattern — the piano roll';
 
+    const tabTracker = document.createElement('button');
+    tabTracker.className = 'dock-tab dock-tab-tracker' + (effectiveInitialTab === 'tracker' ? ' active' : '');
+    tabTracker.innerHTML = '<span>📟</span><span>Tracker</span>';
+    tabTracker.title = 'Tracker — the section, row by row';
+
     const tabSection = document.createElement('button');
     tabSection.className = 'dock-tab dock-tab-section' + (effectiveInitialTab === 'section' ? ' active' : '');
     tabSection.innerHTML = '<span>🎼</span><span>Section</span>';
@@ -122,6 +128,7 @@ export function createToolbar(opts) {
 
     tabBar.appendChild(tabCanvas);
     tabBar.appendChild(tabPianoroll);
+    tabBar.appendChild(tabTracker);
     tabBar.appendChild(tabSection);
     tabBar.appendChild(tabMixer);
     tabBar.appendChild(tabEdit);
@@ -141,6 +148,9 @@ export function createToolbar(opts) {
 
     const pianorollPanel = document.createElement('div');
     pianorollPanel.className = 'dock-panel dock-panel-pianoroll' + (effectiveInitialTab === 'pianoroll' ? ' active' : '');
+
+    const trackerPanel = document.createElement('div');
+    trackerPanel.className = 'dock-panel dock-panel-tracker' + (effectiveInitialTab === 'tracker' ? ' active' : '');
 
     const sectionPanel = document.createElement('div');
     sectionPanel.className = 'dock-panel dock-panel-section' + (effectiveInitialTab === 'section' ? ' active' : '');
@@ -165,8 +175,8 @@ export function createToolbar(opts) {
     // them was mostly empty space.
     const isMobileLayout = window.matchMedia('(max-width: 600px)').matches;
 
-    const mainTabs = [tabCanvas, tabPianoroll];
-    const mainPanels = [canvasPanel, pianorollPanel];
+    const mainTabs = [tabCanvas, tabPianoroll, tabTracker];
+    const mainPanels = [canvasPanel, pianorollPanel, trackerPanel];
     if (isMobileLayout) {
         mainTabs.push(tabSection, tabMixer, tabEdit, tabDevice, tabLog);
         mainPanels.push(sectionPanel, mixerPanel, editPanel, devicePanel, logPanel);
@@ -188,6 +198,7 @@ export function createToolbar(opts) {
 
     centre.appendChild(canvasPanel);
     centre.appendChild(pianorollPanel);
+    centre.appendChild(trackerPanel);
     if (isMobileLayout) {
         centre.appendChild(sectionPanel);
         centre.appendChild(mixerPanel);
@@ -196,12 +207,18 @@ export function createToolbar(opts) {
         centre.appendChild(logPanel);
     }
 
+    let trackerRef = null;      // created below, once the section editor exists
     function activateTab(tab, panel) {
         mainTabs.forEach(t => t.classList.remove('active'));
         mainPanels.forEach(p => p.classList.remove('active'));
         tab.classList.add('active');
         panel.classList.add('active');
+        // A hidden canvas measures zero, so the tracker draws on arrival —
+        // and tells the Section pane whether its viewport is on screen.
+        if (trackerRef) trackerRef.setShown(panel === trackerPanel);
     }
+
+    tabTracker.addEventListener('click', () => activateTab(tabTracker, trackerPanel));
 
     tabCanvas.addEventListener('click', () => activateTab(tabCanvas, canvasPanel));
     tabPianoroll.addEventListener('click', () => {
@@ -476,6 +493,7 @@ export function createToolbar(opts) {
             if (pianorollRef) {
                 pianorollRef.setActiveSlot(slot);
             }
+            if (trackerRef) trackerRef.setActiveSlot(slot);
             updateKeyboardVoice(slot);
         },
         onVolumeChange: opts.onVolumeChange || null,
@@ -644,6 +662,28 @@ export function createToolbar(opts) {
     // when they change so track heads and clips keep up.
     wrapper._session = session;
     wrapper._sectionEditor = sectionEditor;
+
+    // --- Tracker (Tracker tab): the section, row by row ---
+    trackerRef = createTracker({
+        session,
+        transport,
+        log: opts.appendLog || (() => {}),
+        getSlotData: (slot) => {
+            const entries = voiceBank._getEntries ? voiceBank._getEntries() : [];
+            return entries[slot] || null;
+        },
+        // A column picked here is the voice everything else follows; the
+        // bank's onSelect fans it back out to the roll and the keyboard.
+        onSelectTrack: (slot) => {
+            if (voiceBank._setActiveSlot) voiceBank._setActiveSlot(slot);
+        },
+        // The Section pane outlines the rows the tracker has on screen.
+        onViewport: (range) => {
+            if (sectionEditor.setTrackerViewport) sectionEditor.setTrackerViewport(range);
+        },
+    });
+    trackerPanel.appendChild(trackerRef.element);
+    wrapper._tracker = trackerRef;
 
     pianorollPanel.appendChild(pianorollRow);
 

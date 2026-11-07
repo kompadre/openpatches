@@ -1,7 +1,8 @@
 // The tracker's pure layer: lanes derived from overlapping notes (stable,
-// with stealing past four), the section laid out as rows, and the
-// tracker-style edit operations — which must map exactly onto the piano
-// roll's {midi, start, dur} so switching views never changes data.
+// growing to what the busiest chord needs — nothing is stolen), the
+// section laid out as rows, compact cells, and the tracker-style edit
+// operations — which must map exactly onto the piano roll's
+// {midi, start, dur} so switching views never changes data.
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -9,7 +10,7 @@ import {
     createPattern, createTrack, createClip, createProject, MAX_LANES,
 } from '../html/components/project-model.js';
 import {
-    noteName, deriveLanes, applyLanes, relane, trackLaneCount, expandTrack, locate,
+    noteName, deriveLanes, applyLanes, relane, trackLaneCount, expandTrack, compactCells, locate,
     putNote, putOff, clearCell,
 } from '../html/components/tracker-model.js';
 
@@ -56,14 +57,20 @@ describe('deriveLanes', () => {
         assert.deepEqual(lanesOf(notes), [1, 0]);
     });
 
-    test('past four, the oldest sounding note is stolen and marked', () => {
+    test('past four, lanes keep growing — nothing is stolen', () => {
         const notes = [N(60, 0, 16), N(62, 1, 16), N(64, 2, 16), N(65, 3, 16), N(67, 4, 4)];
         const d = deriveLanes(notes);
-        assert.equal(d.lane.get(notes[4]), 0, 'takes the oldest one\'s lane');
-        assert.equal(d.stolenAt.get(notes[0]), 4, 'cut where the new note starts');
-        assert.equal(d.stolenAt.size, 1);
-        assert.equal(d.needed, MAX_LANES);
-        assert.equal(notes[0].dur, 16, 'the model keeps the full length');
+        assert.equal(d.lane.get(notes[4]), 4, 'a fifth sub-lane, derived on the fly');
+        assert.equal(d.needed, 5);
+        assert.equal(notes[0].dur, 16, 'every note keeps its full length');
+    });
+
+    test('a lane past the storable cap is not written, and derives the same again', () => {
+        const notes = [N(60, 0, 16), N(62, 0, 16), N(64, 0, 16), N(65, 0, 16), N(67, 0, 16)];
+        const d = deriveLanes(notes);
+        applyLanes(notes, d);
+        assert.equal('lane' in notes[4], false, 'lane 4 cannot be stored');
+        assert.equal(deriveLanes(notes).lane.get(notes[4]), MAX_LANES, 'but it re-derives there');
     });
 
     test('applyLanes stores lanes, omitting 0, and reports changes', () => {
@@ -92,19 +99,19 @@ describe('the project model keeps lanes, packed', () => {
         assert.deepEqual(Object.keys(p.notes[1]), ['midi', 'start', 'dur']);
     });
 
-    test('track.lanes is stored only when more than one', () => {
-        assert.equal('lanes' in createTrack({}), false);
-        assert.equal('lanes' in createTrack({ lanes: 1 }), false);
-        assert.equal(createTrack({ lanes: 3 }).lanes, 3);
-        assert.equal(createTrack({ lanes: 9 }).lanes, MAX_LANES);
+    test('track.compact is stored only when true', () => {
+        assert.equal('compact' in createTrack({}), false);
+        assert.equal('compact' in createTrack({ compact: false }), false);
+        assert.equal('compact' in createTrack({ compact: 'yes' }), false, 'only a real true');
+        assert.equal(createTrack({ compact: true }).compact, true);
     });
 
     test('a round trip through createProject keeps both', () => {
         const project = createProject({
-            tracks: [{ id: 't', slot: 0, lanes: 2 }],
+            tracks: [{ id: 't', slot: 0, compact: true }],
             patterns: { p: { id: 'p', notes: [N(60, 0, 4, 1)] } },
         });
-        assert.equal(project.tracks[0].lanes, 2);
+        assert.equal(project.tracks[0].compact, true);
         assert.equal(project.patterns.p.notes[0].lane, 1);
     });
 });
@@ -143,22 +150,33 @@ describe('expandTrack: the section as rows', () => {
         assert.deepEqual(expandTrack(project, section, track).events.map(e => e.off), [false, false]);
     });
 
-    test('a stolen note is marked, cut at the steal, and has no OFF', () => {
+    test('a five-note moment expands to five sub-lanes', () => {
         const { project, section, track } = setup([
             N(60, 0, 16), N(62, 1, 16), N(64, 2, 16), N(65, 3, 16), N(67, 4, 2),
         ]);
         const r = expandTrack(project, section, track);
-        const stolen = r.events.filter(e => e.stolen);
-        assert.equal(stolen.length, 1);
-        assert.deepEqual([stolen[0].midi, stolen[0].end, stolen[0].off], [60, 20, false]);
-        assert.equal(r.lanes, MAX_LANES);
+        assert.equal(r.lanes, 5, 'everything is housed; nothing stolen');
+        // The clip (cols 16–32) cuts the long notes at its end; the short
+        // one keeps its own. No other cut exists any more.
+        assert.deepEqual(r.events.map(e => e.end), [32, 32, 32, 32, 22]);
     });
 
-    test('the lane count is the stored one, widened to the notes', () => {
+    test('the lane count follows the notes, and compact folds it to one', () => {
         const { project, section, track } = setup([N(60, 0, 4), N(64, 0, 4)]);
         assert.equal(trackLaneCount(project, section, track), 2);
-        track.lanes = 3;
-        assert.equal(trackLaneCount(project, section, track), 3, 'room to type into');
+        track.compact = true;
+        assert.equal(trackLaneCount(project, section, track), 1);
+    });
+
+    test('compactCells: a chord is one cell, OFFs land unless a note explains them', () => {
+        const { project, section, track } = setup([N(60, 0, 4), N(64, 0, 4), N(62, 4, 4)]);
+        const cells = compactCells(expandTrack(project, section, track).events);
+        const at = (col) => cells.get(col) || { starts: [], offs: [] };
+        assert.deepEqual(at(16).starts.map(e => e.midi), [60, 64], 'the chord, lane order');
+        assert.equal(at(20).starts.length, 1, 'the next note…');
+        assert.deepEqual(at(20).offs.map(e => e.midi), [64],
+            '…swallows the OFF in its own lane; the other lane\'s OFF still shows');
+        assert.deepEqual(at(24).offs.map(e => e.midi), [62]);
     });
 
     test('locate maps a row into the clip\'s pattern, repeats included', () => {
