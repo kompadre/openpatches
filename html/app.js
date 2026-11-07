@@ -3,8 +3,8 @@
 
 import { parseSyxFile, voiceRawToBase64 } from './components/syx-parser.js';
 import { batchRenderWaveforms } from './synth/dx7-synth.js';
-import { acquire, shutdownAll, extendIdle, playNoteRealtime, playNoteOnChannel, releaseAllNotes, sendVoiceSnapshot, setChannelVolume, base64ToUint8Array, renderOffline, isReady, getState, setOnStatusChange, setPianorollStop, emergencyStop, sendFxSnapshot } from './synth/audio-manager.js';
-import { FX_FIELDS, FX_GLOBAL_FIELDS, FX_ENABLE_FIELDS, FX_RANGES, FX_GLOBAL_RANGES } from './synth/fx-params.js';
+import { acquire, shutdownAll, extendIdle, playNoteRealtime, playNoteOnChannel, releaseAllNotes, sendVoiceSnapshot, setChannelVolume, base64ToUint8Array, renderOffline, isReady, getState, setOnStatusChange, setPianorollStop, emergencyStop, sendFxSnapshot, setFxParam, setGlobalFxParam } from './synth/audio-manager.js';
+import { FX_FIELDS, FX_GLOBAL_FIELDS, FX_ENABLE_FIELDS, FX_RANGES, FX_GLOBAL_RANGES, FxParam, FxGlobalParam } from './synth/fx-params.js';
 import { patchStore, canvasStore, jobStore, createPatch, bindProjectSession, loadPatchNames, savePatchNames } from './components/patch-model.js';
 import { initCanvas, addContainer, addPatchToContainer, refreshCanvas } from './components/canvas.js';
 import { createToolbar } from './components/toolbar.js';
@@ -882,6 +882,17 @@ function initToolbar() {
         onVolumeChange: (channel, volume) => {
             setChannelVolume(channel, volume);
         },
+        // A slider mid-drag. The engine hears it now; the project learns it
+        // on release, through the session, and sendFxSnapshot then finds
+        // the engine already has it and sends nothing.
+        onFxLive: (channel, field, value) => {
+            const param = FxParam[FX_FIELDS[field]];
+            if (param != null) setFxParam(channel, param, value);
+        },
+        onFxGlobalLive: (field, value) => {
+            const param = FxGlobalParam[FX_GLOBAL_FIELDS[field]];
+            if (param != null) setGlobalFxParam(param, value);
+        },
         editOpts: {
             baseUrl,
             showProgress,
@@ -1406,11 +1417,11 @@ projectSession.subscribe((ev) => {
 });
 pushFx();
 
-// --- Effects, until the Mixer grows controls (phase 3) ---
+// --- Effects: the e2e seam ---
 //
 // A console handle, in the spirit of window.__opDock and window.__opProject.
-// Phase 2 wires the model and the plumbing but draws nothing, and an effect
-// you cannot switch on is an effect nobody can tell is broken.
+// The Mixer's FX popovers are the user's controls; this is how e2e/fx.spec.js
+// and a session at the console reach the same rack without a pointer.
 //
 //   __opFx.list()                    what is on, and every value
 //   __opFx.on(0, 'delay')            switch delay on for slot 0

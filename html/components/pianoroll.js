@@ -293,7 +293,9 @@ export function createPianoroll(opts) {
         // A patch moved on the canvas is not an arrangement change, and
         // dragging one fires on every pointer move.
         if (ev.kind === 'patches') return;
-        if (ev.source !== 'voicebank') liveCache.clear();
+        // A popover commit from the Mixer (`voicebank-fx`) is a Mixer
+        // write too: only track.fx moved, no pattern could have.
+        if (ev.source !== 'voicebank' && ev.source !== 'voicebank-fx') liveCache.clear();
         adoptProject(session.get());
         updateMeasureButtons();
         refreshSequence();

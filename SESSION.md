@@ -17,7 +17,49 @@ run `node --check` + `node --test` and tick this file only. (Open: AGENTS.md
 "Keep it current ... in the same commit/change" reads per-change; awaiting
 the user's wording if SESSION.md should be deferred too.)
 
-### Track effects — Phases 1-2 DONE 2026-11-07, phases 3-4 in TODO.md
+### Track effects — Phases 1-3 DONE 2026-11-07, phase 4 (finish) in TODO.md
+
+**Phase 3** is the Mixer UI: `html/components/fx-panel.js`. Each strip has
+an `FX` button whose four letters (D O C R — delay, overdrive, compressor,
+reverb send) light per effect; it opens a popover of toggles and sliders,
+the way the ♫ slot picker does. The header's `Reverb · Duck` button opens
+the mix's popover, with the boosted track as a select of occupied slots.
+
+- **Two write paths, on purpose.** A slider tick calls `onFxLive` (threaded
+  voicebank → toolbar → app.js → `setFxParam`) so the engine hears the drag;
+  the release commits through the session. Committing per tick would
+  re-render the Section editor and the roll's legend sixty times a second.
+  The single-param setter updates `sendFxSnapshot`'s cache, so the snapshot
+  the commit triggers sends nothing.
+- **Popover commits carry source `voicebank-fx`, not `voicebank`.** The
+  Mixer skips re-reading its strips on its own fader writes (it would fight
+  the drag) — but it does redraw the FX letters on a popover commit, and a
+  fader *tap* calls `saveState` inside the touch event chain where a
+  synchronous render was deliberately avoided. The roll treats
+  `voicebank-fx` like a Mixer write for its `liveCache` (no pattern moved).
+- **The popover reads the track by slot on every write**, never from a
+  captured object: slots swap under it (a drop on the Mixer, the Section
+  editor's slot select), and the popover is for the slot.
+- **The popover lives in `document.body`, `position: fixed`**, so the
+  strip's re-render (which rebuilds the anchor) neither moves nor destroys
+  it. One popover at a time; any session event from another source closes
+  it; Escape and a click outside close it. The outside-click listener is
+  attached on a `setTimeout(0)` — the opening click is still propagating.
+- **The header button sits right after the title, not `space-between`:**
+  in the bottom pane the header is as wide as all eight strips and
+  overflows sideways, so a button at its far end was off screen and
+  focusing it scrolled the strips away. Found by screenshot.
+- **`TRACK_SECTIONS` is checked against `FX_FIELDS`** in
+  `test/fx-panel.test.js`: a parameter the engine has and the panel does
+  not list is one nobody can set.
+- **Pre-existing, not touched:** on a 390px phone the strips' M/S/▶/× row
+  overflows its 86px strip and overlaps the neighbour ("S ▌M"). Verified
+  identical at the previous commit. The stylesheet documents the spill
+  for strips under 84px; the mobile rule sets `padding: 4px 2px` and no
+  min-width. Worth a line in phase 4 or its own small fix.
+- **The generic `button {}` rule** (pink, 0.75rem padding) is what every
+  small control here overrides; a new button in the Mixer that forgets to
+  will come out as a large pink pill.
 
 **Phase 2** wired the model and the plumbing. `track.fx` and `project.fx`
 are built from the tables in `html/synth/fx-params.js`, pushed to the

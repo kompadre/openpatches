@@ -2043,6 +2043,192 @@ h1 {
     font-size: 0.65rem;
 }
 
+/* --- Effects --- */
+
+/* The header carries the mix's own effects, right after the title. Not
+   space-between: in the bottom pane the header is as wide as all eight
+   strips and overflows sideways, so a button at its far end sits off
+   screen and clicking it (or focusing it) scrolls the strips away. */
+.voicebank-header {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 10px;
+}
+
+.voicebank-global-fx {
+    padding: 1px 7px;
+    background: #1a1a2e;
+    border: 1px solid #333;
+    border-radius: 3px;
+    color: #888;
+    font: inherit;
+    font-size: 0.6rem;
+    letter-spacing: 0.04em;
+    text-transform: none;
+    cursor: pointer;
+}
+
+.voicebank-global-fx:hover {
+    color: #ddd;
+    border-color: #555;
+}
+
+/* The strip's FX button: four letters, lit for the effects that are on. */
+.voicebank-fx {
+    display: flex;
+    justify-content: center;
+    gap: 2px;
+    width: 100%;
+    max-width: 72px;
+    padding: 2px 3px;
+    background: #1a1a2e;
+    border: 1px solid #333;
+    border-radius: 3px;
+    cursor: pointer;
+}
+
+.voicebank-fx:hover {
+    border-color: #555;
+}
+
+.voicebank-fx.on {
+    border-color: #4f5d8a;
+}
+
+.voicebank-fx-letter {
+    flex: 1 1 0;
+    font-size: 0.55rem;
+    font-weight: 700;
+    line-height: 1.2;
+    color: #444;
+    text-align: center;
+}
+
+.voicebank-fx-letter.on {
+    color: #8fb3ff;
+}
+
+.fx-pop {
+    position: fixed;
+    z-index: 1000;
+    width: 300px;
+    max-width: 94vw;
+    max-height: 70vh;
+    overflow-y: auto;
+    background: #131326;
+    border: 1px solid #333;
+    border-radius: 6px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6);
+    color: #ccc;
+    font-size: 0.7rem;
+}
+
+.fx-pop-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 8px;
+    border-bottom: 1px solid #2a2a3e;
+}
+
+.fx-pop-title {
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #888;
+}
+
+.fx-pop-close {
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    background: none;
+    border: 1px solid transparent;
+    color: #666;
+    font-size: 0.8rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.fx-pop-close:hover { color: #e94560; }
+
+.fx-pop-body {
+    padding: 4px 8px 8px;
+}
+
+.fx-section {
+    padding: 6px 0 2px;
+    border-bottom: 1px solid #1e1e30;
+}
+
+.fx-section:last-child { border-bottom: none; }
+
+.fx-section-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+    cursor: pointer;
+}
+
+.fx-toggle {
+    margin: 0;
+    accent-color: #8fb3ff;
+}
+
+.fx-section-label {
+    font-weight: 600;
+    color: #777;
+}
+
+.fx-section.on .fx-section-label {
+    color: #ddd;
+}
+
+/* Sliders of an effect that is off are shown dimmed but stay live: the
+   settings are kept and can be shaped before the effect is switched on. */
+.fx-section:not(.on) .fx-row {
+    opacity: 0.55;
+}
+
+.fx-row {
+    display: grid;
+    grid-template-columns: 62px 1fr 56px;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 0;
+}
+
+.fx-row-label {
+    color: #888;
+    cursor: default;
+}
+
+.fx-row-value {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: #aaa;
+    white-space: nowrap;
+}
+
+.fx-range {
+    width: 100%;
+    margin: 0;
+    accent-color: #8fb3ff;
+}
+
+.fx-duck-source {
+    grid-column: 2 / 4;
+    background: #1a1a2e;
+    border: 1px solid #333;
+    border-radius: 3px;
+    color: #ddd;
+    font: inherit;
+    padding: 2px 4px;
+}
+
 /* The mixer sizes itself to the dock (see .dock-panel's stranded-edge
    warning) — the .voicebank child is width:100% and the strips share it. */
 .dock-panel-mixer.active {
@@ -2620,6 +2806,7 @@ h1 {
 }
 
 .bpane .voicebank-fader { min-height: 36px; }
+.bpane .voicebank-fx { padding: 1px 3px; }
 
 .bpane .dock-log {
     min-width: 0;

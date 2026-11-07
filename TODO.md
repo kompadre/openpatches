@@ -50,9 +50,10 @@ worklet uses, so the export matches what was heard by construction.
 
 **Phase 2 — Model and plumbing.** _Done 2026-11-07._
 
-**Phase 3 — Mixer UI.** A compact FX section per strip; a global Reverb and
-Duck panel naming the boosted track. Replaces the `window.__opFx` console
-handle, which is the only way to reach the rack until then.
+**Phase 3 — Mixer UI.** _Done 2026-11-07._ An `FX` button per strip (four
+letters, lit per effect) opening a popover of toggles and sliders; a
+`Reverb · Duck` button in the Mixer header for the mix. `window.__opFx`
+stays as the e2e seam.
 
 **Phase 4 — Finish.** Playwright, `HEARME.tts`, `CHANGELOG.md`, TODO
 reconciliation.

@@ -18,6 +18,7 @@
 import { onPatchDroppedOnSlot, wireDropZone } from './slot-drop.js';
 import { voiceKey } from './patch-model.js';
 import { createTrack } from './project-model.js';
+import { fxSummary, openTrackFxPopover, openGlobalFxPopover, closeFxPopover } from './fx-panel.js';
 
 const MAX_SLOTS = 8;
 const DEFAULT_VOLUME = 100;
@@ -34,7 +35,7 @@ function copyVoice(voiceData) {
 }
 
 export function createVoiceBank(opts) {
-    const { onSelect, onVolumeChange, onPreview, onSnapshot, session } = opts;
+    const { onSelect, onVolumeChange, onPreview, onSnapshot, session, onFxLive, onFxGlobalLive } = opts;
     let entries = new Array(MAX_SLOTS).fill(null);
     let activeId = null;
 
@@ -47,8 +48,33 @@ export function createVoiceBank(opts) {
 
     const header = document.createElement('div');
     header.className = 'voicebank-header';
-    header.textContent = 'Mixer';
+    const headerTitle = document.createElement('span');
+    headerTitle.className = 'voicebank-header-title';
+    headerTitle.textContent = 'Mixer';
+    header.appendChild(headerTitle);
+    // The mix's own effects — one shared reverb, one ducker — belong to
+    // no strip, so they open from the header.
+    const globalFxBtn = document.createElement('button');
+    globalFxBtn.className = 'voicebank-global-fx';
+    globalFxBtn.textContent = 'Reverb · Duck';
+    globalFxBtn.title = 'Shared reverb and ducking';
+    globalFxBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (!session) return;
+        openGlobalFxPopover({
+            anchor: globalFxBtn, session, entries,
+            onLive: onFxGlobalLive || null,
+        });
+    });
+    header.appendChild(globalFxBtn);
     container.appendChild(header);
+
+    /** The strip's track, for its effects. The slot is the track. */
+    function trackFx(slot) {
+        const project = session && session.get();
+        const track = project && project.tracks.find(t => t.slot === slot);
+        return track && track.fx ? track.fx : null;
+    }
 
     const list = document.createElement('div');
     list.className = 'voicebank-list';
@@ -165,6 +191,29 @@ export function createVoiceBank(opts) {
                 volEl.className = 'voicebank-vol';
                 volEl.textContent = entry.volume ?? DEFAULT_VOLUME;
                 item.appendChild(volEl);
+
+                // FX: four letters, lit for the effects that are on. The
+                // controls open in a popover — a strip has no room for them.
+                const summary = fxSummary(trackFx(i));
+                const fxBtn = document.createElement('button');
+                fxBtn.className = 'voicebank-fx' + (summary.some(l => l.on) ? ' on' : '');
+                fxBtn.title = 'Effects: ' + (summary.filter(l => l.on).map(l => l.label).join(', ') || 'none');
+                for (const l of summary) {
+                    const letter = document.createElement('span');
+                    letter.className = 'voicebank-fx-letter' + (l.on ? ' on' : '');
+                    letter.dataset.flag = l.flag;
+                    letter.textContent = l.letter;
+                    fxBtn.appendChild(letter);
+                }
+                fxBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (!session) return;
+                    openTrackFxPopover({
+                        anchor: fxBtn, slot: i, title: (i + 1) + ' ' + entry.name, session,
+                        onLive: onFxLive ? (field, value) => onFxLive(i, field, value) : null,
+                    });
+                });
+                item.appendChild(fxBtn);
 
                 // M / S / preview / remove
                 const controls = document.createElement('div');
@@ -495,8 +544,15 @@ export function createVoiceBank(opts) {
     // skipped — re-reading mid-edit would fight the user's drag.
     if (session) {
         session.subscribe((ev) => {
-            if (ev.source === 'voicebank') return;
             if (ev.kind !== 'project' && ev.kind !== 'tracks') return;
+            if (ev.source === 'voicebank') return;
+            if (ev.source === 'voicebank-fx') {
+                // A popover commit. The strips are not re-read — nothing
+                // but track.fx moved — but the FX letters are a view of it.
+                render();
+                return;
+            }
+            closeFxPopover();
             loadState();
             applyMix(false);
             render();

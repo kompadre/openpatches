@@ -9,7 +9,7 @@
 // The port is tapped in an init script, before app.js builds anything, so
 // the messages are the real ones the real AudioWorkletNode received.
 
-import { test, expect, openApp } from './fixtures.js';
+import { test, expect, openApp, openMixerTab, openPatchesTab } from './fixtures.js';
 
 /**
  * Start the audio engine. `sendFxSnapshot` is a no-op until the worklet is
@@ -249,5 +249,92 @@ test.describe('track effects', () => {
 
         expect(wet, `dry=${dry} wet=${wet}`).toBeGreaterThan(dry * 3);
         expect(off, `wet=${wet} off=${off}`).toBeLessThan(wet / 3);
+    });
+});
+
+test.describe('the Mixer’s effect controls', () => {
+    /** Three demo patches on slots 1–3, Mixer open. */
+    async function mixerWithVoices(page) {
+        await openApp(page);
+        await page.locator('.menu-item[data-menu="file"] .menu-label').click();
+        const picker = page.waitForEvent('filechooser');
+        await page.locator('#menu-import-syx').click();
+        await (await picker).setFiles('html/DEMO.syx');
+        await openPatchesTab(page);
+        const rows = page.locator('.patch-row');
+        for (const n of [1, 2, 3]) {
+            await rows.nth(n - 1).locator('.patch-assign').click();
+            await rows.nth(n - 1).locator('.patch-assign-pop .patch-assign-slot').nth(n - 1).click();
+        }
+        await openMixerTab(page);
+    }
+
+    test('the FX button opens a popover whose toggle lights the strip', async ({ page }) => {
+        await mixerWithVoices(page);
+        const strip = page.locator('.voicebank-item').first();
+        await strip.locator('.voicebank-fx').click();
+
+        const pop = page.locator('.fx-pop-track');
+        await expect(pop).toBeVisible();
+        await expect(pop.locator('.fx-pop-title')).toContainText('1 ');
+
+        await pop.locator('.fx-toggle[data-flag="delay"]').check();
+        await expect(strip.locator('.voicebank-fx-letter[data-flag="delay"]')).toHaveClass(/on/);
+        expect(await page.evaluate(() => window.__opFx.list().tracks.find(t => t.slot === 0).delay)).toBe(true);
+
+        // The popover survived the strip re-rendering its letters.
+        await expect(pop).toBeVisible();
+        await page.screenshot({ path: 'test-results/fx-popover.png' });
+
+        await pop.locator('.fx-toggle[data-flag="delay"]').uncheck();
+        await expect(strip.locator('.voicebank-fx-letter[data-flag="delay"]')).not.toHaveClass(/on/);
+    });
+
+    test('a slider commits on release and keeps its fraction', async ({ page }) => {
+        await mixerWithVoices(page);
+        await page.locator('.voicebank-item').first().locator('.voicebank-fx').click();
+        const range = page.locator('.fx-pop-track .fx-row[data-field="delayFeedback"] .fx-range');
+        await range.fill('0.65');       // fires input + change on a range
+        expect(await page.evaluate(() => window.__opFx.list().tracks.find(t => t.slot === 0).delayFeedback))
+            .toBeCloseTo(0.65, 5);
+        await expect(page.locator('.fx-pop-track .fx-row[data-field="delayFeedback"] .fx-row-value'))
+            .toHaveText('0.650');
+    });
+
+    test('Escape and a click elsewhere close it', async ({ page }) => {
+        await mixerWithVoices(page);
+        await page.locator('.voicebank-item').first().locator('.voicebank-fx').click();
+        await expect(page.locator('.fx-pop')).toBeVisible();
+        await page.keyboard.press('Escape');
+        await expect(page.locator('.fx-pop')).toHaveCount(0);
+
+        await page.locator('.voicebank-item').first().locator('.voicebank-fx').click();
+        await expect(page.locator('.fx-pop')).toBeVisible();
+        await page.mouse.click(700, 300);
+        await expect(page.locator('.fx-pop')).toHaveCount(0);
+    });
+
+    test('Reverb · Duck lists the occupied slots and commits the source', async ({ page }) => {
+        await mixerWithVoices(page);
+        await page.locator('.voicebank-global-fx').click();
+        const pop = page.locator('.fx-pop-global');
+        await expect(pop).toBeVisible();
+        const options = await pop.locator('.fx-duck-source option').allTextContents();
+        expect(options[0]).toBe('Nobody');
+        expect(options).toHaveLength(4);
+        await pop.locator('.fx-duck-source').selectOption('1');
+        expect(await page.evaluate(() => window.__opFx.list().global.duckSource)).toBe(1);
+        await page.screenshot({ path: 'test-results/fx-global.png' });
+    });
+
+    test('the rack set from the Mixer is there after a reload', async ({ page }) => {
+        await mixerWithVoices(page);
+        await page.locator('.voicebank-item').first().locator('.voicebank-fx').click();
+        await page.locator('.fx-pop-track .fx-toggle[data-flag="drive"]').check();
+        await page.evaluate(() => window.__opProject.flush());
+
+        await openApp(page);
+        await openMixerTab(page);
+        await expect(page.locator('.voicebank-item').first().locator('.voicebank-fx-letter[data-flag="drive"]')).toHaveClass(/on/);
     });
 });

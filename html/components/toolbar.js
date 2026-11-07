@@ -463,6 +463,10 @@ export function createToolbar(opts) {
             updateKeyboardVoice(slot);
         },
         onVolumeChange: opts.onVolumeChange || null,
+        // Effect sliders, while dragging: straight to the engine. The
+        // release commits to the project, which is what everyone re-reads.
+        onFxLive: opts.onFxLive || null,
+        onFxGlobalLive: opts.onFxGlobalLive || null,
         onPreview: (entry, slot) => {
             pianorollPlayFn(60, 600, entry.voiceData, slot);
         },
