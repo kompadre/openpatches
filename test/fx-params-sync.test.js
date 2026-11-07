@@ -13,6 +13,7 @@ import { readFileSync } from 'node:fs';
 import {
     FX_CHANNELS, FxEnable, FxParam, FxGlobalParam,
     FX_RANGES, FX_GLOBAL_RANGES,
+    FX_FIELDS, FX_GLOBAL_FIELDS, FX_ENABLE_FIELDS, fxEnableMask,
 } from '../html/synth/fx-params.js';
 
 const HEADER = readFileSync(
@@ -97,5 +98,50 @@ describe('fx params: ranges cover every parameter', () => {
         assert.equal(FxParam.FX_PARAM_COUNT, Object.keys(FX_RANGES).length);
         assert.equal(FxGlobalParam.FX_G_PARAM_COUNT,
             Object.keys(FX_GLOBAL_RANGES).length);
+    });
+});
+
+describe('fx params: persisted field names', () => {
+    // track.fx / project.fx are exported JSON, so they carry readable keys
+    // rather than enum numbers. A parameter missing from these tables is one
+    // that silently never reaches the engine and never persists.
+    const sorted = o => Object.values(o).slice().sort();
+
+    test('every FxParam has exactly one field', () => {
+        assert.deepEqual(
+            sorted(FX_FIELDS),
+            Object.keys(FX_RANGES).slice().sort());
+        assert.equal(new Set(Object.values(FX_FIELDS)).size,
+            Object.keys(FX_FIELDS).length, 'two fields point at one param');
+    });
+
+    test('every FxGlobalParam has exactly one field', () => {
+        assert.deepEqual(
+            sorted(FX_GLOBAL_FIELDS),
+            Object.keys(FX_GLOBAL_RANGES).slice().sort());
+        assert.equal(new Set(Object.values(FX_GLOBAL_FIELDS)).size,
+            Object.keys(FX_GLOBAL_FIELDS).length);
+    });
+
+    test('every FxEnable bit has a field', () => {
+        assert.deepEqual(sorted(FX_ENABLE_FIELDS),
+            Object.keys(FxEnable).slice().sort());
+    });
+
+    test('field names do not collide across the two tables', () => {
+        for (const k of Object.keys(FX_FIELDS)) {
+            assert.ok(!(k in FX_ENABLE_FIELDS),
+                `${k} is both a parameter and an enable flag`);
+        }
+    });
+
+    test('fxEnableMask builds the bitmask the engine expects', () => {
+        assert.equal(fxEnableMask(null), 0);
+        assert.equal(fxEnableMask({}), 0);
+        assert.equal(fxEnableMask({ delay: true }), FxEnable.FX_EN_DELAY);
+        assert.equal(fxEnableMask({ delay: true, send: true }),
+            FxEnable.FX_EN_DELAY | FxEnable.FX_EN_SEND);
+        // Only a real `true` counts — a stored "1" or "on" is not a flag.
+        assert.equal(fxEnableMask({ delay: 1, drive: 'yes' }), 0);
     });
 });

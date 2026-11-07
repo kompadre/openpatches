@@ -17,7 +17,50 @@ run `node --check` + `node --test` and tick this file only. (Open: AGENTS.md
 "Keep it current ... in the same commit/change" reads per-change; awaiting
 the user's wording if SESSION.md should be deferred too.)
 
-### Track effects — Phase 1 DONE 2026-11-07, phases 2-4 in TODO.md
+### Track effects — Phases 1-2 DONE 2026-11-07, phases 3-4 in TODO.md
+
+**Phase 2** wired the model and the plumbing. `track.fx` and `project.fx`
+are built from the tables in `html/synth/fx-params.js`, pushed to the
+engine by `sendFxSnapshot` in audio-manager, and applied by the
+`fx-param`/`fx-global`/`fx-enabled`/`fx-snapshot` messages in
+dx7-processor. No Mixer controls yet — **`window.__opFx` in the browser
+console is the way to work the rack** (`__opFx.list()`,
+`__opFx.on(0,'delay')`, `__opFx.set(0,'delayMix',0.5)`,
+`__opFx.global('reverbLevel',0.8)`, `__opFx.duck(0)`), in the spirit of
+`window.__opDock` and `window.__opProject`. Phase 3 replaces it.
+
+- **`clampInt` rounds, so effect parameters needed `clampNum`.** A delay
+  feedback of 0.35 stored as 0 and a mix of 0.3 as silence. Same explicit
+  `null` guard, no rounding. Any new fractional field must use it.
+- **Flags and parameters are separate fields on purpose.** Switching an
+  effect off is a bypass, not a reset: the settings stay, which is also
+  what lets the engine take its fast path with nothing lost.
+- **`duckSource` is validated, not clamped.** Clamping turned a stored 99
+  into slot 7 and silently boosted whatever track was there. It is a slot
+  name, not a continuous value. `normalizeProject` also drops a duck
+  source naming an empty slot — otherwise the mix ducks under a track that
+  does not exist and nothing in the UI explains why it went quiet.
+- **A deleted track's delay keeps ringing** unless its slot is switched
+  OFF explicitly. `sendFxSnapshot` addresses empty slots rather than
+  skipping them; `test/fx-snapshot.test.js` is the guard.
+- **`sendFxSnapshot` is a no-op until the worklet is up**, so the status
+  callback pushes on `ready`. Any e2e test touching the rack has to start
+  audio first (press a key) or it silently observes nothing.
+- **`pushFx` holds its own `fxSession` reference**, not `projectSession`:
+  `setOnStatusChange` calls back synchronously during module evaluation,
+  before that `const` exists, and touching it there is a TDZ
+  ReferenceError rather than an undefined.
+- **Old projects get a rack on load** — every path (`store.open`,
+  `project-io` import) goes through `createProject` → `normalizeProject`.
+  A track reaching `__opFx` without one got past `createTrack`, and the
+  handle throws rather than papering over it.
+- **`e2e/fx.spec.js` has the only test that listens.** It taps the worklet
+  with an AnalyserNode and measures ~1 s after a note, where a dry note
+  has decayed to nothing and delay repeats have not. Measured dry 0.000,
+  delay on 0.140, delay off 0.000.
+
+**Phase 1** below.
+
 
 Effects run **in WASM**, between the FM engine's per-channel sum and the
 global ResoFilter in `SynthUnit::GetSamples`. New files:

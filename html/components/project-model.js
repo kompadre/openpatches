@@ -1,5 +1,9 @@
 // Project data model: Tracks, Patterns, Clips, Sections, Projects.
 //
+// The effect tables come from the synth because the engine owns what a
+// parameter means and what it clamps to; duplicating the ranges here is how
+// a Mixer slider and the WASM clamp drift apart.
+//
 // A **Project** is one piece of music, and the unit that gets exported. It
 // has two dimensions:
 //
@@ -39,6 +43,13 @@
 //
 // Pure data. No DOM, no audio, no MIDI, no storage — project-store.js owns
 // persistence and hands bodies to these factories; nothing here reads it.
+// fx-params.js is the one import, and it is pure data too: the effect
+// parameter tables, which the synth owns because the engine is what clamps.
+
+import {
+    FX_FIELDS, FX_GLOBAL_FIELDS, FX_ENABLE_FIELDS,
+    FX_RANGES, FX_GLOBAL_RANGES,
+} from '../synth/fx-params.js';
 
 export const COLS_PER_MEASURE = 16;
 export const MAX_SLOTS = 8;      // slot IS the channel, so this is the track limit
@@ -74,6 +85,16 @@ function clampInt(v, min, max, fallback) {
     // `undefined` already falls through as NaN; null must behave the same.
     if (v == null) return fallback;
     const n = Math.round(Number(v));
+    if (!Number.isFinite(n)) return fallback;
+    return Math.max(min, Math.min(max, n));
+}
+
+function clampNum(v, min, max, fallback) {
+    // clampInt's sibling for the effect parameters, which are genuinely
+    // fractional — a delay feedback of 0.35 rounds to 0 and a mix of 0.3 to
+    // silence. Same explicit `null` guard, same reason.
+    if (v == null) return fallback;
+    const n = Number(v);
     if (!Number.isFinite(n)) return fallback;
     return Math.max(min, Math.min(max, n));
 }
@@ -172,7 +193,52 @@ export function createTrack(partial = {}) {
         // these separately and could disagree; see the file header.
         mute: partial.mute === true,
         solo: partial.solo === true,
+        fx: createTrackFx(partial.fx),
     };
+}
+
+/**
+ * The strip's insert effects: four on/off flags and the parameters behind
+ * them. Always complete and always in range, so no reader has to guess what
+ * a missing delay time means.
+ *
+ * The flags and the parameters are deliberately separate. Switching an
+ * effect off must not throw away how it was set up — that is the difference
+ * between a bypass button and a reset button, and it is also what lets the
+ * engine take its fast path without the user losing anything.
+ *
+ * Built from the tables in fx-params.js rather than spelled out, so adding
+ * a parameter there is the whole change.
+ */
+export function createTrackFx(partial = {}) {
+    const p = plainObject(partial);
+    const fx = {};
+    for (const field of Object.keys(FX_ENABLE_FIELDS)) {
+        fx[field] = p[field] === true;
+    }
+    for (const [field, param] of Object.entries(FX_FIELDS)) {
+        const r = FX_RANGES[param];
+        fx[field] = clampNum(p[field], r.min, r.max, r.def);
+    }
+    return fx;
+}
+
+/** The project's one shared reverb and one ducker. Same contract. */
+export function createProjectFx(partial = {}) {
+    const p = plainObject(partial);
+    const fx = {};
+    for (const [field, param] of Object.entries(FX_GLOBAL_FIELDS)) {
+        if (field === 'duckSource') continue;
+        const r = FX_GLOBAL_RANGES[param];
+        fx[field] = clampNum(p[field], r.min, r.max, r.def);
+    }
+    // The duck source is a slot number, not a continuous value, so it is
+    // validated rather than clamped: clamping would turn a stored 99 into
+    // slot 7 and silently boost whatever track happens to be there.
+    // Anything that is not a real slot means "nobody is boosted".
+    const src = p.duckSource;
+    fx.duckSource = Number.isInteger(src) && src >= 0 && src < MAX_SLOTS ? src : -1;
+    return fx;
 }
 
 /**
@@ -291,6 +357,7 @@ export function createProject(partial = {}) {
         id: p.id || uid('prj'),
         name: nonEmptyName(p.name, 'Untitled project'),
         bpm: clampInt(p.bpm, MIN_BPM, MAX_BPM, DEFAULT_BPM),
+        fx: createProjectFx(p.fx),
         tracks: (Array.isArray(p.tracks) ? p.tracks : []).map(createTrack),
         sections: (Array.isArray(p.sections) ? p.sections : []).map(createSection),
         patterns: normalizePatterns(p.patterns),
@@ -348,6 +415,19 @@ export function normalizeProject(project) {
         if (!bySlot.has(track.slot)) bySlot.set(track.slot, track);
     }
     project.tracks = [...bySlot.values()].sort((a, b) => a.slot - b.slot);
+
+    // Reached by callers that mutate a project in place as well as by
+    // createProject, so neither record can be assumed complete here.
+    project.fx = createProjectFx(project.fx);
+    for (const track of project.tracks) track.fx = createTrackFx(track.fx);
+
+    // The ducker names a slot, and a slot with no track on it boosts
+    // nothing while silently ducking everyone else — which reads as "the
+    // mix got quiet" with no visible cause. Drop it instead.
+    if (project.fx.duckSource >= 0 &&
+        !project.tracks.some(t => t.slot === project.fx.duckSource)) {
+        project.fx.duckSource = -1;
+    }
 
     const trackIds = new Set(project.tracks.map(t => t.id));
     for (const section of project.sections) {

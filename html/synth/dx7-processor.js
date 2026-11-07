@@ -144,6 +144,40 @@ class DX7Processor extends AudioWorkletProcessor {
           this.exp.set_channel_volume(msg.channel, msg.volume);
         }
         break;
+      case 'fx-enabled':
+        if (this.exp.set_fx_enabled) {
+          this.exp.set_fx_enabled(msg.channel, msg.mask);
+        }
+        break;
+      case 'fx-param':
+        if (this.exp.set_fx_param) {
+          this.exp.set_fx_param(msg.channel, msg.param, msg.value);
+        }
+        break;
+      case 'fx-global':
+        if (this.exp.set_global_fx_param) {
+          this.exp.set_global_fx_param(msg.param, msg.value);
+        }
+        break;
+      case 'fx-snapshot':
+        // The whole rack at once: [{channel, mask, params: [[id, value]]}]
+        // plus the global pairs. Sent on project load and after a reinit —
+        // reset_engine keeps fx parameters, but a fresh worklet has only
+        // the engine defaults.
+        if (Array.isArray(msg.channels) && this.exp.set_fx_param) {
+          for (const c of msg.channels) {
+            for (const [param, value] of c.params || []) {
+              this.exp.set_fx_param(c.channel, param, value);
+            }
+            this.exp.set_fx_enabled(c.channel, c.mask | 0);
+          }
+        }
+        if (Array.isArray(msg.global) && this.exp.set_global_fx_param) {
+          for (const [param, value] of msg.global) {
+            this.exp.set_global_fx_param(param, value);
+          }
+        }
+        break;
       case 'all-notes-off':
         // Release every voice with the engine's 64-sample fade. Patches and
         // volumes stay loaded; buffered audio (~12 ms) drains naturally.

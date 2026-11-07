@@ -48,18 +48,11 @@ worklet uses, so the export matches what was heard by construction.
 
 **Phase 1 — WASM effects engine.** _Done 2026-11-07._
 
-**Phase 2 — Model and plumbing.**
-- [ ] `track.fx` and `project.fx` in `project-model.js`, with defaults and
-      clamps from `FX_RANGES`/`FX_GLOBAL_RANGES` in `html/synth/fx-params.js`.
-      Every new numeric field needs the explicit `clampInt(null, …)` guard.
-- [ ] `setFxParam`/`setFxEnabled`/`pushFxSnapshot` in `audio-manager.js`,
-      `fx-param`/`fx-global`/`fx-snapshot` messages in `dx7-processor.js`.
-- [ ] Re-push the snapshot after `reinit`, next to the voice snapshot —
-      `reset_engine` keeps fx parameters but a fresh worklet would not.
-- [ ] `project-session.js` fires on `tracks` updates.
+**Phase 2 — Model and plumbing.** _Done 2026-11-07._
 
 **Phase 3 — Mixer UI.** A compact FX section per strip; a global Reverb and
-Duck panel naming the boosted track.
+Duck panel naming the boosted track. Replaces the `window.__opFx` console
+handle, which is the only way to reach the rack until then.
 
 **Phase 4 — Finish.** Playwright, `HEARME.tts`, `CHANGELOG.md`, TODO
 reconciliation.

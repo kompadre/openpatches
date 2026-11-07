@@ -3,7 +3,8 @@
 
 import { parseSyxFile, voiceRawToBase64 } from './components/syx-parser.js';
 import { batchRenderWaveforms } from './synth/dx7-synth.js';
-import { acquire, shutdownAll, extendIdle, playNoteRealtime, playNoteOnChannel, releaseAllNotes, sendVoiceSnapshot, setChannelVolume, base64ToUint8Array, renderOffline, isReady, getState, setOnStatusChange, setPianorollStop, emergencyStop } from './synth/audio-manager.js';
+import { acquire, shutdownAll, extendIdle, playNoteRealtime, playNoteOnChannel, releaseAllNotes, sendVoiceSnapshot, setChannelVolume, base64ToUint8Array, renderOffline, isReady, getState, setOnStatusChange, setPianorollStop, emergencyStop, sendFxSnapshot } from './synth/audio-manager.js';
+import { FX_FIELDS, FX_GLOBAL_FIELDS, FX_ENABLE_FIELDS, FX_RANGES, FX_GLOBAL_RANGES } from './synth/fx-params.js';
 import { patchStore, canvasStore, jobStore, createPatch, bindProjectSession, loadPatchNames, savePatchNames } from './components/patch-model.js';
 import { initCanvas, addContainer, addPatchToContainer, refreshCanvas } from './components/canvas.js';
 import { createToolbar } from './components/toolbar.js';
@@ -183,7 +184,26 @@ setOnStatusChange((state) => {
         sendVoiceSnapshot(pendingSnapshot);
         pendingSnapshot = null;
     }
+    // Effect state lives only in the engine, so a worklet that has just
+    // come up knows nothing about the open project's rack.
+    if (state === 'ready') pushFx();
 });
+
+/**
+ * Push the open project's effects to the engine. Cheap to call often —
+ * sendFxSnapshot only sends what changed — which is why it hangs off every
+ * `tracks` update rather than off each individual edit.
+ */
+// Not `projectSession` directly: setOnStatusChange calls back synchronously,
+// before the const below it has been initialised, and touching it there is a
+// TDZ ReferenceError rather than an undefined.
+let fxSession = null;
+
+function pushFx() {
+    const project = fxSession && fxSession.get();
+    if (!project) return;
+    sendFxSnapshot(project.tracks, project.fx);
+}
 
 // --- MIDI status indicator ---
 
@@ -243,6 +263,7 @@ const projectStore = createProjectStore({
     canSave: () => !transportIsBusy(),
 });
 const projectSession = createProjectSession(projectStore);
+fxSession = projectSession;
 
 function transportIsBusy() {
     const roll = pianoDockWrapper && pianoDockWrapper._pianoroll;
@@ -275,6 +296,9 @@ function doEmergencyStop() {
             const entries = pianoDockWrapper._voiceBank._getEntries();
             if (entries.length > 0) sendVoiceSnapshot(entries);
         }
+        // reset_engine keeps the fx parameters, but emergencyStop drops the
+        // main thread's cache so this re-pushes the rack in full.
+        pushFx();
         appendLog('Emergency stop: MSFA engine reset, voices reloaded');
     }, 100);
 }
@@ -1375,3 +1399,74 @@ renderProjectName();
 // The name in the bar follows a rename made anywhere — the Projects
 // dialog, or another editor.
 projectSession.subscribe((ev) => { if (ev.kind === 'project') renderProjectName(); });
+// The engine holds no effect state of its own that anyone reads back, so
+// every change to the band — and every project opened — has to be pushed.
+projectSession.subscribe((ev) => {
+    if (ev.kind === 'tracks' || ev.kind === 'project') pushFx();
+});
+pushFx();
+
+// --- Effects, until the Mixer grows controls (phase 3) ---
+//
+// A console handle, in the spirit of window.__opDock and window.__opProject.
+// Phase 2 wires the model and the plumbing but draws nothing, and an effect
+// you cannot switch on is an effect nobody can tell is broken.
+//
+//   __opFx.list()                    what is on, and every value
+//   __opFx.on(0, 'delay')            switch delay on for slot 0
+//   __opFx.off(0, 'delay')           ...and off again
+//   __opFx.set(0, 'delayMix', 0.5)   one parameter
+//   __opFx.global('reverbLevel', 0.8)
+//   __opFx.duck(0)                   slot 0 is the boosted track
+//
+// Everything here goes through projectSession.update, so it persists and
+// survives a reload exactly as the Mixer's controls will.
+function fxTrack(slot) {
+    const project = projectSession.get();
+    const track = project && project.tracks.find(t => t.slot === slot);
+    if (!track) throw new Error(`no track on slot ${slot}`);
+    // Every load path runs normalizeProject, which gives each track a rack;
+    // a track without one got here past createTrack, and that is a bug to
+    // see rather than to paper over.
+    if (!track.fx) throw new Error(`track on slot ${slot} has no fx record`);
+    return track;
+}
+
+window.__opFx = {
+    list() {
+        const project = projectSession.get();
+        if (!project) return null;
+        return {
+            global: { ...project.fx },
+            tracks: project.tracks.map(t => ({ slot: t.slot, name: t.name, ...t.fx })),
+        };
+    },
+    on(slot, effect) { return this._flag(slot, effect, true); },
+    off(slot, effect) { return this._flag(slot, effect, false); },
+    _flag(slot, effect, value) {
+        if (!(effect in FX_ENABLE_FIELDS)) {
+            throw new Error(`unknown effect "${effect}" — one of ${Object.keys(FX_ENABLE_FIELDS)}`);
+        }
+        projectSession.update(() => { fxTrack(slot).fx[effect] = value; }, 'fx', 'tracks');
+        return this.list();
+    },
+    set(slot, field, value) {
+        const param = FX_FIELDS[field];
+        if (!param) throw new Error(`unknown parameter "${field}" — one of ${Object.keys(FX_FIELDS)}`);
+        const r = FX_RANGES[param];
+        projectSession.update(() => {
+            fxTrack(slot).fx[field] = Math.max(r.min, Math.min(r.max, Number(value)));
+        }, 'fx', 'tracks');
+        return this.list();
+    },
+    global(field, value) {
+        const param = FX_GLOBAL_FIELDS[field];
+        if (!param) throw new Error(`unknown parameter "${field}" — one of ${Object.keys(FX_GLOBAL_FIELDS)}`);
+        const r = FX_GLOBAL_RANGES[param];
+        projectSession.update((p) => {
+            p.fx[field] = Math.max(r.min, Math.min(r.max, Number(value)));
+        }, 'fx', 'tracks');
+        return this.list();
+    },
+    duck(slot) { return this.global('duckSource', slot == null ? -1 : slot); },
+};
