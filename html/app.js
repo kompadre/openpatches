@@ -575,14 +575,13 @@ jobManager.setOpts(jobOpts);
 
 // --- File input handler ---
 //
-// The menu option that opened the picker is remembered, because the file's
-// extension alone cannot be trusted to say what it is: Android's download
-// manager renames an exported `name.opproj` (served as application/json)
-// to `name.opproj.json`, so the file the user gets back no longer ends in
-// the extension we gave it. Routing by extension sent such a project down
-// the WAV path, and the probe server answered "not a valid WAV file".
-// A recognised extension still wins (the file is unambiguous); the intent
-// decides only when the extension says nothing.
+// Android's download manager renames an exported `name.opproj` (served as
+// application/json) to `name.opproj.json`, so the file the user gets back
+// no longer ends in the extension we gave it. That rename is deterministic,
+// so `.opproj.json` is recognised as a project alongside `.opproj` — a bare
+// `.json` is not, it could be anything. The menu option that opened the
+// picker is remembered too: a recognised extension still wins (the file is
+// unambiguous), the intent decides only when the extension says nothing.
 let pickKind = null; // 'project' | 'wav' | 'syx', or null when nothing was clicked
 
 fileInput.addEventListener('change', async () => {
@@ -593,7 +592,7 @@ fileInput.addEventListener('change', async () => {
 
     const lower = file.name.toLowerCase();
     const extSays =
-        lower.endsWith('.' + FILE_EXTENSION) || lower.endsWith('.json') ? 'project'
+        lower.endsWith('.' + FILE_EXTENSION) || lower.endsWith('.' + FILE_EXTENSION + '.json') ? 'project'
         : lower.endsWith('.syx') ? 'syx'
         : lower.endsWith('.wav') ? 'wav'
         : null;
