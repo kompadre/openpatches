@@ -3898,6 +3898,22 @@ footer {
 
 .midi-btn-small { padding: 0.25rem 0.5rem; font-size: 0.72rem; }
 
+/* Guided (turn-based) bank send: one voice per step */
+.midi-guided-count {
+    font-size: 0.72rem;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin: 0.2rem 0 0;
+}
+
+.midi-guided-name {
+    font-size: 1.25rem;
+    color: #eee;
+    margin: 0.15rem 0 0.6rem;
+    font-family: monospace;
+}
+
 /* --- Projects dialog --- */
 
 .project-intro {

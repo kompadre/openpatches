@@ -13,7 +13,8 @@ describe('profile table', () => {
             assert.equal(p.id, id, `${id}: id matches its key`);
             assert.ok(p.name && p.family, `${id}: name + family`);
             assert.ok(Array.isArray(p.aliases) && Array.isArray(p.notes) && p.notes.length > 0, `${id}: aliases/notes`);
-            assert.equal(p.programCount, 32, `${id}: a DX7 bank is 32 voices wherever it lands`);
+            assert.ok(p.programCount >= 32, `${id}: at least the 32 voices of a DX7 bank`);
+            assert.ok(['bulk', 'guided'].includes(p.bankSend.strategy), `${id}: a known send strategy`);
             assert.ok(['full', 'ignored'].includes(p.velocity), `${id}: velocity`);
             assert.equal(typeof p.multitimbral, 'boolean', `${id}: multitimbral`);
             assert.ok(p.polyphony === null || Number.isInteger(p.polyphony), `${id}: polyphony`);
@@ -41,8 +42,15 @@ describe('profile table', () => {
         assert.equal(DEVICE_PROFILES.dexed.bankSend.memoryProtect, null);
         assert.equal(DEVICE_PROFILES.volcafm.bankReceive.supported, false, 'the volca is receive-only');
         assert.equal(DEVICE_PROFILES.volcafm.bankSend.memoryProtect, null);
-        assert.equal(DEVICE_PROFILES.volcafm.polyphony, 6);
+        assert.equal(DEVICE_PROFILES.volcafm.bankSend.strategy, 'guided', 'no bulk dump: voices go one at a time');
+        assert.equal(DEVICE_PROFILES.volcafm.polyphony, 3, 'the original is 3-voice; 6 is the fm2');
         assert.equal(DEVICE_PROFILES.volcafm.velocity, 'ignored');
+        assert.equal(DEVICE_PROFILES.volcafm2.bankSend.strategy, 'guided');
+        assert.equal(DEVICE_PROFILES.volcafm2.bankReceive.supported, false);
+        assert.equal(DEVICE_PROFILES.volcafm2.polyphony, 6);
+        assert.equal(DEVICE_PROFILES.volcafm2.velocity, 'full', 'the fm2 added velocity response');
+        assert.equal(DEVICE_PROFILES.volcafm2.programCount, 64, 'the fm2 doubled the program slots');
+        assert.equal(DEVICE_PROFILES.dx7.bankSend.strategy, 'bulk');
         assert.equal(DEVICE_PROFILES.generic.bankReceive.dumpRequest, true, 'unknown synths get the optimistic path');
         for (const p of Object.values(DEVICE_PROFILES)) assert.equal(p.bankSend.supported, true, p.id + ' accepts a bank');
     });
@@ -70,7 +78,10 @@ describe('detection from the port name', () => {
         ['Dexed MIDI In', 'dexed'],
         ['volca fm', 'volcafm'],
         ['Korg volca fm SOUND', 'volcafm'],
-        ['volca fm2', 'volcafm'],
+        ['volca fm2', 'volcafm2'],
+        ['Korg volca fm2 SOUND', 'volcafm2'],
+        ['volca fm mk2', 'volcafm2'],
+        ['volca fm mkII', 'volcafm2'],
         ['volca-fm', 'volcafm'],
         ['DX7', 'dx7'],
         ['Yamaha DX-7', 'dx7'],
@@ -92,6 +103,11 @@ describe('detection from the port name', () => {
             assert.equal(detectDeviceType(name), expected);
         });
     }
+
+    test('fm2 wins over the plain volca fm match it also contains', () => {
+        assert.equal(detectDeviceType('volca fm2'), 'volcafm2');
+        assert.equal(detectDeviceType('volca fm'), 'volcafm');
+    });
 
     test('II-series wins over the plain DX7 match it also contains', () => {
         // The order of the rules is load-bearing: "DX7II" matches /dx7/ too.

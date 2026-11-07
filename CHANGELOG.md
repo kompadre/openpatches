@@ -2,6 +2,14 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-07: Guided bank send for the volcas; volca fm2 as its own profile
+
+**The volcas take no bulk dump.** Tested on the user's volca fm mk2: a 4104-byte bank dump never lands — either the CPU cannot drain it at wire speed or it is simply not implemented (the manual's MIDI chart does not list it). So `bankSend` grew a `strategy` field (`'bulk'` | `'guided'`) and `sendBankToDevice` routes guided profiles to **`sendBankGuided`**: each voice is sent to the edit buffer in turn (`sendVoiceToEditBuffer` with a new `force` option — the dedupe cache is a guess about hardware the user has been saving and knob-turning on between steps), and a modal walks the user through saving it on the device: intro (the Start click is the permission gesture) → per-voice step with name, `Voice n of N`, Resend on failure → Next/Done, Cancel anywhere, the log saying how far it got. No backup leg and no overwrite warning: nothing changes on the device except what the user writes there.
+
+**`volcafm2` is a separate profile** (and `volca fm2` / `mk2` / `mkII` port names detect as it, ordered before the plain `volcafm` rule it also matches): 6-voice where the original is 3 (the old profile wrongly said 6 — fixed), velocity-sensitive where the original ignores it, 64 program slots (`programCount` is now "at least 32"). Both volcas are guided, receive-only, no memory protect.
+
+Tests: `midi-guided-send` (full walk with one 163-byte format-0 dump per step and the right voice in each, forced resend past the dedupe cache, cancel logs `stopped after 2 of 3`, Resend repeats without advancing, failure shows the warning); `midi-devices` and `midi-panel-devices` updated (the volca now opens the guided dialog, not the bulk confirm). 1020 unit, 106 e2e.
+
 ## 2026-11-07: The `⤒ WAV` offer only on containers born of WAV inference
 
 **Fixed: `.syx` and demo containers asked for a source WAV they never had.** Loading a `.syx` bank or the demo leaves a job record (`syx_import` / `demo_import`) so the container gets a `jobId`, and `canvas.js` built its WAV block on `ctr.jobId` alone: it looked the blob up, found nothing, and offered `⤒ WAV`. New `isWavJob(job)` in `patch-model.js` gates the whole block — an **allow-list**: `wav_import`, or no type at all (records predating the field; the `Job` class defaults those the same), so a future job type is not mistaken for one. Non-WAV containers now skip the IndexedDB lookup too. The existing re-upload e2e seeded a job typed `'wav'`, which no code writes; it now uses `wav_import`.

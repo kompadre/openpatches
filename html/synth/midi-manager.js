@@ -1011,9 +1011,13 @@ export function setAuditionEnabled(on) {
  *
  * Sent unstamped on purpose: the audition note-on that follows is delayed
  * by the output latency, so the dump gets that much of a head start.
+ *
+ * `force` sends even when the bytes match the last send. The guided bank
+ * flow needs it: between steps the user has been saving and knob-turning on
+ * the device, so "already loaded" is a guess about hardware we cannot see.
  * @returns {boolean} whether the device was (or already was) loaded
  */
-export function sendVoiceToEditBuffer(voiceData) {
+export function sendVoiceToEditBuffer(voiceData, { force = false } = {}) {
     const port = getOutputPort();
     if (!port || !hasSysex()) return false;
 
@@ -1021,7 +1025,7 @@ export function sendVoiceToEditBuffer(voiceData) {
     if (!packed) return false;
 
     const key = packed.join(',');
-    if (key === lastAuditionVoice) return true;
+    if (!force && key === lastAuditionVoice) return true;
 
     const msg = buildVoiceDump(packed, { channel: deviceChannel });
     if (!msg) return false;

@@ -24,7 +24,9 @@
  * @property {number|null} polyphony  null = unknown.
  * @property {'full'|'ignored'} velocity
  * @property {boolean} multitimbral   Can address several channels at once.
- * @property {{supported: boolean, target: string, memoryProtect: string|null}} bankSend
+ * @property {{supported: boolean, strategy: 'bulk'|'guided', target: string, memoryProtect: string|null}} bankSend
+ *   strategy 'bulk' = one 4104-byte dump; 'guided' = one voice at a time
+ *   through the edit buffer, the user saving each on the device.
  * @property {{supported: boolean, dumpRequest: boolean, manualHint: string|null, reason: string|null}} bankReceive
  * @property {string} editBufferNote  What a single-voice dump does on this device.
  * @property {string} sysexChannelNote
@@ -47,6 +49,7 @@ export const DEVICE_PROFILES = {
         multitimbral: false,
         bankSend: {
             supported: true,
+            strategy: 'bulk',
             target: 'all 32 voices in the device’s bank memory',
             memoryProtect: 'If the synth has a memory protect switch, turn it off first; ' +
                 'with protection on the dump is ignored silently.',
@@ -74,6 +77,7 @@ export const DEVICE_PROFILES = {
         multitimbral: false,
         bankSend: {
             supported: true,
+            strategy: 'bulk',
             target: 'all 32 internal voices',
             memoryProtect: 'Turn memory protect off first: Function › Memory Protect › Internal: OFF. ' +
                 'With protection on the DX7 ignores the dump silently.',
@@ -107,6 +111,7 @@ export const DEVICE_PROFILES = {
         multitimbral: false,
         bankSend: {
             supported: true,
+            strategy: 'bulk',
             target: 'the 32 voices of the selected internal bank',
             memoryProtect: 'Turn memory protect off first (Edit › Utility › Memory Protect), ' +
                 'or the dump is ignored.',
@@ -139,6 +144,7 @@ export const DEVICE_PROFILES = {
         multitimbral: false,
         bankSend: {
             supported: true,
+            strategy: 'bulk',
             target: 'the 32 programs of the currently loaded cartridge (in memory, not on disk until you save it in Dexed)',
             memoryProtect: null,
         },
@@ -161,32 +167,73 @@ export const DEVICE_PROFILES = {
         id: 'volcafm',
         name: 'Korg volca fm',
         family: 'korg',
-        aliases: ['volca fm', 'volca fm2'],
+        aliases: ['volca fm'],
         programCount: 32,
-        polyphony: 6,
-        // The original volca fm plays every note at full velocity; the fm2
-        // added velocity response.
+        polyphony: 3,
         velocity: 'ignored',
         multitimbral: false,
         bankSend: {
             supported: true,
-            target: 'programs 1–32 (there is no undo, and no memory protect to save you)',
+            // A single 4104-byte bulk dump is not in the volca's MIDI
+            // implementation chart and did not land in testing — either the
+            // CPU cannot drain it at wire speed or it is simply ignored. So
+            // voices go one at a time through the edit buffer, the user
+            // saving each on the device between steps.
+            strategy: 'guided',
+            target: 'one voice at a time, each saved by hand on the volca',
             memoryProtect: null,
         },
         bankReceive: {
             supported: false,
             dumpRequest: false,
             manualHint: null,
-            reason: 'The volca fm receives DX7 dumps but never transmits them, so its programs ' +
+            reason: 'The volca fm receives DX7 voices but never transmits them, so its programs ' +
                 'cannot be backed up from here.',
         },
         editBufferNote: 'A single-voice dump replaces the current program’s sound until another ' +
             'program is selected or it is saved on the volca.',
         sysexChannelNote: 'Device channel = the volca’s MIDI channel.',
         notes: [
-            'Receive-only: cannot be backed up before a bank is written.',
-            '6-voice polyphonic — busy piano-roll parts will steal voices.',
-            'The original ignores note velocity (the fm2 does not).',
+            'Receive-only: its programs cannot be backed up from here.',
+            'Bank sends are guided, one voice at a time — save each on the volca when asked.',
+            '3-voice polyphonic — busy piano-roll parts will steal voices.',
+            'Ignores note velocity (the fm2 does not).',
+        ],
+    },
+
+    volcafm2: {
+        id: 'volcafm2',
+        name: 'Korg volca fm2 (mk2)',
+        family: 'korg',
+        aliases: ['volca fm2', 'volca fm mk2'],
+        programCount: 64,
+        polyphony: 6,
+        // The fm2 added velocity response over the original.
+        velocity: 'full',
+        multitimbral: false,
+        bankSend: {
+            supported: true,
+            // Same story as the original: no bulk dump in the manual, none
+            // in testing (reported from a real mk2) — guided it is.
+            strategy: 'guided',
+            target: 'one voice at a time, each saved by hand on the volca',
+            memoryProtect: null,
+        },
+        bankReceive: {
+            supported: false,
+            dumpRequest: false,
+            manualHint: null,
+            reason: 'The volca fm2 receives DX7 voices but never transmits them, so its programs ' +
+                'cannot be backed up from here.',
+        },
+        editBufferNote: 'A single-voice dump replaces the current program’s sound until another ' +
+            'program is selected or it is saved on the volca.',
+        sysexChannelNote: 'Device channel = the volca’s MIDI channel.',
+        notes: [
+            'Receive-only: its programs cannot be backed up from here.',
+            'Bank sends are guided, one voice at a time — save each on the volca when asked.',
+            '6-voice polyphonic, 64 program slots.',
+            'Responds to note velocity (the original volca fm does not).',
         ],
     },
 };
@@ -195,7 +242,7 @@ export const DEVICE_TYPE_AUTO = 'auto';
 
 /** Ids in the order the settings select shows them (auto first). */
 export function listDeviceTypes() {
-    return [DEVICE_TYPE_AUTO, 'dx7', 'dx7ii', 'dexed', 'volcafm', 'generic'];
+    return [DEVICE_TYPE_AUTO, 'dx7', 'dx7ii', 'dexed', 'volcafm', 'volcafm2', 'generic'];
 }
 
 export function isDeviceType(id) {
@@ -208,6 +255,8 @@ const DETECT_RULES = [
     ['dx7ii', /dx7\s*-?\s*(ii|2)|dx7s\b|tx802/i],
     ['dx7', /\bdx\s*-?7\b|\btx7\b/i],
     ['dexed', /dexed/i],
+    // fm2 before fm: "volca fm2" also contains "volca fm".
+    ['volcafm2', /volca\s*-?\s*fm\s*-?\s*(2|mk\s*-?\s*(ii|2))/i],
     ['volcafm', /volca\s*-?\s*fm/i],
 ];
 

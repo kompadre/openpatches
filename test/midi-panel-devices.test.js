@@ -41,7 +41,7 @@ describe('Device type select', () => {
         const sel = document.body.querySelector('.midi-device-type');
         const values = sel.querySelectorAll('option').map(o => o.value);
         assert.equal(values[0], 'auto');
-        assert.deepEqual(values.slice(1).sort(), ['dexed', 'dx7', 'dx7ii', 'generic', 'volcafm']);
+        assert.deepEqual(values.slice(1).sort(), ['dexed', 'dx7', 'dx7ii', 'generic', 'volcafm', 'volcafm2']);
         assert.equal(sel.value, 'auto');
 
         sel.value = 'dx7';
@@ -65,7 +65,7 @@ describe('Device type select', () => {
         await enableWith('Korg volca fm');
         panel.openMidiSettings({});
         const notes = () => document.body.querySelector('.midi-device-notes').children.map(li => li.textContent);
-        assert.ok(notes().some(n => /6-voice/.test(n)), 'volca notes');
+        assert.ok(notes().some(n => /3-voice/.test(n)), 'volca notes');
         const sel = document.body.querySelector('.midi-device-type');
         sel.value = 'dx7';
         sel.dispatch('change');
@@ -101,15 +101,21 @@ describe('send-bank confirmation follows the profile', () => {
         };
     }
 
-    test('volca fm: backup is off and disabled with the reason, and no memory-protect advice', async () => {
+    test('volca fm: no bulk confirm — the guided dialog opens instead', async () => {
         await enableWith('Korg volca fm');
-        const ui = await openConfirm();
-        assert.equal(ui.backupBox.checked, false);
-        assert.equal(ui.backupBox.disabled, true);
-        assert.match(ui.backupHint.textContent, /never transmits/);
-        assert.equal(ui.warnings.length, 1, 'only the overwrite warning');
-        assert.ok(ui.hints.some(h => /as Korg volca fm/.test(h)));
-        await ui.cancel();
+        const done = panel.sendBankToDevice(patches, 'My bank', {
+            appendLog() {}, showProgress() {}, hideProgress() {}, setProgressLabel() {},
+            showError(m) { throw new Error('unexpected error dialog: ' + m); },
+            onBackupReceived() {},
+        });
+        await flush();
+        const overlay = document.body.querySelector('.modal-overlay');
+        assert.ok(overlay, 'a dialog is open');
+        assert.equal(overlay.querySelector('.midi-backup-box'), null, 'no backup leg in the guided flow');
+        const buttons = overlay.querySelectorAll('button');
+        assert.ok(buttons.some(b => b.textContent === 'Start'), 'the guided intro');
+        buttons.find(b => b.textContent === 'Cancel').dispatch('click');
+        await done;
     });
 
     test('Dexed: same posture, with its own reason', async () => {
@@ -133,7 +139,7 @@ describe('send-bank confirmation follows the profile', () => {
 
     test('an explicit choice beats the port name', async () => {
         await enableWith('UM-ONE');
-        midi.setDeviceType('volcafm');
+        midi.setDeviceType('dexed');
         const ui = await openConfirm();
         assert.equal(ui.backupBox.disabled, true);
         await ui.cancel();

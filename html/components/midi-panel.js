@@ -548,6 +548,12 @@ export async function sendBankToDevice(patches, bankName, opts) {
         return;
     }
 
+    // A volca takes its bank one voice at a time (see the profile for why);
+    // that flow is a different dialog altogether.
+    if (midi.getDeviceProfile().bankSend.strategy === 'guided') {
+        return sendBankGuided(patches, bankName, opts);
+    }
+
     const confirmed = await confirmSend(patches, bankName);
     if (!confirmed) return;
 
@@ -603,6 +609,130 @@ export async function sendBankToDevice(patches, bankName, opts) {
         showError('Sending the bank failed.\n\n' + err.message);
         appendLog(`Bank send failed: ${err.message}`);
     }
+}
+
+// --- Guided (turn-based) bank send -------------------------------------
+//
+// For devices whose profile says bankSend.strategy 'guided' (the volcas):
+// no bulk dump, instead each voice is sent to the edit buffer and the user
+// saves it to a program slot on the device before asking for the next one.
+// Nothing is overwritten unless the user writes it there, so there is no
+// backup leg and no overwrite warning — the device's own save step is the
+// confirmation.
+async function sendBankGuided(patches, bankName, opts) {
+    const { appendLog, showError } = opts;
+    const profile = midi.getDeviceProfile();
+    const total = patches.length;
+
+    await new Promise((resolve) => {
+        let settled = false;
+        const finish = () => { if (!settled) { settled = true; resolve(); } };
+
+        // -1 = intro screen; 0..total-1 = one voice per step.
+        let step = -1;
+        let sendOk = false;
+
+        openModal('Send bank to ' + profile.name, (body, close) => {
+            const done = (logLine) => {
+                appendLog(logLine);
+                finish();
+                close();
+            };
+
+            const sendCurrent = () => {
+                sendOk = midi.sendVoiceToEditBuffer(patches[step].voice_data, { force: true });
+                return sendOk;
+            };
+
+            const render = () => {
+                body.innerHTML = '';
+                if (step < 0) return renderIntro();
+                renderStep();
+            };
+
+            const renderIntro = () => {
+                const info = el('div', 'midi-warning midi-warning-info');
+                info.innerHTML = '<strong>One voice at a time.</strong> ' +
+                    'The ' + escapeHtml(profile.name) + ' does not take a 32-voice bulk dump, so each of the ' +
+                    total + ' voice(s) of ' + escapeHtml(bankName) + ' is sent to its edit buffer in turn. ' +
+                    'After each send, save the voice to a program slot <em>on the volca</em> ' +
+                    '(hold WRITE, pick a slot), then click Next here. ' +
+                    'Nothing on the device changes except what you save.';
+                body.appendChild(info);
+                body.appendChild(el('p', 'midi-hint',
+                    'Sending on device channel ' + (midi.getDeviceChannel() + 1) + ' as ' + escapeHtml(profile.name) + '.'));
+
+                const actions = el('div', 'midi-actions');
+                const cancelBtn = el('button', 'midi-btn', 'Cancel');
+                const startBtn = el('button', 'midi-btn midi-btn-danger', 'Start');
+                actions.appendChild(cancelBtn);
+                actions.appendChild(startBtn);
+                body.appendChild(actions);
+
+                cancelBtn.addEventListener('click', () => done('Guided send of ' + bankName + ' cancelled'));
+                startBtn.addEventListener('click', async () => {
+                    // This click is the user gesture the permission prompt needs.
+                    try {
+                        await midi.requestMidi({ sysex: true });
+                    } catch (err) {
+                        showError('SysEx permission is required to send patches to a device, and it was not granted. ' +
+                            '(' + err.message + ')');
+                        done('Guided send of ' + bankName + ' aborted: no SysEx permission');
+                        return;
+                    }
+                    if (!midi.getOutputPort()) {
+                        showError('No MIDI output device is selected. Open MIDI › Devices and pick one.');
+                        done('Guided send of ' + bankName + ' aborted: no output device');
+                        return;
+                    }
+                    step = 0;
+                    sendCurrent();
+                    render();
+                });
+            };
+
+            const renderStep = () => {
+                const patch = patches[step];
+                const last = step === total - 1;
+
+                body.appendChild(el('p', 'midi-guided-count', 'Voice ' + (step + 1) + ' of ' + total));
+                body.appendChild(el('h4', 'midi-guided-name', patch.name || 'Untitled'));
+
+                const status = el('p', sendOk ? 'midi-hint midi-guided-status' : 'midi-warning midi-guided-status');
+                status.textContent = sendOk
+                    ? 'Sent to the edit buffer — play a key on the volca to check it, save it to a ' +
+                      'program slot (hold WRITE, pick a slot), then click ' + (last ? 'Done' : 'Next') + '.'
+                    : 'Could not send this voice — check the MIDI connection, then Resend.';
+                body.appendChild(status);
+
+                const actions = el('div', 'midi-actions');
+                const cancelBtn = el('button', 'midi-btn', 'Cancel');
+                const resendBtn = el('button', 'midi-btn midi-guided-resend', 'Resend');
+                const nextBtn = el('button', 'midi-btn midi-btn-danger midi-guided-next', last ? 'Done' : 'Next');
+                actions.appendChild(cancelBtn);
+                actions.appendChild(resendBtn);
+                actions.appendChild(nextBtn);
+                body.appendChild(actions);
+
+                cancelBtn.addEventListener('click', () =>
+                    done('Guided send of ' + bankName + ' stopped after ' + (step + (sendOk ? 1 : 0)) +
+                        ' of ' + total + ' voice(s)'));
+                resendBtn.addEventListener('click', () => { sendCurrent(); render(); });
+                nextBtn.addEventListener('click', () => {
+                    if (last) {
+                        done('Sent ' + bankName + ' to ' + portName(midi.getOutputPort()) +
+                            ' one voice at a time (' + total + ' voice(s), saved on the device)');
+                        return;
+                    }
+                    step += 1;
+                    sendCurrent();
+                    render();
+                });
+            };
+
+            render();
+        }, { onClose: finish });
+    });
 }
 
 // Resolves to { backup: boolean } on confirm, or null on cancel.

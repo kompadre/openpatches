@@ -327,7 +327,8 @@ only when a feature needs it, and SysEx is a separate upgrade on top.
   `test/midi-panel-permissions.test.js`.
 - [x] **MIDI device profiles (2026-10-28) — first cut.** `html/synth/midi-devices.js`
   is a data table of what differs between DX7-dialect synths: `generic`,
-  `dx7` (Mk I, also TX7), `dx7ii` (II-D/II-FD/DX7s/TX802), `dexed`, `volcafm`.
+  `dx7` (Mk I, also TX7), `dx7ii` (II-D/II-FD/DX7s/TX802), `dexed`, `volcafm`,
+  and (2026-11-07) `volcafm2`.
   Per profile: `bankSend {supported, target, memoryProtect|null}`,
   `bankReceive {supported, dumpRequest, manualHint, reason}`, `programCount`,
   `polyphony`, `velocity`, `multitimbral`, `editBufferNote`,
@@ -335,7 +336,8 @@ only when a feature needs it, and SysEx is a separate upgrade on top.
   requests** (front panel: Function › 8 › MIDI › Transmit) and has memory
   protect; the **II-series answers dump requests**; **Dexed and the volca fm
   are receive-only** (no dump request, cannot transmit) and have no memory
-  protect; volca is 6-voice and the original ignores velocity. The
+  protect; the original volca is 3-voice and ignores velocity, the fm2 is
+  6-voice, 64 slots, velocity-sensitive (separate profiles since 2026-11-07). The
   `generic` fallback is optimistic (sends the request) and verbose. Selection:
   `midi.getDeviceType()`/`setDeviceType(id)` persisted, default `'auto'` →
   `detectDeviceType(portName)` on the output's name (rules ordered
@@ -347,8 +349,13 @@ only when a feature needs it, and SysEx is a separate upgrade on top.
   front with `bankReceive.reason` on receive-only devices (before the
   input-port check, nothing sent, no collector left armed), skips the dump
   request when `dumpRequest` is false, and its timeout message names the
-  device and carries `manualHint`. `sendBank()` checks `bankSend.supported`
-  (all current profiles accept banks). **Panel:** "Device type" select
+  device and carries `manualHint`. `sendBank()` checks `bankSend.supported`.
+  **(2026-11-07)** `bankSend.strategy` ('bulk' | 'guided'): the volcas take no
+  bulk dump (ignored on real hardware), so `sendBankToDevice` routes them to
+  `sendBankGuided` — each voice to the edit buffer via
+  `sendVoiceToEditBuffer(vd, {force})`, a modal walks the user through saving
+  each on the device (Start/Next/Resend/Done/Cancel), no backup leg.
+  `test/midi-guided-send.test.js`. **Panel:** "Device type" select
   (`.midi-device-type`, Auto-detect shows the detected name) with the
   profile's notes under it; the send-bank confirm uses `bankSend.target` in
   the overwrite warning, shows the memory-protect box only when the profile
@@ -356,8 +363,9 @@ only when a feature needs it, and SysEx is a separate upgrade on top.
   the device cannot be dumped. Not yet wired (data only): `polyphony`,
   `velocity`, `multitimbral` — the latter is the Phase 3b hook. Unverified
   details flagged for a hardware pass: TX802 bank placement (64 internal
-  voices, which half a 32-voice dump fills), volca fm2 program count, whether
-  Dexed really ignores `F0 43 2n 09 F7` (believed so). Tests:
+  voices, which half a 32-voice dump fills), whether
+  Dexed really ignores `F0 43 2n 09 F7` (believed so). Verified on hardware
+  (2026-11-07, user's volca fm mk2): bulk dumps do not land — hence guided. Tests:
   `test/midi-devices.test.js`, device block in
   `test/midi-sysex-transport.test.js`, `test/midi-panel-devices.test.js`.
 - [ ] **Phase 3b (later, as agreed)** — note-on scheduling (the `time` option
