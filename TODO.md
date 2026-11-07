@@ -37,27 +37,6 @@ Project backlog. Parent tasks with nested subtasks; `[ ]` pending, `[x]` done,
 - [x] **Storage garbage collection, on demand only** (File → Storage…): report usage per project and for WAVs, delete WAV blobs no job references. No compaction or sharing at project level, and nothing on save.
 - [x] **Import from another project into the current one**: like Import Project, with a step to opt in/out of what comes in (patches, patterns).
 
-### Plan (agreed 2026-11-07) — track effects; each phase moves to SESSION.md when started
-
-Decided with the user: effects live in **WASM**, not in a WebAudio graph of
-eight per-channel outputs. Two reasons settled it — `DynamicsCompressorNode`
-has no sidechain input, so "one track boosted, everybody else ducks" is not
-expressible in the native graph without main-thread envelope following; and
-a future piece mixdown renders through the same `render_audio` the live
-worklet uses, so the export matches what was heard by construction.
-
-**Phase 1 — WASM effects engine.** _Done 2026-11-07._
-
-**Phase 2 — Model and plumbing.** _Done 2026-11-07._
-
-**Phase 3 — Mixer UI.** _Done 2026-11-07._ An `FX` button per strip (four
-letters, lit per effect) opening a popover of toggles and sliders; a
-`Reverb · Duck` button in the Mixer header for the mix. `window.__opFx`
-stays as the e2e seam.
-
-**Phase 4 — Finish.** Playwright, `HEARME.tts`, `CHANGELOG.md`, TODO
-reconciliation.
-
 ### Ideas
 
 - [ ] Import and export **MIDI** (patterns ↔ MIDI files; a section or the piece as a multi-track SMF).

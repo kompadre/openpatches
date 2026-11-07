@@ -17,143 +17,34 @@ run `node --check` + `node --test` and tick this file only. (Open: AGENTS.md
 "Keep it current ... in the same commit/change" reads per-change; awaiting
 the user's wording if SESSION.md should be deferred too.)
 
-### Track effects — Phases 1-3 DONE 2026-11-07, phase 4 (finish) in TODO.md
+### Track effects — DONE 2026-11-07 (all four phases, see CHANGELOG)
 
-**Phase 3** is the Mixer UI: `html/components/fx-panel.js`. Each strip has
-an `FX` button whose four letters (D O C R — delay, overdrive, compressor,
-reverb send) light per effect; it opens a popover of toggles and sliders,
-the way the ♫ slot picker does. The header's `Reverb · Duck` button opens
-the mix's popover, with the boosted track as a select of occupied slots.
+Live state only — what a future change could trip over:
 
-- **Two write paths, on purpose.** A slider tick calls `onFxLive` (threaded
-  voicebank → toolbar → app.js → `setFxParam`) so the engine hears the drag;
-  the release commits through the session. Committing per tick would
-  re-render the Section editor and the roll's legend sixty times a second.
-  The single-param setter updates `sendFxSnapshot`'s cache, so the snapshot
-  the commit triggers sends nothing.
-- **Popover commits carry source `voicebank-fx`, not `voicebank`.** The
-  Mixer skips re-reading its strips on its own fader writes (it would fight
-  the drag) — but it does redraw the FX letters on a popover commit, and a
-  fader *tap* calls `saveState` inside the touch event chain where a
-  synchronous render was deliberately avoided. The roll treats
-  `voicebank-fx` like a Mixer write for its `liveCache` (no pattern moved).
-- **The popover reads the track by slot on every write**, never from a
-  captured object: slots swap under it (a drop on the Mixer, the Section
-  editor's slot select), and the popover is for the slot.
-- **The popover lives in `document.body`, `position: fixed`**, so the
-  strip's re-render (which rebuilds the anchor) neither moves nor destroys
-  it. One popover at a time; any session event from another source closes
-  it; Escape and a click outside close it. The outside-click listener is
-  attached on a `setTimeout(0)` — the opening click is still propagating.
-- **The header button sits right after the title, not `space-between`:**
-  in the bottom pane the header is as wide as all eight strips and
-  overflows sideways, so a button at its far end was off screen and
-  focusing it scrolled the strips away. Found by screenshot.
-- **`TRACK_SECTIONS` is checked against `FX_FIELDS`** in
-  `test/fx-panel.test.js`: a parameter the engine has and the panel does
-  not list is one nobody can set.
-- **Pre-existing, not touched:** on a 390px phone the strips' M/S/▶/× row
-  overflows its 86px strip and overlaps the neighbour ("S ▌M"). Verified
-  identical at the previous commit. The stylesheet documents the spill
-  for strips under 84px; the mobile rule sets `padding: 4px 2px` and no
-  min-width. Worth a line in phase 4 or its own small fix.
-- **The generic `button {}` rule** (pink, 0.75rem padding) is what every
-  small control here overrides; a new button in the Mixer that forgets to
-  will come out as a large pink pill.
-
-**Phase 2** wired the model and the plumbing. `track.fx` and `project.fx`
-are built from the tables in `html/synth/fx-params.js`, pushed to the
-engine by `sendFxSnapshot` in audio-manager, and applied by the
-`fx-param`/`fx-global`/`fx-enabled`/`fx-snapshot` messages in
-dx7-processor. No Mixer controls yet — **`window.__opFx` in the browser
-console is the way to work the rack** (`__opFx.list()`,
-`__opFx.on(0,'delay')`, `__opFx.set(0,'delayMix',0.5)`,
-`__opFx.global('reverbLevel',0.8)`, `__opFx.duck(0)`), in the spirit of
-`window.__opDock` and `window.__opProject`. Phase 3 replaces it.
-
-- **`clampInt` rounds, so effect parameters needed `clampNum`.** A delay
-  feedback of 0.35 stored as 0 and a mix of 0.3 as silence. Same explicit
-  `null` guard, no rounding. Any new fractional field must use it.
-- **Flags and parameters are separate fields on purpose.** Switching an
-  effect off is a bypass, not a reset: the settings stay, which is also
-  what lets the engine take its fast path with nothing lost.
-- **`duckSource` is validated, not clamped.** Clamping turned a stored 99
-  into slot 7 and silently boosted whatever track was there. It is a slot
-  name, not a continuous value. `normalizeProject` also drops a duck
-  source naming an empty slot — otherwise the mix ducks under a track that
-  does not exist and nothing in the UI explains why it went quiet.
-- **A deleted track's delay keeps ringing** unless its slot is switched
-  OFF explicitly. `sendFxSnapshot` addresses empty slots rather than
-  skipping them; `test/fx-snapshot.test.js` is the guard.
-- **`sendFxSnapshot` is a no-op until the worklet is up**, so the status
-  callback pushes on `ready`. Any e2e test touching the rack has to start
-  audio first (press a key) or it silently observes nothing.
-- **`pushFx` holds its own `fxSession` reference**, not `projectSession`:
-  `setOnStatusChange` calls back synchronously during module evaluation,
-  before that `const` exists, and touching it there is a TDZ
-  ReferenceError rather than an undefined.
-- **Old projects get a rack on load** — every path (`store.open`,
-  `project-io` import) goes through `createProject` → `normalizeProject`.
-  A track reaching `__opFx` without one got past `createTrack`, and the
-  handle throws rather than papering over it.
-- **`e2e/fx.spec.js` has the only test that listens.** It taps the worklet
-  with an AnalyserNode and measures ~1 s after a note, where a dry note
-  has decayed to nothing and delay repeats have not. Measured dry 0.000,
-  delay on 0.140, delay off 0.000.
-
-**Phase 1** below.
-
-
-Effects run **in WASM**, between the FM engine's per-channel sum and the
-global ResoFilter in `SynthUnit::GetSamples`. New files:
-`external/msfa-wasm/fx.{h,cc}` (FxRack), `external/msfa-wasm/fx_params.h`,
-`html/synth/fx-params.js`. Chain per channel: delay -> drive -> compressor
--> reverb send, then one **shared** reverb and one ducker. Not wired to any
-UI yet — phase 2.
-
-- **The FM engine is fixed-point; the effects stage is float.** `audiobuf`
-  is 28-bit full scale at that point (the output stage does `>> 4` then
-  clips against `1 << 24`), so `FX_IN_SCALE` is `2^-28`. Anything added to
-  the stage works at +/- 1.0 and must not assume the engine's Q format.
-- **Bypass is exact and tested.** With every channel mask 0 and ducking
-  off, `GetSamples` takes the old path and the output is identical sample
-  for sample — `test/wasm-fx.test.js` asserts that even after every
-  parameter has been set. Do not add anything to the stage that runs
-  before the `fx_active` check.
-- **`FxRack` is a process-wide global, not a SynthUnit member**, so
-  `reset_engine()` does not forget the user's settings — the same reasoning
-  that keeps channel volumes static. `reset_engine()` calls `ClearState()`,
-  which drops delay lines and reverb tails (the stop has to be silent) and
-  keeps the parameters. A **fresh worklet** is a different matter: it has
-  engine defaults, so phase 2 must push an fx snapshot next to the voice
-  snapshot.
-- **`fx_params.h` and `fx-params.js` are one contract in two languages.**
-  `test/fx-params-sync.test.js` parses the header and compares. Append new
-  parameters at the END of the enums — renumbering silently repoints every
-  saved project's parameters at something else.
-- **`channel_outputs_` was 12.8 MB for a diagnostic nothing reads.**
-  `get_channel_samples` has no caller outside tests, so the capture buffer
-  is now 8192 samples, not 200000. Steady-state WASM memory went **30.3 MB
-  -> 19.3 MB** *with* the effects' 1.3 MB of delay lines in it.
-- **Shrinking it exposed a latent overrun:** `GetSamples` memset the
-  capture to `n_samples`, unclamped, and only ever survived because the
-  buffer was wider than any render. An 800 ms offline render walked off the
-  end of WASM memory. Fixed and guarded by a test; `GetChannelSamples` now
-  zero-fills past the capture window rather than returning stale samples.
-- **Silent channels are skipped** via a per-block `touched` bitmask, unless
-  they own a tail (delay or reverb send). Drive and compression of silence
-  are silence, so the skip is exact, not an approximation. This is what
-  keeps the stage cheap on a project using three tracks of eight.
-- **Measured cost** (Node/V8 on this machine, not a phone's AudioWorklet):
-  three tracks playing with every effect on is **0.83% of realtime**,
-  against 0.35% bypassed. The relative figure is large (+137%) only because
-  the FM baseline is small; the FM engine's cost scales with voice count
-  while the effects' is roughly fixed. Eight busy voices: 1.30% vs 0.79%.
-- Deliberately **one shared reverb on a send bus**, not eight instances.
-  It is the one effect here whose per-track cost would actually matter.
-- **Delay time changes crossfade over one block** rather than
-  interpolating a fractional read head; the compressor envelope is
-  block-rate (1.3 ms at 48 k). Glue and ducking, not a brickwall limiter.
+- **Effects run in WASM, float, between the per-channel sum and the
+  ResoFilter.** `audiobuf` is 28-bit full scale there (`FX_IN_SCALE` 2⁻²⁸).
+  Nothing may run before the `fx_active` check: the bypass path is
+  bit-exact and `test/wasm-fx.test.js` asserts it after params are set.
+- **`fx_params.h` ↔ `html/synth/fx-params.js` is one contract in two
+  languages.** Append to the enums only; `test/fx-params-sync.test.js`
+  parses the header. Adding a parameter = one enum line, one range, one
+  field name, one panel section entry — model and plumbing follow.
+- **`FxRack` is a process-wide global**: `reset_engine()` keeps params,
+  drops tails. A *fresh worklet* has engine defaults — the snapshot is
+  pushed on `ready`, and `sendFxSnapshot` is a no-op until then (e2e must
+  start audio first, or observes nothing).
+- **`get_channel_samples` captures only the first 8192 samples** of a
+  render now (was 200000 / 12.8 MB). Diagnostic, tests only.
+- **Fractional fields use `clampNum`, not `clampInt`.** `duckSource` is
+  validated against real slots, never clamped.
+- **Popover commits are source `voicebank-fx`**; the Mixer ignores
+  `voicebank` (its own fader writes) but redraws letters on `-fx`. The
+  popover is for the *slot* and re-reads the track on every write.
+- **The generic `button {}` rule is a large pink pill**; every small Mixer
+  control overrides it.
+- **Pre-existing, untouched:** 390 px phone, the M/S/▶/× row overflows an
+  86 px strip and overlaps the neighbour. Same at the previous commit.
+- **Measured** (Node/V8): 3 tracks, everything on, 0.83 % realtime.
 
 ### Plan of 2026-11-06 — all five phases DONE
 

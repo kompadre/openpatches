@@ -54,3 +54,7 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---
+
+The shared reverb in `external/msfa-wasm/fx.cc` follows the **Freeverb** design (Jezar at Dreampoint, 2000), eight damped comb filters into four allpasses, with its published tunings. Freeverb was released into the public domain; the implementation here is original code in that shape.

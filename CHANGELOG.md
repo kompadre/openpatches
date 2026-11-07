@@ -2,6 +2,24 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-07: Track effects — delay, drive, compressor, shared reverb, ducker, in WASM
+
+**Decision (with the user):** effects run inside the MSFA WASM, not as eight worklet outputs into a WebAudio graph. `DynamicsCompressorNode` has no sidechain input, so "one track boosted, everybody else ducks" is not expressible natively without main-thread envelope following; and a future piece mixdown renders through the same `render_audio` as live playback, so the export matches what was heard by construction. Drive sits **after** the delay (dirty repeats) and the ducker has one source (user's call).
+
+**Engine** (`external/msfa-wasm/fx.{h,cc}`, `fx_params.h`): `FxRack` runs between the FM engine's per-channel sum and the global ResoFilter in `SynthUnit::GetSamples`. Per channel 0–7: delay → tanh drive (LUT) → block-rate compressor → reverb send; then one shared mono Freeverb and a ducker that follows its source **pre**-effects. Channels 8–15 (the preview on 15) bypass it. The FM engine stays fixed-point; the stage is float at ±1.0 (`FX_IN_SCALE` = 2⁻²⁸ — `audiobuf` is 28-bit full scale there). **Bypass is bit-exact**: with every mask 0 and ducking off the old path runs, tested after every parameter has been set. Silent channels are skipped unless they own a tail. Three exports (`set_fx_enabled/param/global_fx_param`) carry everything; IDs live in `fx_params.h`, mirrored by `html/synth/fx-params.js`, held in step by `test/fx-params-sync.test.js`. `FxRack` is a process-wide global so `reset_engine()` keeps the parameters (as it keeps channel volumes) while `ClearState()` drops the tails. Static allocation throughout.
+
+**Memory:** `channel_outputs_[16][200000]` (12.8 MB) served `get_channel_samples`, which no app code reads; now 8192 samples. Steady-state WASM 30.3 MB → 19.3 MB *with* the delay lines. Shrinking it exposed a latent overrun — `GetSamples` memset the capture to an unclamped `n_samples`, surviving only because the buffer was wider than any render; an 800 ms offline render walked off WASM memory. Fixed; `GetChannelSamples` zero-fills past the window.
+
+**Cost** (Node/V8, this machine): three tracks with everything on **0.83 % of realtime** vs 0.35 % bypassed; eight busy voices 1.30 % vs 0.79 %. The relative figure is large because the FM baseline is small; the effects' cost is roughly fixed while FM scales with voices.
+
+**Model + plumbing:** `track.fx` (four flags + parameters, separate so bypass ≠ reset) and `project.fx`, built from the tables in `fx-params.js` — adding a parameter is one line there. New `clampNum` (no rounding: `clampInt` stored a feedback of 0.35 as 0). `duckSource` is validated not clamped (a stored 99 became slot 7) and `normalizeProject` drops one naming an empty slot. `audio-manager.sendFxSnapshot` is a diff that **switches empty slots off** (a deleted track's delay kept ringing); the worklet takes `fx-param/-global/-enabled/-snapshot`, params before mask. Pushed on `tracks`/`project` events, on worklet `ready`, after emergency stop.
+
+**Mixer UI** (`components/fx-panel.js`): an `FX` button per strip, four letters D O C R lit per effect, opening a `position: fixed` popover of toggles and sliders in `document.body`; `Reverb · Duck` in the header with the boosted track as a select of occupied slots. Slider ticks go live to the engine (`onFxLive` → `setFxParam`), release commits via the session with source `voicebank-fx` (the Mixer redraws letters without re-reading strips; the roll keeps its liveCache). The popover reads its track **by slot on every write**. Header button after the title, not `space-between` — the far end of an eight-strip-wide header was off screen. `window.__opFx` stays as the e2e seam.
+
+Tests: `wasm-fx`, `fx-params-sync`, `track-fx-model`, `fx-snapshot`, `fx-panel`; `e2e/fx.spec.js` incl. the only test that **listens** (AnalyserNode ~1 s after a note: dry 0.000, delay on 0.140, off 0.000). 998 unit, 102 e2e.
+
+Noticed, not fixed: on a 390 px phone the strips' M/S/▶/× row overflows and overlaps the neighbour — pre-existing, identical at the prior commit.
+
 ## 2026-11-06: Patch drops that actually land; patches onto Section lanes and new tracks
 
 **Fixed: a container row dragged onto an empty Mixer slot outlined it and did nothing.** The row starts its HTML5 drag with `effectAllowed = 'move'` and the slot answered `dropEffect = 'copy'`; Chromium treats the mismatch as "no drop here" and never fires `drop`. Now `'move'`. My Phase 5 e2e only covered the floating-patch (pointer) drag, which does not go through HTML5 drag at all.
