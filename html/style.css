@@ -2820,6 +2820,7 @@ h1 {
 .device-label { flex: 0 0 3.6rem; color: #777; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; }
 .device-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .device-patch { font-family: monospace; color: #eee; white-space: nowrap; }
+.device-patch.device-patch-off { font-family: inherit; color: #777; font-style: italic; }
 .device-mode { color: #999; }
 .device-actions { display: flex; gap: 0.4rem; margin-top: 0.2rem; }
 .device-toggle, .device-settings {

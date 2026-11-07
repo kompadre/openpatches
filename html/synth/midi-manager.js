@@ -1054,6 +1054,7 @@ export function setAuditionEnabled(on) {
     auditionEnabled = !!on;
     lastAuditionVoice = null;
     saveState();
+    notifyOutChange();     // the Device panel's Patch field reads this
 }
 
 /**

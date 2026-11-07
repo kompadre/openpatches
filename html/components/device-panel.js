@@ -94,11 +94,19 @@ export function createDevicePanel(container, opts = {}) {
 
         channel.value.textContent = String(midi.getDeviceChannel() + 1);
 
+        // Three states: a voice we loaded; none yet but auditioning would
+        // load one; none and auditioning is off, so none ever will be —
+        // the field says so rather than sitting on a dash forever.
         const voice = midi.getCurrentVoice();
-        patch.value.textContent = voice ? voice.name : '—';
+        const audition = midi.getAuditionEnabled();
+        patch.value.textContent = voice ? voice.name : audition ? '—' : 'Audition off';
         patch.value.title = voice
             ? 'Last voice loaded into the device’s edit buffer'
-            : 'Unknown: whatever is loaded on the device. Audition or send a patch to load one.';
+            : audition
+                ? 'Unknown: whatever is loaded on the device. Audition or send a patch to load one.'
+                : 'Previews are not loading patches onto the device. Switch on '
+                  + '“Audition patches on the device” in MIDI › Devices, or send a bank.';
+        patch.value.classList.toggle('device-patch-off', !voice && !audition);
 
         mode.value.textContent = MODE_TEXT[midi.getOutputMode()] || '';
         mode.value.title = MODE_TITLE[midi.getOutputMode()] || '';

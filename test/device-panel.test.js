@@ -105,7 +105,6 @@ describe('the panel', () => {
         assert.match(q('.device-name').textContent, /volca fm2/);
         assert.equal(q('.device-port').textContent, 'Korg volca fm2');
         assert.equal(q('.device-channel').textContent, '1');
-        assert.equal(q('.device-patch').textContent, '—');
 
         midi.setDeviceChannel(4);
         assert.equal(q('.device-channel').textContent, '5');
@@ -114,6 +113,25 @@ describe('the panel', () => {
         midi.setDeviceType('dx7');
         assert.match(q('.device-name').textContent, /DX7/);
         assert.doesNotMatch(q('.device-name').textContent, /auto/);
+    });
+
+    test('Patch: says when auditioning is off and nothing was ever sent', () => {
+        const { q } = mount();
+        // Audition defaults off and nothing has been sent: a dash would
+        // just sit there forever with no hint why.
+        assert.equal(q('.device-patch').textContent, 'Audition off');
+        assert.match(q('.device-patch').title, /Audition patches/);
+
+        // Switching the option on: now a preview would load one — unknown,
+        // not never.
+        midi.setAuditionEnabled(true);
+        assert.equal(q('.device-patch').textContent, '—');
+
+        // A loaded voice is shown regardless of the option: it is on the
+        // device either way.
+        midi.sendVoiceToEditBuffer(voice('BRASS'));
+        midi.setAuditionEnabled(false);
+        assert.equal(q('.device-patch').textContent, 'BRASS');
     });
 
     test('Stop / Resume toggles the pause and says so', () => {
