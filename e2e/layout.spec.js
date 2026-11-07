@@ -176,7 +176,9 @@ test.describe('layout invariants', () => {
         });
 
         expect(l.paneX, 'pane off the left edge').toBeGreaterThanOrEqual(0);
-        expect(l.items.length).toBe(3);
+        // Mixer | Edit | Device | Log, in that order.
+        expect(l.items.map((it) => it.key.match(/bpane-item-(\w+)/)[1]))
+            .toEqual(['mixer', 'edit', 'device', 'log']);
         for (const it of l.items) {
             expect(it.left, `${it.key} starts left of the pane`).toBeGreaterThanOrEqual(-1);
             expect(it.right, `${it.key} ends right of the pane`).toBeLessThanOrEqual(1);
@@ -190,12 +192,12 @@ test.describe('layout invariants', () => {
         await expect(pane).toBeVisible();
 
         // Fold each item by its bookmark: body hides, bookmark remains.
-        for (const key of ['mixer', 'edit', 'log']) {
+        for (const key of ['mixer', 'edit', 'device', 'log']) {
             await page.locator(`.bpane-item-${key} .bpane-bookmark`).click();
             await expect(page.locator(`.bpane-item-${key} .bpane-body`)).toBeHidden();
         }
 
-        // All three folded → the pane (and its handle) fold themselves.
+        // All folded → the pane (and its handle) fold themselves.
         await expect(pane).toBeHidden();
         await expect(page.locator('.bpane-handle')).toBeHidden();
         await expect(page.locator('.dock-tab-log')).not.toHaveClass(/active/);
@@ -223,6 +225,25 @@ test.describe('layout invariants', () => {
         await expect(page.locator('.bpane-item-edit .bpane-body')).toBeVisible();
         await expect(page.locator('.bpane-item-mixer .bpane-body')).toBeVisible();
         await expect(page.locator('.bpane-item-log .bpane-body')).toBeHidden();
+    });
+
+    test('the Device panel sits between Edit and Log, and its tab toggles it', async ({ page }) => {
+        await openApp(page);
+        const tabs = await page.locator('.dock-tabs .dock-tab').evaluateAll((els) =>
+            els.map((e) => [...e.classList].find((c) => c.startsWith('dock-tab-'))));
+        expect(tabs.indexOf('dock-tab-device')).toBe(tabs.indexOf('dock-tab-edit') + 1);
+        expect(tabs.indexOf('dock-tab-log')).toBe(tabs.indexOf('dock-tab-device') + 1);
+
+        const body = page.locator('.bpane-item-device .bpane-body');
+        await expect(body).toBeVisible();
+        // Headless Chromium has no MIDI device: the panel says so and
+        // offers nothing to stop.
+        await expect(page.locator('.device-port')).toHaveText(/Not connected|No Web MIDI/);
+        await expect(page.locator('.device-toggle')).toBeDisabled();
+        await page.locator('.dock-tab-device').click();
+        await expect(body).toBeHidden();
+        await page.locator('.dock-tab-device').click();
+        await expect(body).toBeVisible();
     });
 
     test('left pane: the bookmark and the Section tab fold it, it keeps its width', async ({ page }) => {

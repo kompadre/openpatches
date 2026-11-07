@@ -70,6 +70,13 @@ let lastAuditionVoice = null;           // dedupe key for the loaded edit buffer
 let slotChannels = defaultSlotChannels();
 let sendClock = false;                  // drive an external device from our transport
 let syncToClock = false;                // ...or be driven by one (see "MIDI clock in")
+// The Device panel's Stop: nothing musical goes to the output — notes,
+// clock, audition. Session-only on purpose: a pause remembered across a
+// reload would be a device silent for no reason anyone can see. Explicit
+// transfers (a bank send the user asked for) are not musical and still go.
+let outputPaused = false;
+let currentVoice = null;                // { name, at } — last voice put in the edit buffer
+const outChangeSubscribers = new Set();
 
 // VoiceBank slot → MIDI out channel. Identity by default, matching the
 // internal engine's slot==channel convention. The map is free-form on
@@ -103,6 +110,7 @@ export function hasSysex() {
 function setState(next) {
     state = next;
     if (onStatusChange) onStatusChange(getState());
+    notifyOutChange();
 }
 
 export function setOnStatusChange(fn) {
@@ -116,6 +124,7 @@ export function setOnPortsChange(fn) {
 
 function notifyPorts() {
     if (onPortsChange) onPortsChange();
+    notifyOutChange();
 }
 
 // --- Access ---
@@ -261,9 +270,13 @@ export function setSelectedOutput(id) {
     // Leaving a device behind with notes held down is the one failure the user
     // cannot fix from the browser.
     panic();
-    selectedOutputId = id || null;
+    const next = id || null;
+    // A different device has a different edit buffer.
+    if (next !== selectedOutputId) { currentVoice = null; lastAuditionVoice = null; }
+    selectedOutputId = next;
     saveState();
     notifyPorts();
+    notifyOutChange();
 }
 
 export function getDeviceChannel() { return deviceChannel; }
@@ -273,6 +286,7 @@ export function setDeviceChannel(ch) {
     if (!Number.isInteger(n) || n < 0 || n >= MIDI_CHANNELS) return;
     deviceChannel = n;
     saveState();
+    notifyOutChange();
 }
 
 // --- Device profile ---
@@ -284,6 +298,7 @@ export function setDeviceType(id) {
     if (!isDeviceType(id)) return;
     deviceType = id;
     saveState();
+    notifyOutChange();
 }
 
 // The output's name, live if MIDI is up, otherwise what we remembered for
@@ -410,16 +425,53 @@ export function setOutputMode(mode) {
     if (mode !== outputMode) releaseAllOut();
     outputMode = mode;
     saveState();
+    notifyOutChange();
 }
 
 export function isMidiOutEnabled() {
-    return outputMode !== 'internal' && !!getOutputPort();
+    return outputMode !== 'internal' && !outputPaused && !!getOutputPort();
 }
 
 export function isInternalEnabled() {
-    // If MIDI-only is selected but no device is actually reachable, fall back
-    // to the local synth rather than going silent for no visible reason.
-    return outputMode !== 'midi' || !getOutputPort();
+    // If MIDI-only is selected but no device is actually reachable — or it
+    // is paused — fall back to the local synth rather than going silent.
+    return outputMode !== 'midi' || outputPaused || !getOutputPort();
+}
+
+// --- Pause (the Device panel's Stop / Resume) ---
+
+export function isOutputPaused() { return outputPaused; }
+
+/**
+ * Stop or resume sending to the device. Pausing silences it first — held
+ * notes and a running clock would otherwise be left hanging on the device
+ * with nothing coming to end them.
+ */
+export function setOutputPaused(on) {
+    const next = !!on;
+    if (next === outputPaused) return outputPaused;
+    if (next) panic();
+    outputPaused = next;
+    notifyOutChange();
+    return outputPaused;
+}
+
+/** The voice last loaded into the device's edit buffer, or null if unknown. */
+export function getCurrentVoice() { return currentVoice ? { ...currentVoice } : null; }
+
+/**
+ * Listen for anything the Device panel shows: device, channel, profile,
+ * mode, pause, current voice, connection state. Returns an unsubscribe.
+ */
+export function subscribeOutChange(fn) {
+    outChangeSubscribers.add(fn);
+    return () => outChangeSubscribers.delete(fn);
+}
+
+function notifyOutChange() {
+    for (const fn of [...outChangeSubscribers]) {
+        try { fn(); } catch (err) { console.warn('[midi] out-change listener failed:', err); }
+    }
 }
 
 export function getSlotChannel(slot) {
@@ -636,7 +688,7 @@ export function setSendClock(on) {
  * re-emitting the clock we are slaved to would loop it back onto the bus.
  */
 export function isClockOutEnabled() {
-    return sendClock && !syncToClock && !!getOutputPort();
+    return sendClock && !syncToClock && !outputPaused && !!getOutputPort();
 }
 
 export function isClockRunning() { return clockRunning; }
@@ -978,7 +1030,7 @@ function estimateTransfer(byteCount, onProgress, signal) {
 // --- Live audition ------------------------------------------------------
 
 export function isAuditionEnabled() {
-    return auditionEnabled && hasSysex() && !!getOutputPort();
+    return auditionEnabled && !outputPaused && hasSysex() && !!getOutputPort();
 }
 
 export function getAuditionEnabled() { return auditionEnabled; }
@@ -1036,6 +1088,12 @@ export function sendVoiceToEditBuffer(voiceData, { force = false } = {}) {
         return false;
     }
     lastAuditionVoice = key;
+    // Bytes 118–127 of a packed voice are its name.
+    currentVoice = {
+        name: String.fromCharCode(...packed.slice(118, 128)).replace(/\0/g, '').trim() || 'Untitled',
+        at: Date.now(),
+    };
+    notifyOutChange();
     return true;
 }
 
@@ -1151,6 +1209,9 @@ export function _reset() {
     outputLatencyMs = DEFAULT_OUTPUT_LATENCY_MS;
     deviceType = DEVICE_TYPE_AUTO;
     lastAuditionVoice = null;
+    outputPaused = false;
+    currentVoice = null;
+    outChangeSubscribers.clear();
     sysexCollector = null;
     outNotes.clear();
     initFromStorage();

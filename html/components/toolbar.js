@@ -1,4 +1,4 @@
-// Toolbar — bottom panel with tabs: Canvas | Piano Roll | Section | Mixer | Edit | Log
+// Toolbar — bottom panel with tabs: Canvas | Piano Roll | Section | Mixer | Edit | Device | Log
 // Keyboard is integrated into the Piano Roll panel.
 // Replaces piano-dock.js. Pianoroll/Log logic moved here; Edit tab delegates to edit-panel.js.
 
@@ -7,6 +7,7 @@ import { createSectionEditor } from './section-editor.js';
 import { createTransportBar } from './transport-bar.js';
 import { createVoiceBank } from './voicebank.js';
 import { createEditPanel } from './edit-panel.js';
+import { createDevicePanel } from './device-panel.js';
 // Namespaced as midiManager, not midi: `midi` is the note-number parameter
 // name throughout this file and would shadow the import.
 import * as midiManager from '../synth/midi-manager.js';
@@ -103,6 +104,11 @@ export function createToolbar(opts) {
     tabEdit.className = 'dock-tab dock-tab-edit' + (effectiveInitialTab === 'edit' ? ' active' : '');
     tabEdit.innerHTML = '<span>✏️</span><span>Edit</span>';
 
+    const tabDevice = document.createElement('button');
+    tabDevice.className = 'dock-tab dock-tab-device' + (effectiveInitialTab === 'device' ? ' active' : '');
+    tabDevice.innerHTML = '<span>🎛️</span><span>Device</span>';
+    tabDevice.title = 'Device — the external MIDI synth';
+
     const tabLog = document.createElement('button');
     tabLog.className = 'dock-tab dock-tab-log' + (effectiveInitialTab === 'log' ? ' active' : '');
     tabLog.innerHTML = '<span>📋</span><span>Log</span>';
@@ -119,6 +125,7 @@ export function createToolbar(opts) {
     tabBar.appendChild(tabSection);
     tabBar.appendChild(tabMixer);
     tabBar.appendChild(tabEdit);
+    tabBar.appendChild(tabDevice);
     tabBar.appendChild(tabLog);
     tabBar.appendChild(tabStop);
     // The top strip: the transport bar on the left, the tabs centred. The
@@ -144,6 +151,9 @@ export function createToolbar(opts) {
     const editPanel = document.createElement('div');
     editPanel.className = 'dock-panel' + (effectiveInitialTab === 'edit' ? ' active' : '');
 
+    const devicePanel = document.createElement('div');
+    devicePanel.className = 'dock-panel dock-panel-device' + (effectiveInitialTab === 'device' ? ' active' : '');
+
     const logPanel = document.createElement('div');
     logPanel.className = 'dock-panel dock-panel-log' + (effectiveInitialTab === 'log' ? ' active' : '');
 
@@ -158,8 +168,8 @@ export function createToolbar(opts) {
     const mainTabs = [tabCanvas, tabPianoroll];
     const mainPanels = [canvasPanel, pianorollPanel];
     if (isMobileLayout) {
-        mainTabs.push(tabSection, tabMixer, tabEdit, tabLog);
-        mainPanels.push(sectionPanel, mixerPanel, editPanel, logPanel);
+        mainTabs.push(tabSection, tabMixer, tabEdit, tabDevice, tabLog);
+        mainPanels.push(sectionPanel, mixerPanel, editPanel, devicePanel, logPanel);
     }
 
     // Desktop: tabs / [ left pane | centre column ( panels / bottom pane ) ].
@@ -182,6 +192,7 @@ export function createToolbar(opts) {
         centre.appendChild(sectionPanel);
         centre.appendChild(mixerPanel);
         centre.appendChild(editPanel);
+        centre.appendChild(devicePanel);
         centre.appendChild(logPanel);
     }
 
@@ -278,21 +289,23 @@ export function createToolbar(opts) {
     if (isMobileLayout) {
         tabMixer.addEventListener('click', () => activateTab(tabMixer, mixerPanel));
         tabEdit.addEventListener('click', () => activateTab(tabEdit, editPanel));
+        tabDevice.addEventListener('click', () => activateTab(tabDevice, devicePanel));
         tabLog.addEventListener('click', () => activateTab(tabLog, logPanel));
         showBottom = (key) => {
             if (key === 'mixer') activateTab(tabMixer, mixerPanel);
             else if (key === 'edit') activateTab(tabEdit, editPanel);
+            else if (key === 'device') activateTab(tabDevice, devicePanel);
             else activateTab(tabLog, logPanel);
         };
     } else {
         // --- Bottom pane (desktop) ---
-        // Mixer | Edit | Log side by side under the main panel, ~25% tall and
+        // Mixer | Edit | Device | Log side by side under the main panel, ~25% tall and
         // draggable by its handle. Each item folds toward the left into a
         // thin vertical bookmark; the top tabs toggle the same items. The
         // pane as a whole collapses from the strip on its right edge, and
         // collapses itself when every item inside it is folded.
         const BPANE_KEY = 'openpatches_bpane';
-        let bpaneState = { h: 0.25, paneCollapsed: false, items: { mixer: true, edit: true, log: true } };
+        let bpaneState = { h: 0.25, paneCollapsed: false, items: { mixer: true, edit: true, device: true, log: true } };
         try {
             const saved = JSON.parse(localStorage.getItem(BPANE_KEY));
             if (saved && saved.items) bpaneState = { ...bpaneState, ...saved, items: { ...bpaneState.items, ...saved.items } };
@@ -300,6 +313,7 @@ export function createToolbar(opts) {
 
         mixerPanel.className = 'bpane-content bpane-content-mixer';
         editPanel.className = 'bpane-content bpane-content-edit';
+        devicePanel.className = 'bpane-content bpane-content-device';
         logPanel.className = 'bpane-content bpane-content-log';
 
         const bpaneHandle = document.createElement('div');
@@ -309,7 +323,7 @@ export function createToolbar(opts) {
         const bpane = document.createElement('div');
         bpane.className = 'bpane';
 
-        const bottomTabs = { mixer: tabMixer, edit: tabEdit, log: tabLog };
+        const bottomTabs = { mixer: tabMixer, edit: tabEdit, device: tabDevice, log: tabLog };
         const bpaneItems = {};
         const makeItem = (key, label, content) => {
             const item = document.createElement('div');
@@ -329,6 +343,7 @@ export function createToolbar(opts) {
         };
         makeItem('mixer', 'Mixer', mixerPanel);
         makeItem('edit', 'Edit', editPanel);
+        makeItem('device', 'Device', devicePanel);
         makeItem('log', 'Log', logPanel);
 
         // Right edge: fold the whole pane away.
@@ -347,7 +362,7 @@ export function createToolbar(opts) {
         };
         const syncBpane = () => {
             let anyOpen = false;
-            for (const key of ['mixer', 'edit', 'log']) {
+            for (const key of ['mixer', 'edit', 'device', 'log']) {
                 const open = !!bpaneState.items[key];
                 anyOpen = anyOpen || open;
                 bpaneItems[key].classList.toggle('collapsed', !open);
@@ -379,6 +394,7 @@ export function createToolbar(opts) {
         };
         tabMixer.addEventListener('click', () => tabToggle('mixer'));
         tabEdit.addEventListener('click', () => tabToggle('edit'));
+        tabDevice.addEventListener('click', () => tabToggle('device'));
         tabLog.addEventListener('click', () => tabToggle('log'));
         showBottom = expandItem;
 
@@ -1232,6 +1248,12 @@ export function createToolbar(opts) {
     const edit = createEditPanel(editOpts || {});
     editPanel.appendChild(edit);
 
+    // --- Device panel: the external MIDI-out synth ---
+    wrapper._devicePanel = createDevicePanel(devicePanel, {
+        appendLog: opts.appendLog,
+        onOpenSettings: opts.onOpenMidiSettings,
+    });
+
     // --- Log panel ---
     const logTextarea = document.createElement('textarea');
     logTextarea.id = 'log';
@@ -1249,6 +1271,7 @@ export function createToolbar(opts) {
     wrapper._showEdit = () => { showBottom('edit'); };
     wrapper._showMixer = () => { showBottom('mixer'); };
     wrapper._showLog = () => { showBottom('log'); };
+    wrapper._showDevice = () => { showBottom('device'); };
     wrapper._showSection = () => { showSection(); };
     wrapper._logPanel = logPanel;
     wrapper._setKeyboardCollapsed = setKeyboardCollapsed;

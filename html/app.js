@@ -880,6 +880,8 @@ function initToolbar() {
 
     const dock = createToolbar({
         session: projectSession,
+        // Function declaration further down: hoisted, so safe to pass here.
+        onOpenMidiSettings: () => openMidiDevices(),
         matchedMidi: activeKeyboardNote,
         appendLog,
         playNoteFn: playFn,
@@ -1363,7 +1365,7 @@ function playLatencyTestNote(midi, durMs) {
     const stop = playNoteRealtime(latencyTestVoice, midi);
     if (stop) setTimeout(stop, durMs);
 }
-document.getElementById('menu-midi-devices').addEventListener('click', () => {
+function openMidiDevices() {
     openMidiSettings({
         appendLog,
         onStatusChange: updateMidiStatus,
@@ -1371,7 +1373,8 @@ document.getElementById('menu-midi-devices').addEventListener('click', () => {
         playTestNote: playLatencyTestNote,
         testVoiceData: latencyTestVoice,
     });
-});
+}
+document.getElementById('menu-midi-devices').addEventListener('click', openMidiDevices);
 document.getElementById('menu-midi-panic').addEventListener('click', () => {
     appendLog(midiManager.panic() ? 'MIDI panic sent' : 'MIDI panic: no output device selected');
 });
