@@ -189,3 +189,48 @@ test.describe('mobile', () => {
         expect(await cursor()).toBe(15);                // wrapped to the pattern end
     });
 });
+
+test('the tracker fills the dock and every track can be scrolled to', async ({ page }) => {
+    await openMobile(page);
+    // Eight tracks, each with a chord so expanded lanes make the grid wide.
+    await page.evaluate(async () => {
+        const pm = await import('/html/components/project-model.js');
+        const dock = window.__opDock;
+        const pattern = dock._session.createPattern({ name: 'Wide', notes: [
+            { midi: 60, start: 0, dur: 4 }, { midi: 64, start: 0, dur: 4 }, { midi: 67, start: 0, dur: 4 },
+        ] }, 'e2e');
+        dock._session.update((project, section) => {
+            for (let slot = 0; slot < 8; slot++) {
+                const track = pm.createTrack({ name: 'T' + slot, slot });
+                project.tracks.push(track);
+                pm.addClip(project, section, { patternId: pattern.id, trackId: track.id, startCol: 0, repeats: 1 });
+            }
+        }, 'e2e');
+    });
+    await page.locator('.dock-tab-tracker').tap();
+    await expect(page.locator('.tracker-container')).toBeVisible();
+
+    const m = await page.evaluate(() => {
+        const panel = document.querySelector('.dock-panel-tracker').getBoundingClientRect();
+        const container = document.querySelector('.tracker-container').getBoundingClientRect();
+        const scroll = document.querySelector('.tracker-scroll');
+        const inner = document.querySelector('.tracker-inner');
+        scroll.scrollLeft = 1e6;                       // as far right as it goes
+        const maxLeft = scroll.scrollLeft;
+        return {
+            gapLeft: container.left - panel.left,
+            containerW: container.width,
+            panelW: panel.width,
+            scrollW: scroll.scrollWidth,
+            innerW: inner.getBoundingClientRect().width,
+            reachable: maxLeft + scroll.clientWidth,
+        };
+    });
+    // Not centred with stranded edges: the container sits at the panel's
+    // left edge and takes its width; the grid scrolls inside it.
+    expect(m.gapLeft).toBeLessThanOrEqual(1);
+    expect(Math.abs(m.containerW - m.panelW)).toBeLessThanOrEqual(1);
+    expect(m.innerW).toBeGreaterThan(m.panelW, 'the seed really overflows');
+    expect(m.scrollW).toBeGreaterThanOrEqual(m.innerW - 1);
+    expect(m.reachable).toBeGreaterThanOrEqual(m.innerW - 1, 'track 8 is reachable');
+});

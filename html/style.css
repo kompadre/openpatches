@@ -5273,6 +5273,13 @@ footer {
     flex-direction: column;
     height: 100%;
     min-height: 0;
+    /* Sized to the dock, never to the grid: .dock-panel centres its
+       children, and a centred child wider than the dock strands its left
+       edge off screen for good (the stranded-edge rule on .dock-panel).
+       The grid scrolls inside .tracker-scroll instead. */
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
 }
 
 .tracker-controls {

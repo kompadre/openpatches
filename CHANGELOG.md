@@ -2,6 +2,12 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-07: Tracker fix — stranded edges on mobile
+
+**Fixed: the tracker sat centred with huge side gaps on mobile, and with many expanded lanes part of track 1 and all of track 8 could not be scrolled to.** Exactly the failure mode the stylesheet's own stranded-edge warning on `.dock-panel` describes: the panel is a centring flex column, and a child that takes its content width gets centred — narrower than the dock it floats with gaps, wider and the overflow splits across both sides, where the start side can never be scrolled to. `.tracker-container` now sizes itself to the dock (`width: 100%`) and the grid scrolls inside `.tracker-scroll`, like every other panel.
+
+Tests: e2e `mobile` — eight chorded tracks on a 390px viewport: no left gap, container = panel width, and scrolling right reaches the grid's full width (940px stranded before the fix). 1083 unit, 115 e2e.
+
 ## 2026-11-07: Tracker phase 3 — editing; the pattern name moves to the margin
 
 **Pattern name in the gap** (user's change to phase 2): the clip's name is no longer drawn in the lanes; it reads **downward in the gap right of the track, under the ✎**, on a strip of the pattern's colour spanning the clip. The lanes keep only a 2px start line, so the clip's first row is free for notes.
