@@ -252,6 +252,18 @@ export const jobStore = {
     },
 };
 
+/**
+ * Did this job come from inferring a WAV? Only those have a source audio
+ * blob to show, play or ask for again. A `.syx` load or the demo bank also
+ * leaves a job record (type `syx_import` / `demo_import`) so its container
+ * has a jobId, but there was never a WAV behind it. A record with no type
+ * predates the field and is a WAV job — the Job class defaults it the same.
+ * An allow-list, so a future job type is not mistaken for one.
+ */
+export function isWavJob(job) {
+    return !!job && (job.type == null || job.type === 'wav_import');
+}
+
 // --- Patch name persistence (renames) ---
 //
 // A rename overlay keyed by patch id. Project-owned like the patches it

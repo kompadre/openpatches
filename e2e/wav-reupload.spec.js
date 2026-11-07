@@ -18,7 +18,7 @@ test('re-upload a missing WAV', async ({ page }) => {
     await page.evaluate(async () => {
         const pm = await import('/html/components/patch-model.js');
         const cv = await import('/html/components/canvas.js');
-        pm.jobStore.put({ id: 'job_missing', type: 'wav', status: 'done', fileName: 'kick.wav', sourceMissing: true });
+        pm.jobStore.put({ id: 'job_missing', type: 'wav_import', status: 'done', fileName: 'kick.wav', sourceMissing: true });
         cv.addContainer('kick', { jobId: 'job_missing', patchIds: [] });
         cv.refreshCanvas();
     });
@@ -35,4 +35,27 @@ test('re-upload a missing WAV', async ({ page }) => {
         const pm = await import('/html/components/patch-model.js');
         return pm.jobStore.get('job_missing').sourceMissing;
     })).toBe(false);
+});
+
+test('a .syx or demo container never asks for a WAV', async ({ page }) => {
+    await openApp(page);
+    await page.evaluate(async () => {
+        const pm = await import('/html/components/patch-model.js');
+        const cv = await import('/html/components/canvas.js');
+        // Same shape as an imported project's: a job with no blob behind it.
+        // The difference is that these never had one.
+        pm.jobStore.put({ id: 'job_syx', type: 'syx_import', status: 'completed', fileName: 'bank.syx', sourceMissing: true });
+        pm.jobStore.put({ id: 'job_demo', type: 'demo_import', status: 'completed', fileName: 'DEMO.syx' });
+        cv.addContainer('bank', { jobId: 'job_syx', patchIds: [] });
+        cv.addContainer('demo', { jobId: 'job_demo', patchIds: [] });
+        // And one real WAV job alongside, so the absence is not just a
+        // canvas that never rendered.
+        pm.jobStore.put({ id: 'job_wav', type: 'wav_import', status: 'done', fileName: 'kick.wav', sourceMissing: true });
+        cv.addContainer('kick', { jobId: 'job_wav', patchIds: [] });
+        cv.refreshCanvas();
+    });
+    await openPatchesTab(page);
+    const offers = page.locator('.sky-container-reupload');
+    await expect(offers).toHaveCount(1);
+    await expect(offers).toHaveAttribute('title', /kick\.wav/);
 });

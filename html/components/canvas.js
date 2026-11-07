@@ -3,7 +3,7 @@
 // drag-to-reposition (star handle), and snap-into-container behavior.
 
 import { dropAt } from './slot-drop.js';
-import { canvasStore, patchStore, jobStore, createPatch, patchIdFromVoiceData } from './patch-model.js';
+import { canvasStore, patchStore, jobStore, createPatch, patchIdFromVoiceData, isWavJob } from './patch-model.js';
 import { createTagEditor } from './tag-editor.js';
 import { createPatchRow, getDraggedPatch, clearDraggedPatch, attachAssignPopover, createSlotBadge } from './patch-row.js';
 // Cyclic with job.js (it imports canvas.js) — only used inside functions, so the
@@ -1144,9 +1144,11 @@ function renderContainer(ctr) {
 
     skyEl.appendChild(el);
 
-    // Render spectrogram for WAV-import containers (if jobId exists)
+    // Render spectrogram for WAV-import containers — only those born of a
+    // WAV inference job. A .syx or demo container has a jobId too, but no
+    // WAV ever existed, so it must neither look for one nor ask for it.
     // Insert into headerLeft so it appears between name and buttons
-    if (ctr.jobId && optsRef && optsRef.onLoadJobWav) {
+    if (ctr.jobId && isWavJob(jobStore.get(ctr.jobId)) && optsRef && optsRef.onLoadJobWav) {
         // An imported project's WAV did not travel with it (see
         // project-io.js): offer to supply it again. Shown only when the
         // blob really is absent — `onLoadJobWav` calls back with null then.

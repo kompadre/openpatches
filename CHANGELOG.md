@@ -2,6 +2,12 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-07: The `⤒ WAV` offer only on containers born of WAV inference
+
+**Fixed: `.syx` and demo containers asked for a source WAV they never had.** Loading a `.syx` bank or the demo leaves a job record (`syx_import` / `demo_import`) so the container gets a `jobId`, and `canvas.js` built its WAV block on `ctr.jobId` alone: it looked the blob up, found nothing, and offered `⤒ WAV`. New `isWavJob(job)` in `patch-model.js` gates the whole block — an **allow-list**: `wav_import`, or no type at all (records predating the field; the `Job` class defaults those the same), so a future job type is not mistaken for one. Non-WAV containers now skip the IndexedDB lookup too. The existing re-upload e2e seeded a job typed `'wav'`, which no code writes; it now uses `wav_import`.
+
+Tests: unit `is-wav-job`; e2e `wav-reupload` — a `.syx` and a demo container beside a real WAV job show exactly one offer (three before the fix). 1010 unit, 106 e2e.
+
 ## 2026-11-07: Import project on Android Chrome routed the file to the WAV probe
 
 **Fixed: on Android, Import Project… answered "not a valid WAV file".** Android's download manager renames a downloaded file whose extension doesn't match its MIME type, so the exported `name.opproj` (a Blob typed `application/json`) lands on the phone as `name.opproj.json`. The shared file input routed purely by extension — `.opproj` → project, `.syx` → syx, everything else → the WAV probe — so the renamed project went to `/api/probe` and the server refused it. The rename is deterministic, so the double extension became the discriminator and then the canonical name (both decided with the user): **exports are `name.opproj.json` on every platform** — Desktop, Android or Amiga — via `FILE_SUFFIX` in `project-io.js`, so the name no longer mutates in transit. Routing recognises `.opproj.json` and the bare `.opproj` older exports carry, while a bare `.json` — which could be anything — routes nowhere by extension. The input also remembers which menu option opened the picker (`pickKind`); a recognised extension (project, `.syx`, `.wav`) still wins, the remembered intent decides only when the extension says nothing. The project pickers accept `.opproj,.json,application/json` (accept can't say "double extension"; it only governs what the picker shows) so Android's picker shows the file at all. Re-export strips either suffix from the project name before appending, so names don't stack extensions. A dismissed picker clears the intent (`cancel` event). `html/app.js`.
@@ -14,7 +20,7 @@ Tests: e2e `project` — the export is suggested as `Nocturne.opproj.json` and r
 
 **The Pattern editor's `⬚ Select` toggle is a tool split button**, `[ ✎ Edit | ▾ ]` like the transport's Play: the label names the tool, the caret lists four — **Edit** (draw; Shift-drag still marquees), **Select once** (one rectangle, or one bare click, then back to Edit by itself), **Select** (every drag a marquee until changed), **Erase** (a press removes the note under it, a drag removes every note it crosses, committed once on release; empty grid draws nothing). Lit when not Edit; Escape or a press elsewhere folds the list. The mobile more-menu lists the four flat. `roll.setTool/getTool`; `setSelectMode/isSelectMode` kept for callers. Cursor: crosshair / cell / pointer.
 
-TODO: the `⤒ WAV` re-upload offer appears on containers that never came from an inference job (a multitimbral `.syx` load); only job-born containers should ask.
+TODO (done in the entry above, same day): the `⤒ WAV` re-upload offer appears on containers that never came from an inference job (a multitimbral `.syx` load); only job-born containers should ask.
 
 Tests: `voicebank-slot-state` (second strip, overwrite-never-swap, same-voice-same-slot selects, duplicates load), `patch-assign-popover` (`.current` on both), `pattern-editor` (tool list, Select once spends itself by rectangle and by click, Erase click/drag); e2e `voicebank`, `slot-drop` (a second drop adds a second track), `pianoroll` (Select once, Erase). 1005 unit, 104 e2e.
 
