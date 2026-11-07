@@ -2,6 +2,12 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-07: Import project on Android Chrome routed the file to the WAV probe
+
+**Fixed: on Android, Import Project… answered "not a valid WAV file".** Android's download manager renames a downloaded file whose extension doesn't match its MIME type, so the exported `name.opproj` (a Blob typed `application/json`) lands on the phone as `name.opproj.json`. The shared file input routed purely by extension — `.opproj` → project, `.syx` → syx, everything else → the WAV probe — so the renamed project went to `/api/probe` and the server refused it. The input now remembers which menu option opened the picker (`pickKind`), a recognised extension (`.opproj`/`.json` → project, `.syx`, `.wav`) still wins, and the remembered intent decides only when the extension says nothing; `.json` counts as a project and the project pickers accept `.opproj,.json,application/json` so Android's picker shows the file at all. A dismissed picker clears the intent (`cancel` event). `html/app.js`.
+
+Tests: e2e `project` — an exported file fed back as `Nocturne.opproj.json` imports as a second project. 1005 unit, 105 e2e.
+
 ## 2026-11-07: A voice may sit in several Mixer slots; the roll's tool is a split button
 
 **"One voice, one slot" is gone** (decided with the user). Assigning a banked voice to another slot used to *move* it — the old slot emptied and every clip on that track fell silent — and a project that did hold two tracks of one voice (an import, a slot swap in the Section) got only one strip on load, so the other track was scheduled into a channel the snapshot never loaded a patch for: a silent track with a hole in the Mixer. Now `assignToSlot` writes to the slot asked for and nothing else (occupied by another voice → overwrite, as before; the same voice → just select), `addEntry` and a drop on the Section's empty grid always make a new track, and `loadState` gives every track with a voice its strip. Two Piano tracks with different effects are the point. The voiceKey stays for the slot badge, which now lists every slot (`1·2`), and the ♫ picker marks each slot holding the voice. Moving a voice between slots is the Section editor's slot select (`setTrackSlot`, swaps whole tracks with their clips). `voicebank.js`, `patch-row.js`, `slot-drop.js`.

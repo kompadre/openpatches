@@ -197,6 +197,27 @@ test.describe('export and import', () => {
         expect(names).toEqual(['Nocturne', 'Nocturne 2']);
     });
 
+    test('a file Android renamed to .opproj.json is still a project import', async ({ page }) => {
+        await openApp(page);
+        await page.evaluate(() => {
+            window.__opProject.rename('Nocturne', 'e2e');
+        });
+        const { doc } = await exportAndRead(page);
+
+        // Android's download manager appends .json to a downloaded file
+        // whose extension does not match its application/json MIME type.
+        // Routed by extension alone, this went down the WAV path and the
+        // probe server answered "not a valid WAV file".
+        await page.setInputFiles('#wav-input', {
+            name: 'Nocturne.opproj.json',
+            mimeType: 'application/json',
+            buffer: Buffer.from(JSON.stringify(doc)),
+        });
+
+        await expect.poll(() => bodyIds(page)).toHaveLength(2);
+        await expect(page.locator('#menu-status')).toHaveText('Nocturne 2');
+    });
+
     test('a file from a newer format is refused, not half-read', async ({ page }) => {
         await openApp(page);
         const before = await bodyIds(page);

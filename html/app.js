@@ -574,18 +574,38 @@ const jobOpts = {
 jobManager.setOpts(jobOpts);
 
 // --- File input handler ---
+//
+// The menu option that opened the picker is remembered, because the file's
+// extension alone cannot be trusted to say what it is: Android's download
+// manager renames an exported `name.opproj` (served as application/json)
+// to `name.opproj.json`, so the file the user gets back no longer ends in
+// the extension we gave it. Routing by extension sent such a project down
+// the WAV path, and the probe server answered "not a valid WAV file".
+// A recognised extension still wins (the file is unambiguous); the intent
+// decides only when the extension says nothing.
+let pickKind = null; // 'project' | 'wav' | 'syx', or null when nothing was clicked
 
 fileInput.addEventListener('change', async () => {
     const file = fileInput.files[0];
+    const kind = pickKind;
+    pickKind = null;
     if (!file) return;
 
-    if (file.name.toLowerCase().endsWith('.' + FILE_EXTENSION)) {
+    const lower = file.name.toLowerCase();
+    const extSays =
+        lower.endsWith('.' + FILE_EXTENSION) || lower.endsWith('.json') ? 'project'
+        : lower.endsWith('.syx') ? 'syx'
+        : lower.endsWith('.wav') ? 'wav'
+        : null;
+    const route = extSays || kind || 'wav';
+
+    if (route === 'project') {
         fileInput.value = '';
         await importProjectFile(file);
         return;
     }
 
-    if (file.name.toLowerCase().endsWith('.syx')) {
+    if (route === 'syx') {
         appendLog(`Routing .syx file: ${file.name} (${file.size} bytes)`);
         handleSyxUpload(file);
         fileInput.value = '';
@@ -600,6 +620,9 @@ fileInput.addEventListener('change', async () => {
     await job.probe(file, jobOpts);
     refreshCanvas();
 });
+
+// A dismissed picker must not leave its intent behind for the next pick.
+fileInput.addEventListener('cancel', () => { pickKind = null; });
 
 // --- SYX upload (simple, no Job lifecycle needed) ---
 
@@ -1119,7 +1142,9 @@ document.getElementById('menu-export-project').addEventListener('click', async (
 
 document.getElementById('menu-import-project').addEventListener('click', () => {
     importInto = false;      // a cancelled Import into… must not turn this into a merge
-    fileInput.accept = '.' + FILE_EXTENSION;
+    pickKind = 'project';
+    // .json too: Android's download manager appends it to the exported file.
+    fileInput.accept = '.' + FILE_EXTENSION + ',.json,application/json';
     fileInput.click();
 });
 
@@ -1127,7 +1152,8 @@ document.getElementById('menu-import-project').addEventListener('click', () => {
 let importInto = false;     // the shared file input: is this pick an import-into?
 document.getElementById('menu-import-into').addEventListener('click', () => {
     importInto = true;
-    fileInput.accept = '.' + FILE_EXTENSION;
+    pickKind = 'project';
+    fileInput.accept = '.' + FILE_EXTENSION + ',.json,application/json';
     fileInput.click();
 });
 
@@ -1284,11 +1310,13 @@ function openStorageDialog() {
 
 document.getElementById('menu-import-wav').addEventListener('click', () => {
     importInto = false;
-    fileInput.accept = '.wav';
+    pickKind = 'wav';
+    fileInput.accept = '.wav,audio/wav';
     fileInput.click();
 });
 document.getElementById('menu-import-syx').addEventListener('click', () => {
     importInto = false;
+    pickKind = 'syx';
     fileInput.accept = '.syx';
     fileInput.click();
 });
