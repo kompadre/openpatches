@@ -17,6 +17,28 @@ run `node --check` + `node --test` and tick this file only. (Open: AGENTS.md
 "Keep it current ... in the same commit/change" reads per-change; awaiting
 the user's wording if SESSION.md should be deferred too.)
 
+### Mixer: a voice may be in several slots — DONE 2026-11-07
+
+- **No voice dedup anywhere.** `assignToSlot` touches only its slot;
+  `loadState` makes a strip of every track with a voice. The old `seen`
+  skip is what silently muted a duplicate track. `voiceKey` remains for the
+  badge (`1·2`) and the picker's `.current`; nothing else may use it to
+  refuse, move or merge.
+- **Moving a voice between slots is the Section editor's slot select**
+  (`setTrackSlot`, swaps whole tracks with clips). The Mixer has no move.
+
+### Pattern editor: the grid tool — DONE 2026-11-07
+
+- `tool` ∈ `edit | select-once | select | erase` replaces `selectMode`;
+  `isSelecting()` covers both selects. `select-once` is reset to `edit`
+  inside `commitMarquee` — by a rectangle **or** a bare click — so any new
+  marquee entry point gets it for free.
+- **Erase commits once per gesture** (`erasedAny` → `commitNotes` on
+  release / mouseleave / touchend), not per note: one undo step, one save.
+- The split's list items and the mobile more-menu items are the **same
+  `mkToolMode` buttons**; `toolModeBtns` lights whichever hold the tool.
+  `h.tool(id)` in `test/pattern-editor.test.js` scopes to the desktop list.
+
 ### Track effects — DONE 2026-11-07 (all four phases, see CHANGELOG)
 
 Live state only — what a future change could trip over:

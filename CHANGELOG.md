@@ -2,6 +2,16 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-07: A voice may sit in several Mixer slots; the roll's tool is a split button
+
+**"One voice, one slot" is gone** (decided with the user). Assigning a banked voice to another slot used to *move* it — the old slot emptied and every clip on that track fell silent — and a project that did hold two tracks of one voice (an import, a slot swap in the Section) got only one strip on load, so the other track was scheduled into a channel the snapshot never loaded a patch for: a silent track with a hole in the Mixer. Now `assignToSlot` writes to the slot asked for and nothing else (occupied by another voice → overwrite, as before; the same voice → just select), `addEntry` and a drop on the Section's empty grid always make a new track, and `loadState` gives every track with a voice its strip. Two Piano tracks with different effects are the point. The voiceKey stays for the slot badge, which now lists every slot (`1·2`), and the ♫ picker marks each slot holding the voice. Moving a voice between slots is the Section editor's slot select (`setTrackSlot`, swaps whole tracks with their clips). `voicebank.js`, `patch-row.js`, `slot-drop.js`.
+
+**The Pattern editor's `⬚ Select` toggle is a tool split button**, `[ ✎ Edit | ▾ ]` like the transport's Play: the label names the tool, the caret lists four — **Edit** (draw; Shift-drag still marquees), **Select once** (one rectangle, or one bare click, then back to Edit by itself), **Select** (every drag a marquee until changed), **Erase** (a press removes the note under it, a drag removes every note it crosses, committed once on release; empty grid draws nothing). Lit when not Edit; Escape or a press elsewhere folds the list. The mobile more-menu lists the four flat. `roll.setTool/getTool`; `setSelectMode/isSelectMode` kept for callers. Cursor: crosshair / cell / pointer.
+
+TODO: the `⤒ WAV` re-upload offer appears on containers that never came from an inference job (a multitimbral `.syx` load); only job-born containers should ask.
+
+Tests: `voicebank-slot-state` (second strip, overwrite-never-swap, same-voice-same-slot selects, duplicates load), `patch-assign-popover` (`.current` on both), `pattern-editor` (tool list, Select once spends itself by rectangle and by click, Erase click/drag); e2e `voicebank`, `slot-drop` (a second drop adds a second track), `pianoroll` (Select once, Erase). 1005 unit, 104 e2e.
+
 ## 2026-11-07: Track effects — delay, drive, compressor, shared reverb, ducker, in WASM
 
 **Decision (with the user):** effects run inside the MSFA WASM, not as eight worklet outputs into a WebAudio graph. `DynamicsCompressorNode` has no sidechain input, so "one track boosted, everybody else ducks" is not expressible natively without main-thread envelope following; and a future piece mixdown renders through the same `render_audio` as live playback, so the export matches what was heard by construction. Drive sits **after** the delay (dirty repeats) and the ducker has one source (user's call).

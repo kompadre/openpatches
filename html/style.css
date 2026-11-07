@@ -2282,11 +2282,37 @@ h1 {
     color: #e9a045;
 }
 
-.pianoroll-select.active {
+/* The grid tool: [ ✎ Edit | ▾ ], lit when it is anything but Edit. */
+.pianoroll-tool-split { position: relative; display: inline-flex; }
+.pianoroll-tool-split .pianoroll-tool { border-radius: 4px 0 0 4px; min-width: 6.2rem; text-align: left; }
+.pianoroll-tool-caret { border-radius: 0 4px 4px 0; margin-left: -1px; padding: 0.25rem 0.4rem; }
+.pianoroll-tool-caret.open { background: #1a2744; color: #fff; }
+.pianoroll-tool.active {
     background: #e94560;
     color: #fff;
     border-color: #e94560;
 }
+.pianoroll-tool-menu {
+    position: absolute;
+    top: calc(100% + 2px);
+    left: 0;
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    min-width: 100%;
+    padding: 2px;
+    background: #12122a;
+    border: 1px solid #333;
+    border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+}
+.pianoroll-tool-menu[hidden] { display: none; }
+.pianoroll-tool-menu .pianoroll-tool-mode { text-align: left; border: none; border-radius: 3px; background: transparent; white-space: nowrap; }
+.pianoroll-tool-menu .pianoroll-tool-mode:hover { background: #1a2744; }
+.pianoroll-tool-menu .pianoroll-tool-mode.active { color: #e94560; }
+.pianoroll-tool-menu .pianoroll-tool-mode.active::before { content: '\2713 '; }
+/* In the mobile more-menu the same buttons sit flat; the active one is lit. */
+.pianoroll-more-menu .pianoroll-tool-mode.active { border-color: #e94560; color: #e94560; }
 
 .pianoroll-follow.active {
     color: #4caf50;

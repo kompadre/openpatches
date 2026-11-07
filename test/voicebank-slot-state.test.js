@@ -135,17 +135,23 @@ describe('one voice, one slot', () => {
         assert.equal(e[3].color, PATCH_COLORS[3]);
     });
 
-    test('assigning the same bytes to another slot is a move, not a copy', () => {
+    test('assigning the same bytes to another slot is a second strip, not a move', () => {
+        // It used to move: the old slot emptied and every clip on that track
+        // fell silent. Two tracks of one voice — say one dry and one through
+        // the delay — are a thing to want.
         localStorage.clear();
         const bank = createVoiceBank({ session: session || makeProjectSession() });
         bank._assignToSlot(0, { name: 'Piano', voiceData: 'piano-data', patchId: 'p1' });
         bank._getEntries()[0].volume = 42;
         bank._assignToSlot(5, { name: 'Piano', voiceData: 'piano-data', patchId: 'p1' });
         const e = bank._getEntries();
-        assert.equal(e[0], null, 'the old slot empties');
+        assert.equal(e[0].name, 'Piano', 'the old slot keeps its strip');
+        assert.equal(e[0].volume, 42, '…and its settings');
         assert.equal(e[5].name, 'Piano');
-        assert.equal(e[5].volume, 42, 'the volume travels with the voice');
-        assert.equal(occupied(bank).length, 1);
+        assert.equal(e[5].volume, 100, 'the new strip starts fresh');
+        assert.equal(occupied(bank).length, 2);
+        assert.equal(bank._getActive().name, 'Piano');
+        assert.equal(bank._getEntries().indexOf(bank._getActive()), 5, 'the new strip is selected');
     });
 
     test('assigning an unassigned voice onto an occupied slot overwrites it silently', () => {
@@ -158,30 +164,43 @@ describe('one voice, one slot', () => {
         assert.equal(occupied(bank).length, 1, 'the old voice is gone, not relocated');
     });
 
-    test('assigning a voice that already has a slot onto an occupied one swaps them', () => {
+    test('assigning a banked voice onto an occupied slot overwrites, never swaps', () => {
         localStorage.clear();
         const bank = createVoiceBank({ session: session || makeProjectSession() });
         bank._assignToSlot(0, { name: 'A', voiceData: 'a-data' });
         bank._assignToSlot(3, { name: 'B', voiceData: 'b-data' });
         bank._getEntries()[0].volume = 42;
-        bank._getEntries()[3].volume = 90;
         bank._assignToSlot(3, { name: 'A', voiceData: 'a-data' });
         const e = bank._getEntries();
         assert.equal(e[3].name, 'A');
-        assert.equal(e[0].name, 'B', 'the displaced voice takes the vacated slot');
-        assert.equal(e[3].volume, 42, 'volumes travel with their voices');
-        assert.equal(e[0].volume, 90);
-        assert.equal(bank._getActive().name, 'A', 'the assigned voice becomes active');
+        assert.equal(e[0].name, 'A', 'slot 0 was not touched');
+        assert.equal(e[0].volume, 42);
+        assert.equal(occupied(bank).filter(x => x.name === 'B').length, 0, 'B is gone, not relocated');
     });
 
-    test('dedup sees through encodings: Array and Uint8Array of the same bytes match', () => {
+    test('assigning the voice a slot already holds just selects that strip', () => {
+        localStorage.clear();
+        const bank = createVoiceBank({ session: session || makeProjectSession() });
+        bank._assignToSlot(2, { name: 'A', voiceData: 'a-data' });
+        bank._assignToSlot(4, { name: 'B', voiceData: 'b-data' });
+        const id = bank._getEntries()[2].id;
+        bank._getEntries()[2].volume = 42;
+        bank._assignToSlot(2, { name: 'A renamed', voiceData: 'a-data' });
+        assert.equal(bank._getEntries()[2].id, id, 'same strip, same id');
+        assert.equal(bank._getEntries()[2].volume, 42);
+        assert.equal(bank._getActive().id, id);
+    });
+
+    test('the voice key sees through encodings: Array and Uint8Array of the same bytes match', () => {
+        // Still matters: it is what makes re-assigning to the same slot a
+        // select, and what puts both numbers on the badge.
         localStorage.clear();
         const bank = createVoiceBank({ session: session || makeProjectSession() });
         bank._assignToSlot(0, { name: 'Bass', voiceData: [1, 2, 3], patchId: 'p1' });
+        bank._assignToSlot(0, { name: 'Bass copy', voiceData: Uint8Array.from([1, 2, 3]), patchId: 'p2' });
+        assert.equal(bank._getEntries()[0].name, 'Bass', 'same bytes on the same slot: kept, not replaced');
         bank._assignToSlot(4, { name: 'Bass copy', voiceData: Uint8Array.from([1, 2, 3]), patchId: 'p2' });
-        assert.equal(occupied(bank).length, 1, 'same bytes may not occupy two slots');
-        assert.equal(bank._getEntries()[0], null);
-        assert.equal(bank._getEntries()[4].name, 'Bass', 'the entry moves wholesale, keeping its name');
+        assert.equal(bank._getEntries()[0].voiceKey, bank._getEntries()[4].voiceKey);
     });
 
     test('addEntry fills the first empty slot and re-selects an existing voice', () => {
@@ -192,15 +211,15 @@ describe('one voice, one slot', () => {
         bank._addEntry('B', 'b-data', 'pb');
         assert.equal(bank._getEntries()[1].name, 'B', 'first hole, not append');
         bank._addEntry('A again', 'a-data', 'pa');
-        assert.equal(occupied(bank).length, 3, 'no duplicate added');
-        assert.equal(bank._getActive().name, 'A', 'the existing entry just becomes active');
+        assert.equal(occupied(bank).length, 4, 'a second strip of the same voice');
+        assert.equal(bank._getEntries()[3].name, 'A again');
+        assert.equal(bank._getActive().name, 'A again');
     });
 
-    test('reading the tracks keeps slot positions and drops duplicate voices', () => {
-        // `_setEntries` used to do this for a section's saved bank array.
-        // The tracks *are* the bank now, so the same guarantees belong on
-        // the load path: a hole is a slot with no voice, and a track whose
-        // voice already sits in a lower slot does not get a second strip.
+    test('reading the tracks keeps slot positions; a duplicate voice IS a strip', () => {
+        // A track skipped here would still be scheduled — into a channel
+        // the snapshot never loads a patch for. It played nothing, and the
+        // Mixer showed a hole where the track was.
         seed([
             { id: 'a', name: 'A', voiceData: 'a-data', patchId: 'a', volume: 60 },
             null,
@@ -212,6 +231,7 @@ describe('one voice, one slot', () => {
         assert.equal(e[0].volume, 60);
         assert.equal(e[1], null, 'a slot with no voice is a hole');
         assert.equal(e[2].name, 'B');
-        assert.equal(e[3], null, 'the duplicate voice gets no second strip');
+        assert.equal(e[3].name, 'A dup', 'the duplicate voice gets its strip');
+        assert.equal(e[3].voiceKey, e[0].voiceKey);
     });
 });

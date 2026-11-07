@@ -5,8 +5,16 @@
 // The bank is a fixed array of MAX_SLOTS positions: the slot index IS the
 // synth channel (AGENTS.md), so entries never shift. Removing one leaves a
 // hole; colors are a pure function of the index and never move. The one
-// write path is assignToSlot — no drag-in, no reordering — and it enforces
-// the invariant that a voice (by voiceKey) occupies at most one slot.
+// write path is assignToSlot — no drag-in, no reordering.
+//
+// A voice may sit in several slots. It used to be "one voice, one slot":
+// assigning a banked voice elsewhere *moved* it, which emptied the old slot
+// and silenced every clip on that track; and a project that did hold two
+// tracks of one voice (an import, a slot swap in the Section) got only one
+// strip on load, so the other track was scheduled into a channel with no
+// patch and played nothing. Two Piano tracks — one dry, one through the
+// delay — are a thing to want, not a mistake to prevent (user, 2026-11-07).
+// The voiceKey stays for the slot badge, which now lists every slot.
 //
 // Mute/Solo are plain channel-volume overrides, no engine change:
 // `entry.volume` stays the fader's value, `entry.effectiveVolume` is what
@@ -350,17 +358,13 @@ export function createVoiceBank(opts) {
         return entries.findIndex(e => !e);
     }
 
-    function findSlotByKey(key) {
-        if (!key) return -1;
-        return entries.findIndex(e => e && e.voiceKey === key);
-    }
-
     /**
-     * THE write path. Puts a voice into slot `idx`. One voice, one slot:
-     *  - target occupied, voice not in the bank → silent overwrite;
-     *  - voice already in another slot → the two slots swap (a plain move
-     *    when the target is empty), entries keep their ids and volumes;
-     *  - voice already in `idx` → just select it.
+     * THE write path. Puts a voice into slot `idx`:
+     *  - target empty → a new strip;
+     *  - target occupied by another voice → silent overwrite;
+     *  - target already holds this very voice → just select it, keeping the
+     *    strip's id, volume and effects.
+     * Other slots are never touched — a voice may be in several at once.
      * Returns true if the bank changed or the voice was already in place.
      */
     function assignToSlot(idx, { name, voiceData, patchId }) {
@@ -369,27 +373,16 @@ export function createVoiceBank(opts) {
         if (!voiceCopy) return false;
         const key = voiceKey(voiceCopy);
 
-        const existingIdx = findSlotByKey(key);
-        if (existingIdx === idx) {
-            // Same voice, same slot: just select it. The existing entry
-            // keeps its id and volume.
+        if (entries[idx] && key && entries[idx].voiceKey === key) {
             activeId = entries[idx].id;
             render();
             fireSelect();
             saveState();
             return true;
         }
-        if (existingIdx >= 0) {
-            // Swap: whatever sits in the target takes the vacated slot.
-            const moving = entries[existingIdx];
-            entries[existingIdx] = entries[idx];
-            entries[idx] = moving;
-            activeId = moving.id;
-        } else {
-            const newEntry = makeEntry(idx, name, voiceCopy, patchId, key, null);
-            entries[idx] = newEntry;
-            activeId = newEntry.id;
-        }
+        const newEntry = makeEntry(idx, name, voiceCopy, patchId, key, null);
+        entries[idx] = newEntry;
+        activeId = newEntry.id;
         applyMix();
         render();
         fireSelect();
@@ -398,20 +391,11 @@ export function createVoiceBank(opts) {
         return true;
     }
 
-    // Interim single entry point until the per-patch slot picker lands:
-    // assign to the first empty slot; a voice already in the bank just
-    // becomes the selection.
+    // Assign to the first empty slot — even a voice that is already in the
+    // bank; a second strip of it is what the caller asked for.
     function addEntry(name, voiceData, patchId) {
         const voiceCopy = copyVoice(voiceData);
         if (!voiceCopy) return;
-        const existingIdx = findSlotByKey(voiceKey(voiceCopy));
-        if (existingIdx >= 0) {
-            activeId = entries[existingIdx].id;
-            render();
-            fireSelect();
-            saveState();
-            return;
-        }
         const idx = firstEmptySlot();
         if (idx < 0) return;
         assignToSlot(idx, { name, voiceData: voiceCopy, patchId });
@@ -504,15 +488,13 @@ export function createVoiceBank(opts) {
         const project = session && session.get();
         if (!project) return;
         const next = new Array(MAX_SLOTS).fill(null);
-        const seen = new Set();
         for (const track of project.tracks) {
             if (track.slot < 0 || track.slot >= MAX_SLOTS) continue;
             const voiceCopy = copyVoice(track.voiceData);
             if (!voiceCopy) continue;
             const key = voiceKey(voiceCopy);
-            // One voice, one slot — the invariant assignToSlot enforces.
-            if (key && seen.has(key)) continue;
-            if (key) seen.add(key);
+            // Every track with a voice is a strip, duplicates included: a
+            // track skipped here is scheduled into a channel with no patch.
             next[track.slot] = {
                 id: track.id,
                 name: track.name,
@@ -565,20 +547,11 @@ export function createVoiceBank(opts) {
 
     /**
      * A canvas patch dropped on a voice — see slot-drop.js. `idx` is a slot,
-     * or 'new': a new track on the first free slot, unless this voice is
-     * already in the bank, in which case that slot is simply selected.
+     * or 'new': a new track on the first free slot.
      */
     function assignPatch(patch, idx) {
         if (!patch || !patch.voice_data) return false;
         if (idx === 'new') {
-            const already = findSlotByKey(voiceKey(copyVoice(patch.voice_data)));
-            if (already >= 0) {
-                activeId = entries[already].id;
-                render();
-                fireSelect();
-                saveState();
-                return true;
-            }
             idx = entries.findIndex(e => !e);
             if (idx < 0) return false;            // all eight voices taken
         }

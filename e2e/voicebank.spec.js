@@ -73,7 +73,7 @@ test.describe('assigning patches to the bank', () => {
         await expect(page.locator('.patch-row').first().locator('.patch-slot-badge')).toHaveText('2');
     });
 
-    test('reassigning to an occupied slot swaps the two voices', async ({ page }) => {
+    test('reassigning a banked voice to an occupied slot overwrites it; the first slot stays', async ({ page }) => {
         await openApp(page);
         await importDemoBank(page);
 
@@ -84,21 +84,23 @@ test.describe('assigning patches to the bank', () => {
         const before = await bankState(page);
         expect(before.map(e => e.slot)).toEqual([0, 1]);
 
-        // Slot 1's voice onto slot 2 — the occupant falls back to slot 1.
+        // Slot 1's voice onto slot 2: slot 2's occupant goes, slot 1 is untouched.
         await assignRowToSlot(rows.nth(0), 2);
 
         const after = await bankState(page);
         expect(after.map(e => [e.slot, e.name])).toEqual([
-            [0, before[1].name],
+            [0, before[0].name],
             [1, before[0].name],
         ]);
 
-        // And both rows show their new numbers.
-        await expect(rows.nth(0).locator('.patch-slot-badge')).toHaveText('2');
-        await expect(rows.nth(1).locator('.patch-slot-badge')).toHaveText('1');
+        // The row lists both of its slots; the displaced row none.
+        await expect(rows.nth(0).locator('.patch-slot-badge')).toHaveText('1·2');
+        await expect(rows.nth(1).locator('.patch-slot-badge')).toBeHidden();
     });
 
-    test('one voice never occupies two slots', async ({ page }) => {
+    test('one voice may occupy two slots', async ({ page }) => {
+        // It used to move instead, emptying the first slot and silencing
+        // every clip on that track.
         await openApp(page);
         await importDemoBank(page);
 
@@ -107,8 +109,8 @@ test.describe('assigning patches to the bank', () => {
         await assignRowToSlot(row, 5);
 
         const state = await bankState(page);
-        expect(state).toHaveLength(1);
-        expect(state[0].slot).toBe(4);
+        expect(state.map(e => e.slot)).toEqual([0, 4]);
+        expect(state[0].name).toBe(state[1].name);
     });
 });
 

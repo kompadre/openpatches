@@ -43,7 +43,7 @@ test('a row onto an empty Mixer slot makes the track', async ({ page }) => {
     expect(await tracks(page)).toEqual([[1, 'ROWPATCH']]);
 });
 
-test('onto a Section lane it becomes that track\'s voice; onto empty grid, a new track — once', async ({ page }) => {
+test('onto a Section lane it becomes that track\'s voice; onto empty grid, a new track — each time', async ({ page }) => {
     await openApp(page);
     await seed(page);
     await openSectionPane(page);
@@ -65,7 +65,7 @@ test('onto a Section lane it becomes that track\'s voice; onto empty grid, a new
     await drop();
     await expect.poll(() => tracks(page)).toEqual([[0, 'LANEPATCH'], [1, 'FLOATER']]);
     await expect(page.locator('.section-lane')).toHaveCount(2);
-    await drop();                                                    // already in use: no second track
-    await page.waitForTimeout(200);
-    expect(await tracks(page)).toEqual([[0, 'LANEPATCH'], [1, 'FLOATER']]);
+    await drop();                                                    // the same voice again: a second track of it
+    await expect.poll(() => tracks(page)).toEqual([[0, 'LANEPATCH'], [1, 'FLOATER'], [2, 'FLOATER']]);
+    await expect(page.locator('.section-lane')).toHaveCount(3);
 });

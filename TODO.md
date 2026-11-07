@@ -8,6 +8,7 @@ Project backlog. Parent tasks with nested subtasks; `[ ]` pending, `[x]` done,
 ### Bugs
 
 - [ ] Flaky unit test `pattern colours` (section-editor.test.js): two random pattern ids can hash to the same hue, failing "two patterns, two hues".
+- [ ] Containers do not always come from inferring a WAV — loading a multitimbral `.syx` makes one too — yet the `⤒ WAV` re-upload offer appears on containers that never had a source WAV. Only containers that came from an inference job should ask for the original WAV. The offer is built in `canvas.js` where `ctr.jobId && onLoadJobWav` and the blob is absent; check what gives a `.syx` container a job id (import path in `project-io.js`, `sourceMissing`).
 
 - [x] Pattern sub-measure placement in Section has been lost to recent changes. _(Not lost: Snap defaulted to Bar and was easy to miss. Default is now 1/2.)_
 - [x] div.bpane-content.bpane-content-mixer is limited to .bpane-body viewport width. If .bpane-body scrolls to the right .bpane-content ends abruptly and doesn't cover the rest of Tracks.

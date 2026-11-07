@@ -55,6 +55,16 @@ describe('assign popover', () => {
         assert.ok(!slots[0].className.includes('current'));
     });
 
+    test('a voice in two slots wears .current on both', () => {
+        const { pop } = openPopover({ id: 'x', name: 'C', voice_data: 'C-data' }, {
+            onAssignSlot: () => {},
+            getBankEntries: () => bankWith(['A', 'C', 'C', null, 'B']),
+        });
+        const slots = pop.querySelectorAll('.patch-assign-slot');
+        assert.deepEqual(slots.map(b => b.className.includes('current')),
+            [false, true, true, false, false, false, false, false]);
+    });
+
     test('clicking a slot commits it and closes the popover', () => {
         const calls = [];
         const patch = { id: 'x', name: 'New', voice_data: 'new-data' };

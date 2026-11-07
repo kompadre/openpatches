@@ -437,12 +437,20 @@ export function createPianoroll(opts) {
     clearBtnDesktop.textContent = '\u{1F9F9} Clear';
     controls.appendChild(clearBtnDesktop);
 
-    // Selection: Select mode (a drag on empty grid selects instead of
-    // drawing; Shift-drag does the same without the mode), Copy and Paste.
-    // Mobile copies live in the more-menu below.
-    const SELECT_LABEL = '\u2B1A Select';
-    const SELECT_TITLE = 'Select mode: drag a rectangle over notes to select them (Shift-drag works too), '
-        + 'then drag any selected note to move them all, Delete to remove them, Copy to stamp a copy of them';
+    // The tool — what a press on the grid does. One split button, after
+    // the transport's Play: the label names the current tool, the caret
+    // opens the list. Edit draws notes (Shift-drag still marquees). Select
+    // makes a drag a marquee until changed back; Select once is the same
+    // for a single rectangle and then returns to Edit by itself. Erase
+    // deletes the note under the pointer and every note a drag crosses.
+    // Copy arms the stamp. Mobile copies live in the more-menu below.
+    const TOOLS = [
+        { id: 'edit', label: '\u270E Edit', title: 'Edit: drag on the grid to draw a note; drag a note to move it, its edge to resize it; double-click removes it. Shift-drag selects.' },
+        { id: 'select-once', label: '\u2B1A Select once', title: 'Select once: drag a rectangle over notes to select them, then back to Edit.' },
+        { id: 'select', label: '\u2B1A Select', title: 'Select: every drag on empty grid is a rectangle that selects the notes it crosses; drag any selected note to move them all, Delete removes them, Copy stamps a copy.' },
+        { id: 'erase', label: '\u2326 Erase', title: 'Erase: click a note to remove it, or drag across notes to remove each one you cross.' },
+    ];
+    const toolById = (id) => TOOLS.find(t => t.id === id) || TOOLS[0];
     const COPY_LABEL = '\u2398 Copy';
     const COPY_TITLE = 'Copy the selected notes: a shadow of them follows the pointer — click where they should go '
         + '(Ctrl+C; Escape or Copy again to cancel)';
@@ -453,10 +461,49 @@ export function createPianoroll(opts) {
         b.title = title;
         return b;
     };
-    const selectBtn = mkBtn('pianoroll-select', SELECT_LABEL, SELECT_TITLE);
+    // [ ✎ Edit | ▾ ] — the label shows the tool; label and caret both open
+    // the list (there is nothing else a press on the name could mean).
+    const toolSplit = document.createElement('div');
+    toolSplit.className = 'pianoroll-tool-split';
+    const toolBtn = mkBtn('pianoroll-tool', TOOLS[0].label, TOOLS[0].title);
+    const toolCaret = mkBtn('pianoroll-tool-caret', '\u25BE', 'Choose the tool');
+    const toolMenu = document.createElement('div');
+    toolMenu.className = 'pianoroll-tool-menu';
+    toolMenu.hidden = true;
+    const toolModeBtns = [];
+    const mkToolMode = (t) => {
+        const b = mkBtn('pianoroll-tool-mode', t.label, t.title);
+        b.dataset.tool = t.id;
+        b.addEventListener('click', (e) => { e.stopPropagation(); setTool(t.id); closeToolMenu(); });
+        toolModeBtns.push(b);
+        return b;
+    };
+    for (const t of TOOLS) toolMenu.appendChild(mkToolMode(t));
+    toolSplit.appendChild(toolBtn);
+    toolSplit.appendChild(toolCaret);
+    toolSplit.appendChild(toolMenu);
+    const toolOutside = (e) => { if (!toolSplit.contains(e.target)) closeToolMenu(); };
+    const toolEsc = (e) => { if (e.key === 'Escape') closeToolMenu(); };
+    function openToolMenu() {
+        toolMenu.hidden = false;
+        toolCaret.classList.add('open');
+        document.addEventListener('mousedown', toolOutside);
+        document.addEventListener('touchstart', toolOutside);
+        document.addEventListener('keydown', toolEsc);
+    }
+    function closeToolMenu() {
+        toolMenu.hidden = true;
+        toolCaret.classList.remove('open');
+        document.removeEventListener('mousedown', toolOutside);
+        document.removeEventListener('touchstart', toolOutside);
+        document.removeEventListener('keydown', toolEsc);
+    }
+    for (const b of [toolBtn, toolCaret]) {
+        b.addEventListener('click', (e) => { e.stopPropagation(); toolMenu.hidden ? openToolMenu() : closeToolMenu(); });
+    }
     const copyBtn = mkBtn('pianoroll-copy', COPY_LABEL, COPY_TITLE);
     copyBtn.disabled = true;
-    controls.appendChild(selectBtn);
+    controls.appendChild(toolSplit);
     controls.appendChild(copyBtn);
 
     // Ellipsis menu (mobile)
@@ -481,12 +528,11 @@ export function createPianoroll(opts) {
     followBtnMobile.title = FOLLOW_TITLE;
     moreMenu.appendChild(followBtnMobile);
 
-    const selectBtnMobile = mkBtn('pianoroll-select', SELECT_LABEL, SELECT_TITLE);
+    // The more-menu lists the tools flat — it is a menu already.
+    for (const t of TOOLS) moreMenu.appendChild(mkToolMode(t));
     const copyBtnMobile = mkBtn('pianoroll-copy', COPY_LABEL, COPY_TITLE);
     copyBtnMobile.disabled = true;
-    moreMenu.appendChild(selectBtnMobile);
     moreMenu.appendChild(copyBtnMobile);
-    for (const b of [selectBtn, selectBtnMobile]) b.addEventListener('click', () => setSelectMode(!selectMode));
     // Copy arms the stamp; Copy again while armed cancels it.
     for (const b of [copyBtn, copyBtnMobile]) b.addEventListener('click', () => { if (placing) cancelPlacement(); else copySelection(); });
 
@@ -662,7 +708,10 @@ export function createPianoroll(opts) {
     // drag on empty grid in Select mode, or with Shift held), moved as one
     // by dragging any selected note, copied and pasted by the buttons.
     const selected = new Set();
-    let selectMode = false;
+    let tool = 'edit';                // one of TOOLS[].id
+    const isSelecting = () => tool === 'select' || tool === 'select-once';
+    let erasing = false;              // Erase: the button is down, notes under the pointer go
+    let erasedAny = false;
     let marquee = null;               // {x0, y0, x1, y1} in folded canvas px while dragging one
     let groupMove = null;             // [{note, start, midi}] originals while moving a selection
     // The stamp: Copy takes the selection off the grid as a shadow that
@@ -1058,6 +1107,27 @@ export function createPianoroll(opts) {
         // A bare click on empty grid in Select mode drops the selection.
         if (Math.abs(m.x1 - m.x0) < 4 && Math.abs(m.y1 - m.y0) < 4) { selected.clear(); draw(); }
         else selectInRect(m.x0, m.y0, m.x1, m.y1);
+        // Select once is spent by its one rectangle — or its one click.
+        if (tool === 'select-once') setTool('edit');
+    }
+
+    /** Erase: remove the note under (x, y), if any. Committed on release. */
+    function eraseAt(x, y, finder) {
+        const target = finder(x, y);
+        if (!target || !target.note) return false;
+        const idx = notes.indexOf(target.note);
+        if (idx >= 0) notes.splice(idx, 1);
+        selected.delete(target.note);
+        erasedAny = true;
+        draw();
+        return true;
+    }
+
+    function endErase() {
+        if (!erasing) return;
+        erasing = false;
+        if (erasedAny) commitNotes();
+        erasedAny = false;
     }
 
     // A mouse marquee lives on the document, not the canvas: leaving the
@@ -1228,9 +1298,21 @@ export function createPianoroll(opts) {
         draw();
     }
 
+    function setTool(id) {
+        const t = toolById(id);
+        tool = t.id;
+        toolBtn.textContent = t.label;
+        toolBtn.title = t.title;
+        // Lit whenever the grid does something other than draw.
+        toolBtn.classList.toggle('active', tool !== 'edit');
+        for (const b of toolModeBtns) b.classList.toggle('active', b.dataset.tool === tool);
+        if (tool !== 'erase') endErase();
+    }
+    setTool('edit');
+
+    /** Back-compat: Select on, Edit off. */
     function setSelectMode(on) {
-        selectMode = !!on;
-        for (const b of [selectBtn, selectBtnMobile]) b.classList.toggle('active', selectMode);
+        setTool(on ? 'select' : 'edit');
     }
 
     function updateSelectionButtons() {
@@ -1303,6 +1385,17 @@ export function createPianoroll(opts) {
         }
 
         const now = Date.now();
+
+        // Erase: the press removes the note under it, and the drag that may
+        // follow removes every note it crosses (mousemove), committed once
+        // on release. Empty grid does nothing — no note is drawn.
+        if (tool === 'erase') {
+            erasing = true;
+            erasedAny = false;
+            eraseAt(x, y, findInteractionTarget);
+            return;
+        }
+
         const target = findInteractionTarget(x, y);
 
         // Double-click detection
@@ -1339,10 +1432,11 @@ export function createPianoroll(opts) {
             return;
         }
 
-        // Empty grid. In Select mode (or with Shift) a drag is a marquee;
-        // otherwise it draws a note. The rest of the gesture is tracked on
-        // the document (see marqueeDocMove) so it survives the canvas edge.
-        if (selectMode || e.shiftKey) {
+        // Empty grid. With a Select tool (or with Shift) a drag is a
+        // marquee; otherwise it draws a note. The rest of the gesture is
+        // tracked on the document (see marqueeDocMove) so it survives the
+        // canvas edge.
+        if (isSelecting() || e.shiftKey) {
             const pt = marqueePoint(x, y);
             marquee = { x0: pt.x, y0: pt.y, x1: pt.x, y1: pt.y };
             document.addEventListener('mousemove', marqueeDocMove);
@@ -1374,6 +1468,11 @@ export function createPianoroll(opts) {
         }
 
         if (marquee) return;        // the document handlers own the gesture
+
+        if (erasing) {
+            eraseAt(x, y, findInteractionTarget);
+            return;
+        }
 
         if (resizingNote && moveStartPos) {
             const dx = x - moveStartPos.x;
@@ -1426,7 +1525,7 @@ export function createPianoroll(opts) {
         } else if (y > HEADER_H && nearPlayhead(x, PLAYHEAD_GRAB)) {
             canvas.style.cursor = 'ew-resize';
         } else {
-            canvas.style.cursor = selectMode ? 'cell' : 'crosshair';
+            canvas.style.cursor = isSelecting() ? 'cell' : tool === 'erase' ? 'pointer' : 'crosshair';
         }
     });
 
@@ -1439,6 +1538,11 @@ export function createPianoroll(opts) {
         }
 
         if (marquee) return;        // the document mouseup commits it
+
+        if (erasing) {
+            endErase();
+            return;
+        }
 
         if (resizingNote) {
             if (moveCommitted) {
@@ -1505,6 +1609,7 @@ export function createPianoroll(opts) {
     });
 
     canvas.addEventListener('mouseleave', () => {
+        endErase();
         canvas.style.cursor = '';
         // A seek is already committed as it moves; just stop following.
         // (A live marquee is NOT cancelled: it is a document-level drag.)
@@ -1586,6 +1691,14 @@ export function createPianoroll(opts) {
         }
 
         const now = Date.now();
+
+        if (tool === 'erase') {
+            erasing = true;
+            erasedAny = false;
+            eraseAt(x, y, findInteractionTargetTouch);
+            return;
+        }
+
         const target = findInteractionTargetTouch(x, y);
         const isStopped = !playing && !looping;
 
@@ -1622,10 +1735,10 @@ export function createPianoroll(opts) {
             return;
         }
 
-        // Select mode: a drag on empty grid is a marquee, a tap drops the
+        // A Select tool: a drag on empty grid is a marquee, a tap drops the
         // selection. No document handlers here: a touch keeps streaming to
         // the element it started on even outside its bounds.
-        if (selectMode) {
+        if (isSelecting()) {
             const pt = marqueePoint(x, y);
             marquee = { x0: pt.x, y0: pt.y, x1: pt.x, y1: pt.y };
             draw();
@@ -1680,6 +1793,11 @@ export function createPianoroll(opts) {
             marquee.x1 = pt.x;
             marquee.y1 = pt.y;
             draw();
+            return;
+        }
+
+        if (erasing) {
+            eraseAt(x, y, findInteractionTargetTouch);
             return;
         }
 
@@ -1786,6 +1904,11 @@ export function createPianoroll(opts) {
 
         if (marquee) {
             commitMarquee();
+            return;
+        }
+
+        if (erasing) {
+            endErase();
             return;
         }
 
@@ -2056,7 +2179,10 @@ export function createPianoroll(opts) {
         getPlacement() { return placing && placing.col != null ? { col: placing.col, row: placing.row } : null; },
         cancelPlacement() { cancelPlacement(); },
         setSelectMode(on) { setSelectMode(on); },
-        isSelectMode() { return selectMode; },
+        isSelectMode() { return isSelecting(); },
+        /** The grid tool: 'edit' | 'select-once' | 'select' | 'erase'. */
+        setTool(id) { setTool(id); },
+        getTool() { return tool; },
         setStepCursor(col) {
             stepCol = col >= 0 ? col : -1;
             draw();

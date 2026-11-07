@@ -205,8 +205,33 @@ test.describe('selection, copy and paste', () => {
 
     const selectedMidis = (page) => page.evaluate(() => window.__opDock._pianoroll.getSelectedNotes().map(n => n.midi).sort());
 
+    /** The grid tool, from the split button's list — as the user picks it. */
+    async function pickTool(page, id) {
+        await page.locator('.pianoroll-controls .pianoroll-tool-caret').click();
+        await page.locator(`.pianoroll-controls .pianoroll-tool-menu .pianoroll-tool-mode[data-tool="${id}"]`).click();
+        await expect(page.locator('.pianoroll-controls .pianoroll-tool-menu')).toBeHidden();
+    }
+
+    test('Select once picks a rectangle and the button reads Edit again', async ({ page }) => {
+        await pickTool(page, 'select-once');
+        await expect(page.locator('.pianoroll-controls .pianoroll-tool')).toHaveText(/Select once/);
+        await drag(page, { x: cellX(0) - 10, y: cellY(82) }, { x: cellX(4), y: cellY(74) });
+        expect(await selectedMidis(page)).toEqual([76, 80]);
+        await expect(page.locator('.pianoroll-controls .pianoroll-tool')).toHaveText(/Edit/);
+        expect(await page.evaluate(() => window.__opDock._pianoroll.getTool())).toBe('edit');
+    });
+
+    test('Erase removes the note under a click and every note a drag crosses', async ({ page }) => {
+        await pickTool(page, 'erase');
+        await drag(page, { x: cellX(0) + 4, y: cellY(80) }, { x: cellX(0) + 4, y: cellY(80) });
+        expect((await getNotes(page)).map(n => n.midi)).toEqual([76]);
+        // A sweep from empty grid across the remaining note.
+        await drag(page, { x: cellX(6), y: cellY(76) }, { x: cellX(2), y: cellY(76) });
+        expect(await getNotes(page)).toHaveLength(0);
+    });
+
     test('Select mode: a rectangle picks notes, a drag moves them together', async ({ page }) => {
-        await page.locator('.pianoroll-controls .pianoroll-select').click();
+        await pickTool(page, 'select');
         // A marquee from above-left of the upper note to below-right of the lower, over empty grid.
         await drag(page, { x: cellX(0) - 10, y: cellY(82) }, { x: cellX(4), y: cellY(74) });
         expect(await selectedMidis(page)).toEqual([76, 80]);
@@ -224,7 +249,7 @@ test.describe('selection, copy and paste', () => {
         await drag(page, { x: cellX(15), y: cellY(78) }, { x: cellX(15), y: cellY(78) });
         await expect.poll(() => getNotes(page)).toHaveLength(3);
 
-        await page.locator('.pianoroll-controls .pianoroll-select').click();
+        await pickTool(page, 'select');
         const box = await page.locator('.pianoroll-canvas').boundingBox();
         await page.mouse.move(box.x + cellX(14), box.y + cellY(79));      // empty cell inside
         await page.mouse.down();

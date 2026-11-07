@@ -559,8 +559,80 @@ describe('selection, copy and paste', () => {
         h.notes = () => h.roll.getNotes().map(n => ({ midi: n.midi, start: n.start, dur: n.dur }));
         h.shiftMouse = (type, x, y) => h.canvas.dispatch(type, { clientX: x, clientY: y, shiftKey: true, preventDefault() {} });
         h.selectedMidis = () => h.roll.getSelectedNotes().map(n => n.midi).sort();
+        // Pick a tool the way the user does: open the split button's list
+        // and press the entry. The more-menu holds a second copy of each
+        // entry, so scope to the desktop list.
+        h.tool = (id) => {
+            h.roll.element.querySelector('.pianoroll-tool-caret').dispatch('click', { stopPropagation() {} });
+            h.roll.element.querySelector('.pianoroll-tool-menu')
+                .querySelectorAll('.pianoroll-tool-mode').find(b => b.dataset.tool === id)
+                .dispatch('click', { stopPropagation() {} });
+        };
+        h.toolLabel = () => String(h.roll.element.querySelector('.pianoroll-tool').textContent);
         return h;
     }
+
+    test('the tool button names the tool and lists the four', () => {
+        const h = seeded();
+        assert.equal(h.roll.getTool(), 'edit');
+        assert.equal(h.toolLabel(), '✎ Edit');
+        const menu = h.roll.element.querySelector('.pianoroll-tool-menu');
+        assert.deepEqual(menu.querySelectorAll('.pianoroll-tool-mode').map(b => b.dataset.tool),
+            ['edit', 'select-once', 'select', 'erase']);
+        h.tool('erase');
+        assert.equal(h.toolLabel(), '⌦ Erase');
+        assert.ok(h.roll.element.querySelector('.pianoroll-tool').classList.contains('active'), 'lit when not Edit');
+        h.tool('edit');
+        assert.ok(!h.roll.element.querySelector('.pianoroll-tool').classList.contains('active'));
+    });
+
+    test('Select once: one rectangle, then back to Edit on its own', () => {
+        const h = seeded();
+        h.tool('select-once');
+        assert.equal(h.roll.isSelectMode(), true);
+        marqueeBoth(h, h.mouse);
+        assert.deepEqual(h.selectedMidis(), [60, 64], 'the rectangle selected');
+        assert.equal(h.roll.getTool(), 'edit', 'and the tool dropped back');
+        assert.equal(h.toolLabel(), '✎ Edit');
+        // The selection survives the drop back; the next drag draws again.
+        assert.deepEqual(h.selectedMidis(), [60, 64]);
+        drawNote(h, 48, 6, 6);
+        assert.equal(h.notes().length, 4, 'Edit draws');
+    });
+
+    test('Select once is spent by a bare click too', () => {
+        const h = seeded();
+        h.tool('select-once');
+        h.mouse('mousedown', colX(8), rowY(50));
+        docMouse('mouseup', colX(8) + 1, rowY(50));
+        assert.equal(h.roll.getTool(), 'edit');
+    });
+
+    test('Erase: a click on a note removes it; empty grid draws nothing', () => {
+        const h = seeded();
+        h.tool('erase');
+        h.mouse('mousedown', colX(0) + 6, rowY(60));
+        h.mouse('mouseup', colX(0) + 6, rowY(60));
+        assert.deepEqual(h.notes().map(n => n.midi), [64, 72]);
+        h.mouse('mousedown', colX(8), rowY(50));
+        h.mouse('mousemove', colX(9), rowY(50));
+        h.mouse('mouseup', colX(9), rowY(50));
+        assert.equal(h.notes().length, 2, 'no note drawn in Erase');
+        assert.equal(h.roll.getTool(), 'erase', 'Erase stays until changed');
+    });
+
+    test('Erase: a drag removes every note it crosses, committed once', () => {
+        const h = seeded();
+        const session = h.roll.element && h.session;
+        h.tool('erase');
+        // Press on empty grid in row 60, sweep right across the note at 60
+        // then down into 64's row and across it.
+        h.mouse('mousedown', colX(14), rowY(60));
+        h.mouse('mousemove', colX(0) + 6, rowY(60));
+        h.mouse('mousemove', colX(2) + 6, rowY(64));
+        h.mouse('mouseup', colX(2) + 6, rowY(64));
+        assert.deepEqual(h.notes().map(n => n.midi), [72]);
+    });
     // Once a marquee starts, the gesture lives on the document (so it
     // survives the canvas edge) — move and release are document events.
     // The stub canvas sits at (0,0), so client and canvas px coincide.
@@ -583,8 +655,9 @@ describe('selection, copy and paste', () => {
 
     test('Select mode makes a plain drag do the same; a bare click drops the selection', () => {
         const h = seeded();
-        h.btn('⬚ Select').dispatch('click');
+        h.tool('select');
         assert.equal(h.roll.isSelectMode(), true);
+        assert.equal(h.roll.getTool(), 'select');
         marqueeBoth(h, h.mouse);
         assert.deepEqual(h.selectedMidis(), [60, 64]);
         h.mouse('mousedown', colX(8), rowY(50));

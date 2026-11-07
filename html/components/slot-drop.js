@@ -13,8 +13,8 @@ let handler = null;
 
 /**
  * The voice bank registers how to assign a patch: to slot `idx`, or, for
- * `'new'`, to a new track on the first free slot (or the slot already
- * holding that voice).
+ * `'new'`, to a new track on the first free slot — a second one if the
+ * voice is already in the bank.
  */
 export function onPatchDroppedOnSlot(fn) { handler = fn; return () => { if (handler === fn) handler = null; }; }
 

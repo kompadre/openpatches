@@ -89,19 +89,22 @@ export function reorderContainerPatch(containerId, patchId, targetId, before) {
 
 // --- Voice bank slot badges ---
 
-// voiceKey → {slot, color} for every occupied slot, rebuilt from each bank
-// snapshot. Patches are identified by their voice bytes, not their id, so
-// every row showing the same voice — canvas, container, edit panel, a
-// renamed copy — wears the same slot number.
-const _slotByVoiceKey = new Map();
+// voiceKey → [{slot, color}] for every slot holding that voice, rebuilt from
+// each bank snapshot. Patches are identified by their voice bytes, not their
+// id, so every row showing the same voice — canvas, container, edit panel,
+// a renamed copy — wears the same numbers. A voice may be in several slots
+// (two Piano tracks with different effects), so the badge lists them all,
+// coloured by the first.
+const _slotsByVoiceKey = new Map();
 
 function applyBadge(badge) {
     const key = badge.dataset.voiceKey;
-    const hit = key ? _slotByVoiceKey.get(key) : null;
-    if (hit) {
-        badge.textContent = hit.slot + 1;
-        badge.title = 'Voice bank slot ' + (hit.slot + 1);
-        badge.style.background = hit.color || '';
+    const hits = key ? _slotsByVoiceKey.get(key) : null;
+    if (hits && hits.length) {
+        badge.textContent = hits.map(h => h.slot + 1).join('\u00B7');
+        badge.title = (hits.length === 1 ? 'Voice bank slot ' : 'Voice bank slots ')
+            + hits.map(h => h.slot + 1).join(', ');
+        badge.style.background = hits[0].color || '';
         badge.style.display = '';
     } else {
         badge.textContent = '';
@@ -116,9 +119,12 @@ function applyBadge(badge) {
  * than by subscription — nothing to unsubscribe when a row is discarded.
  */
 export function updateBankSlots(entries) {
-    _slotByVoiceKey.clear();
+    _slotsByVoiceKey.clear();
     (entries || []).forEach((e, i) => {
-        if (e && e.voiceKey) _slotByVoiceKey.set(e.voiceKey, { slot: i, color: e.color });
+        if (!e || !e.voiceKey) return;
+        const list = _slotsByVoiceKey.get(e.voiceKey) || [];
+        list.push({ slot: i, color: e.color });
+        _slotsByVoiceKey.set(e.voiceKey, list);
     });
     document.querySelectorAll('.patch-slot-badge').forEach(applyBadge);
 }
@@ -186,7 +192,9 @@ export function attachAssignPopover(assignBtn, anchorEl, patch, opts) {
 
         const entries = getBankEntries() || [];
         const key = voiceKey(patch.voice_data);
-        const currentSlot = key ? entries.findIndex(en => en && en.voiceKey === key) : -1;
+        // Every slot already holding this voice — there may be several.
+        const current = new Set();
+        if (key) entries.forEach((en, i) => { if (en && en.voiceKey === key) current.add(i); });
 
         pop = document.createElement('div');
         pop.className = 'patch-assign-pop';
@@ -196,9 +204,9 @@ export function attachAssignPopover(assignBtn, anchorEl, patch, opts) {
             const btn = document.createElement('button');
             btn.className = 'patch-assign-slot'
                 + (occ ? ' occupied' : '')
-                + (i === currentSlot ? ' current' : '');
+                + (current.has(i) ? ' current' : '');
             btn.textContent = i + 1;
-            btn.title = i === currentSlot ? 'Current slot'
+            btn.title = current.has(i) ? 'Current slot'
                 : occ ? occ.name : 'Empty slot ' + (i + 1);
             if (occ && occ.color) btn.style.borderColor = occ.color;
             if (!occ && !focusBtn) focusBtn = btn;
