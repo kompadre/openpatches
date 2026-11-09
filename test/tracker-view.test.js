@@ -711,7 +711,7 @@ describe('tracker selection', () => {
         assert.equal(session.getPattern(pattern.id).notes.length, 3, 'nothing removed while in flight');
         for (let i = 0; i < 6; i++) h.key('ArrowDown', { key: 'ArrowDown' });
         h.key('Enter', { key: 'Enter' });
-        assert.equal(h.q('.tracker-status').textContent, 'Moved');
+        assert.match(h.q('.tracker-status').textContent, /^Moved — move the cursor and Ctrl\+V/);
         h.tracker.flush();
         assert.deepEqual(notesOf(pattern.id), [[60, 6, 2, 0], [62, 8, 2, 0], [67, 12, 4, 0]]);
         assert.deepEqual(h.tracker.getSelection().rows, [6, 9]);
@@ -762,5 +762,97 @@ describe('tracker selection', () => {
         h.key('Enter', { key: 'Enter' });
         h.tracker.flush();
         assert.deepEqual(notesOf(pattern.id), [[60, 0, 2, 0], [60, 2, 2, 0]], 'copied, the original kept');
+    });
+
+    // After the first placement: the clipboard stays, the shadow goes, and
+    // Ctrl+V pastes again with its top-left at the cursor.
+    const copyRows01 = (h, x) => {
+        dragSel(h, x, 0, x, 1);
+        h.key('KeyC', { key: 'c', ctrlKey: true });
+    };
+
+    test('after placing, the shadow goes; Ctrl+V pastes again at the cursor, as often as wanted', () => {
+        const { pattern } = seedPattern(session, { notes: [N(60, 0, 2)] });
+        const h = build();
+        const x = h.head(0).x + 4;
+        copyRows01(h, x);
+        h.key('ArrowDown', { key: 'ArrowDown' });
+        h.key('ArrowDown', { key: 'ArrowDown' });
+        h.key('Enter', { key: 'Enter' });                 // the first batch, at row 2
+        assert.equal(btn(h).classList.contains('active'), false, 'no shadow any more');
+        assert.deepEqual(h.tracker.getSelection().rows, [2, 3], 'the placed copy stays selected');
+
+        // The arrows move the cursor now, not a shadow.
+        for (let i = 0; i < 4; i++) h.key('ArrowDown', { key: 'ArrowDown' });
+        assert.equal(h.tracker.getCursor().col, 6);
+        h.key('KeyV', { key: 'v', ctrlKey: true });
+        h.press(x, 10 * ROW + 4);                         // a click moves the cursor too
+        h.key('KeyV', { key: 'v', ctrlKey: true });
+        h.tracker.flush();
+        assert.deepEqual(notesOf(pattern.id), [[60, 0, 2, 0], [60, 2, 2, 0], [60, 6, 2, 0], [60, 10, 2, 0]]);
+        assert.deepEqual(h.tracker.getSelection().rows, [10, 11], 'the last paste is the selection');
+    });
+
+    test('a repeated paste starts exactly at the cursor; rows past the repeat are dropped', () => {
+        const { pattern } = seedPattern(session, { notes: [N(60, 0, 1), N(62, 3, 1)] });
+        const h = build();
+        const x = h.head(0).x + 4;
+        dragSel(h, x, 0, x, 3);
+        h.key('KeyC', { key: 'c', ctrlKey: true });
+        h.key('Enter', { key: 'Enter' });                 // placed over itself
+        h.press(x, 14 * ROW + 4);
+        h.key('KeyV', { key: 'v', ctrlKey: true });
+        h.tracker.flush();
+        // 60 lands on row 14; 62 would be row 17, past the pattern: dropped.
+        assert.deepEqual(notesOf(pattern.id), [[60, 0, 1, 0], [62, 3, 1, 0], [60, 14, 1, 0]]);
+    });
+
+    test('no pattern under the cursor: no paste', () => {
+        const { pattern } = seedPattern(session, { notes: [N(60, 0, 2)] });
+        const h = build();
+        const x = h.head(0).x + 4;
+        copyRows01(h, x);
+        h.key('Enter', { key: 'Enter' });
+        h.press(x, 30 * ROW + 4);                         // below the clip
+        h.key('KeyV', { key: 'v', ctrlKey: true });
+        assert.match(h.q('.tracker-status').textContent, /No pattern under the cursor/);
+        h.tracker.flush();
+        assert.deepEqual(notesOf(pattern.id), [[60, 0, 2, 0]]);
+    });
+
+    test('Escape empties the clipboard: Ctrl+V after it does nothing', () => {
+        const { pattern } = seedPattern(session, { notes: [N(60, 0, 2)] });
+        const h = build();
+        const x = h.head(0).x + 4;
+        copyRows01(h, x);
+        h.key('Enter', { key: 'Enter' });
+        h.press(x, 6 * ROW + 4);                          // also drops the selection
+        h.key('Escape', { key: 'Escape' });
+        let stopped = false;
+        h.key('KeyV', { key: 'v', ctrlKey: true, stopPropagation() { stopped = true; } });
+        h.tracker.flush();
+        assert.deepEqual(notesOf(pattern.id), [[60, 0, 2, 0]]);
+        assert.equal(stopped, false, 'not even claimed');
+        // Escape during a move in flight forgets it as well.
+        copyRows01(h, x);
+        h.key('Escape', { key: 'Escape' });
+        h.press(x, 8 * ROW + 4);
+        h.key('KeyV', { key: 'v', ctrlKey: true });
+        h.tracker.flush();
+        assert.deepEqual(notesOf(pattern.id), [[60, 0, 2, 0]]);
+    });
+
+    test('after a cut, only the first placement removes the original; repeats are copies', () => {
+        const { pattern } = seedPattern(session, { notes: [N(60, 0, 2), N(67, 12, 2)] });
+        const h = build();
+        const x = h.head(0).x + 4;
+        dragSel(h, x, 0, x, 1);
+        h.key('KeyX', { key: 'x', ctrlKey: true });
+        for (let i = 0; i < 4; i++) h.key('ArrowDown', { key: 'ArrowDown' });
+        h.key('Enter', { key: 'Enter' });                 // moved to row 4
+        h.press(x, 8 * ROW + 4);
+        h.key('KeyV', { key: 'v', ctrlKey: true });       // a copy at row 8
+        h.tracker.flush();
+        assert.deepEqual(notesOf(pattern.id), [[60, 4, 2, 0], [60, 8, 2, 0], [67, 12, 2, 0]]);
     });
 });

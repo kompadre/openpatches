@@ -365,3 +365,36 @@ test('Ctrl+X moves a block with the keyboard; the source shows what will go', as
     await page.evaluate(() => window.__opDock._tracker.flush());
     expect(await lane0()).toEqual([[67, 8], [60, 12]]);
 });
+
+test('paste again: after the first placement Ctrl+V stamps at the cursor; Escape forgets it', async ({ page }) => {
+    await openApp(page);
+    await seed(page);
+    await page.locator('.dock-tab-tracker').click();
+    const lane0 = () => page.evaluate(() => Object.values(window.__opProject.get().patterns)[0].notes
+        .filter((n) => n.midi !== 64).map((n) => [n.midi, n.start]).sort((a, b) => a[1] - b[1]));
+    const box = await page.locator('.tracker-canvas').boundingBox();
+
+    // Copy rows 0–1 (C-4 lives at 0), place it at row 2 …
+    await page.mouse.click(box.x + 40, box.y + 8);
+    await page.keyboard.press('Shift+ArrowDown');
+    await page.keyboard.press('Control+c');
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Enter');
+    await expect(page.locator('.tracker-copy')).not.toHaveClass(/active/);   // shadow gone
+    // … then the cursor down to row 12 and Ctrl+V, and row 14 and Ctrl+V.
+    for (let i = 0; i < 10; i++) await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Control+v');
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Control+v');
+    await page.evaluate(() => window.__opDock._tracker.flush());
+    expect(await lane0()).toEqual([[60, 0], [60, 2], [67, 8], [60, 12], [60, 14]]);
+
+    // Escape forgets the clipboard: Ctrl+V at row 4 does nothing.
+    await page.keyboard.press('Escape');
+    await page.mouse.click(box.x + 40, box.y + 4 * 16 + 8);
+    await page.keyboard.press('Control+v');
+    await page.evaluate(() => window.__opDock._tracker.flush());
+    expect(await lane0()).toEqual([[60, 0], [60, 2], [67, 8], [60, 12], [60, 14]]);
+});

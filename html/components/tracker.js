@@ -33,14 +33,19 @@
 // the arrows (Page = a bar; at a repeat's edge it hops to the next) or
 // the pointer. **Enter, Ctrl+V or a click** put it down — into any track
 // or pattern, held inside one repeat and the track's lanes, overwriting
-// what is there. The copy becomes the selection and the stamp is spent
-// (Copy, Enter, Copy, Enter repeats); Escape cancels the move and the
-// selection, Copy again just the move. There is no Paste button.
+// what is there. The copy becomes the selection, and the block stays on
+// a clipboard: the shadow goes, but **Ctrl+V pastes it again
+// with its top-left at the cursor** — move the cursor, Ctrl+V, as often
+// as wanted (no pattern under the cursor, no paste). Escape cancels a
+// move in flight and the selection, and empties the clipboard: Ctrl+V
+// after it does nothing. Copy again cancels just the move. There is no
+// Paste button.
 //
 // **Cut** (Ctrl/Cmd+X) is the same stamp, and placing it also takes the
 // original block away — so a block moves anywhere, across tracks and
 // patterns too. Nothing is removed until it is placed (Escape leaves all
-// as it was); meanwhile the source is dimmed and outlined in red. Ctrl+C
+// as it was); meanwhile the source is dimmed and outlined in red. Only
+// the first placement removes it — later Ctrl+V pastes are copies. Ctrl+C
 // / Ctrl+X on an armed stamp switch it between copy and cut.
 //
 // **Selection.** Drag across cells (Shift-click and Shift-arrows extend
@@ -136,6 +141,9 @@ export function createTracker(opts) {
     // `source` is where it came from (pattern, its note objects, and the
     // block in section rows); `cut` removes those notes on placing.
     let stamp = null;         // { block, at, cut, source }
+    // The clipboard: what the last placed stamp held. Ctrl+V pastes it at
+    // the cursor; Escape empties it.
+    let clip = null;          // { block }
 
     // --- DOM ---
 
@@ -853,12 +861,21 @@ export function createTracker(opts) {
                 return;
             }
             if (e.key === 'Escape') {
-                cancelStamp();
-                clearSelection();
-                draw();
+                forgetClipboard();
                 eat();
                 return;
             }
+        }
+        // No stamp armed: Ctrl+V pastes the clipboard at the cursor —
+        // after Escape there is none, and nothing happens.
+        if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 'v' || e.key === 'V')) {
+            if (clip) { pasteAtCursor(); eat(); }
+            return;
+        }
+        if (e.key === 'Escape' && clip) {
+            forgetClipboard();
+            eat();
+            return;
         }
         if (e.ctrlKey || e.metaKey || e.altKey) return;
         let handled = true;
@@ -1091,10 +1108,10 @@ export function createTracker(opts) {
     }
 
     /** The same, from a cell: track `t`, lane, section row. */
-    function stampTargetAt(t, lane, row) {
+    function stampTargetAt(t, lane, row, block = stamp.block) {
         const at = t && repeatAt(t, row);
         if (!at) return null;
-        const { rows, lanes } = stamp.block;
+        const { rows, lanes } = block;
         const room = Math.max(t.track.compact ? 1 : t.viewLanes, lanes);
         return {
             slot: t.track.slot,
@@ -1196,8 +1213,44 @@ export function createTracker(opts) {
         cursor.col = at.col;
         if (at.slot !== activeSlot) selectTrack(at.slot);
         if (cut && source.pattern !== at.pattern) edited(source.pattern);
+        // The block stays on the clipboard; the shadow goes. A cut has
+        // done its removing — from here on it pastes copies.
+        clip = { block };
         edited(at.pattern);
-        say(cut ? 'Moved' : 'Copied — Copy again to place another');
+        say((cut ? 'Moved' : 'Copied') + ' — move the cursor and Ctrl+V to paste it again, Escape to forget it');
+    }
+
+    /**
+     * Ctrl+V with the clipboard and no stamp armed: paste with the
+     * block's top-left at the cursor, exactly there — rows past the end of
+     * that repeat are dropped, never shifted up. Nothing without a pattern
+     * under the cursor. The pasted block becomes the selection.
+     */
+    function pasteAtCursor() {
+        const t = bySlot(cursor.slot);
+        const at = t && repeatAt(t, cursor.col);
+        if (!at) { say('No pattern under the cursor — nothing pasted'); return; }
+        const { block } = clip;
+        const rows = Math.min(block.rows, at.hi - cursor.col + 1);
+        const lane = t.track.compact ? 0 : Math.min(cursor.lane, Math.max(0, MAX_LANES - block.lanes));
+        const fit = { rows, lanes: block.lanes, items: block.items.filter(i => i.dCol < rows) };
+        pasteBlock(at.block.pattern, cursor.col - at.lo, lane, fit);
+        sel = {
+            slot: t.track.slot, clipId: at.block.clip.id, lo: at.lo, hi: at.hi,
+            a: { lane, col: cursor.col }, h: { lane: lane + block.lanes - 1, col: cursor.col + rows - 1 },
+        };
+        cursor.lane = lane;
+        edited(at.block.pattern);
+        say('Pasted at row ' + cursor.col + ' — Ctrl+V again elsewhere, Escape to forget it');
+    }
+
+    /** Escape: no clipboard, no move in flight, no selection. */
+    function forgetClipboard() {
+        clip = null;
+        cancelStamp();
+        clearSelection();
+        say('');
+        draw();
     }
 
     /** A cut in flight: its source dimmed and outlined in red — what will go. */

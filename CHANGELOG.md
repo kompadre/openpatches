@@ -2,6 +2,12 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-09: Tracker — paste again at the cursor; Escape empties the clipboard
+
+**After the first placement the block stays on a clipboard** (user). Placing a copy or cut (Enter, Ctrl+V or a click) works as before — the placed block is the selection — but the shadow goes and the block is kept: **move the cursor (arrows, or a click) and Ctrl+V pastes it again with its top-left exactly at the cursor**, as many times as wanted; each paste becomes the selection. Rows that would fall past the end of the repeat under the cursor are dropped (not shifted up — the cursor is the corner). **No pattern under the cursor, no paste** (the status says so). **Escape empties the clipboard** — and cancels a move in flight and the selection, as before; Ctrl+V after it does nothing at all. After a cut, only the first placement removes the original; later pastes are copies. Switching tabs cancels a shadow in flight but keeps the clipboard.
+
+Tests: `tracker-view` +5 (shadow gone after placing, arrows move the cursor, Ctrl+V repeatedly via arrows and a click; exact corner with rows past the repeat dropped; no pattern under the cursor; Escape empties it — after placing and in flight — and Ctrl+V isn't even claimed; cut then repeats are copies), the cut status assertion updated; e2e `tracker` +1 (real keys: place, two more Ctrl+V at the cursor, Escape, Ctrl+V does nothing). 1143 unit, 130 e2e.
+
 ## 2026-11-09: Tracker — Ctrl+X (cut)
 
 **Ctrl/Cmd+X cuts the selection**: the same keyboard-driven stamp as Ctrl+C — shadow over the selection, arrows / PageUp/Down / the pointer to steer, Enter / Ctrl+V / a click to place — and placing it also removes the original block, so a block can be moved anywhere, into another track or pattern too. **Nothing is removed until it's placed**: while the cut is in flight the source block is dimmed and outlined in red, and Escape cancels with everything as it was (and drops the selection, as with a copy). The original goes before the paste, so placing onto a spot overlapping the source keeps what was pasted. Ctrl+C and Ctrl+X on an armed stamp switch it between copy and cut. The cut keeps the source's own note objects (`blockNotes`) and removes exactly those (`removeNotes`, in place — the roll holds the same array). Keyboard only; the Copy button's tooltip mentions it.
