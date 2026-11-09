@@ -2,6 +2,12 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-09: Bottom pane — a restore bar under the keyboard
+
+**Every pane item folded, keyboard still up: a bar under the keyboard** (`.bpane-restore`, `▴ Mixer · Edit · Device · Log`) shows what is down there and opens the **Mixer** — before, the pane just vanished and only the top tabs brought it back. Restoring a fully collapsed pane with every item folded now opens the Mixer too, rather than all four, so the two bars agree.
+
+Tests: e2e `layout` — the bar appears under the keyboard at its width, opens the Mixer alone and goes; restoring a collapsed, all-folded pane opens the Mixer (replaces the "opens them all" test). 1088 unit.
+
 ## 2026-11-09: Bottom pane collapse — one button for both rows, and a way back
 
 **Fixed: "Collapse the bottom pane" left no way back but the top tabs.** The button lived inside the pane and vanished with it. Now the keyboard strip and the bottom pane share one block (`.dock-bottom`) and the button runs down the right of **both**: collapsing hides the keyboard and the pane together, and the button stays as a bar across the bottom (`▴ Keyboard · Mixer · Edit · Device · Log`) that brings them back. Restoring a pane whose items were all folded opens them all, so it never comes back as the keyboard alone. The state is the existing `paneCollapsed`, still remembered; the top tabs and the handle's double-click behave as before (a tab reopens the keyboard too).

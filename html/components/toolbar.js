@@ -397,17 +397,26 @@ export function createToolbar(opts) {
             } else {
                 bpaneState.paneCollapsed = false;
                 // Restoring a pane whose items are all folded would bring
-                // back the keyboard alone: open them all instead.
-                if (!Object.values(bpaneState.items).some(Boolean)) {
-                    for (const key of Object.keys(bpaneState.items)) bpaneState.items[key] = true;
-                }
+                // back the keyboard alone: open the Mixer, the one that
+                // matters most, as the bar below does.
+                if (!Object.values(bpaneState.items).some(Boolean)) bpaneState.items.mixer = true;
             }
             saveBpane();
             syncBpane();
         });
 
+        // Every item folded but the keyboard still up: the pane has hidden
+        // itself, so a bar under the keyboard names what is down there and
+        // brings back the Mixer.
+        const paneRestoreBtn = document.createElement('button');
+        paneRestoreBtn.className = 'bpane-restore';
+        paneRestoreBtn.innerHTML = '<span>▴ Mixer · Edit · Device · Log</span>';
+        paneRestoreBtn.title = 'Show the bottom pane (opens the Mixer)';
+        paneRestoreBtn.addEventListener('click', () => expandItem('mixer'));
+
         bottomCol.appendChild(bpaneHandle);
         bottomCol.appendChild(bpane);
+        bottomCol.appendChild(paneRestoreBtn);
         bottomWrap.appendChild(paneCollapseBtn);
 
         const saveBpane = () => {
@@ -436,6 +445,7 @@ export function createToolbar(opts) {
             paneCollapseBtn.innerHTML = folded ? '<span>▴ Keyboard · Mixer · Edit · Device · Log</span>' : '<span>▾</span>';
             paneCollapseBtn.title = folded ? 'Show the keyboard and the bottom pane' : 'Collapse the keyboard and the bottom pane';
             paneCollapseBtn.setAttribute('aria-expanded', String(!folded));
+            paneRestoreBtn.classList.toggle('shown', !folded && !anyOpen);
         };
         const toggleItem = (key) => {
             bpaneState.items[key] = !bpaneState.items[key];

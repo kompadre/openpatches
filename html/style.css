@@ -2733,9 +2733,19 @@ h1 {
 
 .bpane-pane-collapse:hover { color: #e94560; border-color: #e94560; }
 
-/* Collapsed: both rows go; the button becomes a bar across the bottom. */
+/* Collapsed: both rows go; the button becomes a bar across the bottom.
+   The same bar, under the keyboard, when every pane item is folded
+   (.bpane-restore, opens the Mixer). */
 .dock-bottom.collapsed .dock-bottom-col { display: none; }
+.bpane-restore { display: none; }
+.bpane-restore.shown { display: block; }
+.bpane-restore,
 .dock-bottom.collapsed .bpane-pane-collapse {
+    background: transparent;
+    color: #666;
+    border: 1px solid #2a2a3e;
+    border-radius: 6px;
+    cursor: pointer;
     flex: 1;
     height: 22px;
     margin-top: 4px;
@@ -2745,6 +2755,9 @@ h1 {
     text-transform: uppercase;
     letter-spacing: 0.05em;
 }
+/* In the column, a bar: its own height, the column's width. */
+.bpane-restore.shown { flex: none; width: 100%; }
+.bpane-restore:hover { color: #e94560; border-color: #e94560; }
 
 /* ============================================================
    Left pane (desktop) — the Section
