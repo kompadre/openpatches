@@ -318,3 +318,29 @@ test('Copy: the shadow follows the pointer, a click puts the copy down', async (
     await page.keyboard.press('Escape');
     await expect(page.locator('.tracker-copy')).not.toHaveClass(/active/);
 });
+
+test('keyboard only: select, Ctrl+C, arrows, Enter — and Escape drops everything', async ({ page }) => {
+    await openApp(page);
+    await seed(page);
+    await page.locator('.dock-tab-tracker').click();
+    const lane0 = () => page.evaluate(() => Object.values(window.__opProject.get().patterns)[0].notes
+        .filter((n) => n.midi !== 64).map((n) => [n.midi, n.start]).sort((a, b) => a[1] - b[1]));
+
+    // Put the cursor on row 0 of lane 0 and do the rest with keys.
+    const box = await page.locator('.tracker-canvas').boundingBox();
+    await page.mouse.click(box.x + 40, box.y + 8);
+    for (let i = 0; i < 3; i++) await page.keyboard.press('Shift+ArrowDown');
+    await page.keyboard.press('Control+c');
+    await expect(page.locator('.tracker-copy')).toHaveClass(/active/);
+    await expect(page.locator('.tracker-status')).toContainText('Arrows move the copy');
+    for (let i = 0; i < 12; i++) await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Enter');
+    await page.evaluate(() => window.__opDock._tracker.flush());
+    expect(await lane0()).toEqual([[60, 0], [67, 8], [60, 12]]);
+
+    // Ctrl+C again on the new selection, then Escape: stamp and selection gone.
+    await page.keyboard.press('Control+c');
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.tracker-copy')).not.toHaveClass(/active/);
+    expect(await page.evaluate(() => window.__opDock._tracker.getSelection())).toBe(null);
+});

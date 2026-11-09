@@ -28,12 +28,14 @@
 // a selection drag.
 //
 // **Copy** (the button, or Ctrl/Cmd+C on the grid) works as in the Pattern
-// and Section editors: the selected block becomes a stamp whose shadow
-// follows the pointer over the grid, and a click puts it down — into any
-// track or pattern, held inside one repeat and the track's lanes,
-// overwriting what is there. The copy becomes the selection and the stamp
-// is spent (Copy, click, Copy, click repeats); Escape or Copy again
-// cancels. There is no Paste.
+// and Section editors, and entirely from the keyboard: the selected block
+// becomes a stamp whose shadow starts over the selection and moves with
+// the arrows (Page = a bar; at a repeat's edge it hops to the next) or
+// the pointer. **Enter, Ctrl+V or a click** put it down — into any track
+// or pattern, held inside one repeat and the track's lanes, overwriting
+// what is there. The copy becomes the selection and the stamp is spent
+// (Copy, Enter, Copy, Enter repeats); Escape cancels the move and the
+// selection, Copy again just the move. There is no Paste button.
 //
 // **Selection.** Drag across cells (Shift-click and Shift-arrows extend
 // from the cursor) to select a block — inside one track, one pattern, one
@@ -171,8 +173,8 @@ export function createTracker(opts) {
     const copyBtn = document.createElement('button');
     copyBtn.className = 'tracker-btn tracker-copy';
     copyBtn.textContent = '⎘ Copy';
-    copyBtn.title = 'Copy the selected cells: a shadow of them follows the pointer — '
-        + 'click where they should go (Ctrl+C; Escape or Copy again to cancel)';
+    copyBtn.title = 'Copy the selected cells: a shadow of them moves with the arrows or the pointer — '
+        + 'Enter, Ctrl+V or a click where they should go (Ctrl+C; Escape cancels)';
     copyBtn.addEventListener('click', () => { if (stamp) cancelStamp(); else armStamp(); });
     controls.appendChild(copyBtn);
 
@@ -819,17 +821,36 @@ export function createTracker(opts) {
     }
 
     canvas.addEventListener('keydown', (e) => {
+        const eat = () => { e.preventDefault(); e.stopPropagation(); };
         // Ctrl/Cmd+C: the selection becomes a stamp. Stopped here, so the
         // Section's and the roll's own Ctrl+C stay out of it.
         if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 'c' || e.key === 'C')) {
-            if (stamp || armStamp()) { e.preventDefault(); e.stopPropagation(); }
+            if (stamp || armStamp()) eat();
             return;
         }
-        if (e.key === 'Escape' && stamp) {
-            cancelStamp();
-            e.preventDefault();
-            e.stopPropagation();
-            return;
+        // An armed stamp owns the keys that move and place it.
+        if (stamp) {
+            const steps = {
+                ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0],
+                PageUp: [0, -COLS_PER_MEASURE], PageDown: [0, COLS_PER_MEASURE],
+            };
+            if (e.key in steps && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+                nudgeStamp(...steps[e.key]);
+                eat();
+                return;
+            }
+            if (e.key === 'Enter' || ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 'v' || e.key === 'V'))) {
+                placeStampHere();
+                eat();
+                return;
+            }
+            if (e.key === 'Escape') {
+                cancelStamp();
+                clearSelection();
+                draw();
+                eat();
+                return;
+            }
         }
         if (e.ctrlKey || e.metaKey || e.altKey) return;
         let handled = true;
@@ -1004,13 +1025,17 @@ export function createTracker(opts) {
 
     // --- Copy: the stamp ---
 
-    /** Copy: the selected block becomes a stamp that follows the pointer. */
+    /**
+     * Copy: the selected block becomes a stamp, its shadow starting over
+     * the selection itself so the arrows can steer it at once.
+     */
     function armStamp() {
         const st = selTarget();
         if (!st) return false;
         commit();
         stamp = { block: copyBlock(st.pattern, st.p0, st.p1, st.l0, st.l1), at: null };
-        say('Click where the copy should go — Escape or Copy again to cancel');
+        stamp.at = stampTargetAt(bySlot(sel.slot), st.l0, st.c0);
+        say('Arrows move the copy — Enter, Ctrl+V or a click places it, Escape cancels');
         draw();
         return true;
     }
@@ -1030,20 +1055,75 @@ export function createTracker(opts) {
      */
     function stampTarget(p) {
         const t = trackAt(p.x);
-        const at = t && repeatAt(t, p.row);
+        if (!t) return null;
+        const lane = t.track.compact ? 0 : Math.floor((p.x - t.x) / LANE_W);
+        return stampTargetAt(t, lane, p.row);
+    }
+
+    /** The same, from a cell: track `t`, lane, section row. */
+    function stampTargetAt(t, lane, row) {
+        const at = t && repeatAt(t, row);
         if (!at) return null;
         const { rows, lanes } = stamp.block;
-        const lane = t.track.compact ? 0 : Math.floor((p.x - t.x) / LANE_W);
         const room = Math.max(t.track.compact ? 1 : t.viewLanes, lanes);
         return {
             slot: t.track.slot,
-            lane: Math.max(0, Math.min(room - lanes, lane)),
-            col: Math.max(at.lo, Math.min(at.hi - rows + 1, p.row)),
+            lane: Math.max(0, Math.min(room - lanes, t.track.compact ? 0 : lane)),
+            col: Math.max(at.lo, Math.min(at.hi - rows + 1, row)),
             lo: at.lo,
             hi: at.hi,
             pattern: at.block.pattern,
             clipId: at.block.clip.id,
         };
+    }
+
+    /**
+     * Steer the shadow by `dl` lanes and `dc` rows. Pinned against a
+     * repeat's edge, a row step hops into the next repeat (or clip);
+     * pinned against the track's lanes, a lane step crosses into the
+     * neighbouring track. A step with nowhere to go does nothing.
+     */
+    function nudgeStamp(dl, dc) {
+        // The pointer may have carried the shadow off the grid: restart
+        // from where the copy came from, or the cursor.
+        const cur = stamp.at
+            || (sel && stampTargetAt(bySlot(sel.slot), Math.min(sel.a.lane, sel.h.lane), Math.min(sel.a.col, sel.h.col)))
+            || stampTargetAt(bySlot(cursor.slot), cursor.lane, cursor.col);
+        if (!cur) return;
+        let t = bySlot(cur.slot);
+        if (!t) return;
+        let lane = cur.lane + dl;
+        const lanes = t.track.compact ? 1 : t.viewLanes;
+        if (dl && (lane < 0 || lane + stamp.block.lanes > lanes)) {
+            const j = layout.indexOf(t) + (dl > 0 ? 1 : -1);
+            if (j < 0 || j >= layout.length) return;
+            t = layout[j];
+            lane = dl > 0 ? 0 : (t.track.compact ? 0 : t.viewLanes) - stamp.block.lanes;
+        }
+        let at = stampTargetAt(t, lane, cur.col + dc);
+        // Clamped back where it was: hop over the repeat's edge.
+        if (dc && at && t.track.slot === cur.slot && at.col === cur.col && at.lane === cur.lane) {
+            at = stampTargetAt(t, lane, dc > 0 ? cur.hi + 1 : cur.lo - 1);
+            if (at && dc < 0) at.col = Math.max(at.lo, at.hi - stamp.block.rows + 1);
+        }
+        if (!at) return;
+        stamp.at = at;
+        draw();
+        revealStamp();
+    }
+
+    /** Keep the shadow's corner on screen while the arrows steer it. */
+    function revealStamp() {
+        const at = stamp && stamp.at;
+        const t = at && bySlot(at.slot);
+        if (!t) return;
+        const y = at.col * ROW_H;
+        const viewH = scroll.clientHeight - HEAD_H;
+        if (y < scroll.scrollTop) scroll.scrollTop = y;
+        else if (viewH > ROW_H && y + ROW_H > scroll.scrollTop + viewH) scroll.scrollTop = y + ROW_H - viewH;
+        const x = t.x + at.lane * LANE_W;
+        if (x < scroll.scrollLeft + RULER_W) scroll.scrollLeft = Math.max(0, x - RULER_W);
+        else if (x + LANE_W > scroll.scrollLeft + scroll.clientWidth) scroll.scrollLeft = x + LANE_W - scroll.clientWidth;
     }
 
     function followStamp(p) {
@@ -1056,12 +1136,19 @@ export function createTracker(opts) {
         draw();
     }
 
-    /** The click: the copy goes down, becomes the selection, and the stamp is spent. */
+    /** A click: the copy goes down under the pointer. */
     function placeStamp(p) {
+        stamp.at = stampTarget(p);
+        placeStampHere();
+    }
+
+    /** Enter / Ctrl+V / the click: the copy goes down where the shadow is,
+     * becomes the selection, and the stamp is spent. */
+    function placeStampHere() {
         // Read afresh: the layout may have changed since the last move.
-        const at = stampTarget(p);
+        const at = stamp.at && stampTargetAt(bySlot(stamp.at.slot), stamp.at.lane, stamp.at.col);
         stamp.at = at;
-        if (!at) { say('Not in a pattern — place the copy over a clip, or Escape'); return; }
+        if (!at) { say('Not in a pattern — move the copy over a clip, or Escape'); return; }
         const { block } = stamp;
         stamp = null;
         canvas.style.cursor = '';

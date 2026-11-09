@@ -2,6 +2,12 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-09: Tracker — the copy stamp is keyboard-driven
+
+**Ctrl+C now starts moving the block from the keyboard** (user): the stamp's shadow no longer waits for the pointer — it appears **over the selection itself**, and the **arrows steer it** (PageUp/Down a bar at a time; pinned against a repeat's edge a row step hops into the next repeat or clip; against the track's lanes a lane step crosses into the neighbouring track; the view scrolls to keep it on screen). **Enter or Ctrl+V places it** — a click and the pointer still work exactly as before — the copy becomes the selection, so Ctrl+C, arrows, Enter repeats. **Escape cancels the movement and the selection** in one press (Copy again cancels just the movement). While a stamp is armed it owns the arrow/Page/Enter keys; the cursor stays put.
+
+Tests: `tracker-view` +3 (whole flow with keys only incl. Shift-arrow selection; Ctrl+V and the cursor staying put; the repeat hop, PageUp, and Escape dropping both) and the status-message assertion updated; e2e `tracker` +1 (real keys: select, Ctrl+C, 12×ArrowDown, Enter, then Ctrl+C + Escape). 1132 unit, 128 e2e.
+
 ## 2026-11-09: Tracker — Copy, the stamp way
 
 **Copy in the Tracker works like the Pattern and Section editors.** `⎘ Copy` in the Tracker's controls (or Ctrl/Cmd+C on the grid) takes the selected block as a **stamp**: a shadow of it — its outline and note names, over a covered background — follows the pointer over the grid, and **a click puts the copy down**. It can land in any track and any pattern; it is pulled back to stay inside the repeat it lands in and the track's lanes, and it overwrites what's there the way a moved block does (notes starting there go, one sounding into its top is cut, copies stop at the next note). The copy becomes the selection and the stamp is spent — Copy, click, Copy, click repeats. Copy is disabled without a selection and lit while armed; Escape, Copy again, or leaving the tab cancel; a click off any clip places nothing and says so. No Paste button, as in the other editors. Ctrl+C is kept from reaching the Section's and the roll's own copy. The block-move preview got the same covered background, so ghost notes no longer print over the cells beneath.

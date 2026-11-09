@@ -580,7 +580,7 @@ describe('tracker selection', () => {
         assert.equal(btn(h).disabled, false);
         btn(h).dispatch('click');
         assert.ok(btn(h).classList.contains('active'));
-        assert.match(h.q('.tracker-status').textContent, /Click where the copy should go/);
+        assert.match(h.q('.tracker-status').textContent, /Arrows move the copy/);
         btn(h).dispatch('click');                         // Copy again cancels
         assert.equal(btn(h).classList.contains('active'), false);
     });
@@ -641,5 +641,61 @@ describe('tracker selection', () => {
         h.key('Escape', { key: 'Escape' });
         assert.equal(btn(h).classList.contains('active'), false);
         assert.equal(session.getPattern(pattern.id).notes.length, 1);
+    });
+
+    test('keyboard only: Ctrl+C starts the shadow over the selection, arrows steer, Enter places', () => {
+        const { pattern } = seedPattern(session, { notes: [N(60, 0, 2), N(62, 2, 2)] });
+        const h = build();
+        const x = h.head(0).x + 4;
+        // The selection too without the mouse: Shift-arrows from row 0.
+        h.press(x, 4);
+        for (let i = 0; i < 3; i++) h.key('ArrowDown', { key: 'ArrowDown', shiftKey: true });
+        assert.deepEqual(h.tracker.getSelection().rows, [0, 3]);
+        h.key('KeyC', { key: 'c', ctrlKey: true });
+        for (let i = 0; i < 8; i++) h.key('ArrowDown', { key: 'ArrowDown' });
+        h.key('Enter', { key: 'Enter' });
+        h.tracker.flush();
+        assert.deepEqual(notesOf(pattern.id), [[60, 0, 2, 0], [62, 2, 2, 0], [60, 8, 2, 0], [62, 10, 2, 0]]);
+        assert.deepEqual(h.tracker.getSelection().rows, [8, 11], 'the copy is the selection');
+        assert.equal(btn(h).classList.contains('active'), false, 'spent');
+    });
+
+    test('Ctrl+V places too, and the arrows did not move the cursor meanwhile', () => {
+        const { pattern } = seedPattern(session, { notes: [N(60, 0, 2)] });
+        const h = build();
+        const x = h.head(0).x + 4;
+        dragSel(h, x, 0, x, 1);
+        h.key('KeyC', { key: 'c', ctrlKey: true });
+        h.key('ArrowDown', { key: 'ArrowDown' });
+        h.key('ArrowDown', { key: 'ArrowDown' });
+        assert.equal(h.tracker.getCursor().col, 1, 'still the selection corner: the arrows steered the shadow');
+        h.key('KeyV', { key: 'v', ctrlKey: true });
+        h.tracker.flush();
+        assert.deepEqual(notesOf(pattern.id), [[60, 0, 2, 0], [60, 2, 2, 0]]);
+    });
+
+    test('pinned at a repeat edge, a row step hops to the next repeat; Page steps a bar', () => {
+        const { track, pattern } = seedPattern(session, { notes: [N(60, 8, 2)] });
+        session.update((project, section) => {
+            section.clips.find(c => c.trackId === track.id).repeats = 2;   // rows 0–31
+        }, 'test');
+        const h = build();
+        const x = h.head(0).x + 4;
+        dragSel(h, x, 8, x, 15);                          // the last 8 rows of repeat 1, C-4@8 inside
+        h.key('KeyC', { key: 'c', ctrlKey: true });
+        h.key('ArrowDown', { key: 'ArrowDown' });         // pinned at 8 → hops to the next repeat
+        h.key('Enter', { key: 'Enter' });
+        h.tracker.flush();
+        // Rows 16–23 are the next repeat's pattern columns 0–7: the copy
+        // of C-4@8 lands on pattern column 0 — shown in both repeats.
+        assert.deepEqual(notesOf(pattern.id), [[60, 0, 2, 0], [60, 8, 2, 0]]);
+        assert.deepEqual(h.tracker.getSelection().rows, [16, 23]);
+
+        // PageUp from there: a bar up, back into repeat 1 at its clamp.
+        h.key('KeyC', { key: 'c', ctrlKey: true });
+        h.key('PageUp', { key: 'PageUp' });
+        h.key('Escape', { key: 'Escape' });
+        assert.equal(btn(h).classList.contains('active'), false);
+        assert.equal(h.tracker.getSelection(), null, 'Escape drops the movement and the selection');
     });
 });
