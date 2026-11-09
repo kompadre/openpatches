@@ -443,6 +443,24 @@ describe('tracker selection', () => {
         assert.deepEqual(notesOf(pattern.id), [[60, 0, 4, 0], [64, 4, 2, 0]]);
     });
 
+    test('across lanes a note fills only the first lane; OFF still takes every lane', () => {
+        // A chord: 60 in lane 0, 64 in lane 1, both the whole bar.
+        const { pattern } = seedPattern(session, { notes: [N(60, 0, 16), N(64, 0, 16, 1)] });
+        const h = build();
+        setStep(h.q, 4);
+        const x0 = h.head(0).x + 4;
+        dragSel(h, x0, 2, x0 + 46, 9);                    // lanes 0–1, rows 2–9
+        assert.deepEqual(h.tracker.getSelection().lanes, [0, 1]);
+        assert.match(h.q('.tracker-status').textContent, /fills the first lane every 4 rows/);
+        h.key('KeyZ');
+        h.tracker.flush();
+        assert.deepEqual(notesOf(pattern.id), [[60, 0, 2, 0], [60, 2, 4, 0], [60, 6, 10, 0], [64, 0, 16, 1]],
+            'lane 1 keeps its E-4 untouched — no second C there');
+        h.key('Digit1');
+        h.tracker.flush();
+        assert.deepEqual(notesOf(pattern.id), [[60, 0, 2, 0], [64, 0, 2, 1]], 'both lanes silenced from row 2');
+    });
+
     test('the on-screen keyboard (enterKey) fills the selection, without a second audition', () => {
         const { pattern } = seedPattern(session, { notes: [] });
         const played = [];

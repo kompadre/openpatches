@@ -2,6 +2,12 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-09: Tracker — a selection across lanes fills only the first
+
+**Course correction (user):** a note pressed with a block spanning several lanes of a track now fills **only the block's first lane** (every Step rows, as before); the other lanes are left as they were — the same note in each lane was redundant. OFF still silences every lane of the block and Delete still empties them all. The status line says "fills the first lane" when the block is wider than one lane.
+
+Tests: `tracker-view` +1 (a two-lane block over a chord: the note fills lane 0 only, lane 1's E-4 untouched; OFF then silences both). 1111 unit.
+
 ## 2026-11-09: Tracker — selection, Step-aware fill, and the on-screen keyboard
 
 **The on-screen keyboard enters into the Tracker.** With the Tracker tab on screen, a key goes into the selected cell (the cursor) and the cursor advances by Step, as a typed note does — or fills the selection, below. It is heard once (the keyboard's own audition). Outside any pattern the key is just heard, without a message. Not while Rec runs: a take or step record writes into the Pattern editor as before.

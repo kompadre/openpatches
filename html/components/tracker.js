@@ -22,9 +22,10 @@
 // **Selection.** Drag across cells (Shift-drag when starting on a note,
 // whose plain drag moves it; Shift-click and Shift-arrows extend from the
 // cursor) to select a block — inside one track, one pattern, one repeat of
-// it. A note then fills it every Step rows (C, three empty, C, … at Step
-// 4), the rest of the block emptied; OFF does the same with OFFs, Delete
-// empties it. Escape or a plain click drops it. Typing where the track has no clip
+// it. A note then fills its first lane every Step rows (C, three empty,
+// C, … at Step 4), the rest of that lane emptied — other lanes of the
+// block are left alone, a second copy of the note there would be
+// redundant. OFF silences every lane of the block, Delete empties them. Escape or a plain click drops it. Typing where the track has no clip
 // refuses with a message. **Double-click empty space** in a track to make a
 // new one-bar pattern there, or drag one in from the Section pane's
 // library (`dropPattern`, called by the library's drag); grow it here with
@@ -520,7 +521,9 @@ export function createTracker(opts) {
         const r = selRect();
         if (r) {
             const cells = (r.l1 - r.l0 + 1) * (r.c1 - r.c0 + 1);
-            say(cells + ' cells selected — a note fills them every ' + Math.max(1, step) + ' row' + (Math.max(1, step) > 1 ? 's' : ''));
+            const every = Math.max(1, step) + ' row' + (Math.max(1, step) > 1 ? 's' : '');
+            say(cells + ' cells selected — a note fills '
+                + (r.l1 > r.l0 ? 'the first lane' : 'them') + ' every ' + every);
         }
         draw();
         revealCursor();
@@ -691,8 +694,15 @@ export function createTracker(opts) {
     }
 
     /** Fill (midi) or OFF (null) or empty ('clear') the selected block. */
+    /**
+     * Fill (midi) or OFF (null) or empty ('clear') the selected block. A
+     * note goes into the block's first lane only — the same note again in
+     * the track's other lanes would be redundant (user, 2026-11-09) — and
+     * the other lanes are left as they are. OFF and clear take every lane.
+     */
     function applyToSelection(st, midi) {
-        for (let lane = st.l0; lane <= st.l1; lane++) {
+        const last = typeof midi === 'number' ? st.l0 : st.l1;
+        for (let lane = st.l0; lane <= last; lane++) {
             if (midi === 'clear') clearRange(st.pattern, st.p0, st.p1, lane);
             else fillRange(st.pattern, st.p0, st.p1, lane, midi, step);
         }
