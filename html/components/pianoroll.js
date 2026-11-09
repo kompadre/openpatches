@@ -447,7 +447,7 @@ export function createPianoroll(opts) {
     const TOOLS = [
         { id: 'edit', label: '\u270E Edit', title: 'Edit: drag on the grid to draw a note; drag a note to move it, its edge to resize it; double-click removes it. Shift-drag selects.' },
         { id: 'select-once', label: '\u2B1A Select once', title: 'Select once: drag a rectangle over notes to select them, then back to Edit.' },
-        { id: 'select', label: '\u2B1A Select', title: 'Select: every drag on empty grid is a rectangle that selects the notes it crosses; drag any selected note to move them all, Delete removes them, Copy stamps a copy.' },
+        { id: 'select', label: '\u2B1A Select', title: 'Select: every drag on empty grid is a rectangle that selects the notes it crosses; drag any selected note to move them all, or its edge to stretch them all, Delete removes them, Copy stamps a copy.' },
         { id: 'erase', label: '\u2326 Erase', title: 'Erase: click a note to remove it, or drag across notes to remove each one you cross.' },
     ];
     const toolById = (id) => TOOLS.find(t => t.id === id) || TOOLS[0];
@@ -694,6 +694,7 @@ export function createPianoroll(opts) {
     let movingNote = null;
     let resizingNote = null;
     let resizeSide = null; // 'left' or 'right'
+    let groupResize = null;           // [{note, start, dur}] originals while resizing a selection
     let moveStartPos = null;
     let moveOriginal = null;
     let moveCommitted = false;
@@ -706,7 +707,8 @@ export function createPianoroll(opts) {
 
     // Selection: a set of the edited track's notes. Made by a marquee (a
     // drag on empty grid in Select mode, or with Shift held), moved as one
-    // by dragging any selected note, copied and pasted by the buttons.
+    // by dragging any selected note, stretched as one by dragging any
+    // selected note's edge, copied and pasted by the buttons.
     const selected = new Set();
     let tool = 'edit';                // one of TOOLS[].id
     const isSelecting = () => tool === 'select' || tool === 'select-once';
@@ -1218,6 +1220,55 @@ export function createPianoroll(opts) {
         groupMove = null;
     }
 
+    /**
+     * Begin resizing `note` by its `side` edge — and every selected note by
+     * the same edge when it is one of them.
+     */
+    function beginResize(note, side, x, y) {
+        if (!selected.has(note)) selected.clear();     // as a move: an unselected note drops the selection
+        resizingNote = note;
+        resizeSide = side;
+        moveStartPos = { x, y };
+        moveOriginal = { start: note.start, dur: note.dur };
+        moveCommitted = false;
+        groupResize = selected.size > 1 ? [...selected].map(n => ({ note: n, start: n.start, dur: n.dur })) : null;
+    }
+
+    /**
+     * Apply a resize delta in columns. A selection takes the same delta on
+     * the same edge, each note clamped on its own (at least a column, inside
+     * the pattern) — a short note bottoming out does not hold the others.
+     */
+    function applyResizeDelta(colDelta) {
+        const originals = groupResize || [{ note: resizingNote, start: moveOriginal.start, dur: moveOriginal.dur }];
+        for (const o of originals) {
+            if (resizeSide === 'right') {
+                o.note.dur = clampDur(o.start, o.dur + colDelta);
+            } else {
+                const maxStart = o.start + o.dur - 1;
+                const newStart = Math.max(0, Math.min(maxStart, o.start + colDelta));
+                o.note.start = newStart;
+                o.note.dur = o.dur - (newStart - o.start);
+            }
+        }
+    }
+
+    /** Put a resize back where it started (mouseleave / touchcancel). */
+    function restoreResize() {
+        const originals = groupResize || (resizingNote && moveOriginal
+            ? [{ note: resizingNote, start: moveOriginal.start, dur: moveOriginal.dur }] : []);
+        for (const o of originals) { o.note.start = o.start; o.note.dur = o.dur; }
+    }
+
+    function endResize() {
+        resizingNote = null;
+        resizeSide = null;
+        moveStartPos = null;
+        moveOriginal = null;
+        moveCommitted = false;
+        groupResize = null;
+    }
+
     function deleteSelected() {
         if (selected.size === 0) return;
         for (const n of selected) {
@@ -1414,11 +1465,7 @@ export function createPianoroll(opts) {
 
         if (target) {
             if (target.side === 'left' || target.side === 'right') {
-                resizingNote = target.note;
-                resizeSide = target.side;
-                moveStartPos = { x, y };
-                moveOriginal = { start: target.note.start, dur: target.note.dur };
-                moveCommitted = false;
+                beginResize(target.note, target.side, x, y);
                 return;
             }
             beginMove(target.note, x, y);
@@ -1480,16 +1527,7 @@ export function createPianoroll(opts) {
             if (!moveCommitted) canvas.style.cursor = 'ew-resize';
             moveCommitted = true;
 
-            const colDelta = Math.round(dx / COL_W);
-            if (resizeSide === 'right') {
-                resizingNote.dur = clampDur(moveOriginal.start, moveOriginal.dur + colDelta);
-            } else {
-                const maxStart = moveOriginal.start + moveOriginal.dur - 1;
-                const newStart = Math.max(0, Math.min(maxStart, moveOriginal.start + colDelta));
-                const actualDelta = newStart - moveOriginal.start;
-                resizingNote.start = newStart;
-                resizingNote.dur = moveOriginal.dur - actualDelta;
-            }
+            applyResizeDelta(Math.round(dx / COL_W));
             draw();
             return;
         }
@@ -1557,11 +1595,7 @@ export function createPianoroll(opts) {
                 const msPerSixteenth = 60000 / bpm / 4;
                 playNoteFn(resizingNote.midi, resizingNote.dur * msPerSixteenth, voiceData, currentSlot());
             }
-            resizingNote = null;
-            resizeSide = null;
-            moveStartPos = null;
-            moveOriginal = null;
-            moveCommitted = false;
+            endResize();
             return;
         }
 
@@ -1617,13 +1651,8 @@ export function createPianoroll(opts) {
         // The stamp stays armed; its shadow just leaves with the pointer.
         if (placing) { placing.col = null; placing.row = null; draw(); }
         if (resizingNote && moveOriginal) {
-            resizingNote.dur = moveOriginal.dur;
-            resizingNote.start = moveOriginal.start;
-            resizingNote = null;
-            resizeSide = null;
-            moveStartPos = null;
-            moveOriginal = null;
-            moveCommitted = false;
+            restoreResize();
+            endResize();
             draw();
         }
         if (movingNote && moveOriginal) {
@@ -1718,11 +1747,7 @@ export function createPianoroll(opts) {
         // Existing note interactions (resize/move) — always active
         if (target) {
             if (target.side === 'left' || target.side === 'right') {
-                resizingNote = target.note;
-                resizeSide = target.side;
-                moveStartPos = { x, y };
-                moveOriginal = { start: target.note.start, dur: target.note.dur };
-                moveCommitted = false;
+                beginResize(target.note, target.side, x, y);
                 return;
             }
             beginMove(target.note, x, y);
@@ -1827,16 +1852,7 @@ export function createPianoroll(opts) {
             const dx = x - moveStartPos.x;
             if (!moveCommitted && Math.abs(dx) < MOVE_THRESHOLD) return;
             moveCommitted = true;
-            const colDelta = Math.round(dx / COL_W);
-            if (resizeSide === 'right') {
-                resizingNote.dur = clampDur(moveOriginal.start, moveOriginal.dur + colDelta);
-            } else {
-                const maxStart = moveOriginal.start + moveOriginal.dur - 1;
-                const newStart = Math.max(0, Math.min(maxStart, moveOriginal.start + colDelta));
-                const actualDelta = newStart - moveOriginal.start;
-                resizingNote.start = newStart;
-                resizingNote.dur = moveOriginal.dur - actualDelta;
-            }
+            applyResizeDelta(Math.round(dx / COL_W));
             draw();
             return;
         }
@@ -1864,15 +1880,11 @@ export function createPianoroll(opts) {
         longPressPos = null;
         isTouchScrolling = false;
         touchScrollStart = null;
-        if (resizingNote && moveOriginal) {
-            resizingNote.dur = moveOriginal.dur;
-            resizingNote.start = moveOriginal.start;
-        }
+        if (resizingNote && moveOriginal) restoreResize();
         if (movingNote && moveOriginal) restoreMove();
         seekingPlayhead = false;
         marquee = null;
-        resizingNote = null;
-        resizeSide = null;
+        endResize();
         endMove();
         dragging = false;
         dragStart = null;
@@ -1918,11 +1930,7 @@ export function createPianoroll(opts) {
                 onNotesChange();
                 saveState();
             }
-            resizingNote = null;
-            resizeSide = null;
-            moveStartPos = null;
-            moveOriginal = null;
-            moveCommitted = false;
+            endResize();
             return;
         }
 

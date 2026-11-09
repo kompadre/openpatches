@@ -234,3 +234,30 @@ test('the tracker fills the dock and every track can be scrolled to', async ({ p
     expect(m.scrollW).toBeGreaterThanOrEqual(m.innerW - 1);
     expect(m.reachable).toBeGreaterThanOrEqual(m.innerW - 1, 'track 8 is reachable');
 });
+
+test('the Mixer is rows filling the panel, and the fader drags sideways', async ({ page }) => {
+    await openMobile(page);
+    await page.evaluate(() => window.__opDock._voiceBank._assignToSlot(0,
+        { name: 'ROW', voiceData: new Uint8Array(155).fill(1), patchId: null }));
+    await page.locator('.dock-tab-mixer').click();
+
+    const boxes = await page.locator('.voicebank-item').evaluateAll((els) =>
+        els.map((e) => e.getBoundingClientRect()).map((r) => ({ x: r.x, y: r.y, w: r.width, h: r.height })));
+    expect(boxes).toHaveLength(8);
+    // Stacked: one column, each strip the panel's width, top to bottom.
+    for (let i = 1; i < 8; i++) expect(boxes[i].y).toBeGreaterThan(boxes[i - 1].y);
+    expect(new Set(boxes.map((b) => Math.round(b.x))).size).toBe(1);
+    expect(boxes[0].w).toBeGreaterThan(300);
+    // ...and they use the height: the last row ends near the panel's bottom.
+    const panel = await page.locator('.dock-panel-mixer').boundingBox();
+    expect(boxes[7].y + boxes[7].h).toBeGreaterThan(panel.y + panel.height * 0.8);
+
+    // The fader lies down; a quarter of the way along is a quarter volume.
+    const f = await page.locator('.voicebank-fader').first().boundingBox();
+    expect(f.width).toBeGreaterThan(f.height * 4);
+    await page.mouse.move(f.x + f.width / 2, f.y + f.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(f.x + f.width / 4, f.y + f.height / 2, { steps: 4 });
+    await page.mouse.up();
+    await expect(page.locator('.voicebank-vol').first()).toHaveText('32');
+});

@@ -145,3 +145,19 @@ test('✎ → Edit opens the clip in the Pattern editor', async ({ page }) => {
     await expect(page.locator('.dock-tab-pianoroll')).toHaveClass(/active/);
     await expect(page.locator('.tracker-popover')).toHaveCount(0);
 });
+
+test('the keyboard is a strip of its own: on screen under the Tracker, and playable', async ({ page }) => {
+    await openApp(page);
+    await seed(page);
+    await page.locator('.dock-tab-tracker').click();
+    const strip = page.locator('.dock-centre > .dock-keyboard');
+    await expect(strip.locator('.keyboard .key').first()).toBeVisible();
+    expect(await page.locator('.dock-panel-pianoroll .keyboard').count()).toBe(0);
+    // Between the tracker and the bottom pane.
+    const grid = await page.locator('.dock-panel-tracker').boundingBox();
+    const kb = await strip.boundingBox();
+    const pane = await page.locator('.bpane').boundingBox();
+    expect(kb.y).toBeGreaterThanOrEqual(grid.y + grid.height - 1);
+    expect(kb.y + kb.height).toBeLessThanOrEqual(pane.y + 1);
+    await strip.locator('.key[title="C4"]').click();
+});

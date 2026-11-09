@@ -725,6 +725,61 @@ describe('selection, copy and paste', () => {
         assert.deepEqual(h.selectedMidis(), []);
     });
 
+    test('stretching a selected note stretches the whole selection by the same edge', () => {
+        const h = seeded();
+        marqueeBoth(h, h.shiftMouse);
+        // 64 spans [2,4): its right edge is at column 4. Two columns right.
+        h.mouse('mousedown', colX(4), rowY(64));
+        h.mouse('mousemove', colX(6), rowY(64));
+        h.mouse('mouseup', colX(6), rowY(64));
+        assert.deepEqual(h.notes().map(n => [n.midi, n.start, n.dur]).sort(),
+            [[60, 0, 4], [64, 2, 4], [72, 10, 1]], 'both +2 columns; the unselected one untouched');
+        assert.deepEqual(h.selectedMidis(), [60, 64], 'and still the selection');
+
+        // The left edge: 60's start moves right, 64's with it, by the same delta.
+        h.mouse('mousedown', colX(0), rowY(60));
+        h.mouse('mousemove', colX(1), rowY(60));
+        h.mouse('mouseup', colX(1), rowY(60));
+        assert.deepEqual(h.notes().filter(n => n.midi !== 72).map(n => [n.midi, n.start, n.dur]).sort(),
+            [[60, 1, 3], [64, 3, 3]]);
+    });
+
+    test('a group stretch clamps each note on its own, and snaps back if abandoned', () => {
+        const h = seeded();
+        marqueeBoth(h, h.shiftMouse);
+        // Far past the pattern's end: each note stops at the last column.
+        h.mouse('mousedown', colX(2), rowY(60));
+        h.mouse('mousemove', colX(2) + 40 * COL_W, rowY(60));
+        h.mouse('mouseup', colX(2) + 40 * COL_W, rowY(60));
+        assert.deepEqual(h.notes().filter(n => n.midi !== 72).map(n => [n.midi, n.start, n.dur]).sort(),
+            [[60, 0, COLS], [64, 2, COLS - 2]]);
+
+        // Shrinking: never under a column, whatever the others do.
+        h.mouse('mousedown', colX(COLS), rowY(64));
+        h.mouse('mousemove', colX(COLS) - 15 * COL_W, rowY(64));
+        h.mouse('mouseup', colX(COLS) - 15 * COL_W, rowY(64));
+        assert.deepEqual(h.notes().filter(n => n.midi !== 72).map(n => [n.midi, n.start, n.dur]).sort(),
+            [[60, 0, 1], [64, 2, 1]]);
+
+        // Leaving the canvas mid-stretch puts every note back.
+        h.mouse('mousedown', colX(3), rowY(64));
+        h.mouse('mousemove', colX(7), rowY(64));
+        h.canvas.dispatch('mouseleave', {});
+        assert.deepEqual(h.notes().filter(n => n.midi !== 72).map(n => [n.midi, n.start, n.dur]).sort(),
+            [[60, 0, 1], [64, 2, 1]]);
+    });
+
+    test('stretching an unselected note drops the selection and stretches just that note', () => {
+        const h = seeded();
+        marqueeBoth(h, h.shiftMouse);
+        h.mouse('mousedown', colX(11), rowY(72));
+        h.mouse('mousemove', colX(13), rowY(72));
+        h.mouse('mouseup', colX(13), rowY(72));
+        assert.deepEqual(h.notes().map(n => [n.midi, n.start, n.dur]).sort(),
+            [[60, 0, 2], [64, 2, 2], [72, 10, 3]]);
+        assert.deepEqual(h.selectedMidis(), []);
+    });
+
     // Copy arms a stamp: a shadow of the selection follows the pointer and a
     // click puts the copy down where the shadow is. There is no Paste.
     test('Copy arms the stamp; the shadow follows the pointer, kept inside the grid', () => {

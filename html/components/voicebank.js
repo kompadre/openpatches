@@ -1,6 +1,8 @@
 // VoiceBank — the Mixer. One vertical channel strip per slot: fader (drag
 // vertically, 0-127), Mute, Solo, preview and remove. Each entry has a
-// color that maps to pianoroll note colors.
+// color that maps to pianoroll note colors. On a phone the strips are rows
+// and the fader lies down (CSS only); the fill is a `--vol` fraction and
+// the drag reads its axis off the fader's shape, so both work unchanged.
 //
 // The bank is a fixed array of MAX_SLOTS positions: the slot index IS the
 // synth channel (AGENTS.md), so entries never shift. Removing one leaves a
@@ -184,14 +186,15 @@ export function createVoiceBank(opts) {
                 nameEl.title = entry.name;
                 item.appendChild(nameEl);
 
-                // Fader: a vertical track whose fill is the user volume.
-                // Dimmed by CSS when the strip is effectively silent.
+                // Fader: a track whose fill is the user volume, as `--vol`
+                // (0–1) — CSS turns it into a height, or a width when the
+                // fader lies down. Dimmed when the strip is effectively silent.
                 const fader = document.createElement('div');
                 fader.className = 'voicebank-fader';
                 const overlay = document.createElement('div');
                 overlay.className = 'voicebank-volume-overlay';
                 overlay.style.background = entry.color;
-                overlay.style.height = ((entry.volume ?? DEFAULT_VOLUME) / 127 * 100) + '%';
+                overlay.style.setProperty('--vol', (entry.volume ?? DEFAULT_VOLUME) / 127);
                 fader.appendChild(overlay);
                 item.appendChild(fader);
 
@@ -278,19 +281,22 @@ export function createVoiceBank(opts) {
                     saveState();
                 });
 
-                // Fader drag (mouse or touch), vertical. A tap without
+                // Fader drag (mouse or touch): up, or right when the fader
+                // is wider than tall (the phone's rows). A tap without
                 // movement falls through to selection.
                 function handleVolStart(e) {
                     if (e.type === 'mousedown' && e.button !== 0) return;
                     if (e.type === 'touchstart') e.preventDefault();
                     const rect = fader.getBoundingClientRect();
+                    const across = rect.width > rect.height;
                     let didDrag = false;
 
                     function onMove(ev) {
-                        const clientY = ev.touches ? ev.touches[0].clientY : ev.clientY;
-                        const y = rect.bottom - clientY;
-                        const pct = Math.max(0, Math.min(1, y / rect.height));
-                        overlay.style.height = (pct * 100) + '%';
+                        const pt = ev.touches ? ev.touches[0] : ev;
+                        const pct = Math.max(0, Math.min(1, across
+                            ? (pt.clientX - rect.left) / rect.width
+                            : (rect.bottom - pt.clientY) / rect.height));
+                        overlay.style.setProperty('--vol', pct);
                         const vol = Math.round(pct * 127);
                         entry.volume = vol;
                         volEl.textContent = vol;

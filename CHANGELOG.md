@@ -2,6 +2,16 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-09: Mobile Mixer rows, group stretch in the Pattern editor, keyboard strip on desktop
+
+**Mixer on mobile: strips are rows.** Side by side the eight strips filled a third of the screen, the faders were small and the M/S/▶/× row spilled out of the strips. Now each slot is a row and the eight share the panel's height: number, name, value, FX and buttons (28px touch targets) on top, and a full-width fader lying down underneath. CSS only (scoped to `.dock-panel-mixer`, the mobile panel; the desktop bottom pane is untouched). The fader's fill is now a `--vol` custom property that CSS turns into a height or a width, and the drag reads its axis off the fader's shape (wider than tall → left to right).
+
+**Pattern editor: stretching a selected note stretches the whole selection.** Same delta, same edge (right or left), each note clamped on its own (at least a column, inside the pattern), so a short note bottoming out doesn't hold the others back. Abandoning the drag (mouseleave / touchcancel) puts every note back. Grabbing an unselected note's edge drops the selection, as grabbing its body already did. Mouse and touch now share `beginResize`/`applyResizeDelta`/`restoreResize`/`endResize` instead of two copies of the resize code.
+
+**Keyboard: a strip of its own on desktop.** The keyboard (fold bar and keys) left the Pattern panel for `.dock-keyboard`, a strip in the centre column between the main panel and the bottom pane, so it's on screen and playable under Patches, Pattern and Tracker. Mobile is unchanged (the keyboard stays in the Pattern panel). The main panels are ~145px shorter for it; the fold bar still collapses it, remembered.
+
+Tests: `pattern-editor` +3 (group stretch on both edges, per-note clamping and snap-back, unselected edge drops the selection); e2e `mobile` +1 (rows fill the panel, sideways fader drag), `tracker` +1 (keyboard strip between the tracker and the bottom pane, playable); `slot-drop` seeds its floating patch higher, clear of the keyboard strip. 1088 unit, 118 e2e.
+
 ## 2026-11-09: Tracker — Edit in the ✎ popover
 
 **The ✎ popover gains an Edit button** that opens the clip in the Pattern editor, exactly like opening it from the Section pane: pending tracker edits are committed first, the transport is parked on the clip's start (so the roll's Play loops this placement), the track's voice becomes active, and the Pattern tab comes up. `toolbar.js` now shares one `openClipInRoll` between the Section editor and the tracker (`onOpenPattern`).

@@ -14,7 +14,8 @@ async function seed(page) {
         };
         const a = mk('ROWPATCH', 9), b = mk('LANEPATCH', 11), f = mk('FLOATER', 7);
         cv.addContainer('Box', { patchIds: [a.id, b.id], left: 420, top: 120 });
-        pm.canvasStore.putCanvasPatch(f.id, { left: 760, top: 420 });
+        // High enough to clear the keyboard strip under the Patches canvas.
+        pm.canvasStore.putCanvasPatch(f.id, { left: 760, top: 300 });
         cv.refreshCanvas();
         return { a: a.id, b: b.id, f: f.id };
     });

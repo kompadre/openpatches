@@ -199,6 +199,16 @@ export function createToolbar(opts) {
     centre.appendChild(canvasPanel);
     centre.appendChild(pianorollPanel);
     centre.appendChild(trackerPanel);
+    // Desktop: the on-screen keyboard is a strip of its own under whichever
+    // main panel is showing (Patches, Pattern, Tracker), above the bottom
+    // pane — not one of the pane's items. Filled further down, where the
+    // keys are built. Mobile keeps it in the Pattern panel.
+    let kbDock = null;
+    if (!isMobileLayout) {
+        kbDock = document.createElement('div');
+        kbDock.className = 'dock-keyboard';
+        centre.appendChild(kbDock);
+    }
     if (isMobileLayout) {
         centre.appendChild(sectionPanel);
         centre.appendChild(mixerPanel);
@@ -1223,9 +1233,10 @@ export function createToolbar(opts) {
         setKeyboardCollapsed(!kbWrapper.classList.contains('collapsed'));
     });
 
-    pianorollPanel.appendChild(kbToggle);
+    const kbHome = kbDock || pianorollPanel;
+    kbHome.appendChild(kbToggle);
     kbWrapper.appendChild(kb);
-    pianorollPanel.appendChild(kbWrapper);
+    kbHome.appendChild(kbWrapper);
 
     // Octave selector (mobile)
     let octaveBtns = [];

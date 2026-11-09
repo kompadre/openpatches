@@ -1947,6 +1947,8 @@ h1 {
     bottom: 0;
     left: 0;
     width: 100%;
+    /* --vol is the fader's value, 0–1, set by voicebank.js */
+    height: calc(var(--vol, 0) * 100%);
     opacity: 0.7;
     pointer-events: none;
     transition: opacity 0.1s;
@@ -2996,14 +2998,25 @@ h1 {
     resize: vertical;
 }
 
-.dock-panel .keyboard {
+/* Desktop: the keyboard's own strip in the centre column, under the main
+   panel and above the bottom pane, on every main tab (toolbar.js kbDock). */
+.dock-keyboard {
+    width: 100%;
+    flex-shrink: 0;
+}
+.dock-keyboard .kb-toggle { margin-top: 0.25rem; }
+.dock-keyboard .keyboard-wrapper { margin-top: 0; }
+
+.dock-panel .keyboard,
+.dock-keyboard .keyboard {
     height: auto;
     justify-content: center;
     width: 100%;
     display: flex;
 }
 
-.dock-panel .keyboard-wrapper {
+.dock-panel .keyboard-wrapper,
+.dock-keyboard .keyboard-wrapper {
     width: 100%;
 }
 
@@ -3011,13 +3024,15 @@ h1 {
     width: 100%;
 }
 
-.dock-panel .key.white {
+.dock-panel .key.white,
+.dock-keyboard .key.white {
     flex: 1;
     height: 120px;
     min-width: 0;
 }
 
-.dock-panel .key.black {
+.dock-panel .key.black,
+.dock-keyboard .key.black {
     flex: none;
     width: 2.4%;
     margin-left: -1.2%;
@@ -4843,21 +4858,83 @@ footer {
 
     .pianoroll-hint { display: none !important; }
 
-    /* The Mixer on a phone: the same eight strips, tighter. */
-    .voicebank-list {
-        gap: 3px;
-        padding: 4px;
+    /* The Mixer on a phone: the eight strips as rows sharing the panel's
+       height — side by side they were slivers over an empty screen, with
+       the M/S row spilling out of them. Each row is two lines: number,
+       name, value, FX and buttons; under them the fader, lying down, the
+       row's full width. The fill follows (--vol becomes a width) and so does the
+       drag (voicebank.js reads the axis off the fader's shape). */
+    .dock-panel-mixer .voicebank {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
     }
-    .voicebank-item {
-        min-height: 130px;
-        padding: 4px 2px;
+    .dock-panel-mixer .voicebank-list {
+        flex: 1;
+        min-height: 0;
+        flex-direction: column;
+        gap: 4px;
+        padding: 6px;
     }
-    .voicebank-fader {
+    .dock-panel-mixer .voicebank-item {
+        flex: 1 1 0;
+        max-width: none;
+        min-height: 64px;
+        max-height: 96px;
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+        grid-template-areas:
+            "num   name  vol   fx    ctrl"
+            "fader fader fader fader fader";
+        grid-template-rows: auto 1fr;
+        align-items: center;
+        gap: 6px 8px;
+        padding: 6px 8px;
+    }
+    .dock-panel-mixer .voicebank-item.voicebank-empty {
+        display: flex;
+        flex-direction: row;
+        justify-content: flex-start;
+        gap: 8px;
+    }
+    .dock-panel-mixer .voicebank-slot-num {
+        grid-area: num;
+        font-size: 0.75rem;
+        line-height: 20px;
+        min-width: 22px;
+    }
+    .dock-panel-mixer .voicebank-name {
+        grid-area: name;
+        font-size: 0.8rem;
+    }
+    .dock-panel-mixer .voicebank-fx { grid-area: fx; }
+    .dock-panel-mixer .voicebank-strip-controls { grid-area: ctrl; gap: 6px; }
+    .dock-panel-mixer .voicebank-mute,
+    .dock-panel-mixer .voicebank-solo,
+    .dock-panel-mixer .voicebank-play,
+    .dock-panel-mixer .voicebank-remove {
+        width: 28px;
+        height: 28px;
+        font-size: 0.8rem;
+    }
+    .dock-panel-mixer .voicebank-fader {
+        grid-area: fader;
         width: 100%;
-        max-width: 26px;
+        height: 100%;
+        min-height: 24px;
+        cursor: ew-resize;
     }
-    .voicebank-name {
-        font-size: 0.5rem;
+    .dock-panel-mixer .voicebank-volume-overlay {
+        top: 0;
+        height: 100%;
+        width: calc(var(--vol, 0) * 100%);
+    }
+    .dock-panel-mixer .voicebank-vol {
+        grid-area: vol;
+        font-size: 0.75rem;
+        min-width: 2em;
+        text-align: right;
     }
 
     /* Keyboard recording controls */
