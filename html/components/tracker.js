@@ -6,8 +6,9 @@
 // or *compact* (one column; a cell holding several events shows the first
 // plus `+n`, the rest in a tooltip). Clips show as blocks in their
 // pattern's colour, subdued. The gap right of each track is the clip's
-// margin: a ✎ on the clip's first row (repeats, + Bar to pattern) and,
-// under it, the pattern's name reading downward.
+// margin: a ✎ on the clip's first row (Edit in the Pattern editor,
+// repeats, + Bar to pattern) and, under it, the pattern's name reading
+// downward.
 //
 // **Editing** (FT2-style). Click a cell or focus the grid, then:
 //   Z-row / Q-row          notes, as a piano (Z = C of the octave, Q = C above)
@@ -379,7 +380,7 @@ export function createTracker(opts) {
         ctx.fillText(noteName(drag.event.midi), x, drag.row * ROW_H + ROW_H / 2);
     }
 
-    // --- The ✎ popover: the clip's repeats, and a new bar for the pattern ---
+    // --- The ✎ popover: Edit, the clip's repeats, and a new bar for the pattern ---
 
     let popover = null;
 
@@ -399,6 +400,23 @@ export function createTracker(opts) {
         title.className = 'tracker-popover-title';
         title.textContent = block.pattern.name;
         popover.appendChild(title);
+
+        // Edit: open this clip in the Pattern editor, as the Section pane
+        // does — pending edits committed first, the project position
+        // parked on this clip so the roll's Play loops it.
+        if (opts.onOpenPattern) {
+            const edit = document.createElement('button');
+            edit.className = 'tracker-btn tracker-popover-edit';
+            edit.textContent = 'Edit';
+            edit.title = 'Open the pattern in the Pattern editor';
+            edit.addEventListener('click', () => {
+                commit();
+                closePopover();
+                if (transport && transport.setSectionPosition) transport.setSectionPosition(block.clip.startCol);
+                opts.onOpenPattern(block.clip.id, block.clip.trackId, block.pattern.id);
+            });
+            popover.appendChild(edit);
+        }
 
         // Repeats: only meaningful on a clip spelled in repeats; a clip cut
         // to a column count keeps its cut (the Section pane resizes those).

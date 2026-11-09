@@ -624,6 +624,17 @@ export function createToolbar(opts) {
         const initSlot = entries.indexOf(initActive);
         if (initSlot >= 0) pianorollRef.setActiveSlot(initSlot);
     }
+    // Opening a clip (Section pane, Tracker ✎ → Edit): make its voice the
+    // active one (that is what the roll edits), hand the clip to the roll,
+    // show the roll.
+    const openClipInRoll = (clipId, trackId) => {
+        const track = session.get().tracks.find(t => t.id === trackId);
+        if (track && voiceBank._setActiveSlot) voiceBank._setActiveSlot(track.slot);
+        pianorollRef.openClip(clipId);
+        activateTab(tabPianoroll, pianorollPanel);
+        requestAnimationFrame(positionBlackKeys);
+    };
+
     // --- Section editor (Section tab) ---
     const sectionEditor = createSectionEditor({
         session,
@@ -633,15 +644,7 @@ export function createToolbar(opts) {
             const entries = voiceBank._getEntries ? voiceBank._getEntries() : [];
             return entries[slot] || null;
         },
-        // Opening a clip: make its voice the active one (that is what the
-        // roll edits), hand the clip to the roll, show the roll.
-        onOpenPattern: (clipId, trackId) => {
-            const track = session.get().tracks.find(t => t.id === trackId);
-            if (track && voiceBank._setActiveSlot) voiceBank._setActiveSlot(track.slot);
-            pianorollRef.openClip(clipId);
-            activateTab(tabPianoroll, pianorollPanel);
-            requestAnimationFrame(positionBlackKeys);
-        },
+        onOpenPattern: openClipInRoll,
         // The library: open a pattern by id (the roll's own switch picks
         // the clip, placing it first if it is placed nowhere), show the tab.
         onShowPattern: (patternId) => {
@@ -679,6 +682,8 @@ export function createToolbar(opts) {
         },
         // A note typed into the tracker is heard on its track's voice.
         playNote: (midi, slot) => pianorollPlayFn(midi, 300, null, slot),
+        // ✎ → Edit opens the clip in the Pattern editor.
+        onOpenPattern: openClipInRoll,
         // The Section pane outlines the rows the tracker has on screen.
         onViewport: (range) => {
             if (sectionEditor.setTrackerViewport) sectionEditor.setTrackerViewport(range);

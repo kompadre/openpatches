@@ -130,3 +130,18 @@ test('clicking the grid does not scroll it (focus would tuck rows under the head
     await page.locator('.tracker-canvas').click({ position: { x: 40, y: 3 * 16 + 8 } });
     expect(await page.locator('.tracker-scroll').evaluate((el) => el.scrollTop)).toBe(0);
 });
+
+test('✎ → Edit opens the clip in the Pattern editor', async ({ page }) => {
+    await openApp(page);
+    await seed(page);
+    await page.locator('.dock-tab-tracker').click();
+
+    // The ✎ sits in the gap right of the track, on the clip's first row.
+    const { left, width } = await page.locator('.tracker-head').evaluate((el) =>
+        ({ left: parseFloat(el.style.left), width: parseFloat(el.style.width) }));
+    await page.locator('.tracker-canvas').click({ position: { x: left + width + 4, y: 4 } });
+    await page.locator('.tracker-popover-edit').click();
+
+    await expect(page.locator('.dock-tab-pianoroll')).toHaveClass(/active/);
+    await expect(page.locator('.tracker-popover')).toHaveCount(0);
+});

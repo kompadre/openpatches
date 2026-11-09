@@ -2,6 +2,12 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-09: Tracker — Edit in the ✎ popover
+
+**The ✎ popover gains an Edit button** that opens the clip in the Pattern editor, exactly like opening it from the Section pane: pending tracker edits are committed first, the transport is parked on the clip's start (so the roll's Play loops this placement), the track's voice becomes active, and the Pattern tab comes up. `toolbar.js` now shares one `openClipInRoll` between the Section editor and the tracker (`onOpenPattern`).
+
+Tests: `tracker-view` +2 (Edit opens with clip/track/pattern ids after committing a pending edit; no Edit without `onOpenPattern`); e2e `tracker` +1 (✎ → Edit lands on the Pattern tab). 1085 unit.
+
 ## 2026-11-07: Tracker fix — stranded edges on mobile
 
 **Fixed: the tracker sat centred with huge side gaps on mobile, and with many expanded lanes part of track 1 and all of track 8 could not be scrolled to.** Exactly the failure mode the stylesheet's own stranded-edge warning on `.dock-panel` describes: the panel is a centring flex column, and a child that takes its content width gets centred — narrower than the dock it floats with gaps, wider and the overflow splits across both sides, where the start side can never be scrolled to. `.tracker-container` now sizes itself to the dock (`width: 100%`) and the grid scrolls inside `.tracker-scroll`, like every other panel.

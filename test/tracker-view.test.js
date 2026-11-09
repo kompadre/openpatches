@@ -120,6 +120,36 @@ describe('tracker view', () => {
         void tracker;
     });
 
+    test('the ✎ popover: Edit opens the clip in the Pattern editor, committing first', () => {
+        const { pattern, clip, track } = seedPattern(session, { notes: [{ midi: 60, start: 0, dur: 4 }] });
+        const opened = [];
+        let touched = 0;
+        const { tracker, q, head, press, key } = build({
+            onOpenPattern: (...args) => opened.push({ args, pending: touched }),
+        });
+        session.subscribe((ev) => { if (ev.source === 'tracker') touched++; });
+
+        // A pending (uncommitted) edit, then ✎ → Edit.
+        press(head(0).x + 4, ROW * 2 + 4);
+        key('KeyZ');
+        press(head(0).x + head(0).w + 4, 4);
+        q('.tracker-popover').querySelectorAll('button')
+            .find(b => b.textContent === 'Edit').dispatch('click');
+
+        assert.equal(opened.length, 1);
+        assert.deepEqual(opened[0].args, [clip.id, track.id, pattern.id]);
+        assert.ok(opened[0].pending > 0, 'the pending edit was committed before opening');
+        assert.equal(q('.tracker-popover'), null, 'closed after acting');
+        void tracker;
+    });
+
+    test('the ✎ popover has no Edit without an onOpenPattern', () => {
+        seedPattern(session, { notes: [{ midi: 60, start: 0, dur: 4 }] });
+        const { q, head, press } = build();
+        press(head(0).x + head(0).w + 4, 4);
+        assert.equal(q('.tracker-popover').querySelectorAll('button').find(b => b.textContent === 'Edit'), undefined);
+    });
+
     test('clicking a track column selects its voice', () => {
         seedPattern(session, { slot: 0, notes: [] });
         seedPattern(session, { slot: 3, notes: [] });
