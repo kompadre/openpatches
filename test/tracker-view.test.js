@@ -566,4 +566,80 @@ describe('tracker selection', () => {
         h.press(x, 3 * ROW + 4);
         assert.equal(h.tracker.enterKey(67), false, 'not while the tab is hidden');
     });
+
+    // Copy → a stamp that follows the pointer; a click puts it down.
+    const btn = (h) => h.q('.tracker-copy');
+    const move = (h, x, row) => h.canvas.dispatch('mousemove', { clientX: x, clientY: row * ROW + 4 });
+
+    test('Copy is disabled without a selection; armed, it lights and the status says what to do', () => {
+        seedPattern(session, { notes: [N(60, 0, 2)] });
+        const h = build();
+        assert.equal(btn(h).disabled, true);
+        const x = h.head(0).x + 4;
+        dragSel(h, x, 0, x, 3);
+        assert.equal(btn(h).disabled, false);
+        btn(h).dispatch('click');
+        assert.ok(btn(h).classList.contains('active'));
+        assert.match(h.q('.tracker-status').textContent, /Click where the copy should go/);
+        btn(h).dispatch('click');                         // Copy again cancels
+        assert.equal(btn(h).classList.contains('active'), false);
+    });
+
+    test('a click puts the copy down; it becomes the selection and the stamp is spent', () => {
+        const { pattern } = seedPattern(session, { notes: [N(60, 0, 2), N(62, 2, 2)] });
+        const h = build();
+        const x = h.head(0).x + 4;
+        dragSel(h, x, 0, x, 3);
+        btn(h).dispatch('click');
+        move(h, x, 8);
+        h.press(x, 8 * ROW + 4);
+        h.tracker.flush();
+        assert.deepEqual(notesOf(pattern.id), [[60, 0, 2, 0], [62, 2, 2, 0], [60, 8, 2, 0], [62, 10, 2, 0]]);
+        assert.deepEqual(h.tracker.getSelection(), { slot: 0, lanes: [0, 0], rows: [8, 11] });
+        assert.equal(btn(h).classList.contains('active'), false, 'spent');
+        h.press(x, 14 * ROW + 4);                         // an ordinary click again
+        h.tracker.flush();
+        assert.equal(session.getPattern(pattern.id).notes.length, 4);
+    });
+
+    test('the copy is held inside the repeat it lands in', () => {
+        const { pattern } = seedPattern(session, { notes: [N(60, 0, 2)] });
+        const h = build();
+        const x = h.head(0).x + 4;
+        dragSel(h, x, 0, x, 3);
+        btn(h).dispatch('click');
+        h.press(x, 15 * ROW + 4);                         // a 4-row block at row 15 → pulled up to 12
+        h.tracker.flush();
+        assert.deepEqual(notesOf(pattern.id), [[60, 0, 2, 0], [60, 12, 2, 0]]);
+    });
+
+    test('into another track and pattern', () => {
+        const { pattern } = seedPattern(session, { notes: [N(60, 0, 2)] });
+        const other = seedPattern(session, { slot: 1, notes: [] });
+        const h = build();
+        dragSel(h, h.head(0).x + 4, 0, h.head(0).x + 4, 1);
+        btn(h).dispatch('click');
+        h.press(h.head(1).x + 4, 4 * ROW + 4);
+        h.tracker.flush();
+        assert.deepEqual(notesOf(other.pattern.id), [[60, 4, 2, 0]]);
+        assert.deepEqual(notesOf(pattern.id), [[60, 0, 2, 0]]);
+        assert.equal(h.tracker.getSelection().slot, 1);
+    });
+
+    test('Ctrl+C arms, Escape cancels; a click off any clip places nothing and keeps it armed', () => {
+        const { pattern } = seedPattern(session, { notes: [N(60, 0, 2)] });
+        const h = build();
+        const x = h.head(0).x + 4;
+        dragSel(h, x, 0, x, 1);
+        let stopped = false;
+        h.key('KeyC', { key: 'c', ctrlKey: true, stopPropagation() { stopped = true; } });
+        assert.ok(btn(h).classList.contains('active'));
+        assert.equal(stopped, true, 'the Section and the roll do not copy too');
+        h.press(x, 30 * ROW + 4);                         // no clip there
+        assert.match(h.q('.tracker-status').textContent, /Not in a pattern/);
+        assert.ok(btn(h).classList.contains('active'));
+        h.key('Escape', { key: 'Escape' });
+        assert.equal(btn(h).classList.contains('active'), false);
+        assert.equal(session.getPattern(pattern.id).notes.length, 1);
+    });
 });

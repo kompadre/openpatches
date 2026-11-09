@@ -11,7 +11,7 @@ import {
 } from '../html/components/project-model.js';
 import {
     noteName, deriveLanes, applyLanes, relane, trackLaneCount, expandTrack, compactCells, locate,
-    putNote, putOff, clearCell, growBlocker, measuresFor, moveNote, clearRange, fillRange, moveBlock,
+    putNote, putOff, clearCell, growBlocker, measuresFor, moveNote, clearRange, fillRange, moveBlock, copyBlock, pasteBlock,
 } from '../html/components/tracker-model.js';
 
 const N = (midi, start, dur, lane) => (lane == null ? { midi, start, dur } : { midi, start, dur, lane });
@@ -398,5 +398,43 @@ describe('moveBlock (moving the selection)', () => {
         const p = pat([N(60, 0, 8), N(62, 4, 2)]);
         moveBlock(p, 4, 5, 0, 0, 0, 0);
         assert.deepEqual(sorted(p), [[60, 0, 8, 0], [62, 4, 2, 0]]);
+    });
+});
+
+describe('copyBlock / pasteBlock (the copy stamp)', () => {
+    const sorted = (p) => view(p).sort((a, b) => a[3] - b[3] || a[1] - b[1]);
+
+    test('a copy is the block\'s notes relative to its corner, and a snapshot', () => {
+        const p = pat([N(60, 0, 2), N(62, 2, 2), N(64, 2, 4), N(67, 12, 4)]);   // 64 in lane 1
+        const st = copyBlock(p, 0, 3, 0, 1);
+        assert.deepEqual(st.rows, 4);
+        assert.deepEqual(st.lanes, 2);
+        assert.deepEqual(st.items.map(i => [i.dCol, i.dLane, i.midi, i.dur]).sort(),
+            [[0, 0, 60, 2], [2, 0, 62, 2], [2, 1, 64, 4]]);
+        p.notes[0].midi = 10;
+        assert.equal(st.items.find(i => i.dCol === 0).midi, 60, 'later edits do not reach it');
+    });
+
+    test('pasting writes copies with their lengths and leaves the original', () => {
+        const p = pat([N(60, 0, 2), N(62, 2, 2)]);
+        pasteBlock(p, 8, 0, copyBlock(p, 0, 3, 0, 0));
+        assert.deepEqual(sorted(p), [[60, 0, 2, 0], [62, 2, 2, 0], [60, 8, 2, 0], [62, 10, 2, 0]]);
+    });
+
+    test('the destination is overwritten and a note sounding into it cut; copies stop at the next note', () => {
+        const p = pat([N(60, 0, 4), N(50, 6, 3), N(52, 9, 1), N(67, 13, 3)]);   // one lane
+        pasteBlock(p, 8, 0, copyBlock(p, 0, 3, 0, 0));    // 60 (4 long) → rows 8–11
+        assert.deepEqual(sorted(p), [[60, 0, 4, 0], [50, 6, 2, 0], [60, 8, 4, 0], [67, 13, 3, 0]]);
+        const q = pat([N(60, 0, 8), N(67, 10, 2)]);
+        pasteBlock(q, 6, 0, copyBlock(q, 0, 0, 0, 0));
+        assert.deepEqual(sorted(q), [[60, 0, 6, 0], [60, 6, 4, 0], [67, 10, 2, 0]]);
+    });
+
+    test('into another pattern and another lane; past the end, copies are dropped', () => {
+        const src = pat([N(60, 0, 2), N(62, 3, 1)]);
+        const dst = createPattern({ id: 'p2', notes: [N(48, 0, 16)], measures: 1 });
+        const made = pasteBlock(dst, 14, 1, copyBlock(src, 0, 3, 0, 0));
+        assert.equal(made.length, 1, '62 would land on row 17: dropped');
+        assert.deepEqual(sorted(dst), [[48, 0, 16, 0], [60, 14, 2, 1]]);
     });
 });

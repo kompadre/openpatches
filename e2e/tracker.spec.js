@@ -286,3 +286,35 @@ test('held inside a selection, a drag moves the block', async ({ page }) => {
     await page.evaluate(() => window.__opDock._tracker.flush());
     expect(await lane0()).toEqual([[60, 2], [67, 8]]);
 });
+
+test('Copy: the shadow follows the pointer, a click puts the copy down', async ({ page }) => {
+    await openApp(page);
+    await seed(page);
+    await page.locator('.dock-tab-tracker').click();
+    const box = await page.locator('.tracker-canvas').boundingBox();
+    const at = (row) => ({ x: box.x + 40, y: box.y + row * 16 + 8 });
+    const lane0 = () => page.evaluate(() => Object.values(window.__opProject.get().patterns)[0].notes
+        .filter((n) => n.midi !== 64).map((n) => [n.midi, n.start]).sort((a, b) => a[1] - b[1]));
+
+    // Riff lane 0: C-4 at 0, G-4 at 8. Select rows 0–3 and copy.
+    await expect(page.locator('.tracker-copy')).toBeDisabled();
+    await page.mouse.move(at(0).x, at(0).y);
+    await page.mouse.down();
+    await page.mouse.move(at(3).x, at(3).y, { steps: 3 });
+    await page.mouse.up();
+    await page.locator('.tracker-copy').click();
+    await expect(page.locator('.tracker-copy')).toHaveClass(/active/);
+
+    await page.mouse.move(at(12).x, at(12).y, { steps: 3 });
+    await page.screenshot({ path: '/tmp/op-shots/tracker-stamp.png', clip: { x: box.x - 40, y: box.y - 60, width: 420, height: 320 } });
+    await page.mouse.click(at(12).x, at(12).y);
+    await page.evaluate(() => window.__opDock._tracker.flush());
+    expect(await lane0()).toEqual([[60, 0], [67, 8], [60, 12]]);
+    await expect(page.locator('.tracker-copy')).not.toHaveClass(/active/);
+
+    // Ctrl+C on the grid arms it again (the copy is the selection now).
+    await page.keyboard.press('Control+c');
+    await expect(page.locator('.tracker-copy')).toHaveClass(/active/);
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.tracker-copy')).not.toHaveClass(/active/);
+});

@@ -455,3 +455,59 @@ export function moveBlock(pattern, c0, c1, l0, l1, dr, dl) {
     sortNotes(pattern);
     return true;
 }
+
+/**
+ * The notes starting in a block — pattern columns `c0`..`c1`, lanes
+ * `l0`..`l1` — as a stamp: `{ rows, lanes, items: [{ dCol, dLane, midi,
+ * dur }] }`, offsets from the block's top-left cell. A snapshot: later
+ * edits to the pattern do not reach it.
+ */
+export function copyBlock(pattern, c0, c1, l0, l1) {
+    const d = deriveLanes(pattern.notes);
+    const items = [];
+    for (const n of pattern.notes) {
+        const lane = d.lane.get(n);
+        if (lane < l0 || lane > l1 || n.start < c0 || n.start > c1) continue;
+        items.push({ dCol: n.start - c0, dLane: lane - l0, midi: n.midi, dur: n.dur });
+    }
+    return { rows: c1 - c0 + 1, lanes: l1 - l0 + 1, items };
+}
+
+/**
+ * Put a stamp (copyBlock) down with its top-left cell at pattern column
+ * `c0`, lane `l0`. Overwrites the way moveBlock lands: in the stamp's
+ * rows and lanes, notes starting there go and one sounding into the top
+ * is cut there; the copies keep their lengths but stop at the next note
+ * in their lane and at the pattern's end. Copies falling past the end are
+ * dropped. Returns the notes made.
+ */
+export function pasteBlock(pattern, c0, l0, stamp) {
+    const d = freeze(pattern);
+    const len = patternCols(pattern);
+    const c1 = Math.min(len - 1, c0 + stamp.rows - 1);
+    for (let lane = l0; lane < l0 + stamp.lanes; lane++) {
+        for (const n of inLane(pattern, d, lane)) {
+            if (n.start >= c0 && n.start <= c1) pattern.notes.splice(pattern.notes.indexOf(n), 1);
+            else if (n.start < c0 && endOf(n) > c0) n.dur = c0 - n.start;
+        }
+    }
+    const laneOf = new Map();
+    for (const it of stamp.items) {
+        const start = c0 + it.dCol;
+        if (start >= len) continue;
+        const n = { midi: it.midi, start, dur: it.dur };
+        setLane(n, l0 + it.dLane);
+        laneOf.set(n, l0 + it.dLane);
+        pattern.notes.push(n);
+    }
+    const lane = (n) => (laneOf.has(n) ? laneOf.get(n) : d.lane.get(n));
+    for (const n of laneOf.keys()) {
+        let to = len;
+        for (const o of pattern.notes) {
+            if (o !== n && lane(o) === lane(n) && o.start > n.start) to = Math.min(to, o.start);
+        }
+        n.dur = Math.max(1, Math.min(n.dur, to - n.start));
+    }
+    sortNotes(pattern);
+    return [...laneOf.keys()];
+}

@@ -27,6 +27,14 @@
 // click (it drops the selection) or, once the pointer leaves its cell,
 // a selection drag.
 //
+// **Copy** (the button, or Ctrl/Cmd+C on the grid) works as in the Pattern
+// and Section editors: the selected block becomes a stamp whose shadow
+// follows the pointer over the grid, and a click puts it down — into any
+// track or pattern, held inside one repeat and the track's lanes,
+// overwriting what is there. The copy becomes the selection and the stamp
+// is spent (Copy, click, Copy, click repeats); Escape or Copy again
+// cancels. There is no Paste.
+//
 // **Selection.** Drag across cells (Shift-click and Shift-arrows extend
 // from the cursor) to select a block — inside one track, one pattern, one
 // repeat of it. A note then fills its first lane every Step rows (C, three empty,
@@ -56,7 +64,7 @@
 import {
     expandTrack, compactCells, noteName, locate, MAX_LANES,
     putNote, putOff, clearCell, relane, growBlocker, measuresFor, moveNote,
-    clearRange, fillRange, moveBlock,
+    clearRange, fillRange, moveBlock, copyBlock, pasteBlock,
 } from './tracker-model.js';
 import {
     COLS_PER_MEASURE, updateClip, clipRepeats, sectionLength, addClip, patternCols,
@@ -114,6 +122,10 @@ export function createTracker(opts) {
     let pending = null;
     let armed = null;         // { slot, lane, row } the cell a hold armed, outlined
     let blockMove = null;     // { st, slot, row, lane, dr, dl } while the selection is moved
+    // The armed stamp: a copyBlock snapshot, and where its top-left cell
+    // would land under the pointer ({ slot, lane, col, lo, hi, pattern,
+    // clipId }) — null while the pointer is off the grid or off any clip.
+    let stamp = null;         // { block, at }
 
     // --- DOM ---
 
@@ -155,6 +167,19 @@ export function createTracker(opts) {
         try { localStorage.setItem(FOLLOW_KEY, followPlayhead ? '1' : '0'); } catch { /* ignore */ }
     });
     controls.appendChild(followBtn);
+
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'tracker-btn tracker-copy';
+    copyBtn.textContent = '⎘ Copy';
+    copyBtn.title = 'Copy the selected cells: a shadow of them follows the pointer — '
+        + 'click where they should go (Ctrl+C; Escape or Copy again to cancel)';
+    copyBtn.addEventListener('click', () => { if (stamp) cancelStamp(); else armStamp(); });
+    controls.appendChild(copyBtn);
+
+    function syncCopyBtn() {
+        copyBtn.disabled = !stamp && !selRect();
+        copyBtn.classList.toggle('active', !!stamp);
+    }
     const status = document.createElement('span');
     status.className = 'tracker-status';
     controls.appendChild(status);
@@ -311,6 +336,8 @@ export function createTracker(opts) {
         drawCursor(ctx);
         drawDrag(ctx);
         drawBlockMove(ctx);
+        drawStamp(ctx);
+        syncCopyBtn();
         reportViewport();
     }
 
@@ -792,6 +819,18 @@ export function createTracker(opts) {
     }
 
     canvas.addEventListener('keydown', (e) => {
+        // Ctrl/Cmd+C: the selection becomes a stamp. Stopped here, so the
+        // Section's and the roll's own Ctrl+C stay out of it.
+        if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 'c' || e.key === 'C')) {
+            if (stamp || armStamp()) { e.preventDefault(); e.stopPropagation(); }
+            return;
+        }
+        if (e.key === 'Escape' && stamp) {
+            cancelStamp();
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+        }
         if (e.ctrlKey || e.metaKey || e.altKey) return;
         let handled = true;
         const arrows = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
@@ -836,6 +875,11 @@ export function createTracker(opts) {
         }
     });
 
+    // The shadow leaves with the pointer; the stamp stays armed.
+    canvas.addEventListener('mouseleave', () => {
+        if (stamp && stamp.at) { stamp.at = null; draw(); }
+    });
+
     canvas.addEventListener('focus', () => { focused = true; draw(); });
     canvas.addEventListener('blur', () => { focused = false; draw(); });
 
@@ -850,6 +894,12 @@ export function createTracker(opts) {
 
     canvas.addEventListener('mousedown', (e) => {
         const p = pointAt(e);
+        // An armed stamp: the press is where the copy goes, nothing else.
+        if (stamp) {
+            if (canvas.focus) canvas.focus({ preventScroll: true });
+            placeStamp(p);
+            return;
+        }
         const hit = pencils.find(h => p.x >= h.x && p.x < h.x + h.w && p.y >= h.y && p.y < h.y + h.h);
         if (hit) { openPopover(hit); return; }
         closePopover();
@@ -952,6 +1002,108 @@ export function createTracker(opts) {
         canvas.style.cursor = '';
     }
 
+    // --- Copy: the stamp ---
+
+    /** Copy: the selected block becomes a stamp that follows the pointer. */
+    function armStamp() {
+        const st = selTarget();
+        if (!st) return false;
+        commit();
+        stamp = { block: copyBlock(st.pattern, st.p0, st.p1, st.l0, st.l1), at: null };
+        say('Click where the copy should go — Escape or Copy again to cancel');
+        draw();
+        return true;
+    }
+
+    function cancelStamp() {
+        if (!stamp) return;
+        stamp = null;
+        canvas.style.cursor = '';
+        say('');
+        draw();
+    }
+
+    /**
+     * Where the stamp's top-left cell lands for a canvas point: the track
+     * and cell under it, pulled back so the block stays inside that
+     * repeat of the pattern and the track's lanes. Null off any clip.
+     */
+    function stampTarget(p) {
+        const t = trackAt(p.x);
+        const at = t && repeatAt(t, p.row);
+        if (!at) return null;
+        const { rows, lanes } = stamp.block;
+        const lane = t.track.compact ? 0 : Math.floor((p.x - t.x) / LANE_W);
+        const room = Math.max(t.track.compact ? 1 : t.viewLanes, lanes);
+        return {
+            slot: t.track.slot,
+            lane: Math.max(0, Math.min(room - lanes, lane)),
+            col: Math.max(at.lo, Math.min(at.hi - rows + 1, p.row)),
+            lo: at.lo,
+            hi: at.hi,
+            pattern: at.block.pattern,
+            clipId: at.block.clip.id,
+        };
+    }
+
+    function followStamp(p) {
+        const at = stampTarget(p);
+        const was = stamp.at;
+        if (was && at && was.slot === at.slot && was.lane === at.lane && was.col === at.col) return;
+        if (!was && !at) return;
+        stamp.at = at;
+        canvas.style.cursor = at ? 'copy' : 'not-allowed';
+        draw();
+    }
+
+    /** The click: the copy goes down, becomes the selection, and the stamp is spent. */
+    function placeStamp(p) {
+        // Read afresh: the layout may have changed since the last move.
+        const at = stampTarget(p);
+        stamp.at = at;
+        if (!at) { say('Not in a pattern — place the copy over a clip, or Escape'); return; }
+        const { block } = stamp;
+        stamp = null;
+        canvas.style.cursor = '';
+        pasteBlock(at.pattern, at.col - at.lo, at.lane, block);
+        const c1 = Math.min(at.hi, at.col + block.rows - 1);
+        sel = {
+            slot: at.slot, clipId: at.clipId, lo: at.lo, hi: at.hi,
+            a: { lane: at.lane, col: at.col }, h: { lane: at.lane + block.lanes - 1, col: c1 },
+        };
+        cursor.slot = at.slot;
+        cursor.lane = at.lane;
+        cursor.col = at.col;
+        if (at.slot !== activeSlot) selectTrack(at.slot);
+        edited(at.pattern);
+        say('Copied — Copy again to place another');
+    }
+
+    /** The shadow: the block's outline and its notes where the click would put them. */
+    function drawStamp(ctx) {
+        const at = stamp && stamp.at;
+        const t = at && bySlot(at.slot);
+        if (!t) return;
+        const { rows, lanes, items } = stamp.block;
+        const x = t.x + at.lane * LANE_W;
+        const y = at.col * ROW_H;
+        const h = Math.min(rows, at.hi - at.col + 1) * ROW_H;
+        // Covers the cells beneath, so the copy's notes read on their own.
+        ctx.fillStyle = 'rgba(16, 16, 32, 0.9)';
+        ctx.fillRect(x, y, lanes * LANE_W, h);
+        ctx.fillStyle = 'rgba(76, 175, 80, 0.12)';
+        ctx.fillRect(x, y, lanes * LANE_W, h);
+        ctx.setLineDash && ctx.setLineDash([4, 3]);
+        ctx.strokeStyle = '#4caf50';
+        ctx.strokeRect(x + 0.5, y + 0.5, lanes * LANE_W - 1, h - 1);
+        ctx.setLineDash && ctx.setLineDash([]);
+        ctx.fillStyle = '#81c784';
+        for (const it of items) {
+            if (at.col + it.dCol > at.hi) continue;
+            ctx.fillText(noteName(it.midi), x + it.dLane * LANE_W + 4, (at.col + it.dCol) * ROW_H + ROW_H / 2);
+        }
+    }
+
     // --- Moving the selection ---
 
     /** Follow the pointer, the block held inside its repeat and its track's lanes. */
@@ -993,6 +1145,9 @@ export function createTracker(opts) {
         const { st } = m;
         const x = t.x + (st.l0 + m.dl) * LANE_W;
         const y = (st.c0 + m.dr) * ROW_H;
+        // Covers the cells beneath, which the move will overwrite anyway.
+        ctx.fillStyle = 'rgba(16, 16, 32, 0.9)';
+        ctx.fillRect(x, y, (st.l1 - st.l0 + 1) * LANE_W, (st.c1 - st.c0 + 1) * ROW_H);
         ctx.setLineDash && ctx.setLineDash([4, 3]);
         ctx.strokeStyle = '#2196f3';
         ctx.strokeRect(x + 0.5, y + 0.5, (st.l1 - st.l0 + 1) * LANE_W - 1, (st.c1 - st.c0 + 1) * ROW_H - 1);
@@ -1133,6 +1288,7 @@ export function createTracker(opts) {
     // Compact `+` cells carry their full story in the canvas title.
     canvas.addEventListener('mousemove', (e) => {
         const p = pointAt(e);
+        if (stamp) { followStamp(p); return; }
         const t = trackAt(p.x);
         let tip = '';
         if (t && t.track.compact && t.cells) {
@@ -1225,7 +1381,7 @@ export function createTracker(opts) {
         setShown(on) {
             shown = !!on;
             if (shown) render();
-            else { commit(); reportViewport(); }
+            else { cancelStamp(); commit(); reportViewport(); }
         },
         setActiveSlot(slot) {
             if (slot === activeSlot) return;

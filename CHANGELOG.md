@@ -2,6 +2,14 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-09: Tracker — Copy, the stamp way
+
+**Copy in the Tracker works like the Pattern and Section editors.** `⎘ Copy` in the Tracker's controls (or Ctrl/Cmd+C on the grid) takes the selected block as a **stamp**: a shadow of it — its outline and note names, over a covered background — follows the pointer over the grid, and **a click puts the copy down**. It can land in any track and any pattern; it is pulled back to stay inside the repeat it lands in and the track's lanes, and it overwrites what's there the way a moved block does (notes starting there go, one sounding into its top is cut, copies stop at the next note). The copy becomes the selection and the stamp is spent — Copy, click, Copy, click repeats. Copy is disabled without a selection and lit while armed; Escape, Copy again, or leaving the tab cancel; a click off any clip places nothing and says so. No Paste button, as in the other editors. Ctrl+C is kept from reaching the Section's and the roll's own copy. The block-move preview got the same covered background, so ghost notes no longer print over the cells beneath.
+
+New model functions `copyBlock` (a snapshot of a block's notes, relative to its corner) and `pasteBlock` (`tracker-model.js`).
+
+Tests: `tracker-model` +4 (copy relative + snapshot, paste keeps the original, overwrite/cut/stop at next note, other pattern and lane with copies past the end dropped); `tracker-view` +5 (button disabled/lit/cancel, click places → selection → spent, held inside the repeat, into another track and pattern, Ctrl+C stops propagation, click off a clip keeps it armed, Escape); e2e `tracker` +1 (real selection, Copy, shadow, click, Ctrl+C, Escape). 1129 unit, 127 e2e.
+
 ## 2026-11-09: Tracker — drag selects, hold moves (and the selection can be moved)
 
 **Course correction (user):** the hold belongs to *moving*, so the immediate drag is free for selecting — the previous change had it the wrong way round (a hold before selecting).
