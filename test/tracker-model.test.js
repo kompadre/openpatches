@@ -11,7 +11,7 @@ import {
 } from '../html/components/project-model.js';
 import {
     noteName, deriveLanes, applyLanes, relane, trackLaneCount, expandTrack, compactCells, locate,
-    putNote, putOff, clearCell, growBlocker, measuresFor, moveNote, clearRange, fillRange, moveBlock, copyBlock, pasteBlock,
+    putNote, putOff, clearCell, growBlocker, measuresFor, moveNote, clearRange, fillRange, moveBlock, copyBlock, pasteBlock, blockNotes, removeNotes,
 } from '../html/components/tracker-model.js';
 
 const N = (midi, start, dur, lane) => (lane == null ? { midi, start, dur } : { midi, start, dur, lane });
@@ -436,5 +436,24 @@ describe('copyBlock / pasteBlock (the copy stamp)', () => {
         const made = pasteBlock(dst, 14, 1, copyBlock(src, 0, 3, 0, 0));
         assert.equal(made.length, 1, '62 would land on row 17: dropped');
         assert.deepEqual(sorted(dst), [[48, 0, 16, 0], [60, 14, 2, 1]]);
+    });
+});
+
+describe('blockNotes / removeNotes (the cut)', () => {
+    test('a block\'s notes are the pattern\'s own objects, by lane and start', () => {
+        const p = pat([N(60, 0, 2), N(62, 2, 2), N(64, 2, 4), N(67, 12, 4)]);   // 64 in lane 1
+        const got = blockNotes(p, 0, 3, 0, 0);
+        assert.deepEqual(got.map(n => n.midi), [60, 62]);
+        assert.ok(got.every(n => p.notes.includes(n)), 'the same objects, not copies');
+    });
+
+    test('removeNotes takes them out in place and skips ones already gone', () => {
+        const p = pat([N(60, 0, 2), N(62, 2, 2), N(67, 12, 4)]);
+        const arr = p.notes;
+        const got = blockNotes(p, 0, 3, 0, 0);
+        p.notes.splice(p.notes.indexOf(got[1]), 1);        // 62 went some other way
+        assert.equal(removeNotes(p, got), 1);
+        assert.equal(p.notes, arr, 'the same array: the roll holds it');
+        assert.deepEqual(view(p), [[67, 12, 4, 0]]);
     });
 });

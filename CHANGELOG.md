@@ -2,6 +2,12 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-09: Tracker — Ctrl+X (cut)
+
+**Ctrl/Cmd+X cuts the selection**: the same keyboard-driven stamp as Ctrl+C — shadow over the selection, arrows / PageUp/Down / the pointer to steer, Enter / Ctrl+V / a click to place — and placing it also removes the original block, so a block can be moved anywhere, into another track or pattern too. **Nothing is removed until it's placed**: while the cut is in flight the source block is dimmed and outlined in red, and Escape cancels with everything as it was (and drops the selection, as with a copy). The original goes before the paste, so placing onto a spot overlapping the source keeps what was pasted. Ctrl+C and Ctrl+X on an armed stamp switch it between copy and cut. The cut keeps the source's own note objects (`blockNotes`) and removes exactly those (`removeNotes`, in place — the roll holds the same array). Keyboard only; the Copy button's tooltip mentions it.
+
+Tests: `tracker-model` +2 (`blockNotes` returns the pattern's own objects by lane and start; `removeNotes` in place, skipping ones already gone); `tracker-view` +4 (cut steered with arrows and placed, original gone, status; overlapping destination; into another track and pattern via a click; Escape removes nothing, Ctrl+C/X switch); e2e `tracker` +1 (real keys, source untouched until Enter). 1138 unit, 129 e2e.
+
 ## 2026-11-09: Tracker — the copy stamp is keyboard-driven
 
 **Ctrl+C now starts moving the block from the keyboard** (user): the stamp's shadow no longer waits for the pointer — it appears **over the selection itself**, and the **arrows steer it** (PageUp/Down a bar at a time; pinned against a repeat's edge a row step hops into the next repeat or clip; against the track's lanes a lane step crosses into the neighbouring track; the view scrolls to keep it on screen). **Enter or Ctrl+V places it** — a click and the pointer still work exactly as before — the copy becomes the selection, so Ctrl+C, arrows, Enter repeats. **Escape cancels the movement and the selection** in one press (Copy again cancels just the movement). While a stamp is armed it owns the arrow/Page/Enter keys; the cursor stays put.

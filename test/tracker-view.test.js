@@ -698,4 +698,69 @@ describe('tracker selection', () => {
         assert.equal(btn(h).classList.contains('active'), false);
         assert.equal(h.tracker.getSelection(), null, 'Escape drops the movement and the selection');
     });
+
+    test('Ctrl+X: steered and placed like a copy, and the original goes', () => {
+        const { pattern } = seedPattern(session, { notes: [N(60, 0, 2), N(62, 2, 2), N(67, 12, 4)] });
+        const h = build();
+        const x = h.head(0).x + 4;
+        dragSel(h, x, 0, x, 3);
+        let stopped = false;
+        h.key('KeyX', { key: 'x', ctrlKey: true, stopPropagation() { stopped = true; } });
+        assert.equal(stopped, true, 'the Section and the roll do not cut too');
+        assert.match(h.q('.tracker-status').textContent, /cut block/);
+        assert.equal(session.getPattern(pattern.id).notes.length, 3, 'nothing removed while in flight');
+        for (let i = 0; i < 6; i++) h.key('ArrowDown', { key: 'ArrowDown' });
+        h.key('Enter', { key: 'Enter' });
+        assert.equal(h.q('.tracker-status').textContent, 'Moved');
+        h.tracker.flush();
+        assert.deepEqual(notesOf(pattern.id), [[60, 6, 2, 0], [62, 8, 2, 0], [67, 12, 4, 0]]);
+        assert.deepEqual(h.tracker.getSelection().rows, [6, 9]);
+    });
+
+    test('a cut onto an overlapping spot keeps what it pasted', () => {
+        const { pattern } = seedPattern(session, { notes: [N(60, 0, 2), N(62, 2, 2)] });
+        const h = build();
+        const x = h.head(0).x + 4;
+        dragSel(h, x, 0, x, 3);
+        h.key('KeyX', { key: 'x', ctrlKey: true });
+        h.key('ArrowDown', { key: 'ArrowDown' });         // one row down: overlaps rows 1–3
+        h.key('KeyV', { key: 'v', ctrlKey: true });
+        h.tracker.flush();
+        assert.deepEqual(notesOf(pattern.id), [[60, 1, 2, 0], [62, 3, 2, 0]]);
+    });
+
+    test('a cut into another track and pattern empties the source', () => {
+        const { pattern } = seedPattern(session, { notes: [N(60, 0, 2)] });
+        const other = seedPattern(session, { slot: 1, notes: [] });
+        const h = build();
+        dragSel(h, h.head(0).x + 4, 0, h.head(0).x + 4, 1);
+        h.key('KeyX', { key: 'x', ctrlKey: true });
+        h.press(h.head(1).x + 4, 4 * ROW + 4);            // a click places it too
+        h.tracker.flush();
+        assert.deepEqual(notesOf(pattern.id), []);
+        assert.deepEqual(notesOf(other.pattern.id), [[60, 4, 2, 0]]);
+    });
+
+    test('Escape on a cut removes nothing; Ctrl+C and Ctrl+X switch an armed stamp', () => {
+        const { pattern } = seedPattern(session, { notes: [N(60, 0, 2)] });
+        const h = build();
+        const x = h.head(0).x + 4;
+        dragSel(h, x, 0, x, 1);
+        h.key('KeyX', { key: 'x', ctrlKey: true });
+        h.key('ArrowDown', { key: 'ArrowDown' });
+        h.key('Escape', { key: 'Escape' });
+        h.tracker.flush();
+        assert.deepEqual(notesOf(pattern.id), [[60, 0, 2, 0]], 'all as it was');
+        assert.equal(h.tracker.getSelection(), null);
+
+        dragSel(h, x, 0, x, 1);
+        h.key('KeyX', { key: 'x', ctrlKey: true });
+        h.key('KeyC', { key: 'c', ctrlKey: true });       // now a copy
+        assert.match(h.q('.tracker-status').textContent, /Arrows move the copy/);
+        h.key('ArrowDown', { key: 'ArrowDown' });
+        h.key('ArrowDown', { key: 'ArrowDown' });
+        h.key('Enter', { key: 'Enter' });
+        h.tracker.flush();
+        assert.deepEqual(notesOf(pattern.id), [[60, 0, 2, 0], [60, 2, 2, 0]], 'copied, the original kept');
+    });
 });

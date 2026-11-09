@@ -37,6 +37,12 @@
 // (Copy, Enter, Copy, Enter repeats); Escape cancels the move and the
 // selection, Copy again just the move. There is no Paste button.
 //
+// **Cut** (Ctrl/Cmd+X) is the same stamp, and placing it also takes the
+// original block away — so a block moves anywhere, across tracks and
+// patterns too. Nothing is removed until it is placed (Escape leaves all
+// as it was); meanwhile the source is dimmed and outlined in red. Ctrl+C
+// / Ctrl+X on an armed stamp switch it between copy and cut.
+//
 // **Selection.** Drag across cells (Shift-click and Shift-arrows extend
 // from the cursor) to select a block — inside one track, one pattern, one
 // repeat of it. A note then fills its first lane every Step rows (C, three empty,
@@ -66,7 +72,7 @@
 import {
     expandTrack, compactCells, noteName, locate, MAX_LANES,
     putNote, putOff, clearCell, relane, growBlocker, measuresFor, moveNote,
-    clearRange, fillRange, moveBlock, copyBlock, pasteBlock,
+    clearRange, fillRange, moveBlock, copyBlock, pasteBlock, blockNotes, removeNotes,
 } from './tracker-model.js';
 import {
     COLS_PER_MEASURE, updateClip, clipRepeats, sectionLength, addClip, patternCols,
@@ -127,7 +133,9 @@ export function createTracker(opts) {
     // The armed stamp: a copyBlock snapshot, and where its top-left cell
     // would land under the pointer ({ slot, lane, col, lo, hi, pattern,
     // clipId }) — null while the pointer is off the grid or off any clip.
-    let stamp = null;         // { block, at }
+    // `source` is where it came from (pattern, its note objects, and the
+    // block in section rows); `cut` removes those notes on placing.
+    let stamp = null;         // { block, at, cut, source }
 
     // --- DOM ---
 
@@ -174,7 +182,7 @@ export function createTracker(opts) {
     copyBtn.className = 'tracker-btn tracker-copy';
     copyBtn.textContent = '⎘ Copy';
     copyBtn.title = 'Copy the selected cells: a shadow of them moves with the arrows or the pointer — '
-        + 'Enter, Ctrl+V or a click where they should go (Ctrl+C; Escape cancels)';
+        + 'Enter, Ctrl+V or a click where they should go (Ctrl+C; Ctrl+X to cut instead; Escape cancels)';
     copyBtn.addEventListener('click', () => { if (stamp) cancelStamp(); else armStamp(); });
     controls.appendChild(copyBtn);
 
@@ -822,10 +830,10 @@ export function createTracker(opts) {
 
     canvas.addEventListener('keydown', (e) => {
         const eat = () => { e.preventDefault(); e.stopPropagation(); };
-        // Ctrl/Cmd+C: the selection becomes a stamp. Stopped here, so the
-        // Section's and the roll's own Ctrl+C stay out of it.
-        if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 'c' || e.key === 'C')) {
-            if (stamp || armStamp()) eat();
+        // Ctrl/Cmd+C / +X: the selection becomes a stamp (X: a cut).
+        // Stopped here, so the Section's and the roll's own keys stay out.
+        if ((e.ctrlKey || e.metaKey) && !e.altKey && /^[cxCX]$/.test(e.key)) {
+            if (armStamp(e.key === 'x' || e.key === 'X')) eat();
             return;
         }
         // An armed stamp owns the keys that move and place it.
@@ -1029,15 +1037,37 @@ export function createTracker(opts) {
      * Copy: the selected block becomes a stamp, its shadow starting over
      * the selection itself so the arrows can steer it at once.
      */
-    function armStamp() {
+    function armStamp(cut = false) {
+        // Already armed: Ctrl+C / Ctrl+X just switch it between copy and cut.
+        if (stamp) {
+            stamp.cut = cut;
+            sayStamp();
+            draw();
+            return true;
+        }
         const st = selTarget();
         if (!st) return false;
         commit();
-        stamp = { block: copyBlock(st.pattern, st.p0, st.p1, st.l0, st.l1), at: null };
+        stamp = {
+            block: copyBlock(st.pattern, st.p0, st.p1, st.l0, st.l1),
+            at: null,
+            cut,
+            source: {
+                pattern: st.pattern,
+                notes: blockNotes(st.pattern, st.p0, st.p1, st.l0, st.l1),
+                slot: sel.slot, l0: st.l0, l1: st.l1, c0: st.c0, c1: st.c1,
+            },
+        };
         stamp.at = stampTargetAt(bySlot(sel.slot), st.l0, st.c0);
-        say('Arrows move the copy — Enter, Ctrl+V or a click places it, Escape cancels');
+        sayStamp();
         draw();
         return true;
+    }
+
+    function sayStamp() {
+        say(stamp.cut
+            ? 'Arrows move the cut block — Enter, Ctrl+V or a click places it (the original goes then), Escape cancels'
+            : 'Arrows move the copy — Enter, Ctrl+V or a click places it, Escape cancels');
     }
 
     function cancelStamp() {
@@ -1149,9 +1179,12 @@ export function createTracker(opts) {
         const at = stamp.at && stampTargetAt(bySlot(stamp.at.slot), stamp.at.lane, stamp.at.col);
         stamp.at = at;
         if (!at) { say('Not in a pattern — move the copy over a clip, or Escape'); return; }
-        const { block } = stamp;
+        const { block, cut, source } = stamp;
         stamp = null;
         canvas.style.cursor = '';
+        // A cut takes the original away first, so a destination that
+        // overlaps it keeps the pasted notes.
+        if (cut) removeNotes(source.pattern, source.notes);
         pasteBlock(at.pattern, at.col - at.lo, at.lane, block);
         const c1 = Math.min(at.hi, at.col + block.rows - 1);
         sel = {
@@ -1162,12 +1195,31 @@ export function createTracker(opts) {
         cursor.lane = at.lane;
         cursor.col = at.col;
         if (at.slot !== activeSlot) selectTrack(at.slot);
+        if (cut && source.pattern !== at.pattern) edited(source.pattern);
         edited(at.pattern);
-        say('Copied — Copy again to place another');
+        say(cut ? 'Moved' : 'Copied — Copy again to place another');
+    }
+
+    /** A cut in flight: its source dimmed and outlined in red — what will go. */
+    function drawCutSource(ctx) {
+        const src = stamp && stamp.cut && stamp.source;
+        const t = src && bySlot(src.slot);
+        if (!t) return;
+        const x = t.x + src.l0 * LANE_W;
+        const y = src.c0 * ROW_H;
+        const w = (src.l1 - src.l0 + 1) * LANE_W;
+        const h = (src.c1 - src.c0 + 1) * ROW_H;
+        ctx.fillStyle = 'rgba(16, 16, 32, 0.6)';
+        ctx.fillRect(x, y, w, h);
+        ctx.setLineDash && ctx.setLineDash([4, 3]);
+        ctx.strokeStyle = '#e94560';
+        ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+        ctx.setLineDash && ctx.setLineDash([]);
     }
 
     /** The shadow: the block's outline and its notes where the click would put them. */
     function drawStamp(ctx) {
+        drawCutSource(ctx);
         const at = stamp && stamp.at;
         const t = at && bySlot(at.slot);
         if (!t) return;

@@ -511,3 +511,30 @@ export function pasteBlock(pattern, c0, l0, stamp) {
     sortNotes(pattern);
     return [...laneOf.keys()];
 }
+
+/**
+ * The notes starting in a block — pattern columns `c0`..`c1`, lanes
+ * `l0`..`l1` — as the pattern's own note objects (a cut keeps these, so
+ * it removes exactly what it took, whatever re-renders in between).
+ */
+export function blockNotes(pattern, c0, c1, l0, l1) {
+    const d = deriveLanes(pattern.notes);
+    return pattern.notes.filter((n) => {
+        const lane = d.lane.get(n);
+        return lane >= l0 && lane <= l1 && n.start >= c0 && n.start <= c1;
+    });
+}
+
+/**
+ * Take these note objects out of the pattern, in place (the piano roll
+ * holds the same notes array). Ones already gone are skipped. Returns how
+ * many went.
+ */
+export function removeNotes(pattern, notes) {
+    let n = 0;
+    for (const note of notes) {
+        const i = pattern.notes.indexOf(note);
+        if (i >= 0) { pattern.notes.splice(i, 1); n++; }
+    }
+    return n;
+}

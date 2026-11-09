@@ -344,3 +344,24 @@ test('keyboard only: select, Ctrl+C, arrows, Enter — and Escape drops everythi
     await expect(page.locator('.tracker-copy')).not.toHaveClass(/active/);
     expect(await page.evaluate(() => window.__opDock._tracker.getSelection())).toBe(null);
 });
+
+test('Ctrl+X moves a block with the keyboard; the source shows what will go', async ({ page }) => {
+    await openApp(page);
+    await seed(page);
+    await page.locator('.dock-tab-tracker').click();
+    const lane0 = () => page.evaluate(() => Object.values(window.__opProject.get().patterns)[0].notes
+        .filter((n) => n.midi !== 64).map((n) => [n.midi, n.start]).sort((a, b) => a[1] - b[1]));
+    const box = await page.locator('.tracker-canvas').boundingBox();
+
+    // Rows 0–3 of lane 0 (C-4), cut, down 12, place.
+    await page.mouse.click(box.x + 40, box.y + 8);
+    for (let i = 0; i < 3; i++) await page.keyboard.press('Shift+ArrowDown');
+    await page.keyboard.press('Control+x');
+    await expect(page.locator('.tracker-status')).toContainText('cut block');
+    for (let i = 0; i < 12; i++) await page.keyboard.press('ArrowDown');
+    await page.screenshot({ path: '/tmp/op-shots/tracker-cut.png', clip: { x: box.x - 40, y: box.y - 60, width: 420, height: 320 } });
+    expect(await lane0()).toEqual([[60, 0], [67, 8]]);           // nothing gone yet
+    await page.keyboard.press('Enter');
+    await page.evaluate(() => window.__opDock._tracker.flush());
+    expect(await lane0()).toEqual([[67, 8], [60, 12]]);
+});
