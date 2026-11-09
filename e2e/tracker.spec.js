@@ -205,7 +205,7 @@ test('a pattern dragged from the Section library onto a track is placed at that 
     await expect(page.locator('.section-library-ghost')).toHaveCount(0);
 });
 
-test('drag-select 12 rows, Step 4, press C3 on the on-screen keyboard: C3, three empty, …', async ({ page }) => {
+test('hold-drag-select 12 rows, Step 4, press C3 on the on-screen keyboard: C3, three empty, …', async ({ page }) => {
     await openApp(page);
     await seed(page);
     await page.locator('.dock-tab-tracker').click();
@@ -217,6 +217,8 @@ test('drag-select 12 rows, Step 4, press C3 on the on-screen keyboard: C3, three
     const box = await canvas.boundingBox();
     await page.mouse.move(box.x + 40, box.y + 11 * 16 + 8);
     await page.mouse.down();
+    await page.waitForTimeout(1100);                  // the hold that arms a drag
+    await expect(page.locator('.tracker-status')).toContainText('Drag to select');
     await page.mouse.move(box.x + 40, box.y + 8, { steps: 6 });
     await page.mouse.up();
     await expect(page.locator('.tracker-status')).toContainText('12 cells selected');
@@ -233,4 +235,29 @@ test('drag-select 12 rows, Step 4, press C3 on the on-screen keyboard: C3, three
     const e4 = await page.evaluate(() => Object.values(window.__opProject.get().patterns)[0].notes.filter((n) => n.midi === 64).length);
     expect(e4).toBe(1);
     await page.screenshot({ path: '/tmp/op-shots/tracker-filled.png', clip: { x: box.x - 40, y: box.y - 60, width: 420, height: 320 } });
+});
+
+test('a quick drag on a note is a click; held for a second it moves the note', async ({ page }) => {
+    await openApp(page);
+    await seed(page);
+    await page.locator('.dock-tab-tracker').click();
+    const box = await page.locator('.tracker-canvas').boundingBox();
+    const g4 = () => page.evaluate(() => Object.values(window.__opProject.get().patterns)[0].notes.find((n) => n.midi === 67).start);
+    // G-4 starts on row 8 of lane 0.
+    const at = (row) => ({ x: box.x + 40, y: box.y + row * 16 + 8 });
+
+    await page.mouse.move(at(8).x, at(8).y);
+    await page.mouse.down();
+    await page.mouse.move(at(10).x, at(10).y, { steps: 4 });
+    await page.mouse.up();
+    expect(await g4()).toBe(8);
+
+    await page.mouse.move(at(8).x, at(8).y);
+    await page.mouse.down();
+    await page.waitForTimeout(1100);
+    await expect(page.locator('.tracker-status')).toContainText('Drag G-4 up or down');
+    await page.mouse.move(at(10).x, at(10).y, { steps: 4 });
+    await page.mouse.up();
+    await page.evaluate(() => window.__opDock._tracker.flush());
+    expect(await g4()).toBe(10);
 });

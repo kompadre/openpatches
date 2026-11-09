@@ -17,7 +17,16 @@ before(async () => {
 
 let session;
 
-beforeEach(() => {
+// Drags start after a held press (HOLD_MS): the clock is mocked, and
+// `hold()` waits it out. Commits are tested through flush(), never a timer.
+// Each test's own mock (t.mock), which node scopes and restores per test.
+const HOLD = 1000;
+let clock = null;
+const hold = () => clock.tick(HOLD);
+
+beforeEach((t) => {
+    clock = t.mock.timers;
+    clock.enable({ apis: ['setTimeout'] });
     localStorage.clear();
     document.body.children.length = 0;
     session = makeProjectSession();
@@ -330,6 +339,7 @@ describe('tracker editing', () => {
         const { pattern } = seedPattern(session, { notes: [N(60, 4, 2)] });
         const { head, press } = build();
         press(head(0).x + 4, 4 * ROW);
+        hold();
         docFire('mouseup', { clientX: head(0).x + 4, clientY: 20 * ROW });
         const p = session.getPattern(pattern.id);
         assert.equal(p.measures, 2);
@@ -344,6 +354,7 @@ describe('tracker editing', () => {
         }, 'test');
         const { head, press, q } = build();
         press(head(0).x + 4, 4 * ROW);
+        hold();
         docFire('mouseup', { clientX: head(0).x + 4, clientY: 20 * ROW });
         assert.equal(session.getPattern(pattern.id).measures, 1);
         assert.match(q('.tracker-status').textContent, /No room/);
@@ -358,11 +369,12 @@ describe('tracker selection', () => {
     // A drag from one cell to another: press, then document move and release.
     const dragSel = (h, x0, row0, x1, row1, extra = {}) => {
         h.canvas.dispatch('mousedown', { clientX: x0, clientY: row0 * ROW + 4, ...extra });
+        hold();
         docFire('mousemove', { clientX: x1, clientY: row1 * ROW + 4 });
         docFire('mouseup', { clientX: x1, clientY: row1 * ROW + 4 });
     };
 
-    test('a drag selects a block; a note then fills it every Step rows', () => {
+    test('a held drag selects a block; a note then fills it every Step rows', () => {
         const { pattern } = seedPattern(session, { notes: [] });
         const h = build();
         setStep(h.q, 4);
@@ -375,6 +387,50 @@ describe('tracker selection', () => {
         assert.deepEqual(notesOf(pattern.id), [[60, 0, 4, 0], [60, 4, 4, 0], [60, 8, 8, 0]]);
         assert.equal(h.tracker.getCursor().col, 11, 'the cursor does not jump on a fill');
         assert.ok(h.tracker.getSelection(), 'the selection stays, so another note can replace it');
+    });
+
+    test('without the hold a drag is just a click: no block, no note moved', () => {
+        const { pattern } = seedPattern(session, { notes: [N(60, 2, 2)] });
+        const h = build();
+        const x = h.head(0).x + 4;
+        // From an empty cell, and from the note's first row, straight away.
+        for (const row0 of [5, 2]) {
+            h.canvas.dispatch('mousedown', { clientX: x, clientY: row0 * ROW + 4 });
+            docFire('mousemove', { clientX: x, clientY: 10 * ROW + 4 });
+            hold();                                       // the second runs out after the pointer left
+            docFire('mousemove', { clientX: x, clientY: 12 * ROW + 4 });
+            docFire('mouseup', { clientX: x, clientY: 12 * ROW + 4 });
+            assert.equal(h.tracker.getSelection(), null);
+            assert.equal(h.tracker.getCursor().col, row0, 'the press placed the cursor, nothing more');
+        }
+        assert.deepEqual(notesOf(pattern.id), [[60, 2, 2, 0]]);
+    });
+
+    test('a release before the second is a click; a held, unmoved release leaves no block', () => {
+        seedPattern(session, { notes: [] });
+        const h = build();
+        const x = h.head(0).x + 4;
+        h.canvas.dispatch('mousedown', { clientX: x, clientY: 3 * ROW + 4 });
+        clock.tick(HOLD - 1);
+        docFire('mouseup', {});
+        clock.tick(10);
+        assert.match(h.q('.tracker-status').textContent, /^$/, 'never armed');
+        h.canvas.dispatch('mousedown', { clientX: x, clientY: 3 * ROW + 4 });
+        hold();
+        assert.match(h.q('.tracker-status').textContent, /Drag to select/, 'armed, and says so');
+        docFire('mousemove', { clientX: x + 2, clientY: 3 * ROW + 6 });   // jitter inside the cell
+        docFire('mouseup', {});
+        assert.equal(h.tracker.getSelection(), null);
+        assert.equal(h.q('.tracker-status').textContent, '');
+    });
+
+    test('a hold on a note says it is armed to move', () => {
+        seedPattern(session, { notes: [N(60, 2, 2)] });
+        const h = build();
+        h.canvas.dispatch('mousedown', { clientX: h.head(0).x + 4, clientY: 2 * ROW + 4 });
+        hold();
+        assert.match(h.q('.tracker-status').textContent, /Drag C-4 up or down/);
+        docFire('mouseup', { clientX: h.head(0).x + 4, clientY: 2 * ROW + 4 });
     });
 
     test('a selection is held inside its track and its pattern (one repeat)', () => {
@@ -398,7 +454,7 @@ describe('tracker selection', () => {
         assert.equal(h.tracker.getSelection(), null);
     });
 
-    test('a plain drag on a note still moves it; Shift-drag from it selects instead', () => {
+    test('a held drag on a note moves it; a Shift-held drag from it selects instead', () => {
         const { pattern } = seedPattern(session, { notes: [N(60, 2, 2)] });
         const h = build();
         const x = h.head(0).x + 4;

@@ -2,6 +2,14 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-09: Tracker — drags start with a one-second hold
+
+**A press in the Tracker grid only places the cursor now.** Held still on its cell for **one second**, it arms a drag: on a note's first row the note moves (up/down, growing the pattern past its end as before), anywhere else a selection is dragged out. The pressed cell gets a blue ring, the pointer changes, and the status says which ("Drag G-4 up or down" / "Drag to select"). Leaving the cell or releasing before the second is up is a plain click, so clicking around never nudges a note or starts a block by accident; jitter inside the cell is fine. A held release without moving leaves no selection. Shift-click and Shift-arrows still extend a selection from the cursor at once; a Shift-hold on a note selects from it instead of moving it.
+
+**Test infrastructure:** `tracker-view.test.js` mocks the clock per test with `t.mock.timers` — the global `mock.timers` with enable/reset hooks stopped mocking partway through the file under Node 20, so holds silently never armed.
+
+Tests: `tracker-view` +3 (an unheld drag is a click from an empty cell and from a note; release before the second / held release without moving; the armed note says so), existing drag tests now hold first; e2e `tracker` +1 (real quick drag leaves the note, held drag moves it), the selection e2e holds a real second. 1114 unit, 125 e2e.
+
 ## 2026-11-09: Tracker — a selection across lanes fills only the first
 
 **Course correction (user):** a note pressed with a block spanning several lanes of a track now fills **only the block's first lane** (every Step rows, as before); the other lanes are left as they were — the same note in each lane was redundant. OFF still silences every lane of the block and Delete still empties them all. The status line says "fills the first lane" when the block is wider than one lane.
