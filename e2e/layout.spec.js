@@ -227,6 +227,54 @@ test.describe('layout invariants', () => {
         await expect(page.locator('.bpane-item-log .bpane-body')).toBeHidden();
     });
 
+    test('the collapse button spans the keyboard and the pane, and stays as a bar to restore both', async ({ page }) => {
+        await openApp(page);
+        const btn = page.locator('.bpane-pane-collapse');
+        const kb = page.locator('.dock-keyboard');
+        const pane = page.locator('.bpane');
+
+        // Down the right of both rows: from the keyboard's top to the pane's bottom.
+        const b = await btn.boundingBox(), k = await kb.boundingBox(), p = await pane.boundingBox();
+        expect(Math.abs(b.y - k.y)).toBeLessThanOrEqual(1);
+        expect(Math.abs((b.y + b.height) - (p.y + p.height))).toBeLessThanOrEqual(1);
+        expect(b.x).toBeGreaterThanOrEqual(k.x + k.width - 1);
+
+        // Collapse: both rows go, the button remains — as a bar.
+        await btn.click();
+        await expect(kb).toBeHidden();
+        await expect(pane).toBeHidden();
+        await expect(btn).toBeVisible();
+        await expect(btn).toHaveAttribute('aria-expanded', 'false');
+        expect((await btn.boundingBox()).width).toBeGreaterThan(400);
+
+        // Remembered across a reload.
+        await page.reload();
+        await expect(page.locator('#piano-dock')).toBeAttached();
+        await expect(btn).toHaveAttribute('aria-expanded', 'false');
+        await expect(pane).toBeHidden();
+
+        // The bar brings both back.
+        await btn.click();
+        await expect(kb).toBeVisible();
+        await expect(pane).toBeVisible();
+        await expect(page.locator('.bpane-item-mixer .bpane-body')).toBeVisible();
+    });
+
+    test('restoring a pane whose items were all folded opens them all, not the keyboard alone', async ({ page }) => {
+        await openApp(page);
+        for (const key of ['mixer', 'edit', 'device', 'log']) {
+            await page.locator(`.bpane-item-${key} .bpane-bookmark`).click();
+        }
+        await expect(page.locator('.bpane')).toBeHidden();
+        await page.locator('.bpane-pane-collapse').click();       // collapse what is left: the keyboard
+        await expect(page.locator('.dock-keyboard')).toBeHidden();
+        await page.locator('.bpane-pane-collapse').click();       // restore
+        await expect(page.locator('.bpane')).toBeVisible();
+        for (const key of ['mixer', 'edit', 'device', 'log']) {
+            await expect(page.locator(`.bpane-item-${key} .bpane-body`)).toBeVisible();
+        }
+    });
+
     test('the Device panel sits between Edit and Log, and its tab toggles it', async ({ page }) => {
         await openApp(page);
         const tabs = await page.locator('.dock-tabs .dock-tab').evaluateAll((els) =>

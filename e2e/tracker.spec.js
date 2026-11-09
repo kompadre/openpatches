@@ -150,7 +150,7 @@ test('the keyboard is a strip of its own: on screen under the Tracker, and playa
     await openApp(page);
     await seed(page);
     await page.locator('.dock-tab-tracker').click();
-    const strip = page.locator('.dock-centre > .dock-keyboard');
+    const strip = page.locator('.dock-centre .dock-keyboard');
     await expect(strip.locator('.keyboard .key').first()).toBeVisible();
     expect(await page.locator('.dock-panel-pianoroll .keyboard').count()).toBe(0);
     // Between the tracker and the bottom pane.

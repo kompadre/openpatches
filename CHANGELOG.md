@@ -2,6 +2,14 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-09: Bottom pane collapse — one button for both rows, and a way back
+
+**Fixed: "Collapse the bottom pane" left no way back but the top tabs.** The button lived inside the pane and vanished with it. Now the keyboard strip and the bottom pane share one block (`.dock-bottom`) and the button runs down the right of **both**: collapsing hides the keyboard and the pane together, and the button stays as a bar across the bottom (`▴ Keyboard · Mixer · Edit · Device · Log`) that brings them back. Restoring a pane whose items were all folded opens them all, so it never comes back as the keyboard alone. The state is the existing `paneCollapsed`, still remembered; the top tabs and the handle's double-click behave as before (a tab reopens the keyboard too).
+
+Since the pane is now nested under the block, its height is expressed in `cqh` against `.dock-centre`, made a size container; the stored fraction and the drag are unchanged.
+
+Tests: e2e `layout` +2 (the button spans keyboard top to pane bottom, collapses both, survives a reload, restores both; restoring with every item folded opens them all). Visual baselines `keyboard` and `pianoroll-tab` regenerated (the old `pianoroll-tab` still showed the pre-Tracker tab strip). 1088 unit, 120 e2e.
+
 ## 2026-11-09: Mobile Mixer rows, group stretch in the Pattern editor, keyboard strip on desktop
 
 **Mixer on mobile: strips are rows.** Side by side the eight strips filled a third of the screen, the faders were small and the M/S/▶/× row spilled out of the strips. Now each slot is a row and the eight share the panel's height: number, name, value, FX and buttons (28px touch targets) on top, and a full-width fader lying down underneath. CSS only (scoped to `.dock-panel-mixer`, the mobile panel; the desktop bottom pane is untouched). The fader's fill is now a `--vol` custom property that CSS turns into a height or a width, and the drag reads its axis off the fader's shape (wider than tall → left to right).

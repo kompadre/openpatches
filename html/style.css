@@ -2703,8 +2703,25 @@ h1 {
 }
 
 /* Right edge: fold the whole pane. */
+/* The keyboard strip and the bottom pane share one block, with the
+   collapse button down the right of both (toolbar.js bottomWrap). */
+.dock-bottom {
+    display: flex;
+    width: 100%;
+    flex-shrink: 0;
+    gap: 4px;
+    min-width: 0;
+}
+.dock-bottom-col {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+
 .bpane-pane-collapse {
     flex: 0 0 16px;
+    align-self: stretch;
     background: transparent;
     color: #666;
     border: 1px solid #2a2a3e;
@@ -2715,6 +2732,19 @@ h1 {
 }
 
 .bpane-pane-collapse:hover { color: #e94560; border-color: #e94560; }
+
+/* Collapsed: both rows go; the button becomes a bar across the bottom. */
+.dock-bottom.collapsed .dock-bottom-col { display: none; }
+.dock-bottom.collapsed .bpane-pane-collapse {
+    flex: 1;
+    height: 22px;
+    margin-top: 4px;
+    padding: 0 0.6rem;
+    text-align: left;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
 
 /* ============================================================
    Left pane (desktop) — the Section
@@ -2739,6 +2769,9 @@ h1 {
     flex: 1;
     min-width: 0;
     min-height: 0;
+    /* A size container: the bottom pane, nested under .dock-bottom, sizes
+       itself as a share of this column in cqh (toolbar.js syncBpane). */
+    container-type: size;
 }
 
 /* Inside the centre column the viewport-wide sizes become the column's. */

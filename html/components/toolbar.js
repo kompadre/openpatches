@@ -203,11 +203,25 @@ export function createToolbar(opts) {
     // main panel is showing (Patches, Pattern, Tracker), above the bottom
     // pane — not one of the pane's items. Filled further down, where the
     // keys are built. Mobile keeps it in the Pattern panel.
+    //
+    // The two rows share one block: `bottomCol` stacks the keyboard, the
+    // pane's handle and the pane, and the collapse button runs down the
+    // right of both (`bottomWrap`). Collapsed, both rows go and the button
+    // is a bar across the bottom that brings them back — the pane's own
+    // edge button used to vanish with it, leaving only the top tabs.
     let kbDock = null;
+    let bottomWrap = null;
+    let bottomCol = null;
     if (!isMobileLayout) {
+        bottomWrap = document.createElement('div');
+        bottomWrap.className = 'dock-bottom';
+        bottomCol = document.createElement('div');
+        bottomCol.className = 'dock-bottom-col';
         kbDock = document.createElement('div');
         kbDock.className = 'dock-keyboard';
-        centre.appendChild(kbDock);
+        bottomCol.appendChild(kbDock);
+        bottomWrap.appendChild(bottomCol);
+        centre.appendChild(bottomWrap);
     }
     if (isMobileLayout) {
         centre.appendChild(sectionPanel);
@@ -373,16 +387,28 @@ export function createToolbar(opts) {
         makeItem('device', 'Device', devicePanel);
         makeItem('log', 'Log', logPanel);
 
-        // Right edge: fold the whole pane away.
+        // Right of the keyboard and the pane, spanning both: fold them
+        // away; collapsed, the same button is the bar that restores them.
         const paneCollapseBtn = document.createElement('button');
         paneCollapseBtn.className = 'bpane-pane-collapse';
-        paneCollapseBtn.innerHTML = '<span>▾</span>';
-        paneCollapseBtn.title = 'Collapse the bottom pane';
-        paneCollapseBtn.addEventListener('click', () => { bpaneState.paneCollapsed = true; saveBpane(); syncBpane(); });
-        bpane.appendChild(paneCollapseBtn);
+        paneCollapseBtn.addEventListener('click', () => {
+            if (!bpaneState.paneCollapsed) {
+                bpaneState.paneCollapsed = true;
+            } else {
+                bpaneState.paneCollapsed = false;
+                // Restoring a pane whose items are all folded would bring
+                // back the keyboard alone: open them all instead.
+                if (!Object.values(bpaneState.items).some(Boolean)) {
+                    for (const key of Object.keys(bpaneState.items)) bpaneState.items[key] = true;
+                }
+            }
+            saveBpane();
+            syncBpane();
+        });
 
-        centre.appendChild(bpaneHandle);
-        centre.appendChild(bpane);
+        bottomCol.appendChild(bpaneHandle);
+        bottomCol.appendChild(bpane);
+        bottomWrap.appendChild(paneCollapseBtn);
 
         const saveBpane = () => {
             try { localStorage.setItem(BPANE_KEY, JSON.stringify(bpaneState)); } catch { /* storage full/blocked */ }
@@ -401,7 +427,15 @@ export function createToolbar(opts) {
             const paneHidden = bpaneState.paneCollapsed || !anyOpen;
             bpane.classList.toggle('collapsed', paneHidden);
             bpaneHandle.classList.toggle('collapsed', paneHidden);
-            bpane.style.height = (bpaneState.h * 100).toFixed(1) + '%';
+            // cqh: a share of the centre column (a size container), which
+            // the pane is no longer a direct child of.
+            bpane.style.height = (bpaneState.h * 100).toFixed(1) + 'cqh';
+            // Pane-collapsed hides the keyboard too; the button stays.
+            const folded = bpaneState.paneCollapsed;
+            bottomWrap.classList.toggle('collapsed', folded);
+            paneCollapseBtn.innerHTML = folded ? '<span>▴ Keyboard · Mixer · Edit · Device · Log</span>' : '<span>▾</span>';
+            paneCollapseBtn.title = folded ? 'Show the keyboard and the bottom pane' : 'Collapse the keyboard and the bottom pane';
+            paneCollapseBtn.setAttribute('aria-expanded', String(!folded));
         };
         const toggleItem = (key) => {
             bpaneState.items[key] = !bpaneState.items[key];
