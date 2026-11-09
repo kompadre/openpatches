@@ -2,6 +2,16 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-09: Tracker — selection, Step-aware fill, and the on-screen keyboard
+
+**The on-screen keyboard enters into the Tracker.** With the Tracker tab on screen, a key goes into the selected cell (the cursor) and the cursor advances by Step, as a typed note does — or fills the selection, below. It is heard once (the keyboard's own audition). Outside any pattern the key is just heard, without a message. Not while Rec runs: a take or step record writes into the Pattern editor as before.
+
+**Selection.** Drag across cells to select a block; Shift-click and Shift-arrows extend it from the cursor. A plain drag that starts on a note's first cell still moves that note — Shift-drag selects from it. The block can't leave its track or its pattern: lanes clamp to the track, rows to the clip's current **repeat** (a repeat seam counts as a pattern boundary, since both repeats are the same notes). It's drawn blue with a tick on every row a note will land on, and the status says how many cells and the Step. Escape, a plain click or a plain cursor move drops it.
+
+**Filling.** A note (typed, or from the on-screen keyboard) fills the block every **Step** rows: 12 rows at Step 4 → `C-3`, three empty, `C-3`, three empty, `C-3`, three empty. The block is emptied first and each note sustains through the empty rows to the next, exactly as if typed. Each selected lane fills on its own. Step 0 fills every row. `1` (OFF) does the same with OFFs, i.e. silences the block; Delete empties it, what sounded into it sustaining through. The selection stays after a fill, so another note replaces it. New model functions `fillRange` / `clearRange` (`tracker-model.js`).
+
+Tests: `tracker-model` +8 (the Step 4 example, emptying first, lanes apart, Step 0, OFF fill, clear sustain incl. OFFs before/after the block); `tracker-view` +8 (drag selects and fills by Step, held to track and repeat, nothing outside a clip, plain vs Shift drag on a note, Shift-click/arrows, Escape, plain click, Delete/OFF on a block, `enterKey` with and without a selection, hidden tab); e2e `tracker` +1 (real drag, Step select and a click on the on-screen C3). 1110 unit, 124 e2e.
+
 ## 2026-11-09: Tracker — new patterns by double-click, and library drops
 
 **Double-click empty space in a Tracker track** to make a new one-bar pattern (`Pattern N`, like Section's `+ Pattern`) at exactly that row; the cursor lands on it, ready to type. Double-clicking inside a clip does nothing. If the next clip on the track starts less than a bar below, it is refused with a message — checked before the pattern is created, so a refusal never leaves an orphan in the library.

@@ -11,7 +11,7 @@ import {
 } from '../html/components/project-model.js';
 import {
     noteName, deriveLanes, applyLanes, relane, trackLaneCount, expandTrack, compactCells, locate,
-    putNote, putOff, clearCell, growBlocker, measuresFor, moveNote,
+    putNote, putOff, clearCell, growBlocker, measuresFor, moveNote, clearRange, fillRange,
 } from '../html/components/tracker-model.js';
 
 const N = (midi, start, dur, lane) => (lane == null ? { midi, start, dur } : { midi, start, dur, lane });
@@ -303,5 +303,62 @@ describe('commit-time helpers', () => {
         assert.match(growBlocker(project, 'p', 3), /run into the next clip in "A"/);
         project.sections[0].clips[0] = { id: 'c1', trackId: 't', patternId: 'p', startCol: 0, lengthCols: 16 };
         assert.equal(growBlocker(project, 'p', 8), null, 'a clip cut to a length keeps it');
+    });
+});
+
+describe('fillRange / clearRange (the selection)', () => {
+    const sorted = (p) => view(p).sort((a, b) => a[3] - b[3] || a[1] - b[1]);
+
+    test('Step 4 over 12 rows: the note, three empty, the note, three empty, …', () => {
+        const p = pat([]);
+        fillRange(p, 0, 11, 0, 48, 4);          // C3
+        assert.deepEqual(sorted(p), [[48, 0, 4, 0], [48, 4, 4, 0], [48, 8, 8, 0]],
+            'each sustains to the next; the last to the end of the empty pattern');
+    });
+
+    test('the block is emptied first: notes inside it go, one sounding in is cut at the top', () => {
+        const p = pat([N(60, 0, 4), N(62, 4, 2), N(64, 7, 1), N(67, 12, 4)]);
+        fillRange(p, 2, 9, 0, 72, 4);
+        assert.deepEqual(sorted(p), [[60, 0, 2, 0], [72, 2, 4, 0], [72, 6, 6, 0], [67, 12, 4, 0]],
+            'the last fill sustains to the next note after the block');
+    });
+
+    test('other lanes are untouched; each lane of the block fills on its own', () => {
+        const p = pat([N(60, 0, 16), N(64, 0, 16, 1)]);
+        fillRange(p, 4, 7, 1, 50, 2);
+        assert.deepEqual(sorted(p), [[60, 0, 16, 0], [64, 0, 4, 1], [50, 4, 2, 1], [50, 6, 10, 1]]);
+    });
+
+    test('Step 0 fills every row', () => {
+        const p = pat([]);
+        fillRange(p, 0, 2, 0, 60, 0);
+        assert.deepEqual(sorted(p), [[60, 0, 1, 0], [60, 1, 1, 0], [60, 2, 14, 0]]);
+    });
+
+    test('OFF fill silences the block from its top', () => {
+        const p = pat([N(60, 0, 16)]);
+        fillRange(p, 4, 7, 0, null, 2);
+        assert.deepEqual(sorted(p), [[60, 0, 4, 0]]);
+    });
+
+    test('clearing: what sounded in sustains through to the next event after the block', () => {
+        const p = pat([N(60, 0, 4), N(62, 4, 2), N(67, 12, 4)]);   // an OFF at 6
+        assert.equal(clearRange(p, 3, 8, 0), true);
+        assert.deepEqual(sorted(p), [[60, 0, 12, 0], [67, 12, 4, 0]]);
+    });
+
+    test('clearing keeps an OFF that lay past the block', () => {
+        const p = pat([N(60, 0, 4), N(62, 4, 6)]);                 // OFF at 10, outside 3..8
+        clearRange(p, 3, 8, 0);
+        assert.deepEqual(sorted(p), [[60, 0, 10, 0]]);
+    });
+
+    test('clearing leaves an OFF before the block, and a note sounding past it, alone', () => {
+        const a = pat([N(60, 0, 2)]);
+        assert.equal(clearRange(a, 4, 8, 0), false);
+        assert.deepEqual(sorted(a), [[60, 0, 2, 0]]);
+        const b = pat([N(60, 0, 12)]);
+        assert.equal(clearRange(b, 4, 8, 0), false);
+        assert.deepEqual(sorted(b), [[60, 0, 12, 0]]);
     });
 });

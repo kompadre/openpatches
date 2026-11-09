@@ -1227,6 +1227,13 @@ export function createToolbar(opts) {
                 if (e.type === 'mousedown' && e.button !== 0) return;
                 e.preventDefault();
                 noteOn(n.midi);
+                // With the Tracker on screen the key is also an entry: into
+                // its selection, or the cursor's cell. Not while recording —
+                // Rec writes into the Pattern editor. (preventDefault above
+                // keeps the grid's focus, so typing carries on after.)
+                if (!recording && !stepping && trackerRef && trackerPanel.classList.contains('active')) {
+                    trackerRef.enterKey(n.midi);
+                }
             }
 
             // noteOff ignores keys that are not held, so mouseleave is safe to

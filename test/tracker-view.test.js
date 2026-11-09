@@ -349,3 +349,127 @@ describe('tracker editing', () => {
         assert.match(q('.tracker-status').textContent, /No room/);
     });
 });
+
+describe('tracker selection', () => {
+    const N = (midi, start, dur, lane) => (lane == null ? { midi, start, dur } : { midi, start, dur, lane });
+    const notesOf = (id) => session.getPattern(id).notes.map(n => [n.midi, n.start, n.dur, n.lane || 0])
+        .sort((a, b) => a[3] - b[3] || a[1] - b[1]);
+    const setStep = (q, v) => { const s = q('.tracker-step'); s.value = String(v); s.dispatch('change'); };
+    // A drag from one cell to another: press, then document move and release.
+    const dragSel = (h, x0, row0, x1, row1, extra = {}) => {
+        h.canvas.dispatch('mousedown', { clientX: x0, clientY: row0 * ROW + 4, ...extra });
+        docFire('mousemove', { clientX: x1, clientY: row1 * ROW + 4 });
+        docFire('mouseup', { clientX: x1, clientY: row1 * ROW + 4 });
+    };
+
+    test('a drag selects a block; a note then fills it every Step rows', () => {
+        const { pattern } = seedPattern(session, { notes: [] });
+        const h = build();
+        setStep(h.q, 4);
+        const x = h.head(0).x + 4;
+        dragSel(h, x, 0, x, 11);
+        assert.deepEqual(h.tracker.getSelection(), { slot: 0, lanes: [0, 0], rows: [0, 11] });
+        assert.match(h.q('.tracker-status').textContent, /12 cells selected/);
+        h.key('KeyZ');                                   // C-4 at octave 4
+        h.tracker.flush();
+        assert.deepEqual(notesOf(pattern.id), [[60, 0, 4, 0], [60, 4, 4, 0], [60, 8, 8, 0]]);
+        assert.equal(h.tracker.getCursor().col, 11, 'the cursor does not jump on a fill');
+        assert.ok(h.tracker.getSelection(), 'the selection stays, so another note can replace it');
+    });
+
+    test('a selection is held inside its track and its pattern (one repeat)', () => {
+        const { track } = seedPattern(session, { notes: [] });
+        session.update((project, section) => {
+            section.clips.find(c => c.trackId === track.id).repeats = 2;   // rows 0–31, pattern 0–15 twice
+        }, 'test');
+        seedPattern(session, { slot: 1, notes: [] });
+        const h = build();
+        const x = h.head(0).x + 4;
+        dragSel(h, x, 10, h.head(1).x + 4, 25);           // into the next track, past the repeat seam
+        assert.deepEqual(h.tracker.getSelection(), { slot: 0, lanes: [0, 1], rows: [10, 15] },
+            'lanes clamped to track 1 (with its spare lane), rows to the first repeat');
+    });
+
+    test('a drag from outside any clip selects nothing', () => {
+        seedPattern(session, { notes: [] });
+        const h = build();
+        const x = h.head(0).x + 4;
+        dragSel(h, x, 20, x, 10);
+        assert.equal(h.tracker.getSelection(), null);
+    });
+
+    test('a plain drag on a note still moves it; Shift-drag from it selects instead', () => {
+        const { pattern } = seedPattern(session, { notes: [N(60, 2, 2)] });
+        const h = build();
+        const x = h.head(0).x + 4;
+        dragSel(h, x, 2, x, 6);
+        assert.deepEqual(notesOf(pattern.id), [[60, 6, 2, 0]], 'moved');
+        assert.equal(h.tracker.getSelection(), null);
+        dragSel(h, x, 6, x, 9, { shiftKey: true });
+        assert.deepEqual(h.tracker.getSelection(), { slot: 0, lanes: [0, 0], rows: [6, 9] });
+        assert.deepEqual(notesOf(pattern.id), [[60, 6, 2, 0]], 'not moved');
+    });
+
+    test('Shift-click and Shift-arrows extend from the cursor; a plain click or Escape drops it', () => {
+        seedPattern(session, { notes: [] });
+        const h = build();
+        const x = h.head(0).x + 4;
+        h.press(x, 2 * ROW + 4);
+        h.canvas.dispatch('mousedown', { clientX: x, clientY: 5 * ROW + 4, shiftKey: true });
+        docFire('mouseup', {});
+        assert.deepEqual(h.tracker.getSelection().rows, [2, 5]);
+        h.key('ArrowDown', { key: 'ArrowDown', shiftKey: true });
+        h.key('ArrowRight', { key: 'ArrowRight', shiftKey: true });
+        assert.deepEqual(h.tracker.getSelection(), { slot: 0, lanes: [0, 1], rows: [2, 6] });
+        h.key('Escape', { key: 'Escape' });
+        assert.equal(h.tracker.getSelection(), null);
+        h.key('ArrowDown', { key: 'ArrowDown', shiftKey: true });
+        assert.ok(h.tracker.getSelection());
+        h.press(x, 9 * ROW + 4);
+        assert.equal(h.tracker.getSelection(), null, 'a plain click drops it');
+    });
+
+    test('Delete empties the block, OFF silences it', () => {
+        const { pattern } = seedPattern(session, { notes: [N(60, 0, 2), N(62, 2, 2), N(64, 4, 12)] });
+        const h = build();
+        const x = h.head(0).x + 4;
+        dragSel(h, x, 1, x, 3);                           // row 1 is inside 60, not its start: a plain drag selects
+        h.key('Delete', { key: 'Delete' });
+        h.tracker.flush();
+        assert.deepEqual(notesOf(pattern.id), [[60, 0, 4, 0], [64, 4, 12, 0]], '62 gone, 60 sustains through');
+        dragSel(h, x, 6, x, 9);
+        h.key('Digit1');
+        h.tracker.flush();
+        assert.deepEqual(notesOf(pattern.id), [[60, 0, 4, 0], [64, 4, 2, 0]]);
+    });
+
+    test('the on-screen keyboard (enterKey) fills the selection, without a second audition', () => {
+        const { pattern } = seedPattern(session, { notes: [] });
+        const played = [];
+        const h = build({ playNote: (midi, slot) => played.push([midi, slot]) });
+        setStep(h.q, 2);
+        const x = h.head(0).x + 4;
+        dragSel(h, x, 0, x, 3);
+        assert.equal(h.tracker.enterKey(48), true);
+        h.tracker.flush();
+        assert.deepEqual(notesOf(pattern.id), [[48, 0, 2, 0], [48, 2, 14, 0]]);
+        assert.deepEqual(played, [], 'the keyboard already sounded it');
+    });
+
+    test('enterKey without a selection writes at the cursor and steps on; outside a pattern it declines quietly', () => {
+        const { pattern } = seedPattern(session, { notes: [] });
+        const h = build();
+        const x = h.head(0).x + 4;
+        h.press(x, 3 * ROW + 4);
+        assert.equal(h.tracker.enterKey(67), true);
+        assert.equal(h.tracker.getCursor().col, 4);
+        h.tracker.flush();
+        assert.deepEqual(notesOf(pattern.id), [[67, 3, 13, 0]]);
+        h.press(x, 30 * ROW + 4);
+        assert.equal(h.tracker.enterKey(67), false);
+        assert.equal(h.q('.tracker-status').textContent, '', 'no nagging');
+        h.tracker.setShown(false);
+        h.press(x, 3 * ROW + 4);
+        assert.equal(h.tracker.enterKey(67), false, 'not while the tab is hidden');
+    });
+});

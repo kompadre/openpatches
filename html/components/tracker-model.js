@@ -365,3 +365,46 @@ export function clearCell(pattern, col, lane) {
     }
     return null;
 }
+
+/**
+ * Empty the cells `col0`..`col1` (pattern columns, inclusive) of a lane:
+ * every note starting there goes, and a note sounding into the range — or
+ * stopped by an OFF inside it — sustains through it to the next note after
+ * it (or the pattern's end), the way an emptied single cell does.
+ */
+export function clearRange(pattern, col0, col1, lane) {
+    const d = freeze(pattern);
+    const notes = inLane(pattern, d, lane);
+    const removed = notes.filter(n => n.start >= col0 && n.start <= col1);
+    for (const n of removed) pattern.notes.splice(pattern.notes.indexOf(n), 1);
+    // What sounded into the range (or was stopped inside it) carries on to
+    // the first event after it: the next note, an OFF a removed note had
+    // past the range, or the pattern's end.
+    const before = notes.filter(n => n.start < col0).pop();
+    if (before && endOf(before) >= col0 && endOf(before) <= col1) {
+        const next = notes.find(n => n.start > col1);
+        const to = Math.min(
+            next ? next.start : Infinity,
+            ...removed.map(endOf).filter(e => e > col1),
+            patternCols(pattern),
+        );
+        before.dur = to - before.start;
+        return true;
+    }
+    return removed.length > 0;
+}
+
+/**
+ * Fill `col0`..`col1` of a lane, every `step` columns from `col0`: the
+ * range is emptied first, then `midi` goes in at col0, col0+step, … — so
+ * each note sustains through the empty cells to the next one, as typed.
+ * `midi` null fills with OFF instead (which silences the range).
+ */
+export function fillRange(pattern, col0, col1, lane, midi, step) {
+    const by = Math.max(1, step | 0);
+    clearRange(pattern, col0, col1, lane);
+    for (let c = col0; c <= col1; c += by) {
+        if (midi == null) putOff(pattern, c, lane);
+        else putNote(pattern, c, lane, midi);
+    }
+}

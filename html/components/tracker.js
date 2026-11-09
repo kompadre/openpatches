@@ -16,7 +16,15 @@
 //   arrows, PgUp/PgDn, Home/End, Tab / Shift-Tab           move
 //   Numpad + / −           octave
 // The cursor advances by the edit step after an entry. A note is heard on
-// its track's voice as it goes in. Typing where the track has no clip
+// its track's voice as it goes in. The on-screen keyboard enters too
+// (`enterKey`, called by the toolbar while this tab is on screen).
+//
+// **Selection.** Drag across cells (Shift-drag when starting on a note,
+// whose plain drag moves it; Shift-click and Shift-arrows extend from the
+// cursor) to select a block — inside one track, one pattern, one repeat of
+// it. A note then fills it every Step rows (C, three empty, C, … at Step
+// 4), the rest of the block emptied; OFF does the same with OFFs, Delete
+// empties it. Escape or a plain click drops it. Typing where the track has no clip
 // refuses with a message. **Double-click empty space** in a track to make a
 // new one-bar pattern there, or drag one in from the Section pane's
 // library (`dropPattern`, called by the library's drag); grow it here with
@@ -40,9 +48,10 @@
 import {
     expandTrack, compactCells, noteName, locate, MAX_LANES,
     putNote, putOff, clearCell, relane, growBlocker, measuresFor, moveNote,
+    clearRange, fillRange,
 } from './tracker-model.js';
 import {
-    COLS_PER_MEASURE, updateClip, clipRepeats, sectionLength, addClip,
+    COLS_PER_MEASURE, updateClip, clipRepeats, sectionLength, addClip, patternCols,
 } from './project-model.js';
 
 const ROW_H = 16;
@@ -84,6 +93,12 @@ export function createTracker(opts) {
     const dirty = new Map();  // patternId → pattern, awaiting commit
     let commitTimer = null;
     let drag = null;          // { event, track, row } while a note is dragged
+    // The selection: a block of cells in one track, inside one repeat of
+    // one clip's pattern. `a` is the anchor, `h` the moving corner (both
+    // {lane, col}); lo..hi the section rows it may span. One cell is no
+    // selection.
+    let sel = null;           // { slot, clipId, lo, hi, a, h }
+    let selDrag = null;       // { slot, lane, row } from a press, until it moves
 
     // --- DOM ---
 
@@ -277,6 +292,7 @@ export function createTracker(opts) {
             ctx.fillStyle = 'rgba(233, 69, 96, 0.05)';
             ctx.fillRect(active.x, 0, active.w, h);
         }
+        drawSelection(ctx);
         drawCursor(ctx);
         drawDrag(ctx);
         reportViewport();
@@ -470,9 +486,109 @@ export function createTracker(opts) {
         inner.appendChild(popover);
     }
 
+    // --- Selection ---
+
+    /** The block and repeat holding `row` on track `t`, or null outside a clip. */
+    function repeatAt(t, row) {
+        const block = t.blocks.find(b => row >= b.startCol && row < b.endCol);
+        if (!block) return null;
+        const pc = patternCols(block.pattern);
+        const lo = block.startCol + Math.floor((row - block.startCol) / pc) * pc;
+        return { block, lo, hi: Math.min(lo + pc, block.endCol) - 1 };
+    }
+
+    /** Start a selection anchored at a cell; false outside a clip. */
+    function startSelection(slot, lane, col) {
+        const t = bySlot(slot);
+        const at = t && repeatAt(t, col);
+        if (!at) { sel = null; return false; }
+        const ln = t.track.compact ? 0 : lane;
+        sel = { slot, clipId: at.block.clip.id, lo: at.lo, hi: at.hi, a: { lane: ln, col }, h: { lane: ln, col } };
+        return true;
+    }
+
+    /** Move the selection's free corner, held inside its track and repeat. */
+    function extendSelection(lane, col) {
+        const t = sel && bySlot(sel.slot);
+        if (!t) return;
+        sel.h = {
+            lane: t.track.compact ? 0 : Math.max(0, Math.min(t.viewLanes - 1, lane)),
+            col: Math.max(sel.lo, Math.min(sel.hi, col)),
+        };
+        cursor.lane = sel.h.lane;
+        cursor.col = sel.h.col;
+        const r = selRect();
+        if (r) {
+            const cells = (r.l1 - r.l0 + 1) * (r.c1 - r.c0 + 1);
+            say(cells + ' cells selected — a note fills them every ' + Math.max(1, step) + ' row' + (Math.max(1, step) > 1 ? 's' : ''));
+        }
+        draw();
+        revealCursor();
+    }
+
+    /** The selected block, or null when there is none (or just one cell). */
+    function selRect() {
+        if (!sel) return null;
+        const r = {
+            l0: Math.min(sel.a.lane, sel.h.lane), l1: Math.max(sel.a.lane, sel.h.lane),
+            c0: Math.min(sel.a.col, sel.h.col), c1: Math.max(sel.a.col, sel.h.col),
+        };
+        return r.l0 === r.l1 && r.c0 === r.c1 ? null : r;
+    }
+
+    function clearSelection() {
+        if (!sel) return;
+        sel = null;
+        say('');
+    }
+
+    /**
+     * After a rebuild: the selection survives only while its clip is still
+     * there and still covers it; lanes are re-clamped to the track.
+     */
+    function revalidateSelection() {
+        if (!sel) return;
+        const t = bySlot(sel.slot);
+        const at = t && repeatAt(t, sel.a.col);
+        if (!at || at.block.clip.id !== sel.clipId) { sel = null; return; }
+        sel.lo = at.lo;
+        sel.hi = at.hi;
+        const max = t.track.compact ? 0 : t.viewLanes - 1;
+        for (const c of [sel.a, sel.h]) {
+            c.lane = Math.min(max, c.lane);
+            c.col = Math.max(sel.lo, Math.min(sel.hi, c.col));
+        }
+    }
+
+    /** Extend from the cursor (starting a selection there if need be). */
+    function extendFromCursor(lane, col) {
+        if (!sel && !startSelection(cursor.slot, cursor.lane, cursor.col)) return false;
+        if (sel.slot !== cursor.slot) return false;
+        extendSelection(lane, col);
+        return true;
+    }
+
+    function drawSelection(ctx) {
+        const r = selRect();
+        const t = r && bySlot(sel.slot);
+        if (!t) return;
+        const x = t.x + r.l0 * LANE_W;
+        const y = r.c0 * ROW_H;
+        const w = (r.l1 - r.l0 + 1) * LANE_W;
+        const h = (r.c1 - r.c0 + 1) * ROW_H;
+        ctx.fillStyle = 'rgba(33, 150, 243, 0.16)';
+        ctx.fillRect(x, y, w, h);
+        // The rows a note would land on, marked down the left edge.
+        ctx.fillStyle = 'rgba(33, 150, 243, 0.6)';
+        for (let c = r.c0; c <= r.c1; c += Math.max(1, step)) ctx.fillRect(x, c * ROW_H + 1, 3, ROW_H - 2);
+        ctx.strokeStyle = '#2196f3';
+        ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+    }
+
     // --- Cursor ---
 
     function clampCursor() {
+        revalidateSelection();
         if (layout.length === 0) return;
         let t = bySlot(cursor.slot);
         if (!t) { t = bySlot(activeSlot) || layout[0]; cursor.slot = t.track.slot; }
@@ -562,17 +678,69 @@ export function createTracker(opts) {
         render();
     }
 
+    /**
+     * The selected block as pattern columns, or null. It never leaves one
+     * repeat of one clip, so pattern column = row − the repeat's first row.
+     */
+    function selTarget() {
+        const r = selRect();
+        const t = r && bySlot(sel.slot);
+        const at = t && repeatAt(t, r.c0);
+        if (!at || at.block.clip.id !== sel.clipId) return null;
+        return { ...r, track: t.track, pattern: at.block.pattern, p0: r.c0 - at.lo, p1: r.c1 - at.lo };
+    }
+
+    /** Fill (midi) or OFF (null) or empty ('clear') the selected block. */
+    function applyToSelection(st, midi) {
+        for (let lane = st.l0; lane <= st.l1; lane++) {
+            if (midi === 'clear') clearRange(st.pattern, st.p0, st.p1, lane);
+            else fillRange(st.pattern, st.p0, st.p1, lane, midi, step);
+        }
+        edited(st.pattern);
+    }
+
     function enterNote(semis) {
+        enterMidi(Math.max(0, Math.min(127, (octave + 1) * 12 + semis)));
+    }
+
+    /**
+     * A note into the selection (filled every Step rows) or at the cursor
+     * (then the cursor advances). `audition: false` when the caller has
+     * already sounded it — the on-screen keyboard.
+     */
+    function enterMidi(midi, { audition = true } = {}) {
+        const st = selTarget();
+        if (st) {
+            applyToSelection(st, midi);
+            if (audition && opts.playNote) opts.playNote(midi, st.track.slot);
+            return;
+        }
         const at = target();
         if (!at) return;
-        const midi = Math.max(0, Math.min(127, (octave + 1) * 12 + semis));
         putNote(at.pattern, at.patternCol, at.lane, midi);
-        if (opts.playNote) opts.playNote(midi, at.track.slot);
+        if (audition && opts.playNote) opts.playNote(midi, at.track.slot);
         edited(at.pattern);
         moveRow(step);
     }
 
+    /**
+     * The on-screen keyboard, while the tab is on screen: the key goes into
+     * the selection or the cursor's cell. Quietly false (the key is just
+     * heard) when neither is in a pattern — no nagging on every key.
+     */
+    function enterKey(midi) {
+        if (!shown) return false;
+        if (!selTarget()) {
+            const t = bySlot(cursor.slot);
+            if (!t || !locate(session.get(), session.getSection(), t.track, cursor.col)) return false;
+        }
+        enterMidi(midi, { audition: false });
+        return true;
+    }
+
     function enterOff() {
+        const st = selTarget();
+        if (st) { applyToSelection(st, null); return; }
         const at = target();
         if (!at) return;
         if (!putOff(at.pattern, at.patternCol, at.lane)) { say('Nothing sounding here to stop'); return; }
@@ -581,6 +749,8 @@ export function createTracker(opts) {
     }
 
     function clearHere() {
+        const st = selTarget();
+        if (st) { applyToSelection(st, 'clear'); return; }
         const at = target();
         if (!at) return;
         if (!clearCell(at.pattern, at.patternCol, at.lane)) { moveRow(step); return; }
@@ -591,6 +761,25 @@ export function createTracker(opts) {
     canvas.addEventListener('keydown', (e) => {
         if (e.ctrlKey || e.metaKey || e.altKey) return;
         let handled = true;
+        const arrows = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
+        if (e.shiftKey && e.key in arrows) {
+            const [dl, dc] = arrows[e.key];
+            const from = sel ? sel.h : cursor;
+            extendFromCursor(from.lane + dl, from.col + dc);
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+        }
+        if (e.key === 'Escape' && sel) {
+            clearSelection();
+            draw();
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+        }
+        // Moving the cursor drops the selection; entries keep it, so a
+        // second note can replace the first.
+        if (/^(Arrow|Page|Home$|End$|Tab$)/.test(e.key)) clearSelection();
         if (e.code in NOTE_KEYS && !e.shiftKey) enterNote(NOTE_KEYS[e.code]);
         else if (e.code === 'Digit1') enterOff();
         else if (e.key === 'Delete' || e.key === 'Backspace') clearHere();
@@ -637,16 +826,62 @@ export function createTracker(opts) {
         const t = trackAt(p.x);
         if (!t) return;
         const lane = t.track.compact ? 0 : Math.floor((p.x - t.x) / LANE_W);
-        // A note's start cell can be dragged up or down; any other press
-        // just puts the cursor there.
-        const ev = !t.track.compact && t.events.find(v => v.col === p.row && v.lane === lane);
+        // Shift: extend from the cursor in this track, and keep extending
+        // while the button is held.
+        if (e.shiftKey && t.track.slot === cursor.slot && extendFromCursor(lane, p.row)) {
+            selDrag = { slot: t.track.slot, lane: sel.a.lane, row: sel.a.col, started: true };
+            document.addEventListener('mousemove', onSelMove);
+            document.addEventListener('mouseup', onSelEnd);
+            return;
+        }
+        clearSelection();
+        // A note's start cell can be dragged up or down (Shift-drag selects
+        // from it instead); any other press puts the cursor there, and a
+        // drag from it selects.
+        const ev = !e.shiftKey && !t.track.compact && t.events.find(v => v.col === p.row && v.lane === lane);
         if (ev) {
             drag = { event: ev, track: t, row: p.row };
             document.addEventListener('mousemove', onDragMove);
             document.addEventListener('mouseup', onDragEnd);
+        } else {
+            selDrag = { slot: t.track.slot, lane, row: p.row, started: false };
+            document.addEventListener('mousemove', onSelMove);
+            document.addEventListener('mouseup', onSelEnd);
         }
         setCursor(t.track.slot, lane, p.row);
     });
+
+    /** The cell under a client point, read against the selection's track. */
+    function cellIn(t, e) {
+        const p = pointAt(e);
+        return {
+            lane: t.track.compact ? 0 : Math.floor((p.x - t.x) / LANE_W),
+            row: Math.max(0, Math.floor(p.y / ROW_H)),
+        };
+    }
+
+    function onSelMove(e) {
+        if (!selDrag) return;
+        const t = bySlot(selDrag.slot);
+        if (!t) return;
+        const c = cellIn(t, e);
+        if (!selDrag.started) {
+            if (c.lane === selDrag.lane && c.row === selDrag.row) return;
+            if (!startSelection(selDrag.slot, selDrag.lane, selDrag.row)) {
+                say('Select inside a pattern: there is no clip here');
+                selDrag = null;
+                return;
+            }
+            selDrag.started = true;
+        }
+        extendSelection(c.lane, c.row);
+    }
+
+    function onSelEnd() {
+        document.removeEventListener('mousemove', onSelMove);
+        document.removeEventListener('mouseup', onSelEnd);
+        selDrag = null;
+    }
 
     function onDragMove(e) {
         if (!drag) return;
@@ -854,6 +1089,12 @@ export function createTracker(opts) {
         },
         getViewport: viewport,
         dropPattern,
+        enterKey,
+        /** For tests: the selected block in section rows, or null. */
+        getSelection: () => {
+            const r = selRect();
+            return r && { slot: sel.slot, lanes: [r.l0, r.l1], rows: [r.c0, r.c1] };
+        },
         /** For tests and the e2e: commit pending edits now. */
         flush: commit,
         getCursor: () => ({ ...cursor }),

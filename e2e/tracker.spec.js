@@ -204,3 +204,33 @@ test('a pattern dragged from the Section library onto a track is placed at that 
     expect(placed).toEqual([18]);
     await expect(page.locator('.section-library-ghost')).toHaveCount(0);
 });
+
+test('drag-select 12 rows, Step 4, press C3 on the on-screen keyboard: C3, three empty, …', async ({ page }) => {
+    await openApp(page);
+    await seed(page);
+    await page.locator('.dock-tab-tracker').click();
+    await page.locator('.tracker-step').selectOption('4');
+
+    // Lane 0 of Riff, from row 11 up to row 0 (row 11 is no note's start,
+    // so the drag selects rather than moving a note).
+    const canvas = page.locator('.tracker-canvas');
+    const box = await canvas.boundingBox();
+    await page.mouse.move(box.x + 40, box.y + 11 * 16 + 8);
+    await page.mouse.down();
+    await page.mouse.move(box.x + 40, box.y + 8, { steps: 6 });
+    await page.mouse.up();
+    await expect(page.locator('.tracker-status')).toContainText('12 cells selected');
+    await page.screenshot({ path: '/tmp/op-shots/tracker-sel.png', clip: { x: box.x - 40, y: box.y - 60, width: 420, height: 320 } });
+
+    await page.locator('.dock-keyboard .key[title="C3"]').click();
+    await page.evaluate(() => window.__opDock._tracker.flush());
+    const lane0 = await page.evaluate(() => {
+        const p = Object.values(window.__opProject.get().patterns)[0];
+        return p.notes.filter((n) => n.midi !== 64).map((n) => [n.midi, n.start, n.dur]).sort((a, b) => a[1] - b[1]);
+    });
+    expect(lane0).toEqual([[48, 0, 4], [48, 4, 4], [48, 8, 8]]);
+    // The chord's other lane is outside the block and keeps its E-4.
+    const e4 = await page.evaluate(() => Object.values(window.__opProject.get().patterns)[0].notes.filter((n) => n.midi === 64).length);
+    expect(e4).toBe(1);
+    await page.screenshot({ path: '/tmp/op-shots/tracker-filled.png', clip: { x: box.x - 40, y: box.y - 60, width: 420, height: 320 } });
+});
