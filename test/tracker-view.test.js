@@ -150,6 +150,90 @@ describe('tracker view', () => {
         assert.equal(q('.tracker-popover').querySelectorAll('button').find(b => b.textContent === 'Edit'), undefined);
     });
 
+    // Double-click empty space in a track: a new one-bar pattern, there.
+    const dbl = (canvas, x, y) => canvas.dispatch('dblclick', { clientX: x, clientY: y });
+    const patternCount = () => session.listPatterns().length;
+
+    test('double-clicking empty track space makes a one-bar pattern at that row', () => {
+        const { track } = seedPattern(session, { notes: [{ midi: 60, start: 0, dur: 4 }] });
+        const { tracker, q, head, canvas } = build();
+        const before = patternCount();
+        dbl(canvas, head(0).x + 4, ROW * 20 + 4);                    // row 20: below the one-bar clip
+        assert.equal(patternCount(), before + 1);
+        const clip = session.getSection().clips.find(c => c.startCol === 20);
+        assert.ok(clip, 'placed at the clicked row');
+        assert.equal(clip.trackId, track.id);
+        const made = session.getPattern(clip.patternId);
+        assert.equal(made.measures, 1);
+        assert.match(made.name, /^Pattern \d+$/);
+        assert.equal(tracker.getCursor().col, 20, 'the cursor waits there to type into it');
+        assert.match(q('.tracker-status').textContent, /type notes/);
+    });
+
+    test('double-clicking inside a clip makes nothing', () => {
+        seedPattern(session, { notes: [] });
+        const { head, canvas } = build();
+        const before = patternCount();
+        dbl(canvas, head(0).x + 4, ROW * 5 + 4);
+        assert.equal(patternCount(), before);
+        assert.equal(session.getSection().clips.length, 1);
+    });
+
+    test('no bar of room before the next clip: refused, and no orphan pattern left behind', () => {
+        const { track, pattern } = seedPattern(session, { notes: [] });
+        session.update((project, section) => {
+            section.clips.push({ id: 'c2', trackId: track.id, patternId: pattern.id, startCol: 24, repeats: 1 });
+        }, 'test');
+        const { q, head, canvas } = build();
+        const before = patternCount();
+        dbl(canvas, head(0).x + 4, ROW * 16 + 4);                    // rows 16–23 free: half a bar
+        assert.equal(patternCount(), before, 'nothing created');
+        assert.equal(session.getSection().clips.length, 2);
+        assert.match(q('.tracker-status').textContent, /No room/);
+    });
+
+    // A pattern dragged from the Section library, released over the grid.
+    const withView = (q) => {
+        q('.tracker-scroll').getBoundingClientRect = () => ({ left: 0, top: 0, right: 2000, bottom: 2000 });
+    };
+
+    test('a library drop places the pattern on the track and row under the pointer', () => {
+        const { track } = seedPattern(session, { notes: [] });
+        const other = session.createPattern({ name: 'Lib', measures: 1 }, 'test');
+        const { tracker, q, head } = build();
+        withView(q);
+        // Dropped in the gap right of the lanes, on row 32: still this track.
+        const ok = tracker.dropPattern(head(0).x + head(0).w + 4, ROW * 32 + 4, other.id);
+        assert.equal(ok, true);
+        const clip = session.getSection().clips.find(c => c.patternId === other.id);
+        assert.ok(clip);
+        assert.equal(clip.trackId, track.id);
+        assert.equal(clip.startCol, 32);
+        assert.equal(tracker.getCursor().col, 32);
+    });
+
+    test('a library drop onto a clip is refused with a message, but still claimed', () => {
+        seedPattern(session, { notes: [] });
+        const other = session.createPattern({ name: 'Lib', measures: 1 }, 'test');
+        const { tracker, q, head } = build();
+        withView(q);
+        assert.equal(tracker.dropPattern(head(0).x + 4, 30 + ROW * 3, other.id), true);
+        assert.equal(session.getSection().clips.length, 1, 'nothing placed');
+        assert.match(q('.tracker-status').textContent, /clip here already/);
+    });
+
+    test('a library drop outside the grid, or while hidden, is left to the caller', () => {
+        seedPattern(session, { notes: [] });
+        const other = session.createPattern({ name: 'Lib', measures: 1 }, 'test');
+        const { tracker, q } = build();
+        withView(q);
+        assert.equal(tracker.dropPattern(3000, 100, other.id), false, 'right of the view');
+        assert.equal(tracker.dropPattern(100, 10, other.id), false, 'over the heads');
+        tracker.setShown(false);
+        assert.equal(tracker.dropPattern(100, 300, other.id), false, 'tab not on screen');
+        assert.equal(session.getSection().clips.length, 1);
+    });
+
     test('clicking a track column selects its voice', () => {
         seedPattern(session, { slot: 0, notes: [] });
         seedPattern(session, { slot: 3, notes: [] });

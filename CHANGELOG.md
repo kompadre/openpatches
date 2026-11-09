@@ -2,6 +2,14 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-09: Tracker — new patterns by double-click, and library drops
+
+**Double-click empty space in a Tracker track** to make a new one-bar pattern (`Pattern N`, like Section's `+ Pattern`) at exactly that row; the cursor lands on it, ready to type. Double-clicking inside a clip does nothing. If the next clip on the track starts less than a bar below, it is refused with a message — checked before the pattern is created, so a refusal never leaves an orphan in the library.
+
+**Drag a pattern from the Section pane's library onto the Tracker** to place it on the track and row under the pointer (the gap right of a track counts as that track). Dropping onto an existing clip, or where the next clip leaves no room, is refused with a message in the Tracker's status. The library's drag asks `opts.dropOnTracker` (wired in toolbar.js to `tracker.dropPattern`, only while the Tracker tab is on screen) before trying its own lanes; a point outside the visible grid falls through.
+
+Tests: `tracker-view` +6 (double-click creates and places, nothing inside a clip, no room → no orphan; drop places at row incl. the gap, drop onto a clip refused but claimed, outside/hidden falls through); e2e `tracker` +2 (real double-click then typing into the new pattern; real drag from the library onto row 18). 1094 unit, 123 e2e.
+
 ## 2026-11-09: Bottom pane — a restore bar under the keyboard
 
 **Every pane item folded, keyboard still up: a bar under the keyboard** (`.bpane-restore`, `▴ Mixer · Edit · Device · Log`) shows what is down there and opens the **Mixer** — before, the pane just vanished and only the top tabs brought it back. Restoring a fully collapsed pane with every item folded now opens the Mixer too, rather than all four, so the two bars agree.

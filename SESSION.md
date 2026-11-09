@@ -32,7 +32,7 @@ What the next agent must not break:
   the commit is `relane(p, {fresh:true})` (pack lanes, low-to-high) +
   `touchPattern(…, 'tracker')`. Leaving the tab / pagehide / a foreign edit
   commits immediately. Lanes may legitimately move at commit time.
-- **Typing outside a clip refuses** (patterns are placed in Section). Growth
+- **Typing outside a clip refuses.** New patterns come from a **double-click on empty track space** (one bar at that row; refused before creating anything if the next clip leaves less than a bar, so no orphan) or a **drag from the Section library** — `section-editor` asks `opts.dropOnTracker` (toolbar → `tracker.dropPattern(x, y, id)`, true = over the visible grid, placed or refused) before its own lanes. Growth
   is explicit: the ✎ popover (clip repeats, + Bar) and note-drag past the
   pattern end — both gated by `growBlocker` (checks every section).
 - The ✎ popover's **Edit** opens the clip in the Pattern editor through

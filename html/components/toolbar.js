@@ -708,6 +708,10 @@ export function createToolbar(opts) {
         },
         // A library drag released here opens the pattern instead of placing
         // it. Only while the Pattern tab is on screen.
+        // ...and released over the Tracker, it is placed on the track and
+        // row under the pointer. Only while the Tracker tab is on screen.
+        dropOnTracker: (x, y, patternId) => !!trackerRef && trackerPanel.classList.contains('active')
+            && trackerRef.dropPattern(x, y, patternId),
         isOverPatternEditor: (x, y) => {
             if (!pianorollPanel.classList.contains('active')) return false;
             const r = pianorollRef.element.getBoundingClientRect();

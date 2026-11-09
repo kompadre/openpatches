@@ -161,3 +161,46 @@ test('the keyboard is a strip of its own: on screen under the Tracker, and playa
     expect(kb.y + kb.height).toBeLessThanOrEqual(pane.y + 1);
     await strip.locator('.key[title="C4"]').click();
 });
+
+test('double-clicking empty space in a track makes a pattern there', async ({ page }) => {
+    await openApp(page);
+    await seed(page);
+    await page.locator('.dock-tab-tracker').click();
+    const before = await page.evaluate(() => Object.keys(window.__opProject.get().patterns).length);
+    // Row 20 of lane 0: below the one-bar Riff (ruler 36px, rows 16px).
+    await page.locator('.tracker-canvas').dblclick({ position: { x: 40, y: 20 * 16 + 8 } });
+    await expect.poll(() => page.evaluate(() => Object.keys(window.__opProject.get().patterns).length)).toBe(before + 1);
+    const clip = await page.evaluate(() => window.__opProject.getSection().clips.find((c) => c.startCol === 20));
+    expect(clip).toBeTruthy();
+    // ...and it can be typed into straight away.
+    await page.keyboard.press('KeyZ');
+    await page.evaluate(() => window.__opDock._tracker.flush());
+    const notes = await page.evaluate((id) => window.__opProject.getPattern(id).notes.map((n) => [n.midi, n.start]), clip.patternId);
+    expect(notes).toEqual([[60, 0]]);   // Z at octave 4: C-4
+});
+
+test('a pattern dragged from the Section library onto a track is placed at that row', async ({ page }) => {
+    await openApp(page);
+    await seed(page);
+    await page.evaluate(() => window.__opProject.createPattern({ name: 'Lib', measures: 1 }, 'e2e'));
+    await page.locator('.dock-tab-tracker').click();
+
+    const item = page.locator('.section-library-item', { hasText: 'Lib' });
+    await expect(item).toBeVisible();
+    const from = await item.boundingBox();
+    const grid = await page.locator('.tracker-canvas').boundingBox();
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(from.x + 40, from.y - 40, { steps: 5 });
+    // Row 18, lane 0: just below the one-bar Riff, and on screen (the grid
+    // shares the height with the keyboard strip — a drop must be visible).
+    await page.mouse.move(grid.x + 40, grid.y + 18 * 16 + 8, { steps: 10 });
+    await page.mouse.up();
+
+    const placed = await page.evaluate(() => {
+        const id = Object.values(window.__opProject.get().patterns).find((p) => p.name === 'Lib').id;
+        return window.__opProject.getSection().clips.filter((c) => c.patternId === id).map((c) => c.startCol);
+    });
+    expect(placed).toEqual([18]);
+    await expect(page.locator('.section-library-ghost')).toHaveCount(0);
+});

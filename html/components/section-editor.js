@@ -1292,7 +1292,7 @@ export function createSectionEditor(opts = {}) {
         item.className = 'section-library-item' + (pattern.id === selectedPatternId ? ' selected' : '');
         item.dataset.patternId = pattern.id;
         item.title = `${pattern.name} — ${pattern.measures} bar${pattern.measures > 1 ? 's' : ''}, `
-            + (n ? `placed ${n}×` : 'not placed') + '. Click to select (then click a lane), drag onto a lane to place it, '
+            + (n ? `placed ${n}×` : 'not placed') + '. Click to select (then click a lane), drag onto a lane — or a Tracker track — to place it, '
             + 'hold — or drag onto the Pattern editor — to edit it.';
 
         const thumb = document.createElement('div');
@@ -1338,9 +1338,10 @@ export function createSectionEditor(opts = {}) {
     /**
      * Press on a library item: a tap selects the pattern; a hold opens it
      * in the Pattern tab; a drag carries a ghost of it and drops a clip
-     * where it is released over a lane (the snap cell under the pointer),
-     * or opens it when released over the Pattern editor. Released anywhere
-     * else, nothing.
+     * where it is released over a lane (the snap cell under the pointer)
+     * or a Tracker track (the row under it, `opts.dropOnTracker`), or opens
+     * it when released over the Pattern editor. Released anywhere else,
+     * nothing.
      */
     function startLibraryDrag(e, pattern, item) {
         if (e.cancelable && e.preventDefault) e.preventDefault();
@@ -1378,6 +1379,12 @@ export function createSectionEditor(opts = {}) {
             if (ghost.parentNode) ghost.parentNode.removeChild(ghost);
             const pt = pointer(ev);
             if (opts.isOverPatternEditor && opts.isOverPatternEditor(pt.x, pt.y)) { showPattern(pattern); return; }
+            // Over the Tracker: it places the clip (or says why not) itself.
+            if (opts.dropOnTracker && opts.dropOnTracker(pt.x, pt.y, pattern.id)) {
+                selectedPatternId = pattern.id;
+                render();
+                return;
+            }
             const hit = laneAt(pt.x);
             const r = grid.getBoundingClientRect();
             if (!hit || pt.y < r.top || pt.y >= r.bottom) return;

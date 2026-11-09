@@ -17,8 +17,10 @@
 //   Numpad + / −           octave
 // The cursor advances by the edit step after an entry. A note is heard on
 // its track's voice as it goes in. Typing where the track has no clip
-// refuses with a message — patterns are made and placed in Section, and
-// grown here with the ✎ or by dragging a note down past the pattern's end.
+// refuses with a message. **Double-click empty space** in a track to make a
+// new one-bar pattern there, or drag one in from the Section pane's
+// library (`dropPattern`, called by the library's drag); grow it here with
+// the ✎ or by dragging a note down past the pattern's end.
 // The active track shows one spare sub-lane when expanded, so a chord can
 // be typed one note at a time.
 //
@@ -40,7 +42,7 @@ import {
     putNote, putOff, clearCell, relane, growBlocker, measuresFor, moveNote,
 } from './tracker-model.js';
 import {
-    COLS_PER_MEASURE, updateClip, clipRepeats, sectionLength,
+    COLS_PER_MEASURE, updateClip, clipRepeats, sectionLength, addClip,
 } from './project-model.js';
 
 const ROW_H = 16;
@@ -676,6 +678,77 @@ export function createTracker(opts) {
         edited(pattern);
     }
 
+    // --- New patterns: double-click empty space, or a library drop ---
+
+    /** The track whose lanes — or the gap right of them — hold x. */
+    const trackOrGapAt = (x) => layout.find(t => x >= t.x && x < t.x + t.w + GAP_W) || null;
+
+    /**
+     * Place `patternId` on `t` at `row`, refusing (with a message) where a
+     * clip already is or the next one leaves no room. True when placed.
+     */
+    function placePattern(t, patternId, row) {
+        const inside = t.blocks.find(b => row >= b.startCol && row < b.endCol);
+        if (inside) { say('There is a clip here already: ' + inside.pattern.name); return false; }
+        let placed = null;
+        try {
+            session.update((p, section) => {
+                placed = addClip(p, section, { trackId: t.track.id, patternId, startCol: row });
+            }, 'tracker');
+        } catch (e) {
+            say(e.message === 'Clip overlaps' ? 'No room: the next clip is in the way' : e.message);
+            return false;
+        }
+        return !!placed;
+    }
+
+    /** Room on track `t` from `row` to the next clip's start (Infinity: none). */
+    function roomAt(t, row) {
+        let next = Infinity;
+        for (const b of t.blocks) if (b.startCol >= row) next = Math.min(next, b.startCol);
+        return next - row;
+    }
+
+    canvas.addEventListener('dblclick', (e) => {
+        const p = pointAt(e);
+        const t = trackAt(p.x);
+        if (!t) return;
+        if (t.blocks.some(b => p.row >= b.startCol && b.endCol > p.row)) return;   // a clip: that is editing
+        // Checked before creating: a refused double-click must not leave
+        // an orphan pattern in the library.
+        if (roomAt(t, p.row) < COLS_PER_MEASURE) { say('No room for a bar here: the next clip is in the way'); return; }
+        commit();
+        const pattern = session.createPattern({ name: `Pattern ${session.listPatterns().length + 1}`, measures: 1 }, 'tracker');
+        if (!pattern) return;
+        if (!placePattern(t, pattern.id, p.row)) { session.removePattern(pattern.id, 'tracker'); return; }
+        say(pattern.name + ' — type notes into it');
+        setCursor(t.track.slot, 0, p.row);
+    });
+
+    /**
+     * A pattern dragged from the Section pane's library, released at a
+     * client point. False when the point is not over the grid (the caller
+     * tries its own targets); true when it was — placed, or refused with a
+     * message.
+     */
+    function dropPattern(clientX, clientY, patternId) {
+        if (!shown || !session.getPattern(patternId)) return false;
+        const view = scroll.getBoundingClientRect();
+        if (clientX < view.left || clientX >= view.right || clientY < view.top + HEAD_H || clientY >= view.bottom) return false;
+        const r = canvas.getBoundingClientRect();
+        const x = clientX - r.left;
+        const y = clientY - r.top;
+        const t = trackOrGapAt(x);
+        if (!t || y < 0) return false;
+        const row = Math.min(rows - 1, Math.floor(y / ROW_H));
+        commit();
+        if (placePattern(t, patternId, row)) {
+            say(session.getPattern(patternId).name + ' placed at row ' + row);
+            setCursor(t.track.slot, 0, row);
+        }
+        return true;
+    }
+
     // Compact `+` cells carry their full story in the canvas title.
     canvas.addEventListener('mousemove', (e) => {
         const p = pointAt(e);
@@ -780,6 +853,7 @@ export function createTracker(opts) {
             if (shown) render();
         },
         getViewport: viewport,
+        dropPattern,
         /** For tests and the e2e: commit pending edits now. */
         flush: commit,
         getCursor: () => ({ ...cursor }),
