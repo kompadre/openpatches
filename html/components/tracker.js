@@ -19,16 +19,17 @@
 // its track's voice as it goes in. The on-screen keyboard enters too
 // (`enterKey`, called by the toolbar while this tab is on screen).
 //
-// **Hold to drag.** A press only places the cursor; held still for a
-// second (HOLD_MS) on its cell, it arms a drag — on a note's first row the
-// note moves, anywhere else a selection is dragged out. Moving off the
-// cell or releasing sooner is a plain click, so a click never nudges a
-// note or starts a block by accident.
+// **Drag selects, hold moves.** A press and an immediate drag select,
+// from any cell — a note's too. Moving is the deliberate gesture: held
+// still for a second (HOLD_MS), a press inside the selection arms moving
+// the whole block, one on a note's first row moving that note; the cell
+// is ringed and the status says which. Before the second a press is a
+// click (it drops the selection) or, once the pointer leaves its cell,
+// a selection drag.
 //
-// **Selection.** Hold and drag across cells (Shift-click and Shift-arrows
-// extend from the cursor at once; Shift-hold on a note selects from it
-// instead of moving it) to select a block — inside one track, one pattern, one repeat of
-// it. A note then fills its first lane every Step rows (C, three empty,
+// **Selection.** Drag across cells (Shift-click and Shift-arrows extend
+// from the cursor) to select a block — inside one track, one pattern, one
+// repeat of it. A note then fills its first lane every Step rows (C, three empty,
 // C, … at Step 4), the rest of that lane emptied — other lanes of the
 // block are left alone, a second copy of the note there would be
 // redundant. OFF silences every lane of the block, Delete empties them. Escape or a plain click drops it. Typing where the track has no clip
@@ -55,7 +56,7 @@
 import {
     expandTrack, compactCells, noteName, locate, MAX_LANES,
     putNote, putOff, clearCell, relane, growBlocker, measuresFor, moveNote,
-    clearRange, fillRange,
+    clearRange, fillRange, moveBlock,
 } from './tracker-model.js';
 import {
     COLS_PER_MEASURE, updateClip, clipRepeats, sectionLength, addClip, patternCols,
@@ -68,7 +69,7 @@ const RULER_W = 36;
 const HEAD_H = 26;
 const MIN_MEASURES = 4;  // never a zero-height grid
 const COMMIT_MS = 3000;  // quiet time before an edited pattern is committed
-const HOLD_MS = 1000;    // a still press this long arms a note drag or a selection
+const HOLD_MS = 1000;    // a still press this long arms a move (a note, or the selection)
 const FOLLOW_KEY = 'openpatches_tracker_follow';
 
 const DEFAULT_COLORS = ['#e94560', '#4caf50', '#2196f3', '#ff9800', '#9c27b0', '#00bcd4', '#ff5722', '#607d8b'];
@@ -107,10 +108,12 @@ export function createTracker(opts) {
     // selection.
     let sel = null;           // { slot, clipId, lo, hi, a, h }
     let selDrag = null;       // { slot } while an armed selection drag runs
-    // A press waiting out HOLD_MS before it may drag: { slot, lane, row, timer }.
-    // Leaving the pressed cell or releasing first makes it a plain click.
+    // A press not yet a gesture: { slot, lane, row, inSel, timer }. Leaving
+    // its cell makes it a selection drag; release makes it a click; HOLD_MS
+    // still makes it a move.
     let pending = null;
     let armed = null;         // { slot, lane, row } the cell a hold armed, outlined
+    let blockMove = null;     // { st, slot, row, lane, dr, dl } while the selection is moved
 
     // --- DOM ---
 
@@ -307,6 +310,7 @@ export function createTracker(opts) {
         drawSelection(ctx);
         drawCursor(ctx);
         drawDrag(ctx);
+        drawBlockMove(ctx);
         reportViewport();
     }
 
@@ -863,69 +867,141 @@ export function createTracker(opts) {
             document.addEventListener('mouseup', onSelEnd);
             return;
         }
-        clearSelection();
+        // A press inside the selection keeps it — held, it moves the block.
+        const r = selRect();
+        const inSel = !!r && sel.slot === t.track.slot
+            && lane >= r.l0 && lane <= r.l1 && p.row >= r.c0 && p.row <= r.c1;
+        if (!inSel) clearSelection();
         setCursor(t.track.slot, lane, p.row);
-        // Nothing drags yet: the press has to be held still on its cell.
-        startHold(t.track.slot, lane, p.row, !e.shiftKey);
+        startPress(t.track.slot, lane, p.row, inSel);
     });
 
     /**
-     * Wait out HOLD_MS on the pressed cell. Then a note's first row arms a
-     * note drag (unless `noteDrag` is false — Shift — or the track is
-     * compact), anything else a selection; the outline and the status say
-     * which, and the drag follows the pointer until release.
+     * A press, until it becomes a gesture. Off its cell first: a selection
+     * dragged out from it. Released first: a click. Held still HOLD_MS:
+     * inside the selection, the block moves; on a note's first row, the
+     * note; elsewhere nothing — and moving after still selects.
      */
-    function startHold(slot, lane, row, noteDrag) {
-        cancelHold();
-        pending = { slot, lane, row, noteDrag };
+    function startPress(slot, lane, row, inSel) {
+        cancelPress();
+        pending = { slot, lane, row, inSel };
         pending.timer = setTimeout(armHold, HOLD_MS);
-        document.addEventListener('mousemove', onHoldMove);
-        document.addEventListener('mouseup', cancelHold);
+        document.addEventListener('mousemove', onPressMove);
+        document.addEventListener('mouseup', onPressUp);
     }
 
-    function onHoldMove(e) {
+    function onPressMove(e) {
         if (!pending) return;
         const t = bySlot(pending.slot);
-        const c = t && cellIn(t, e);
-        if (!c || c.lane !== pending.lane || c.row !== pending.row) cancelHold();
+        if (!t) { cancelPress(); return; }
+        const c = cellIn(t, e);
+        if (c.lane === pending.lane && c.row === pending.row) return;
+        const { slot, lane, row } = pending;
+        cancelPress();
+        // Left the cell before any hold: drag out a selection from it.
+        if (!startSelection(slot, lane, row)) { say('Select inside a pattern: there is no clip here'); draw(); return; }
+        selDrag = { slot };
+        document.addEventListener('mousemove', onSelMove);
+        document.addEventListener('mouseup', onSelEnd);
+        extendSelection(c.lane, c.row);
     }
 
-    function cancelHold() {
+    function onPressUp() {
+        const p = pending;
+        cancelPress();
+        // A click inside the selection drops it, as a click elsewhere did.
+        if (p && p.inSel) { clearSelection(); draw(); }
+    }
+
+    function cancelPress() {
         if (!pending) return;
         clearTimeout(pending.timer);
         pending = null;
-        document.removeEventListener('mousemove', onHoldMove);
-        document.removeEventListener('mouseup', cancelHold);
+        document.removeEventListener('mousemove', onPressMove);
+        document.removeEventListener('mouseup', onPressUp);
     }
 
     function armHold() {
         const p = pending;
-        cancelHold();
         const t = p && bySlot(p.slot);
-        if (!t) return;
+        if (!t) { cancelPress(); return; }
         // Read against the layout as it is now: a press can re-render (a
         // new active track), so nothing from the press itself is trusted.
-        const ev = p.noteDrag && !t.track.compact && t.events.find(v => v.col === p.row && v.lane === p.lane);
-        if (ev) {
+        const st = p.inSel ? selTarget() : null;
+        const ev = !st && !t.track.compact && t.events.find(v => v.col === p.row && v.lane === p.lane);
+        if (!st && !ev) { p.timer = null; return; }   // nothing to move: still a press
+        cancelPress();
+        if (st) {
+            blockMove = { st, slot: p.slot, row: p.row, lane: p.lane, dr: 0, dl: 0 };
+            document.addEventListener('mousemove', onBlockMove);
+            document.addEventListener('mouseup', onBlockEnd);
+            say('Move the selection');
+        } else {
             drag = { event: ev, track: t, row: p.row };
             document.addEventListener('mousemove', onDragMove);
             document.addEventListener('mouseup', onDragEnd);
             say('Drag ' + noteName(ev.midi) + ' up or down');
-        } else {
-            if (!startSelection(p.slot, p.lane, p.row)) { say('Select inside a pattern: there is no clip here'); return; }
-            selDrag = { slot: p.slot };
-            document.addEventListener('mousemove', onSelMove);
-            document.addEventListener('mouseup', onSelEnd);
-            say('Drag to select');
         }
         armed = { slot: p.slot, lane: t.track.compact ? 0 : p.lane, row: p.row };
-        canvas.style.cursor = ev ? 'grabbing' : 'cell';
+        canvas.style.cursor = 'grabbing';
         draw();
     }
 
     function disarm() {
         armed = null;
         canvas.style.cursor = '';
+    }
+
+    // --- Moving the selection ---
+
+    /** Follow the pointer, the block held inside its repeat and its track's lanes. */
+    function onBlockMove(e) {
+        const m = blockMove;
+        const t = m && bySlot(m.slot);
+        if (!t) return;
+        const c = cellIn(t, e);
+        const { st } = m;
+        const maxLane = t.track.compact ? 0 : t.viewLanes - 1;
+        const dr = Math.max(sel.lo - st.c0, Math.min(sel.hi - st.c1, c.row - m.row));
+        const dl = Math.max(-st.l0, Math.min(maxLane - st.l1, c.lane - m.lane));
+        if (dr !== m.dr || dl !== m.dl) { m.dr = dr; m.dl = dl; draw(); }
+    }
+
+    function onBlockEnd(e) {
+        document.removeEventListener('mousemove', onBlockMove);
+        document.removeEventListener('mouseup', onBlockEnd);
+        disarm();
+        if (!blockMove) return;
+        onBlockMove(e);
+        const { st, dr, dl } = blockMove;
+        blockMove = null;
+        say('');
+        if (!dr && !dl) { draw(); return; }
+        moveBlock(st.pattern, st.p0, st.p1, st.l0, st.l1, dr, dl);
+        // The selection travels with what it held.
+        for (const c of [sel.a, sel.h]) { c.col += dr; c.lane += dl; }
+        cursor.col += dr;
+        cursor.lane += dl;
+        edited(st.pattern);
+    }
+
+    /** While moving: the block's outline and its notes, where they would land. */
+    function drawBlockMove(ctx) {
+        const m = blockMove;
+        const t = m && bySlot(m.slot);
+        if (!t || (!m.dr && !m.dl)) return;
+        const { st } = m;
+        const x = t.x + (st.l0 + m.dl) * LANE_W;
+        const y = (st.c0 + m.dr) * ROW_H;
+        ctx.setLineDash && ctx.setLineDash([4, 3]);
+        ctx.strokeStyle = '#2196f3';
+        ctx.strokeRect(x + 0.5, y + 0.5, (st.l1 - st.l0 + 1) * LANE_W - 1, (st.c1 - st.c0 + 1) * ROW_H - 1);
+        ctx.setLineDash && ctx.setLineDash([]);
+        ctx.fillStyle = '#64b5f6';
+        for (const ev of t.events) {
+            if (ev.col < st.c0 || ev.col > st.c1 || ev.lane < st.l0 || ev.lane > st.l1) continue;
+            ctx.fillText(noteName(ev.midi), t.x + (ev.lane + m.dl) * LANE_W + 4, (ev.col + m.dr) * ROW_H + ROW_H / 2);
+        }
     }
 
     /** The cell under a client point, read against the selection's track. */
@@ -949,12 +1025,6 @@ export function createTracker(opts) {
         document.removeEventListener('mousemove', onSelMove);
         document.removeEventListener('mouseup', onSelEnd);
         selDrag = null;
-        if (armed) {
-            disarm();
-            // Held and released without moving: one cell, no selection.
-            if (!selRect()) { clearSelection(); say(''); }
-            draw();
-        }
     }
 
     function onDragMove(e) {

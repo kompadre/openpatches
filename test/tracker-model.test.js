@@ -11,7 +11,7 @@ import {
 } from '../html/components/project-model.js';
 import {
     noteName, deriveLanes, applyLanes, relane, trackLaneCount, expandTrack, compactCells, locate,
-    putNote, putOff, clearCell, growBlocker, measuresFor, moveNote, clearRange, fillRange,
+    putNote, putOff, clearCell, growBlocker, measuresFor, moveNote, clearRange, fillRange, moveBlock,
 } from '../html/components/tracker-model.js';
 
 const N = (midi, start, dur, lane) => (lane == null ? { midi, start, dur } : { midi, start, dur, lane });
@@ -360,5 +360,43 @@ describe('fillRange / clearRange (the selection)', () => {
         const b = pat([N(60, 0, 12)]);
         assert.equal(clearRange(b, 4, 8, 0), false);
         assert.deepEqual(sorted(b), [[60, 0, 12, 0]]);
+    });
+});
+
+describe('moveBlock (moving the selection)', () => {
+    const sorted = (p) => view(p).sort((a, b) => a[3] - b[3] || a[1] - b[1]);
+
+    test('notes starting in the block travel down with their lengths', () => {
+        const p = pat([N(60, 0, 2), N(62, 2, 2), N(67, 12, 4)]);
+        assert.equal(moveBlock(p, 0, 3, 0, 0, 4, 0), true);
+        assert.deepEqual(sorted(p), [[60, 4, 2, 0], [62, 6, 2, 0], [67, 12, 4, 0]]);
+    });
+
+    test('the destination is overwritten; a note sounding into it is cut at its top', () => {
+        const p = pat([N(60, 0, 2), N(50, 4, 3), N(52, 7, 1)]);   // one lane; block 0–1 → 6–7
+        moveBlock(p, 0, 1, 0, 0, 6, 0);
+        assert.deepEqual(sorted(p), [[50, 4, 2, 0], [60, 6, 2, 0]], '52 overwritten, 50 cut at row 6');
+    });
+
+    test('a moved note stops at the next note in its lane, and at the pattern end', () => {
+        const a = pat([N(60, 0, 8), N(67, 10, 2)]);
+        moveBlock(a, 0, 0, 0, 0, 4, 0);
+        assert.deepEqual(sorted(a), [[60, 4, 6, 0], [67, 10, 2, 0]]);
+        const b = pat([N(60, 0, 8)]);
+        moveBlock(b, 0, 3, 0, 0, 12, 0);
+        assert.deepEqual(sorted(b), [[60, 12, 4, 0]]);
+    });
+
+    test('across lanes: lane 0 into lane 1, the other lanes untouched', () => {
+        const p = pat([N(60, 0, 4), N(64, 0, 16, 1)]);
+        moveBlock(p, 0, 3, 0, 0, 8, 1);
+        // 64 in lane 1 is cut at row 8 where the block lands; 60 lands there.
+        assert.deepEqual(sorted(p), [[64, 0, 8, 1], [60, 8, 4, 1]]);
+    });
+
+    test('a note sounding into the vacated cells keeps its length; no move, no change', () => {
+        const p = pat([N(60, 0, 8), N(62, 4, 2)]);
+        moveBlock(p, 4, 5, 0, 0, 0, 0);
+        assert.deepEqual(sorted(p), [[60, 0, 8, 0], [62, 4, 2, 0]]);
     });
 });

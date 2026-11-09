@@ -408,3 +408,50 @@ export function fillRange(pattern, col0, col1, lane, midi, step) {
         else putNote(pattern, c, lane, midi);
     }
 }
+
+/**
+ * Move a block of cells — pattern columns `c0`..`c1`, lanes `l0`..`l1` —
+ * by `dr` columns and `dl` lanes. The notes that start inside it travel
+ * with their lengths; the destination is overwritten (notes starting in
+ * it go, one sounding into its top is cut there); each moved note is then
+ * shortened, if need be, to stop at the next note in its lane or the
+ * pattern's end. Notes outside the block stay put — one sounding into the
+ * vacated cells keeps its length. The caller keeps the block inside the
+ * pattern and the track's lanes. Returns whether anything changed.
+ */
+export function moveBlock(pattern, c0, c1, l0, l1, dr, dl) {
+    if (!dr && !dl) return false;
+    const d = freeze(pattern);
+    const len = patternCols(pattern);
+    const laneOf = new Map();                 // moved note → its new lane
+    for (let lane = l0; lane <= l1; lane++) {
+        for (const n of inLane(pattern, d, lane)) {
+            if (n.start >= c0 && n.start <= c1) laneOf.set(n, lane + dl);
+        }
+    }
+    for (const n of laneOf.keys()) pattern.notes.splice(pattern.notes.indexOf(n), 1);
+    // Overwrite the destination, lane by lane.
+    const t0 = c0 + dr, t1 = c1 + dr;
+    for (let lane = l0 + dl; lane <= l1 + dl; lane++) {
+        for (const n of inLane(pattern, d, lane)) {
+            if (n.start >= t0 && n.start <= t1) pattern.notes.splice(pattern.notes.indexOf(n), 1);
+            else if (n.start < t0 && endOf(n) > t0) n.dur = t0 - n.start;
+        }
+    }
+    for (const [n, lane] of laneOf) {
+        n.start += dr;
+        setLane(n, lane);
+        pattern.notes.push(n);
+    }
+    // Moved notes stop at the next note in their lane, and at the end.
+    const lane = (n) => (laneOf.has(n) ? laneOf.get(n) : d.lane.get(n));
+    for (const n of laneOf.keys()) {
+        let to = len;
+        for (const o of pattern.notes) {
+            if (o !== n && lane(o) === lane(n) && o.start > n.start) to = Math.min(to, o.start);
+        }
+        n.dur = Math.max(1, Math.min(n.dur, to - n.start));
+    }
+    sortNotes(pattern);
+    return true;
+}

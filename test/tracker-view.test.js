@@ -17,8 +17,8 @@ before(async () => {
 
 let session;
 
-// Drags start after a held press (HOLD_MS): the clock is mocked, and
-// `hold()` waits it out. Commits are tested through flush(), never a timer.
+// Moves start after a held press (HOLD_MS): the clock is mocked, and
+// `hold()` waits it out. A drag straight away selects. Commits are tested through flush(), never a timer.
 // Each test's own mock (t.mock), which node scopes and restores per test.
 const HOLD = 1000;
 let clock = null;
@@ -369,12 +369,11 @@ describe('tracker selection', () => {
     // A drag from one cell to another: press, then document move and release.
     const dragSel = (h, x0, row0, x1, row1, extra = {}) => {
         h.canvas.dispatch('mousedown', { clientX: x0, clientY: row0 * ROW + 4, ...extra });
-        hold();
         docFire('mousemove', { clientX: x1, clientY: row1 * ROW + 4 });
         docFire('mouseup', { clientX: x1, clientY: row1 * ROW + 4 });
     };
 
-    test('a held drag selects a block; a note then fills it every Step rows', () => {
+    test('a drag selects a block; a note then fills it every Step rows', () => {
         const { pattern } = seedPattern(session, { notes: [] });
         const h = build();
         setStep(h.q, 4);
@@ -389,48 +388,81 @@ describe('tracker selection', () => {
         assert.ok(h.tracker.getSelection(), 'the selection stays, so another note can replace it');
     });
 
-    test('without the hold a drag is just a click: no block, no note moved', () => {
+    test('a drag straight away selects, from a note too, and moves nothing', () => {
         const { pattern } = seedPattern(session, { notes: [N(60, 2, 2)] });
         const h = build();
         const x = h.head(0).x + 4;
-        // From an empty cell, and from the note's first row, straight away.
-        for (const row0 of [5, 2]) {
-            h.canvas.dispatch('mousedown', { clientX: x, clientY: row0 * ROW + 4 });
-            docFire('mousemove', { clientX: x, clientY: 10 * ROW + 4 });
-            hold();                                       // the second runs out after the pointer left
-            docFire('mousemove', { clientX: x, clientY: 12 * ROW + 4 });
-            docFire('mouseup', { clientX: x, clientY: 12 * ROW + 4 });
-            assert.equal(h.tracker.getSelection(), null);
-            assert.equal(h.tracker.getCursor().col, row0, 'the press placed the cursor, nothing more');
-        }
-        assert.deepEqual(notesOf(pattern.id), [[60, 2, 2, 0]]);
+        dragSel(h, x, 2, x, 6);                           // from the note's first row
+        assert.deepEqual(h.tracker.getSelection(), { slot: 0, lanes: [0, 0], rows: [2, 6] });
+        assert.deepEqual(notesOf(pattern.id), [[60, 2, 2, 0]], 'not moved');
     });
 
-    test('a release before the second is a click; a held, unmoved release leaves no block', () => {
+    test('held for a second on a note, a drag moves the note; sooner, it selects', () => {
+        const { pattern } = seedPattern(session, { notes: [N(60, 2, 2)] });
+        const h = build();
+        const x = h.head(0).x + 4;
+        h.canvas.dispatch('mousedown', { clientX: x, clientY: 2 * ROW + 4 });
+        clock.tick(HOLD - 1);
+        docFire('mousemove', { clientX: x, clientY: 6 * ROW + 4 });
+        docFire('mouseup', { clientX: x, clientY: 6 * ROW + 4 });
+        assert.deepEqual(notesOf(pattern.id), [[60, 2, 2, 0]], 'a second not yet up: selected instead');
+        assert.ok(h.tracker.getSelection());
+
+        h.canvas.dispatch('mousedown', { clientX: x, clientY: 2 * ROW + 4 });   // inside the block…
+        docFire('mouseup', {});                                                  // …a click drops it
+        assert.equal(h.tracker.getSelection(), null);
+        h.canvas.dispatch('mousedown', { clientX: x, clientY: 2 * ROW + 4 });
+        hold();
+        assert.match(h.q('.tracker-status').textContent, /Drag C-4 up or down/);
+        docFire('mousemove', { clientX: x, clientY: 6 * ROW + 4 });
+        docFire('mouseup', { clientX: x, clientY: 6 * ROW + 4 });
+        h.tracker.flush();
+        assert.deepEqual(notesOf(pattern.id), [[60, 6, 2, 0]]);
+    });
+
+    test('held on an empty cell nothing arms; moving after still selects', () => {
         seedPattern(session, { notes: [] });
         const h = build();
         const x = h.head(0).x + 4;
         h.canvas.dispatch('mousedown', { clientX: x, clientY: 3 * ROW + 4 });
-        clock.tick(HOLD - 1);
-        docFire('mouseup', {});
-        clock.tick(10);
-        assert.match(h.q('.tracker-status').textContent, /^$/, 'never armed');
-        h.canvas.dispatch('mousedown', { clientX: x, clientY: 3 * ROW + 4 });
         hold();
-        assert.match(h.q('.tracker-status').textContent, /Drag to select/, 'armed, and says so');
-        docFire('mousemove', { clientX: x + 2, clientY: 3 * ROW + 6 });   // jitter inside the cell
-        docFire('mouseup', {});
-        assert.equal(h.tracker.getSelection(), null);
         assert.equal(h.q('.tracker-status').textContent, '');
+        docFire('mousemove', { clientX: x, clientY: 7 * ROW + 4 });
+        docFire('mouseup', { clientX: x, clientY: 7 * ROW + 4 });
+        assert.deepEqual(h.tracker.getSelection().rows, [3, 7]);
     });
 
-    test('a hold on a note says it is armed to move', () => {
-        seedPattern(session, { notes: [N(60, 2, 2)] });
+    test('held inside the selection, a drag moves the whole block, and the selection with it', () => {
+        const { pattern } = seedPattern(session, { notes: [N(60, 0, 2), N(62, 2, 2), N(67, 12, 4)] });
         const h = build();
-        h.canvas.dispatch('mousedown', { clientX: h.head(0).x + 4, clientY: 2 * ROW + 4 });
+        const x = h.head(0).x + 4;
+        dragSel(h, x, 0, x, 3);                           // rows 0–3: 60 and 62
+        h.canvas.dispatch('mousedown', { clientX: x, clientY: 1 * ROW + 4 });
+        assert.ok(h.tracker.getSelection(), 'a press inside keeps it');
         hold();
-        assert.match(h.q('.tracker-status').textContent, /Drag C-4 up or down/);
-        docFire('mouseup', { clientX: h.head(0).x + 4, clientY: 2 * ROW + 4 });
+        assert.match(h.q('.tracker-status').textContent, /Move the selection/);
+        docFire('mousemove', { clientX: x, clientY: 5 * ROW + 4 });
+        docFire('mouseup', { clientX: x, clientY: 5 * ROW + 4 });
+        h.tracker.flush();
+        assert.deepEqual(notesOf(pattern.id), [[60, 4, 2, 0], [62, 6, 2, 0], [67, 12, 4, 0]]);
+        assert.deepEqual(h.tracker.getSelection().rows, [4, 7], 'the selection followed');
+    });
+
+    test('a block move is held inside its repeat and its track', () => {
+        const { pattern } = seedPattern(session, { notes: [N(60, 0, 2)] });
+        seedPattern(session, { slot: 1, notes: [] });
+        const h = build();
+        const x = h.head(0).x + 4;
+        dragSel(h, x, 0, x, 3);
+        h.canvas.dispatch('mousedown', { clientX: x, clientY: 2 * ROW + 4 });
+        hold();
+        // Far down and into the next track: rows stop at the pattern's
+        // end (block 0–3 → 12–15), lanes at the track's last (its spare).
+        docFire('mousemove', { clientX: h.head(1).x + 4, clientY: 40 * ROW + 4 });
+        docFire('mouseup', { clientX: h.head(1).x + 4, clientY: 40 * ROW + 4 });
+        h.tracker.flush();
+        assert.deepEqual(notesOf(pattern.id), [[60, 12, 2, 0]], 'packed back to lane 0 on commit');
+        assert.deepEqual(h.tracker.getSelection().rows, [12, 15]);
     });
 
     test('a selection is held inside its track and its pattern (one repeat)', () => {
@@ -452,18 +484,6 @@ describe('tracker selection', () => {
         const x = h.head(0).x + 4;
         dragSel(h, x, 20, x, 10);
         assert.equal(h.tracker.getSelection(), null);
-    });
-
-    test('a held drag on a note moves it; a Shift-held drag from it selects instead', () => {
-        const { pattern } = seedPattern(session, { notes: [N(60, 2, 2)] });
-        const h = build();
-        const x = h.head(0).x + 4;
-        dragSel(h, x, 2, x, 6);
-        assert.deepEqual(notesOf(pattern.id), [[60, 6, 2, 0]], 'moved');
-        assert.equal(h.tracker.getSelection(), null);
-        dragSel(h, x, 6, x, 9, { shiftKey: true });
-        assert.deepEqual(h.tracker.getSelection(), { slot: 0, lanes: [0, 0], rows: [6, 9] });
-        assert.deepEqual(notesOf(pattern.id), [[60, 6, 2, 0]], 'not moved');
     });
 
     test('Shift-click and Shift-arrows extend from the cursor; a plain click or Escape drops it', () => {
@@ -489,7 +509,7 @@ describe('tracker selection', () => {
         const { pattern } = seedPattern(session, { notes: [N(60, 0, 2), N(62, 2, 2), N(64, 4, 12)] });
         const h = build();
         const x = h.head(0).x + 4;
-        dragSel(h, x, 1, x, 3);                           // row 1 is inside 60, not its start: a plain drag selects
+        dragSel(h, x, 1, x, 3);
         h.key('Delete', { key: 'Delete' });
         h.tracker.flush();
         assert.deepEqual(notesOf(pattern.id), [[60, 0, 4, 0], [64, 4, 12, 0]], '62 gone, 60 sustains through');

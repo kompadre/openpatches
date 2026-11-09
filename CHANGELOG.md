@@ -2,6 +2,19 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-09: Tracker — drag selects, hold moves (and the selection can be moved)
+
+**Course correction (user):** the hold belongs to *moving*, so the immediate drag is free for selecting — the previous change had it the wrong way round (a hold before selecting).
+
+- **Press and drag straight away → select**, from any cell, a note's first row included.
+- **Hold a second on a note's first row, then drag → move the note** (as before, past the pattern's end it grows it).
+- **Hold a second inside the selection, then drag → move the whole block** (new): the notes starting in it travel with their lengths, rows held inside the clip's repeat and lanes inside the track; the destination is overwritten (notes starting there go, one sounding into its top is cut there) and moved notes stop at the next note in their lane. A dashed outline and ghost note names show where it lands; the selection follows it. New model function `moveBlock` (`tracker-model.js`).
+- A press inside the selection keeps it until it becomes a gesture; released as a click, it drops the selection. Held on an empty cell nothing arms, and moving after still selects. The armed cell gets a blue ring and the status says "Drag G-4 up or down" / "Move the selection".
+
+Tests: `tracker-model` +5 (`moveBlock`: travel with lengths, overwrite + cut, stop at the next note / pattern end, across lanes, no-op); `tracker-view` reworked for the corrected gestures (+5: immediate drag from a note selects; hold on a note moves, sooner selects; hold on empty arms nothing; hold inside the selection moves the block and the selection; block move clamped to repeat and track); e2e `tracker` +1 (real hold-and-drag of a selected block), the others adjusted. 1120 unit, 126 e2e.
+
+Noticed, not changed: `section-editor.test.js` › "every pattern has one…" is flaky (~1 in 12): it asserts two random pattern ids hash to different colours out of 12.
+
 ## 2026-11-09: Tracker — drags start with a one-second hold
 
 **A press in the Tracker grid only places the cursor now.** Held still on its cell for **one second**, it arms a drag: on a note's first row the note moves (up/down, growing the pattern past its end as before), anywhere else a selection is dragged out. The pressed cell gets a blue ring, the pointer changes, and the status says which ("Drag G-4 up or down" / "Drag to select"). Leaving the cell or releasing before the second is up is a plain click, so clicking around never nudges a note or starts a block by accident; jitter inside the cell is fine. A held release without moving leaves no selection. Shift-click and Shift-arrows still extend a selection from the cursor at once; a Shift-hold on a note selects from it instead of moving it.
