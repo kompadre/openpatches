@@ -25,6 +25,8 @@ import { attachSaveIndicator, attachSaveWarning } from './components/save-indica
 import { openModal, el } from './components/modal.js';
 import { planStorage, formatBytes } from './components/storage-gc.js';
 import { importCandidates, planImport } from './components/project-merge.js';
+import { createCollab } from './components/collab.js';
+import { attachCollabChip, openCollabDialog } from './components/collab-panel.js';
 
 const fileInput = document.getElementById('wav-input');
 
@@ -1421,6 +1423,26 @@ attachSaveWarning({ session: projectSession, lost: takeLostSaveMarker() });
 // The e2e seam, as window.__opDock is for the dock.
 window.__opProject = projectSession;
 
+// --- Collaborate (collab.js): share the open project, or watch one ---
+//
+// A watched project brings its own patches, so the canvas is rebuilt the
+// way a project switch rebuilds it. `?join=CODE` joins on load — what the
+// host's "Open a watching tab" opens.
+const collab = createCollab({
+    session: projectSession,
+    onBench: () => initCanvas(getCanvasOpts()),
+});
+window.__opCollab = collab;
+window.addEventListener('pagehide', () => collab.close());
+function openCollab() {
+    openCollabDialog({
+        collab, session: projectSession, appendLog,
+        openTab: (code) => window.open(location.pathname + '?join=' + encodeURIComponent(code), '_blank'),
+    });
+}
+document.getElementById('menu-collab').addEventListener('click', openCollab);
+attachCollabChip({ collab, chip: document.getElementById('menu-collab-chip'), appendLog, openDialog: openCollab });
+
 // The editors read the open project synchronously, so it has to be open
 // before they are built — hence the top-level await. A store that cannot
 // start (IndexedDB blocked in a locked-down profile) must not take the
@@ -1448,6 +1470,19 @@ projectSession.subscribe((ev) => {
     if (ev.kind === 'tracks' || ev.kind === 'project') pushFx();
 });
 pushFx();
+
+{
+    const params = new URLSearchParams(location.search);
+    const code = params.get('join');
+    if (code) {
+        params.delete('join');
+        const rest = params.toString();
+        history.replaceState(null, '', location.pathname + (rest ? '?' + rest : '') + location.hash);
+        collab.join(code.toUpperCase())
+            .then(() => appendLog('Collab: watching ' + (collab.status().hostName || code)))
+            .catch(() => { /* said already: the chip logs the notice */ });
+    }
+}
 
 // --- Effects: the e2e seam ---
 //

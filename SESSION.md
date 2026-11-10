@@ -17,6 +17,34 @@ run `node --check` + `node --test` and tick this file only. (Open: AGENTS.md
 "Keep it current ... in the same commit/change" reads per-change; awaiting
 the user's wording if SESSION.md should be deferred too.)
 
+### Collaborative editing — M1 DONE 2026-11-10; M2 (guest edits) next
+
+TODO.md › Collaborative editing has the plan. What the next agent must not
+break:
+
+- **Parts, not operations** (`collab-model.js`): `patterns/<id>`,
+  `patches/<id>`, and each other top-level key; `id`, `created`,
+  `modified`, `schemaVersion` never travel. Parts are JSON text — the
+  host's diff is string inequality, so anything that makes serialisation
+  unstable (key order churn, a `Date` object) shows up as constant traffic.
+- **Hints come from session events** (`hintFor`): `pattern` + patternId →
+  that pattern only; `patches` → the bench keys; anything else → a full
+  diff. An edit that mutates the body without any session event is
+  invisible to the host until the next event — the same rule autosave has.
+- **Guests apply patterns in place** (same object, same `notes` array):
+  the roll and the tracker hold them. Everything else via the model
+  factories + `normalizeProject`.
+- **Ephemeral store** (`adoptEphemeral`, `isEphemeral`): never written,
+  journaled or upserted into the profile. Any `open`/`adoptNow` ends it.
+  `session.joinAsGuest/leaveGuest/isGuest`; `changed()` and `adopted()`
+  skip the profile while guest.
+- **View only in M1**: a guest's non-`collab` data event schedules a revert
+  (`divergence` vs the mirror). Expect this to become "send to host" in M2.
+- Same-browser caveat: two tabs share localStorage/IndexedDB, so a guest
+  tab boots into whatever project the profile says is current (often the
+  host's) before joining, and "back to my project" returns there. Fine for
+  M1's BroadcastChannel; M3's other machines do not have it.
+
 ### Tracker — phases 1–3 DONE 2026-11-07; phase 4 (mobile) pending
 
 The Section as rows (TODO.md › Tracker has the plan and the decisions).

@@ -574,6 +574,56 @@ describe('the page going away', () => {
     });
 });
 
+describe('ephemeral bodies (watching a collab host)', () => {
+    test('held in memory only: edits, ticks, flushes and the page going away write nothing', async () => {
+        const store = createProjectStore({ backend, intervalMs: 10, bindLifecycle: true });
+        await store.adopt({ name: 'Mine' });
+        const mine = store.getId();
+        let writes = 0;
+        const save = backend.save;
+        backend.save = (...a) => { writes++; return save(...a); };
+
+        store.adoptEphemeral({ id: 'prj_theirs', name: 'Theirs' });
+        assert.equal(store.isEphemeral(), true);
+        assert.equal(store.get().name, 'Theirs');
+        store.get().bpm = 99;
+        store.touch();
+        assert.equal(store.isDirty(), false);
+        await tick(30);
+        await store.flush({ force: true });
+        document.visibilityState = 'hidden';
+        for (const fn of document._listeners.visibilitychange || []) fn();
+        for (const fn of window._listeners?.pagehide || []) fn();
+        await tick(5);
+        assert.equal(writes, 0);
+        assert.equal(await backend.load('prj_theirs'), null);
+        assert.equal(localStorage.getItem('openpatches_project_journal'), null, 'not journaled either');
+
+        // Opening ours ends it.
+        await store.open(mine);
+        assert.equal(store.isEphemeral(), false);
+        store.touch();
+        assert.equal(store.isDirty(), true);
+    });
+
+    test('the outgoing body is flushed before an ephemeral one replaces it', async () => {
+        const store = await opened();
+        store.get().bpm = 133;
+        store.touch();
+        store.adoptEphemeral({ name: 'Theirs' });
+        await store.whenIdle();
+        const id = (await backend.listIds())[0];
+        assert.equal((await backend.load(id)).bpm, 133);
+    });
+
+    test('adoptNow ends it', () => {
+        const store = makeStore();
+        store.adoptEphemeral({ name: 'Theirs' });
+        store.adoptNow({ name: 'Imported' });
+        assert.equal(store.isEphemeral(), false);
+    });
+});
+
 describe('the body is plain JSON', () => {
     test('what comes out of the backend is a copy, not the live object', async () => {
         const store = await opened();

@@ -15,6 +15,15 @@
 //   'tracks'   — the band changed: added, removed, renamed, re-patched
 //   'saving'   — a write started or finished (for the save indicator)
 //
+// ## Guest mode
+//
+// Watching someone else's project in a collab session (collab.js) opens
+// their body as **ephemeral**: held in memory, never written, journaled
+// or listed in this profile's projects. Edits notify as usual, so every
+// editor works unchanged. Leaving goes back to the project that was open
+// before (or keeps a copy as a new project of our own); opening any other
+// project ends it too.
+//
 // ## Persistence
 //
 // The session never writes storage itself. It mutates the in-memory body
@@ -36,6 +45,9 @@ import { profileStore } from './profile-store.js';
 
 export function createProjectSession(store) {
     let sectionId = null;
+    // Watching a collab host's project: the id of ours to go back to.
+    let guestOf = null;
+    const isGuest = () => !!(store.isEphemeral && store.isEphemeral());
     const subscribers = new Set();
 
     function notify(kind, detail = {}) {
@@ -63,7 +75,7 @@ export function createProjectSession(store) {
         const project = store.get();
         if (!project) return null;
         store.touch(kind);
-        profileStore.upsert(project);
+        if (!isGuest()) profileStore.upsert(project);
         notify(kind, { source, projectId: project.id, ...detail });
         return project;
     }
@@ -295,6 +307,42 @@ export function createProjectSession(store) {
             return api.createFrom({ ...body, name: `${body.name} copy` }, source);
         },
 
+        // --- Guest mode (see the header) ---
+
+        /**
+         * Open a collab host's project, ephemeral. `sectionId` is the one
+         * the host is on, when it exists. Remembers our own project the
+         * first time, so a re-join (the host switched project) still goes
+         * back to ours.
+         */
+        joinAsGuest(body, { sectionId: wanted } = {}, source) {
+            if (!isGuest()) guestOf = store.getId();
+            store.adoptEphemeral(createProject(body || {}));
+            const project = store.get();
+            sectionId = wanted && getSection(project, wanted) ? wanted : project.sections[0].id;
+            notify('project', { source, projectId: project.id, guest: true });
+            return project;
+        },
+
+        isGuest() { return isGuest(); },
+
+        /**
+         * Stop watching. `keepCopy` makes the watched project ours — a
+         * new project, fresh id and free name, like an import. Otherwise
+         * back to the project open before, else the usual fallbacks.
+         */
+        async leaveGuest(source, { keepCopy = false } = {}) {
+            if (!isGuest()) return store.get();
+            const back = guestOf;
+            guestOf = null;
+            if (keepCopy) return api.createFrom(store.get(), source);
+            if (back && await tryOpen(back)) return adopted(source);
+            for (const entry of profileStore.list()) {
+                if (await tryOpen(entry.id)) return adopted(source);
+            }
+            return api.createNew('Untitled project', source);
+        },
+
         /** Rename the open project. */
         rename(name, source) {
             const project = store.get();
@@ -409,8 +457,11 @@ export function createProjectSession(store) {
         if (!store.get()) return createProject({ name: 'Untitled project' });
         const project = store.get();
         sectionId = project.sections[0].id;
-        profileStore.upsert(project);
-        profileStore.setCurrent(project.id);
+        if (!isGuest()) {
+            guestOf = null;
+            profileStore.upsert(project);
+            profileStore.setCurrent(project.id);
+        }
         notify('project', { source, projectId: project.id });
         return project;
     }

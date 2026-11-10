@@ -85,6 +85,29 @@ note would be a lie about what plays):
   reading downward.
 - [ ] **Phase 4 — Mobile** (later): tap-to-cursor and an entry pad.
 
+### Collaborative editing (agreed 2026-11-10) — milestones in order
+
+Host-authoritative: one person's session is the controller; others join it,
+see the project, play it, and (from M2) edit it. What travels is **parts**
+(a pattern, a patch, the track list…) resent whole when they change, cut
+from the session's existing `source`-tagged events and debounced commits —
+no operation log, no CRDT. Conflicts: last writer wins *per part*.
+Transport-agnostic protocol; browsers cannot accept sockets, so "p2p" is a
+relay (first) or WebRTC (later, if latency matters).
+
+- [x] **M1 — Protocol + mirror, one browser.** `collab-model.js` (parts,
+  diff, in-place apply, messages), `collab.js` (host/guest over a
+  pluggable channel; BroadcastChannel first), store/session guest mode
+  (ephemeral body), File › Collaborate…, menu-bar chip, `?join=CODE`.
+  Guests watch and play; their edits are reverted with a notice.
+- [ ] **M2 — Guest edits.** Guest commits flow to the host, the host orders
+  and rebroadcasts (LWW per part). Presence beyond a count.
+- [ ] **M3 — Real network.** A room relay (`/api/room/{code}` WebSocket in
+  the Go service; a dev relay for `server.py`), join by code from another
+  machine, heartbeats, reconnect + resync, host-gone handling.
+- [ ] **M4 — Comforts.** Remote cursors/selections, follow the host's
+  transport, soft locks ("Alex is editing Riff"), names and colours.
+
 ### Ideas
 
 - [ ] Import and export **MIDI** (patterns ↔ MIDI files; a section or the piece as a multi-track SMF).

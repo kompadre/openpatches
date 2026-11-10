@@ -200,6 +200,33 @@ body {
 
 .menu-status:hover { color: #ddd; }
 
+/* Collab: the chip while a session is on, and the dialog */
+.menu-collab-chip {
+    margin-left: auto;
+    font-size: 0.72rem;
+    padding: 0.1rem 0.5rem;
+    border-radius: 3px;
+    border: 1px solid #3a6;
+    background: rgba(60, 170, 100, 0.12);
+    color: #8d9;
+    white-space: nowrap;
+    max-width: 22rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+}
+.menu-collab-chip.collab-guest { border-color: #48c; background: rgba(70, 130, 200, 0.12); color: #9bd; }
+.menu-collab-chip.collab-notice { border-color: #f0a030; background: rgba(240, 160, 48, 0.15); color: #f3c070; }
+.menu-collab-chip:not([style*="none"]) + .menu-status { margin-left: 0.25rem; }
+.collab-dialog { min-width: 20rem; max-width: 28rem; }
+.collab-dialog h4 { margin: 0.6rem 0 0.3rem; }
+.collab-dialog .collab-hint { color: #999; font-size: 0.8rem; margin: 0 0 0.5rem; }
+.collab-row { display: flex; gap: 0.5rem; align-items: center; margin: 0.4rem 0; }
+.collab-code-input { width: 8rem; text-transform: uppercase; font-family: monospace; letter-spacing: 0.1em; }
+.collab-code { font: bold 1.6rem monospace; letter-spacing: 0.25em; color: #8d9; margin: 0.3rem 0; user-select: all; }
+.collab-peers { color: #999; margin: 0.2rem 0 0.5rem; }
+.collab-error { color: #e94560; margin: 0.4rem 0 0; }
+
 /* ============================================================
    Modal
    ============================================================ */

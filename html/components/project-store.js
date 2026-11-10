@@ -204,6 +204,9 @@ export function createProjectStore(opts = {}) {
 
     let project = null;      // the open body — the source of truth while open
     let dirty = false;
+    // An ephemeral body — someone else's project, watched in a collab
+    // session — is held in memory only: never written, never journaled.
+    let ephemeral = false;
     let timer = null;
     // How many writes are enqueued or running. `saving` is `pending > 0`,
     // and idle is reached when the last of them settles — **however it
@@ -305,7 +308,7 @@ export function createProjectStore(opts = {}) {
      * project, or the end of a take.
      */
     function flush({ force = false } = {}) {
-        if (!project || !dirty) return inFlight;
+        if (!project || !dirty || ephemeral) return inFlight;
         if (!force && !canSave()) return inFlight;   // try again next tick
         const body = clone(project);
         dirty = false;
@@ -348,6 +351,7 @@ export function createProjectStore(opts = {}) {
     function touch(reason = 'edit') {
         if (!project) return;
         project.modified = Date.now();
+        if (ephemeral) { notify(reason); return; }
         dirty = true;
         startTicker();
         notify(reason);
@@ -411,6 +415,7 @@ export function createProjectStore(opts = {}) {
                 : null;
             const body = recovered || stored;
             if (!body) return null;
+            ephemeral = false;
             project = createProject(body);
             dirty = !!recovered;
             notify('open');
@@ -439,6 +444,7 @@ export function createProjectStore(opts = {}) {
          */
         adoptNow(partial, { write = true } = {}) {
             flush({ force: true });              // clones the outgoing body now
+            ephemeral = false;
             project = createProject(partial);
             dirty = write;
             notify('open');
@@ -450,6 +456,23 @@ export function createProjectStore(opts = {}) {
             if (write) flush({ force: true });
             return project;
         },
+
+        /**
+         * Hold a body that is not ours — a project watched in a collab
+         * session — in memory only. The outgoing body is flushed first;
+         * this one is never written or journaled, so it cannot land in
+         * this profile's storage. Any other open/adopt ends it.
+         */
+        adoptEphemeral(partial) {
+            flush({ force: true });
+            project = createProject(partial);
+            dirty = false;
+            ephemeral = true;
+            notify('open');
+            return project;
+        },
+
+        isEphemeral() { return ephemeral; },
 
         /** `adoptNow`, awaited to the point the body is actually written. */
         async adopt(partial) {
