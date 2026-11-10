@@ -88,10 +88,11 @@ note would be a lie about what plays):
 ### Collaborative editing (agreed 2026-11-10) — milestones in order
 
 Host-authoritative: one person's session is the controller; others join it,
-see the project, play it, and (from M2) edit it. What travels is **parts**
+see the project, play it, and (from M2) edit it. Host → guests: **parts**
 (a pattern, a patch, the track list…) resent whole when they change, cut
-from the session's existing `source`-tagged events and debounced commits —
-no operation log, no CRDT. Conflicts: last writer wins *per part*.
+from the session's existing `source`-tagged events and debounced commits.
+Guest → host (M2): **edits made of atomic ops**, refereed per atom —
+earliest start wins (design below). No CRDT.
 Transport-agnostic protocol; browsers cannot accept sockets, so "p2p" is a
 relay (first) or WebRTC (later, if latency matters).
 
@@ -100,8 +101,80 @@ relay (first) or WebRTC (later, if latency matters).
   pluggable channel; BroadcastChannel first), store/session guest mode
   (ephemeral body), File › Collaborate…, menu-bar chip, `?join=CODE`.
   Guests watch and play; their edits are reverted with a notice.
-- [ ] **M2 — Guest edits.** Guest commits flow to the host, the host orders
-  and rebroadcasts (LWW per part). Presence beyond a count.
+- [ ] **M2 — Guest edits, with conflicts refereed per atom.** Design agreed
+  2026-11-10 (user took every recommendation); **next step: phase M2-1.**
+
+  **Atoms** — the smallest independently changeable things:
+  `pattern/<id>/note/<start>:<midi>` (value: `dur`; the lane is *not* in
+  the key — it is re-derived at every commit), `pattern/<id>/{name,measures,color}`,
+  `track/<id>/{name,slot,voice,volume,mute,solo,compact}`,
+  `track/<id>/fx/<effect>/<param>`, `section/<id>/clip/<clipId>/{startCol,repeats,…}`,
+  `section/<id>/{name,bpm,…}`, `sections/order`, project `name`/`bpm`/`fx/<param>`,
+  `patch/<id>` (whole; content-addressed, add/remove only),
+  `canvas/<container>/{x,y}`, and existence atoms (`pattern/<id>`, `track/<id>`,
+  `clip/<id>`…) for create/delete. Notes keyed by start+pitch, **no note ids**
+  (unique after a commit thanks to mergeDuplicates).
+  **Groups**: a delete+insert of one pitch in one pattern within one edit is
+  a move and is accepted or rejected whole; so is a new pattern with its
+  first clip. Everything else is a group of one.
+
+  **Edit** = `{ id, alias, peer, module, base, start, end, groups: [[op…]…] }`,
+  op = `{ atom, before, after }` (compare-and-set; `before` from the guest's
+  host-confirmed mirror). `module` = the session event's `source`. `end` =
+  the editor's commit. `start` = new `session.beginEdit(scope, source)` in
+  tracker (first keystroke into an uncommitted pattern), roll (press), section
+  editor, mixer (grab); editors without it get start = end. Times are
+  **host-clock**: ping/pong offset on join and every 30 s.
+
+  **Referee (host)** per op: current = before → apply; current = after →
+  no-op, accepted; else **conflict**. A conflict exists only if the atom's
+  last accepted writer (host keeps `{edit, alias, module, start, end, version}`
+  per atom) landed after the edit's `base` — versions decide *whether*,
+  never intervals. Ranking: **earliest start wins**, then earliest end, then
+  peer id; the loser's group is rejected (or the displaced winner gets an
+  "overridden" row). **Edit beats delete** regardless of time. Invariants
+  (one track per slot, no orphan/overlapping clips, notes inside the pattern)
+  checked after merging; a violating group is rejected with the reason.
+  **Per-group acceptance**, not all-or-nothing. **Starts older than 2 min
+  lose their priority** (a forgotten open edit cannot win forever).
+
+  **People see**: the chip shows `⚠ n conflicts`; the Log gets a line each;
+  the Collaborate dialog has a session Conflicts table — What · You (value,
+  module, start–end) · Them (alias, value, module, start–end) · Kept (who,
+  why) · **Reapply mine** (re-sends your value as a fresh edit on the current
+  base). Both sides get a row (winner's collapsed). Aliases and colours asked
+  on first Share/Join, stored in the profile. **"Bob is editing Riff"**
+  presence in M2, from `beginEdit` (`begin` message).
+
+  **Guest side**: own edits show at once, marked pending; host parts arriving
+  mid-edit merge **per atom**, skipping atoms with local pending changes
+  (M1's whole-array pattern replace would wipe a tracker edit); acks settle
+  them; rejected atoms take the host's value + a table row. The host's own
+  edits go through the same referee. Resync as M1, pending edits rebased.
+  New messages: `begin`, `edit`, `ack`, `overridden`, `ping`/`pong`.
+
+  Worked examples to become tests: A adds C-4@0 / B adds E-4@4 in one pattern
+  → both; same note same dur → one (agreement); same note dur 4 vs 8 →
+  conflict, earliest start; notes vs rename → both; volume vs delay → both;
+  clip move vs repeats → both unless it now overlaps (invariant conflict);
+  clip to bar 3 vs bar 5 → conflict; delete pattern vs add a note → edit
+  wins, deleter notified; tracker typing that cuts a held note (dur 16→4)
+  vs roll lengthening it to 12 → conflict on that note's dur; overlapping
+  notes in one lane → both, lanes repack.
+
+  - [ ] **M2-1 Atoms and ops** (pure, collab-model or a new `collab-ops.js`):
+    the atom map incl. note keys; diff two bodies → ops with before/after;
+    group moves; apply ops; invariant check.
+  - [ ] **M2-2 Referee** (pure): per-atom last-writer record, CAS outcomes,
+    ranking, edit-beats-delete, 2-minute cap, conflict rows. Every worked
+    example above as a unit test.
+  - [ ] **M2-3 Clock and identity**: ping/pong host-time offset; alias and
+    colour in the profile.
+  - [ ] **M2-4 Wiring**: `beginEdit` in tracker/roll/section/mixer; commits →
+    edits; pending overlay and per-atom merge on guests; acks; the host's own
+    edits through the referee. Removes M1's view-only revert.
+  - [ ] **M2-5 UI**: conflicts table, chip badge, Reapply mine, presence;
+    two-tab e2e that makes each kind of conflict on purpose.
 - [ ] **M3 — Real network.** A room relay (`/api/room/{code}` WebSocket in
   the Go service; a dev relay for `server.py`), join by code from another
   machine, heartbeats, reconnect + resync, host-gone handling.

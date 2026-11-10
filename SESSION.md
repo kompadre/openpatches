@@ -17,10 +17,14 @@ run `node --check` + `node --test` and tick this file only. (Open: AGENTS.md
 "Keep it current ... in the same commit/change" reads per-change; awaiting
 the user's wording if SESSION.md should be deferred too.)
 
-### Collaborative editing — M1 DONE 2026-11-10; M2 (guest edits) next
+### Collaborative editing — M1 DONE 2026-11-10; M2 designed, parked — resume at M2-1
 
-TODO.md › Collaborative editing has the plan. What the next agent must not
-break:
+TODO.md › Collaborative editing › M2 holds the full agreed design (atoms,
+edits with start/end in host time, the per-atom referee: earliest start
+wins, edit beats delete, per-group acceptance, 2-minute cap; conflicts
+table + Reapply mine; presence). Parked by the user on 2026-11-10 evening;
+**pick up at phase M2-1 (atoms and ops, pure)**. What the next agent must
+not break:
 
 - **Parts, not operations** (`collab-model.js`): `patterns/<id>`,
   `patches/<id>`, and each other top-level key; `id`, `created`,
@@ -39,7 +43,9 @@ break:
   `session.joinAsGuest/leaveGuest/isGuest`; `changed()` and `adopted()`
   skip the profile while guest.
 - **View only in M1**: a guest's non-`collab` data event schedules a revert
-  (`divergence` vs the mirror). Expect this to become "send to host" in M2.
+  (`divergence` vs the mirror). M2-4 replaces it with "send to host".
+- **M1 applies host parts whole** (a pattern's notes array refilled); M2's
+  guest must merge per atom instead, or a pending tracker edit is wiped.
 - Same-browser caveat: two tabs share localStorage/IndexedDB, so a guest
   tab boots into whatever project the profile says is current (often the
   host's) before joining, and "back to my project" returns there. Fine for

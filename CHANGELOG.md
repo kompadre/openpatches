@@ -2,6 +2,10 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-10: Collaborate — milestone 2 designed (no code)
+
+The guest-edits milestone was worked out with the user and recorded in TODO.md › Collaborative editing › M2, every recommendation accepted: edits split into **atomic ops** (a note keyed by start+pitch, a track field, a clip field, an fx parameter…) with compare-and-set before/after values, so compatible changes to one pattern merge; moves grouped so they cannot half-apply. Conflicts are detected by **versions** (the atom's last writer landed after the edit's base) and decided by **earliest start** in host-clock time (then end, then peer), with **edit beating delete**, per-group acceptance, invariants checked after merging, and a 2-minute cap on an open edit's priority. Whoever loses (or is overridden) gets a row in a conflicts table — alias, module, start–end, value — with **Reapply mine**; "X is editing Y" presence comes with it. Five phases; parked to resume at M2-1.
+
 ## 2026-11-10: Collaborate — milestone 1: share a project live with other tabs
 
 **File › Collaborate…** shares the open project under a six-character code (no look-alike characters); another tab joins with the code, or by the host's **Open a watching tab** (`?join=CODE`, joined on load and stripped from the URL). The guest gets a live copy it can **play** — playback keeps running while the host edits — and **watches**: an edit on the guest's side is put back to the host's version, part by part, and the chip says so. A chip in the menu bar shows the session (`Sharing CODE · n watching`, `Watching Jam · view only`, `Session ended`) and opens the dialog. When the host stops, the guest keeps the project on screen and chooses **Keep a copy** (a new project of their own) or **Back to my project**. Opening any other project also ends watching.
