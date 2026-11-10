@@ -279,6 +279,59 @@ describe('tracker editing', () => {
         assert.equal(tracker.getCursor().col, 2, 'stepped past both');
     });
 
+    test('a doubled note is merged when the edit commits, not while typing', () => {
+        const { pattern } = seedPattern(session, { notes: [N(60, 0, 4)] });
+        const { head, press, key, tracker } = build();
+        press(head(0).x + 46 + 4, 0);            // row 0, the spare lane 1
+        key('KeyZ');                             // C-4 again, over silence: to the end
+        assert.deepEqual(notesOf(session, pattern.id), [[60, 0, 4, 0], [60, 0, 16, 1]], 'both, while typing');
+        tracker.flush();
+        assert.deepEqual(notesOf(session, pattern.id), [[60, 0, 16, 0]]);
+    });
+
+    const MERGE = '#f0a030';
+    const texts = (h, style) => h.canvas.getContext('2d')._calls
+        .filter(c => c.fn === 'fillText' && (style == null || c.fillStyle === style));
+
+    test('doubles waiting to merge are shown and named; the merge glides and fades, and says so', () => {
+        const { pattern } = seedPattern(session, { notes: [N(60, 0, 4)] });
+        const h = build();
+        h.press(h.head(0).x + 46 + 4, 0);
+        h.key('KeyZ');
+        h.canvas.getContext('2d')._calls.length = 0;
+        h.tracker.render();
+        assert.deepEqual(texts(h, MERGE).map(c => c.args[0]), ['C-4', 'C-4'], 'both in the merge colour');
+        assert.match(h.q('.tracker-status').textContent, /C-4 twice on row 0 — merged into one when you stop typing/);
+
+        clock.tick(3000);                                    // the quiet time: commit
+        assert.deepEqual(notesOf(session, pattern.id), [[60, 0, 16, 0]]);
+        assert.match(h.q('.tracker-status').textContent, /Merged a doubled C-4 into one note/);
+        h.canvas.getContext('2d')._calls.length = 0;
+        h.tracker.render();
+        assert.equal(texts(h, MERGE).length, 1, 'the evicted one, as a ghost');
+        assert.ok(texts(h, '#e8e8f0').some(c => c.args[0] === 'C-4'), 'the kept one is plain again');
+
+        for (let i = 0; i < 20; i++) clock.tick(35);         // frame by frame: the ghost goes
+        h.canvas.getContext('2d')._calls.length = 0;
+        h.tracker.render();
+        assert.equal(texts(h, MERGE).length, 0);
+    });
+
+    test('a note the evicted double had cut keeps its end: an OFF shows where the double was', () => {
+        // Lane 0: E 0–4, C at 4. Lane 1: G 0–8, then C-4 typed at row 4 cuts it.
+        const { pattern } = seedPattern(session, { notes: [N(64, 0, 4), N(60, 4, 4), N(67, 0, 8, 1)] });
+        const h = build();
+        h.press(h.head(0).x + 46 + 4, 4 * ROW);
+        h.key('KeyZ');
+        h.tracker.flush();
+        assert.deepEqual(notesOf(session, pattern.id).sort((a, b) => a[1] - b[1] || a[0] - b[0]),
+            [[64, 0, 4, 0], [67, 0, 4, 1], [60, 4, 4, 0]], 'G still stops at 4');
+        h.canvas.getContext('2d')._calls.length = 0;
+        h.tracker.render();
+        assert.ok(texts(h).some(c => c.args[0] === 'OFF' && c.args[1] === h.head(0).x + 46 + 4
+            && c.args[2] === 4 * ROW + ROW / 2), 'OFF in lane 1, row 4');
+    });
+
     test('1 is OFF, Delete clears, and the cursor steps', () => {
         const { pattern } = seedPattern(session, { notes: [N(60, 0, 16)] });
         const { head, press, key } = build();
@@ -571,11 +624,14 @@ describe('tracker selection', () => {
     const btn = (h) => h.q('.tracker-copy');
     const move = (h, x, row) => h.canvas.dispatch('mousemove', { clientX: x, clientY: row * ROW + 4 });
 
-    test('Copy is disabled without a selection; armed, it lights and the status says what to do', () => {
+    test('Copy is disabled with no selection and the cursor off any clip; armed, it lights and the status says what to do', () => {
         seedPattern(session, { notes: [N(60, 0, 2)] });
         const h = build();
-        assert.equal(btn(h).disabled, true);
         const x = h.head(0).x + 4;
+        h.press(x, 30 * ROW + 4);                         // no clip there
+        assert.equal(btn(h).disabled, true);
+        h.press(x, 2 * ROW + 4);                          // a cell in the clip
+        assert.equal(btn(h).disabled, false, 'the cursor cell can be copied');
         dragSel(h, x, 0, x, 3);
         assert.equal(btn(h).disabled, false);
         btn(h).dispatch('click');
@@ -658,6 +714,56 @@ describe('tracker selection', () => {
         assert.deepEqual(notesOf(pattern.id), [[60, 0, 2, 0], [62, 2, 2, 0], [60, 8, 2, 0], [62, 10, 2, 0]]);
         assert.deepEqual(h.tracker.getSelection().rows, [8, 11], 'the copy is the selection');
         assert.equal(btn(h).classList.contains('active'), false, 'spent');
+    });
+
+    test('no selection: Ctrl+C copies the cursor cell, arrows steer, Enter places', () => {
+        const { pattern } = seedPattern(session, { notes: [N(60, 0, 2), N(62, 2, 2)] });
+        const h = build();
+        const x = h.head(0).x + 4;
+        h.press(x, 2 * ROW + 4);
+        assert.equal(h.tracker.getSelection(), null);
+        let stopped = false;
+        h.key('KeyC', { key: 'c', ctrlKey: true, stopPropagation() { stopped = true; } });
+        assert.ok(btn(h).classList.contains('active'));
+        assert.equal(stopped, true);
+        for (let i = 0; i < 4; i++) h.key('ArrowDown', { key: 'ArrowDown' });
+        h.key('Enter', { key: 'Enter' });
+        h.tracker.flush();
+        assert.deepEqual(notesOf(pattern.id), [[60, 0, 2, 0], [62, 2, 2, 0], [62, 6, 2, 0]]);
+        assert.equal(btn(h).classList.contains('active'), false, 'spent');
+        h.key('ArrowDown', { key: 'ArrowDown' });         // the clipboard keeps it
+        h.key('ArrowDown', { key: 'ArrowDown' });
+        h.key('KeyV', { key: 'v', ctrlKey: true });
+        h.tracker.flush();
+        assert.deepEqual(notesOf(pattern.id), [[60, 0, 2, 0], [62, 2, 2, 0], [62, 6, 2, 0], [62, 8, 2, 0]]);
+    });
+
+    test('no selection: the cursor cell\'s copy follows the pointer and a click places it; Ctrl+V too', () => {
+        const { pattern } = seedPattern(session, { notes: [N(60, 0, 2)] });
+        const h = build();
+        const x = h.head(0).x + 4;
+        h.press(x, 4);
+        h.key('KeyC', { key: 'c', ctrlKey: true });
+        move(h, x, 9);
+        h.press(x, 9 * ROW + 4);
+        h.tracker.flush();
+        assert.deepEqual(notesOf(pattern.id), [[60, 0, 2, 0], [60, 9, 2, 0]]);
+        h.press(x, 4);
+        h.key('KeyC', { key: 'c', ctrlKey: true });
+        move(h, x, 12);
+        h.key('KeyV', { key: 'v', ctrlKey: true });
+        h.tracker.flush();
+        assert.deepEqual(notesOf(pattern.id), [[60, 0, 2, 0], [60, 9, 2, 0], [60, 12, 2, 0]]);
+    });
+
+    test('no selection and the cursor off any clip: Ctrl+C does nothing and is not claimed', () => {
+        seedPattern(session, { notes: [N(60, 0, 2)] });
+        const h = build();
+        h.press(h.head(0).x + 4, 30 * ROW + 4);
+        let stopped = false;
+        h.key('KeyC', { key: 'c', ctrlKey: true, stopPropagation() { stopped = true; } });
+        assert.equal(btn(h).classList.contains('active'), false);
+        assert.equal(stopped, false, 'left to the Section');
     });
 
     test('Ctrl+V places too, and the arrows did not move the cursor meanwhile', () => {

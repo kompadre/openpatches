@@ -296,8 +296,9 @@ test('Copy: the shadow follows the pointer, a click puts the copy down', async (
     const lane0 = () => page.evaluate(() => Object.values(window.__opProject.get().patterns)[0].notes
         .filter((n) => n.midi !== 64).map((n) => [n.midi, n.start]).sort((a, b) => a[1] - b[1]));
 
-    // Riff lane 0: C-4 at 0, G-4 at 8. Select rows 0–3 and copy.
-    await expect(page.locator('.tracker-copy')).toBeDisabled();
+    // Riff lane 0: C-4 at 0, G-4 at 8. The cursor starts on a clip cell,
+    // so Copy is already on. Select rows 0–3 and copy.
+    await expect(page.locator('.tracker-copy')).toBeEnabled();
     await page.mouse.move(at(0).x, at(0).y);
     await page.mouse.down();
     await page.mouse.move(at(3).x, at(3).y, { steps: 3 });
@@ -397,4 +398,53 @@ test('paste again: after the first placement Ctrl+V stamps at the cursor; Escape
     await page.keyboard.press('Control+v');
     await page.evaluate(() => window.__opDock._tracker.flush());
     expect(await lane0()).toEqual([[60, 0], [60, 2], [67, 8], [60, 12], [60, 14]]);
+});
+
+test('no selection: Ctrl+C copies the cursor cell — arrows and Enter, or the pointer and a click', async ({ page }) => {
+    await openApp(page);
+    await seed(page);
+    await page.locator('.dock-tab-tracker').click();
+    const lane0 = () => page.evaluate(() => Object.values(window.__opProject.get().patterns)[0].notes
+        .filter((n) => n.midi !== 64).map((n) => [n.midi, n.start]).sort((a, b) => a[1] - b[1]));
+    const box = await page.locator('.tracker-canvas').boundingBox();
+
+    // The G-4 on row 8, no selection: Ctrl+C, four rows down, Enter.
+    await page.mouse.click(box.x + 40, box.y + 8 * 16 + 8);
+    await page.keyboard.press('Control+c');
+    await expect(page.locator('.tracker-copy')).toHaveClass(/active/);
+    for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Enter');
+    await page.evaluate(() => window.__opDock._tracker.flush());
+    expect(await lane0()).toEqual([[60, 0], [67, 8], [67, 12]]);
+
+    // The C-4 on row 0: Ctrl+C, then the pointer to row 14 and a click.
+    await page.keyboard.press('Escape');
+    await page.mouse.click(box.x + 40, box.y + 8);
+    await page.keyboard.press('Control+c');
+    await page.mouse.move(box.x + 40, box.y + 14 * 16 + 8);
+    await page.mouse.click(box.x + 40, box.y + 14 * 16 + 8);
+    await page.evaluate(() => window.__opDock._tracker.flush());
+    expect(await lane0()).toEqual([[60, 0], [67, 8], [67, 12], [60, 14]]);
+});
+
+test('doubled notes: marked while typing, merged on the idle commit', async ({ page }) => {
+    await openApp(page);
+    await seed(page);
+    await page.locator('.dock-tab-tracker').click();
+    const lane = (midi) => page.evaluate((m) => Object.values(window.__opProject.get().patterns)[0].notes
+        .filter((n) => n.midi === m).map((n) => [n.start, n.dur]).sort((a, b) => a[0] - b[0]), midi);
+    const box = await page.locator('.tracker-canvas').boundingBox();
+
+    // Riff: C-4 and E-4 at row 0 (lanes 0, 1), G-4 at 8. Type G-4 at row 8
+    // in lane 1 too (B on the FT2 keys is G).
+    await page.mouse.click(box.x + 40 + 46, box.y + 8 * 16 + 8);
+    await page.keyboard.press('KeyB');
+    await expect(page.locator('.tracker-status')).toContainText('G-4 twice on row 8');
+    await page.screenshot({ path: '/tmp/op-shots/tracker-doubles.png', clip: { x: box.x - 40, y: box.y - 60, width: 420, height: 320 } });
+    expect(await lane(67)).toHaveLength(2);
+
+    // The idle commit merges them, and says so.
+    await expect(page.locator('.tracker-status')).toContainText('Merged a doubled G-4', { timeout: 6000 });
+    await page.screenshot({ path: '/tmp/op-shots/tracker-merged.png', clip: { x: box.x - 40, y: box.y - 60, width: 420, height: 320 } });
+    expect(await lane(67)).toHaveLength(1);
 });

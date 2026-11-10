@@ -12,6 +12,7 @@ import {
 import {
     noteName, deriveLanes, applyLanes, relane, trackLaneCount, expandTrack, compactCells, locate,
     putNote, putOff, clearCell, growBlocker, measuresFor, moveNote, clearRange, fillRange, moveBlock, copyBlock, pasteBlock, blockNotes, removeNotes,
+    mergeDuplicates,
 } from '../html/components/tracker-model.js';
 
 const N = (midi, start, dur, lane) => (lane == null ? { midi, start, dur } : { midi, start, dur, lane });
@@ -455,5 +456,52 @@ describe('blockNotes / removeNotes (the cut)', () => {
         assert.equal(removeNotes(p, got), 1);
         assert.equal(p.notes, arr, 'the same array: the roll holds it');
         assert.deepEqual(view(p), [[67, 12, 4, 0]]);
+    });
+});
+
+describe('mergeDuplicates (doubled notes, at commit)', () => {
+    const evicted = (p) => mergeDuplicates(p).reduce((a, m) => a + m.gone.length, 0);
+    test('one pitch twice on a row: the left-most stays, to the furthest note-off', () => {
+        const p = pat([N(60, 0, 4), N(60, 0, 10, 1)]);
+        const keep = p.notes[0];
+        const arr = p.notes;
+        assert.equal(evicted(p), 1);
+        assert.equal(p.notes, arr, 'in place: the roll holds the same array');
+        assert.deepEqual(view(p), [[60, 0, 10, 0]]);
+        assert.equal(p.notes[0], keep, 'the left-most note object');
+    });
+
+    test('three of them: the furthest note-off wins, whichever lane it was in', () => {
+        const p = pat([N(60, 0, 2, 2), N(60, 0, 9, 1), N(60, 0, 4)]);
+        assert.equal(evicted(p), 2);
+        assert.deepEqual(view(p), [[60, 0, 9, 0]]);
+    });
+
+    test('the left-most is the lane shown, stored lanes and all', () => {
+        // Lane 0 is busy at row 4, so the doubles sit in lanes 1 and 2.
+        const p = pat([N(48, 0, 8), N(60, 4, 2, 2), N(60, 4, 6, 1)]);
+        mergeDuplicates(p);
+        assert.deepEqual(view(p), [[48, 0, 8, 0], [60, 4, 6, 1]]);
+    });
+
+    test('a different note-on in the kept lane before that: every note-off goes, it holds to that note', () => {
+        // Lane 0: C at 0 (OFF at 2), E at 6. Lane 1: C at 0 to 12.
+        const p = pat([N(60, 0, 2), N(64, 6, 2), N(60, 0, 12, 1)]);
+        mergeDuplicates(p);
+        assert.deepEqual(view(p), [[60, 0, 6, 0], [64, 6, 2, 0]]);
+    });
+
+    test('a note-on that is itself a double going away does not cut it', () => {
+        // Lane 1: C 0–4 then E at 4 (a double of lane 0's E); lane 2: C 0–8.
+        const p = pat([N(67, 0, 4), N(64, 4, 4), N(60, 0, 4, 1), N(64, 4, 4, 1), N(60, 0, 8, 2)]);
+        assert.equal(evicted(p), 2);
+        assert.deepEqual(view(p).sort((a, b) => a[1] - b[1] || a[0] - b[0]),
+            [[60, 0, 8, 1], [67, 0, 4, 0], [64, 4, 4, 0]]);
+    });
+
+    test('other pitches on the row, or the pitch on other rows, are left alone', () => {
+        const p = pat([N(60, 0, 4), N(64, 0, 4, 1), N(60, 4, 4), N(60, 8, 4, 1)]);
+        assert.equal(evicted(p), 0);
+        assert.equal(p.notes.length, 4);
     });
 });

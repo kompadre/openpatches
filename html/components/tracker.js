@@ -64,7 +64,9 @@
 // **Commits are debounced.** An edit changes the pattern object at once
 // (the tracker redraws, every placement of the pattern with it, and the
 // transport re-snapshots so it is heard), marks the pattern dirty, and the
-// commit — a fresh lane derivation (fewest lanes) and the session event
+// commit — doubled notes merged (one pitch twice on a row: the left-most
+// kept, to the furthest note-off), a fresh lane derivation (fewest
+// lanes) and the session event
 // the roll, the Section pane and autosave listen to — waits for 3 s of
 // quiet, so lanes do not reshuffle under the cursor while typing. Leaving
 // the tab or the page commits at once.
@@ -76,7 +78,7 @@
 
 import {
     expandTrack, compactCells, noteName, locate, MAX_LANES,
-    putNote, putOff, clearCell, relane, growBlocker, measuresFor, moveNote,
+    putNote, putOff, clearCell, relane, findDuplicates, mergeDuplicates, growBlocker, measuresFor, moveNote,
     clearRange, fillRange, moveBlock, copyBlock, pasteBlock, blockNotes, removeNotes,
 } from './tracker-model.js';
 import {
@@ -90,6 +92,9 @@ const RULER_W = 36;
 const HEAD_H = 26;
 const MIN_MEASURES = 4;  // never a zero-height grid
 const COMMIT_MS = 3000;  // quiet time before an edited pattern is committed
+const MERGE = '#f0a030';  // doubled notes about to merge, and the merge itself
+const GHOST_FRAMES = 12;  // the merge, shown: the doubles slide into the kept note and fade
+const GHOST_STEP_MS = 35;
 const HOLD_MS = 1000;    // a still press this long arms a move (a note, or the selection)
 const FOLLOW_KEY = 'openpatches_tracker_follow';
 
@@ -144,6 +149,12 @@ export function createTracker(opts) {
     // The clipboard: what the last placed stamp held. Ctrl+V pastes it at
     // the cursor; Escape empties it.
     let clip = null;          // { block }
+    // Doubled notes in the uncommitted patterns (findDuplicates), shown
+    // until the commit merges them: note → { keep: true, dur } or { gone: true }.
+    let doubles = new Map();
+    // Just merged: the evicted doubles, sliding into their kept note and
+    // fading out. { items: [{ slot, lane, col, midi, keep }], frame, timer }
+    let ghosts = null;
 
     // --- DOM ---
 
@@ -189,13 +200,13 @@ export function createTracker(opts) {
     const copyBtn = document.createElement('button');
     copyBtn.className = 'tracker-btn tracker-copy';
     copyBtn.textContent = '⎘ Copy';
-    copyBtn.title = 'Copy the selected cells: a shadow of them moves with the arrows or the pointer — '
+    copyBtn.title = 'Copy the selected cells (or, with none, the cell under the cursor): a shadow of them moves with the arrows or the pointer — '
         + 'Enter, Ctrl+V or a click where they should go (Ctrl+C; Ctrl+X to cut instead; Escape cancels)';
     copyBtn.addEventListener('click', () => { if (stamp) cancelStamp(); else armStamp(); });
     controls.appendChild(copyBtn);
 
     function syncCopyBtn() {
-        copyBtn.disabled = !stamp && !selRect();
+        copyBtn.disabled = !stamp && !selRect() && !cursorTarget();
         copyBtn.classList.toggle('active', !!stamp);
     }
     const status = document.createElement('span');
@@ -257,6 +268,13 @@ export function createTracker(opts) {
         layout = [];
         if (!project || !section) return;
 
+        doubles = new Map();
+        for (const p of dirty.values()) {
+            for (const m of findDuplicates(p).merges) {
+                doubles.set(m.keep, { keep: true, dur: m.dur });
+                for (const n of m.gone) doubles.set(n, { gone: true, of: m.gone.length + 1 });
+            }
+        }
         rows = Math.max(MIN_MEASURES, sectionLength(project, section)) * COLS_PER_MEASURE;
         let x = RULER_W;
         for (const track of [...project.tracks].sort((a, b) => a.slot - b.slot)) {
@@ -323,7 +341,9 @@ export function createTracker(opts) {
         ctx.fillStyle = '#101020';
         ctx.fillRect(0, 0, w, h);
 
-        // Row shading and the ruler. Every 4th row lifted, bar rows lined.
+        // Row shading and the ruler. Every 4th row lifted, bar rows lined,
+        // and a hairline between all other rows so the steps inside a beat
+        // can be told apart.
         ctx.font = '10px monospace';
         ctx.textBaseline = 'middle';
         for (let r = 0; r < rows; r++) {
@@ -331,6 +351,10 @@ export function createTracker(opts) {
             if (r % 4 === 0) {
                 ctx.fillStyle = r % COLS_PER_MEASURE === 0 ? 'rgba(255,255,255,0.055)' : 'rgba(255,255,255,0.025)';
                 ctx.fillRect(0, y, w, ROW_H);
+            }
+            if (r % COLS_PER_MEASURE !== 0) {
+                ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+                ctx.beginPath(); ctx.moveTo(0, y + 0.5); ctx.lineTo(w, y + 0.5); ctx.stroke();
             }
             if (r % COLS_PER_MEASURE === 0) {
                 ctx.strokeStyle = 'rgba(255,255,255,0.14)';
@@ -355,6 +379,7 @@ export function createTracker(opts) {
         drawDrag(ctx);
         drawBlockMove(ctx);
         drawStamp(ctx);
+        drawGhosts(ctx);
         syncCopyBtn();
         reportViewport();
     }
@@ -418,9 +443,11 @@ export function createTracker(opts) {
     }
 
     function drawExpanded(ctx, t) {
+        drawDoubles(ctx, t);
         for (const e of t.events) {
             const x = t.x + e.lane * LANE_W + 4;
-            ctx.fillStyle = drag && drag.event === e ? '#666' : '#e8e8f0';
+            const dbl = doubles.get(e.note);
+            ctx.fillStyle = drag && drag.event === e ? '#666' : dbl ? MERGE : '#e8e8f0';
             ctx.fillText(noteName(e.midi), x, e.col * ROW_H + ROW_H / 2);
             if (e.off) {
                 ctx.fillStyle = '#667';
@@ -435,9 +462,81 @@ export function createTracker(opts) {
             if (n === 0) continue;
             const first = cell.starts[0];
             const label = (first ? noteName(first.midi) : 'OFF') + (n > 1 ? ' +' + (n - 1) : '');
-            ctx.fillStyle = first ? '#e8e8f0' : '#667';
+            const dbl = cell.starts.some(e => doubles.has(e.note));
+            ctx.fillStyle = dbl ? MERGE : first ? '#e8e8f0' : '#667';
             ctx.fillText(label, t.x + 4, col * ROW_H + ROW_H / 2, t.w - 8);
         }
+    }
+
+    /**
+     * Doubles waiting for the commit: each evicted one tinted, a notch on
+     * its left edge pointing at the note it joins; the kept one marked
+     * down its lane to where the merged note will end.
+     */
+    function drawDoubles(ctx, t) {
+        if (doubles.size === 0) return;
+        for (const e of t.events) {
+            const dbl = doubles.get(e.note);
+            if (!dbl) continue;
+            const x = t.x + e.lane * LANE_W;
+            const y = e.col * ROW_H;
+            if (dbl.gone) {
+                ctx.fillStyle = 'rgba(240, 160, 48, 0.14)';
+                ctx.fillRect(x + 1, y + 1, LANE_W - 2, ROW_H - 2);
+                ctx.fillStyle = MERGE;
+                ctx.beginPath();
+                ctx.moveTo(x + 1, y + ROW_H / 2);
+                ctx.lineTo(x + 5, y + 3);
+                ctx.lineTo(x + 5, y + ROW_H - 3);
+                ctx.closePath();
+                ctx.fill();
+            } else {
+                const block = t.blocks.find(b => e.col >= b.startCol && e.col < b.endCol);
+                const end = Math.min(e.col + dbl.dur, block ? block.endCol : rows);
+                ctx.fillStyle = 'rgba(240, 160, 48, 0.55)';
+                ctx.fillRect(x + 1, y + 2, 2, ROW_H - 4);
+                ctx.fillStyle = 'rgba(240, 160, 48, 0.25)';
+                ctx.fillRect(x + 1, y + ROW_H, 2, (end - e.col - 1) * ROW_H);
+            }
+        }
+    }
+
+    /** The merge just made: doubles gliding into the kept note, fading. */
+    function drawGhosts(ctx) {
+        if (!ghosts) return;
+        const k = ghosts.frame / GHOST_FRAMES;
+        const ease = 1 - (1 - k) * (1 - k);
+        for (const g of ghosts.items) {
+            const t = bySlot(g.slot);
+            if (!t) continue;
+            const kept = t.events.find(e => e.note === g.keep && e.col === g.col);
+            const to = kept ? kept.lane : 0;
+            const x = t.x + (g.lane + (to - g.lane) * ease) * LANE_W;
+            const y = g.col * ROW_H;
+            ctx.globalAlpha = 1 - k;
+            ctx.fillStyle = 'rgba(16, 16, 32, 0.8)';
+            ctx.fillRect(x + 1, y + 1, LANE_W - 2, ROW_H - 2);
+            ctx.fillStyle = MERGE;
+            ctx.fillText(noteName(g.midi), x + 4, y + ROW_H / 2);
+            if (kept) {
+                ctx.strokeStyle = MERGE;
+                ctx.strokeRect(t.x + to * LANE_W + 0.5, y + 0.5, LANE_W - 1, ROW_H - 1);
+            }
+            ctx.globalAlpha = 1;
+        }
+    }
+
+    function stopGhosts() {
+        if (ghosts) clearTimeout(ghosts.timer);
+        ghosts = null;
+    }
+
+    function stepGhosts() {
+        if (!ghosts) return;
+        ghosts.frame++;
+        if (ghosts.frame >= GHOST_FRAMES) { ghosts = null; draw(); return; }
+        draw();
+        ghosts.timer = setTimeout(stepGhosts, GHOST_STEP_MS);
     }
 
     function drawCursor(ctx) {
@@ -730,22 +829,60 @@ export function createTracker(opts) {
         if (transport && transport.refresh) transport.refresh();
         clearTimeout(commitTimer);
         commitTimer = setTimeout(commit, COMMIT_MS);
-        say('Editing ' + pattern.name + '…');
         render();
+        say('Editing ' + pattern.name + '…' + doublesNote());
     }
 
-    /** Pack lanes afresh and tell everyone. Called after the quiet time, or on leaving. */
+    /** The status's word on doubles waiting to merge, or ''. */
+    function doublesNote() {
+        for (const t of layout) {
+            const e = t.events.find(v => doubles.get(v.note)?.gone);
+            if (e) {
+                const more = [...doubles.values()].filter(v => v.keep).length - 1;
+                const n = doubles.get(e.note).of;
+                return ' ' + noteName(e.midi) + (n === 2 ? ' twice' : ' ×' + n) + ' on row ' + e.col
+                    + (more > 0 ? ' (and ' + more + ' more)' : '')
+                    + ' — merged into one when you stop typing';
+            }
+        }
+        return '';
+    }
+
+    /** Merge doubled notes, pack lanes afresh and tell everyone. Called
+     * after the quiet time, or on leaving. */
     function commit() {
         clearTimeout(commitTimer);
         commitTimer = null;
         if (dirty.size === 0) return;
         const patterns = [...dirty.values()];
+        // Where the doubles sit now, for the merge to be seen.
+        const items = [];
+        for (const t of layout) {
+            for (const e of t.events) {
+                if (!doubles.get(e.note)?.gone) continue;
+                const m = findDuplicates(e.pattern).merges.find(v => v.gone.includes(e.note));
+                if (m) items.push({ slot: t.track.slot, lane: e.lane, col: e.col, midi: e.midi, keep: m.keep });
+            }
+        }
         dirty.clear();
+        let merged = 0;
+        let first = null;
         for (const p of patterns) {
+            for (const m of mergeDuplicates(p)) {
+                merged += m.gone.length;
+                first = first || m.keep;
+            }
             relane(p, { fresh: true });
             session.touchPattern(p.id, 'tracker');
         }
-        say('');
+        stopGhosts();
+        if (items.length && shown) {
+            ghosts = { items, frame: 0, timer: setTimeout(stepGhosts, GHOST_STEP_MS) };
+        }
+        say(merged
+            ? 'Merged ' + (merged === 1 ? 'a doubled ' + noteName(first.midi) : merged + ' doubled notes')
+                + ' into one note'
+            : '');
         render();
     }
 
@@ -758,7 +895,21 @@ export function createTracker(opts) {
         const t = r && bySlot(sel.slot);
         const at = t && repeatAt(t, r.c0);
         if (!at || at.block.clip.id !== sel.clipId) return null;
-        return { ...r, track: t.track, pattern: at.block.pattern, p0: r.c0 - at.lo, p1: r.c1 - at.lo };
+        return { ...r, slot: sel.slot, track: t.track, pattern: at.block.pattern, p0: r.c0 - at.lo, p1: r.c1 - at.lo };
+    }
+
+    /** The cursor's cell in the same shape, or null off any clip: what
+     * Copy takes when nothing is selected. */
+    function cursorTarget() {
+        const t = bySlot(cursor.slot);
+        const at = t && repeatAt(t, cursor.col);
+        if (!at) return null;
+        const lane = t.track.compact ? 0 : cursor.lane;
+        return {
+            l0: lane, l1: lane, c0: cursor.col, c1: cursor.col,
+            slot: t.track.slot, track: t.track, pattern: at.block.pattern,
+            p0: cursor.col - at.lo, p1: cursor.col - at.lo,
+        };
     }
 
     /** Fill (midi) or OFF (null) or empty ('clear') the selected block. */
@@ -1052,7 +1203,8 @@ export function createTracker(opts) {
 
     /**
      * Copy: the selected block becomes a stamp, its shadow starting over
-     * the selection itself so the arrows can steer it at once.
+     * the selection itself so the arrows can steer it at once. With no
+     * selection, the cursor's cell is the block.
      */
     function armStamp(cut = false) {
         // Already armed: Ctrl+C / Ctrl+X just switch it between copy and cut.
@@ -1062,7 +1214,7 @@ export function createTracker(opts) {
             draw();
             return true;
         }
-        const st = selTarget();
+        const st = selTarget() || cursorTarget();
         if (!st) return false;
         commit();
         stamp = {
@@ -1072,10 +1224,10 @@ export function createTracker(opts) {
             source: {
                 pattern: st.pattern,
                 notes: blockNotes(st.pattern, st.p0, st.p1, st.l0, st.l1),
-                slot: sel.slot, l0: st.l0, l1: st.l1, c0: st.c0, c1: st.c1,
+                slot: st.slot, l0: st.l0, l1: st.l1, c0: st.c0, c1: st.c1,
             },
         };
-        stamp.at = stampTargetAt(bySlot(sel.slot), st.l0, st.c0);
+        stamp.at = stampTargetAt(bySlot(st.slot), st.l0, st.c0);
         sayStamp();
         draw();
         return true;

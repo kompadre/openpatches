@@ -2,6 +2,22 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-10: Tracker — doubled notes merge at the idle commit, visibly
+
+**Two or more note-ons of one pitch on one row become one note** when the debounced commit runs (3 s quiet, or leaving the tab): the left-most stays, in its lane, holding until the furthest of their note-offs — unless another note-on lands in the kept lane before that, in which case their note-offs are dropped and the kept note runs legato into it (`findDuplicates` plans it pure, `mergeDuplicates` applies it in place; `commit()` calls it before the lane repack). A note the evicted double had cut short keeps its own end — it still stops there, now with an OFF where the double was. **The merge is visible**: while typing, the doubles turn amber — the one that will go gets a tinted cell and a notch pointing at the one that stays, which shows an amber bar down to where the merged note will end — and the status names them ("G-4 twice on row 8 — merged into one when you stop typing"). On commit the evicted notes slide into the kept one and fade (~0.4 s), and the status reports the merge. Compact tracks tint the cell's label.
+
+Tests: `tracker-model` +6 (the basic merge, three doubles, the shown lane kept, legato past a dropped OFF, a double that is itself evicted does not cut, non-doubles untouched); `tracker-view` +3 (both shown while typing then one at commit; the marks, the ghost and the statuses; the cut note keeps its end, OFF drawn); e2e `tracker` +1 (real keys: marked while typing, merged at the commit). 1155 unit, 132 e2e.
+
+## 2026-11-10: Tracker — Ctrl+C with no selection copies the cursor cell
+
+**Ctrl+C (and Ctrl+X) with no selection takes the cell under the cursor** as a 1×1 stamp: the same shadow, steered by arrows/PageUp/Down or the pointer, placed with Enter, Ctrl+V or a click, kept on the clipboard for repeated Ctrl+V pastes — exactly as a selection copy (new `cursorTarget()` feeds `armStamp`). The Copy button enables whenever the cursor sits on a clip cell. With the cursor off any clip and nothing selected, Ctrl+C is not claimed and passes to the Section pane. Copying an empty cell pastes emptiness (clears the destination), per the block rules.
+
+Tests: `tracker-view` +3 and two assertions updated (keyboard copy then repeated Ctrl+V; pointer copy; off-clip Ctrl+C unclaimed); e2e `tracker` +1 (keys and mouse) and one assertion updated.
+
+## 2026-11-10: Tracker — a hairline between rows
+
+Every row now draws a 1px top line at `rgba(255,255,255,0.04)`, so the three rows after each beat can be told apart; beat shading (`0.025`/`0.055`) and the bar line (`0.14`) still read above it.
+
 ## 2026-11-09: Tracker — paste again at the cursor; Escape empties the clipboard
 
 **After the first placement the block stays on a clipboard** (user). Placing a copy or cut (Enter, Ctrl+V or a click) works as before — the placed block is the selection — but the shadow goes and the block is kept: **move the cursor (arrows, or a click) and Ctrl+V pastes it again with its top-left exactly at the cursor**, as many times as wanted; each paste becomes the selection. Rows that would fall past the end of the repeat under the cursor are dropped (not shifted up — the cursor is the corner). **No pattern under the cursor, no paste** (the status says so). **Escape empties the clipboard** — and cancels a move in flight and the selection, as before; Ctrl+V after it does nothing at all. After a cut, only the first placement removes the original; later pastes are copies. Switching tabs cancels a shadow in flight but keeps the clipboard.

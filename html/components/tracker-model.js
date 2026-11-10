@@ -121,6 +121,64 @@ export function relane(pattern, { fresh = false } = {}) {
 }
 
 /**
+ * Doubled notes: two or more note-ons of one pitch on one row (each in its
+ * own lane) are to become one — the left-most, in the lane it is shown
+ * in — holding until the furthest of their note-offs. Unless the kept
+ * note's lane has another note-on before that: then every one of their
+ * note-offs is dropped and the note holds until that note-on (legato).
+ * Lanes are as shown, i.e. as derived from the notes now.
+ *
+ * A note the evicted double had cut short keeps its own end, so it still
+ * stops there — now with an OFF, where the double was.
+ *
+ * Pure: says what mergeDuplicates would do, so the view can show it.
+ * @returns {{ merges: Array<{keep, gone: object[], dur: number}>, gone: Set<object> }}
+ */
+export function findDuplicates(pattern) {
+    const d = deriveLanes(pattern.notes);
+    const groups = new Map();
+    for (const n of pattern.notes) {
+        const k = n.start + ':' + n.midi;
+        if (!groups.has(k)) groups.set(k, []);
+        groups.get(k).push(n);
+    }
+    const merges = [];
+    const gone = new Set();
+    for (const g of groups.values()) {
+        if (g.length < 2) continue;
+        g.sort((a, b) => d.lane.get(a) - d.lane.get(b));
+        merges.push({ keep: g[0], gone: g.slice(1), dur: Math.max(...g.map(endOf)) - g[0].start });
+        for (const n of g.slice(1)) gone.add(n);
+    }
+    // Only notes that stay can cut the kept one short.
+    for (const m of merges) {
+        const lane = d.lane.get(m.keep);
+        let to = m.keep.start + m.dur;
+        for (const o of pattern.notes) {
+            if (!gone.has(o) && o !== m.keep && d.lane.get(o) === lane && o.start > m.keep.start) to = Math.min(to, o.start);
+        }
+        m.dur = to - m.keep.start;
+    }
+    return { merges, gone };
+}
+
+/**
+ * Do it: the kept notes get their lengths, the doubles are taken out in
+ * place (the roll holds the same array). What the tracker does once typing
+ * has stopped.
+ * @returns {Array<{keep, gone, dur}>} the merges made
+ */
+export function mergeDuplicates(pattern) {
+    const { merges, gone } = findDuplicates(pattern);
+    if (gone.size === 0) return merges;
+    for (const m of merges) m.keep.dur = m.dur;
+    for (let i = pattern.notes.length - 1; i >= 0; i--) {
+        if (gone.has(pattern.notes[i])) pattern.notes.splice(i, 1);
+    }
+    return merges;
+}
+
+/**
  * Can `patternId` grow to `measures` without any clip playing it running
  * into the next clip on its track, in any section? A clip spelled in
  * repeats grows with its pattern; one cut to a column count does not.
