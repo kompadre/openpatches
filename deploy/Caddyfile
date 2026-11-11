@@ -1,4 +1,4 @@
-{$DOMAIN:localhost} {
+*:80 {
 	root * /srv
 	file_server
 
@@ -20,5 +20,8 @@
 
 	handle /api/* {
 		reverse_proxy openpatches:8080
+	}
+	log {
+		output stdout		
 	}
 }

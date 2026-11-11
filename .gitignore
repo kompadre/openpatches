@@ -23,3 +23,9 @@ deploy/app/
 # Playwright e2e
 test-results/
 playwright-report/
+
+# Deploy binaries
+deploy/dx7_codebook.bin
+deploy/dx7_codebook_timbre.bin
+deploy/libonnxruntime.so
+deploy/server

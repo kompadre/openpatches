@@ -6,7 +6,6 @@ Project backlog. Parent tasks with nested subtasks; `[ ]` pending, `[x]` done,
 ## Project
 
 ### Bugs
-
 - [ ] Flaky unit test `pattern colours` (section-editor.test.js): two random pattern ids can hash to the same hue, failing "two patterns, two hues".
 - [x] Containers do not always come from inferring a WAV — loading a multitimbral `.syx` makes one too — yet the `⤒ WAV` re-upload offer appears on containers that never had a source WAV. Only containers that came from an inference job should ask for the original WAV. The offer is built in `canvas.js` where `ctr.jobId && onLoadJobWav` and the blob is absent; check what gives a `.syx` container a job id (import path in `project-io.js`, `sourceMissing`).
 
@@ -185,3 +184,8 @@ relay (first) or WebRTC (later, if latency matters).
 
 - [ ] Import and export **MIDI** (patterns ↔ MIDI files; a section or the piece as a multi-track SMF).
 - [ ] Export (and maybe import) the project as a **Reaper project** (.rpp): tracks, clips as MIDI items, tempo.
+- [ ] Default pattern naming: <<Section name>><<Track slot>>_<<Autoincremented Index>> all caps. Example: INTRO1_1, DROP3_10
+- [ ] Add a Section Clone / Duplicate button
+- [ ] Per section track configuration. 
+- [ ] Per track param "Skip tick". Make a track systematically ignore (n-1)/n of ticks. By default n = 1 (0/1 skipped). Other values can be 2 (1/2), 3 (2/3) every second, 3 = play the first, ignore last two.
+- [ ] 

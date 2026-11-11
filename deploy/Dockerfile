@@ -5,12 +5,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-COPY server .
-COPY lib/libonnxruntime.so ./lib/
+COPY deploy/server .
+COPY deploy/libonnxruntime.so ./lib/
+COPY deploy/dx7_codebook.bin deploy/dx7_codebook_timbre.bin ./
 COPY index.html .
-COPY html/ ./html/
-COPY legal/ ./legal/
-COPY dx7_codebook.bin dx7_codebook_timbre.bin ./
+COPY html/ html/
+COPY legal/ legal/
 
 RUN chmod +x server && mkdir -p exports
 
