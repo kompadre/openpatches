@@ -29,3 +29,4 @@ deploy/dx7_codebook.bin
 deploy/dx7_codebook_timbre.bin
 deploy/libonnxruntime.so
 deploy/server
+__pycache__/
