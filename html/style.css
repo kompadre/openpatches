@@ -5789,3 +5789,10 @@ footer {
     font-size: 0.6rem; line-height: 1; padding: 0.1rem 0.25rem; border-radius: 2px;
     background: var(--peer-color, #f0a030); color: #111; pointer-events: none; white-space: nowrap;
 }
+/* Collab cursors (cursors.js): a clip someone else has picked. */
+.section-clip.peer-selected { box-shadow: 0 0 0 2px var(--peer-color, #f0a030) inset; }
+.section-clip.peer-selected::before {
+    content: attr(data-pickers); position: absolute; bottom: 0.1rem; right: 0.15rem; z-index: 2;
+    font-size: 0.6rem; line-height: 1; padding: 0.1rem 0.25rem; border-radius: 2px;
+    background: var(--peer-color, #f0a030); color: #111; pointer-events: none; white-space: nowrap;
+}

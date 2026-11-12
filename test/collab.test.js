@@ -469,6 +469,37 @@ describe('collab: guest edits', () => {
         assert.deepEqual(s.guest.collab.status().editing, []);
     });
 
+    test('cursors travel at most every 100 ms, reach the others as ghosts, never move anyone, and go with the peer', async () => {
+        const C = await import('../html/components/cursors.js');
+        const s = setup();
+        const code = await joined(s);
+        const other = await joinedToo(s, code);
+        profileStore.setIdentity({ alias: 'Bob', color: '#d84a6b' });
+        // The guest's tracker reports twice inside the gathering time: one message, the latest.
+        C.reportCursor('tracker', { sectionId: 'sX', slot: 0, lane: 0, col: 3 });
+        C.reportCursor('tracker', { sectionId: 'sX', slot: 0, lane: 0, col: 5 });
+        assert.equal(s.hub.sent.filter(m => m.t === 'cursor').length, 0, 'not yet');
+        s.clock.advance(100);
+        const sentAll = s.hub.sent.filter(m => m.t === 'cursor');
+        // Every collab in this process shares the registry, so each of the three sent one; look at the content.
+        assert.ok(sentAll.length >= 1);
+        assert.equal(sentAll[0].where.tracker.col, 5);
+        s.hub.pump();
+        const seen = C.cursorsIn('tracker', { sectionId: 'sX' });
+        assert.ok(seen.length >= 1, 'arrived as a remote cursor');
+        assert.ok(seen.every(r => r.where.col === 5));
+        assert.equal(s.guest.session.getSectionId(), s.host.session.getSectionId(), 'nobody’s view moved');
+        // A section id nobody has on screen: drawn by nobody.
+        assert.deepEqual(C.cursorsIn('tracker', { sectionId: s.host.session.getSectionId() }), []);
+        // The other guest leaves: its cursor goes everywhere.
+        await other.collab.leave();
+        s.hub.pump();
+        assert.ok(C.cursorsIn('tracker', { sectionId: 'sX' }).every(r => r.peer !== s.hub.sent.filter(m => m.t === 'join')[1].peer));
+        C.reportCursor('tracker', null);
+        s.clock.advance(100);
+        s.hub.pump();
+    });
+
     test('a missed message with an edit in flight: resync keeps and resends it', async () => {
         const s = setup();
         await joined(s);
@@ -501,6 +532,20 @@ describe('collab: guest edits', () => {
         assert.equal(s.guest.collab.status().pending, 0);
         s.hub.pump();
         assert.notEqual(s.host.session.get().bpm, 77);
+    });
+
+    test('a guest’s section edits travel: add, rename, tempo', async () => {
+        const s = setup();
+        await joined(s);
+        s.guest.session.addSection({ name: 'Bridge' }, 'section');
+        s.guest.session.renameSection('Bridge 2', 'section');
+        s.guest.session.setSectionTempo({ bpm: 90 }, 'section');
+        settle(s); settle(s);
+        const h = s.host.session.get().sections;
+        assert.deepEqual(h.map(x => [x.name, x.bpm]), [['Section 1', null], ['Bridge 2', 90]]);
+        assert.equal(s.guest.collab.status().pending, 0);
+        assert.deepEqual(s.guest.collab.status().conflicts, []);
+        assert.equal(s.host.session.getSectionId(), h[0].id, 'the host stays on its own section');
     });
 
     test('switching section is the guest’s own business', async () => {

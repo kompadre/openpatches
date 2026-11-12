@@ -48,12 +48,14 @@ import { createReferee, stampEdit } from './collab-referee.js';
 import { createProject, normalizeProject } from './project-model.js';
 import { profileStore } from './profile-store.js';
 import { setPresence } from './presence.js';
+import { onLocalCursor, myCursors, setRemoteCursor, dropRemoteCursor, clearRemoteCursors } from './cursors.js';
 
 const RECONNECT_MS = 500;      // first retry after a relay socket drops; doubles…
 const RECONNECT_MAX_MS = 5000; // …up to this
 const BEAT_MS = 5000;          // everyone says "still here" this often
 const SILENT_MS = 20000;       // nothing heard from a peer for this long: it may be gone
 const GRACE_MS = 15000;        // the host gone (left, or silent): wait this long before ending
+const CURSOR_MS = 100;        // cursors go out at most this often
 const SEND_MS = 100;            // changes gathered this long before sending
 const JOIN_TIMEOUT_MS = 3000;   // guest: no snapshot by then, no one is sharing
 const MAX_CONFLICTS = 200;      // rows kept in status().conflicts
@@ -196,6 +198,8 @@ export function createCollab(opts) {
     const clock = opts.clock || (() => Date.now());
 
     let role = null;            // null | 'host' | 'guest'
+    let cursorTimer = null;
+    let cursorDirty = {};       // editor → where, since the last cursor message
     let beatTimer = null;
     let graceTimer = null;      // guest: the host may be gone
     let hostAway = false;
@@ -293,7 +297,30 @@ export function createCollab(opts) {
         beatTimer = setTimer(tick, beatMs);
     }
 
+    /** My position, to the room: gathered for CURSOR_MS, one message. */
+    function queueCursor(editor, where) {
+        if (!role || (role === 'guest' && state !== 'watching')) return;
+        cursorDirty[editor] = where;
+        if (cursorTimer == null) cursorTimer = setTimer(flushCursor, CURSOR_MS);
+    }
+    function flushCursor() {
+        cursorTimer = null;
+        if (!role || !Object.keys(cursorDirty).length) return;
+        const where = cursorDirty; cursorDirty = {};
+        send('cursor', { peer: role === 'host' ? 'host' : peer, alias: alias || (role === 'host' ? 'host' : peer), color: myColor(), where });
+    }
+    /** Everything I last reported — for whoever just arrived. */
+    function sendAllCursors() {
+        const all = myCursors();
+        if (Object.keys(all).length) { cursorDirty = { ...all, ...cursorDirty }; if (cursorTimer == null) cursorTimer = setTimer(flushCursor, CURSOR_MS); }
+    }
+    function onCursorMessage(m) {
+        setRemoteCursor(m.peer, m.alias, m.color, m.where);
+    }
+
     function stopTimers() {
+        clearTimer(cursorTimer); cursorTimer = null; cursorDirty = {};
+        clearRemoteCursors();
         clearTimer(beatTimer); beatTimer = null;
         clearTimer(graceTimer); graceTimer = null;
         hostAway = false;
@@ -411,6 +438,7 @@ export function createCollab(opts) {
     /** A guest gone: out of the count and of presence. */
     function dropPeer(p) {
         heardPeer.delete(p);
+        dropRemoteCursor(p);
         if (editing.delete(p)) sendPresence();
         if (peers.delete(p)) emit();
     }
@@ -438,6 +466,7 @@ export function createCollab(opts) {
             peers.add(m.peer);
             flushNow();                  // the snapshot is then exactly version v
             sendSnapshot(m.peer);
+            sendAllCursors();
             if (fresh) emit();
         } else if (m.t === 'leave') {
             dropPeer(m.peer);
@@ -447,6 +476,8 @@ export function createCollab(opts) {
             emit();
         } else if (m.t === 'edit') {
             if (m.project === hostedId) onGuestEdit(m);   // not one for a project we no longer share
+        } else if (m.t === 'cursor') {
+            onCursorMessage(m);
         }
     }
 
@@ -653,6 +684,8 @@ export function createCollab(opts) {
         if (m.t !== 'join' && m.t !== 'resync' && m.t !== 'leave' && m.t !== 'edit' && m.t !== 'begin'
             && !(m.t === 'beat' && m.peer !== 'host')) hostHeard();
         if (m.t === 'beat') return;
+        if (m.t === 'cursor') { if (m.peer !== peer && state === 'watching') onCursorMessage(m); return; }
+        if (m.t === 'leave') { dropRemoteCursor(m.peer); return; }   // another guest, heard directly
         if (m.t === 'snapshot') {
             if (m.to != null && m.to !== peer) return;
             if (state === 'ended') return;
@@ -687,6 +720,7 @@ export function createCollab(opts) {
             }
             onBench();
             emit();
+            if (first) sendAllCursors();
             if (first && joined) { joined.resolve(status()); joined = null; }
         } else if (m.t === 'parts') {
             if (state !== 'watching' || m.v <= gv) return;
@@ -767,7 +801,10 @@ export function createCollab(opts) {
     }
 
     function onGuestSession(ev) {
-        if (ev.source === 'collab' || ev.kind === 'saving' || ev.kind === 'section') return;
+        // 'section' events are let through: switching the edited section
+        // changes nothing in the body and so sends nothing, but adding,
+        // renaming or re-tempoing one announces the same kind and must go.
+        if (ev.source === 'collab' || ev.kind === 'saving') return;
         // Another project opened here: that ends watching.
         if (!session.isGuest()) {
             if (state === 'watching' || state === 'ended') {
@@ -834,6 +871,7 @@ export function createCollab(opts) {
         emit();
     }
 
+    onLocalCursor(queueCursor);
     session.subscribe((ev) => {
         if (role === 'host') onHostSession(ev);
         else if (role === 'guest') onGuestSession(ev);

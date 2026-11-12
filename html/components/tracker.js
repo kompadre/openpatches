@@ -86,6 +86,7 @@ import {
     dividerOf, defaultPatternName,
 } from './project-model.js';
 import { presenceOn, markPresence, onPresence } from './presence.js';
+import { reportCursor, cursorsIn, onCursors } from './cursors.js';
 
 const ROW_H = 16;
 const LANE_W = 46;
@@ -406,6 +407,7 @@ export function createTracker(opts) {
         drawSelection(ctx);
         drawCursor(ctx);
         drawDrag(ctx);
+        reportCursor('tracker', shown && bySlot(cursor.slot) ? { sectionId: session.getSectionId(), slot: cursor.slot, lane: cursor.lane, col: cursor.col } : null);
         drawBlockMove(ctx);
         drawStamp(ctx);
         drawGhosts(ctx);
@@ -568,9 +570,31 @@ export function createTracker(opts) {
         ghosts.timer = setTimeout(stepGhosts, GHOST_STEP_MS);
     }
 
+    /** The others' cells — those in the tracker on this section; nothing follows them. */
+    function drawRemoteCursors(ctx) {
+        const sid = session.getSectionId();
+        for (const r of cursorsIn('tracker', { sectionId: sid })) {
+            const t = bySlot(r.where.slot);
+            if (!t || r.where.lane >= t.viewLanes) continue;
+            const x = t.x + r.where.lane * LANE_W;
+            const y = r.where.col * ROW_H;
+            ctx.strokeStyle = r.color;
+            ctx.lineWidth = 2;
+            ctx.strokeRect(x + 1, y + 1, LANE_W - 2, ROW_H - 2);
+            ctx.lineWidth = 1;
+            ctx.fillStyle = r.color;
+            ctx.font = 'bold 9px sans-serif';
+            ctx.textBaseline = 'top';
+            ctx.fillText(r.alias, x + 2, y - 10 < 0 ? y + ROW_H : y - 10);
+            ctx.font = '10px monospace';
+            ctx.textBaseline = 'middle';
+        }
+    }
+
     function drawCursor(ctx) {
         const t = bySlot(cursor.slot);
         if (!t) return;
+        drawRemoteCursors(ctx);
         const x = t.x + cursor.lane * LANE_W;
         const y = cursor.col * ROW_H;
         ctx.fillStyle = focused ? 'rgba(233, 69, 96, 0.22)' : 'rgba(233, 69, 96, 0.08)';
@@ -1737,6 +1761,7 @@ export function createTracker(opts) {
     }
 
     onPresence(() => { if (shown) render(); });
+    onCursors(() => { if (shown) draw(); });
     session.subscribe((ev) => {
         if (ev.kind === 'patches') return;   // canvas drags; nothing of ours
         // Another editor changed a pattern we hold uncommitted: ours is the

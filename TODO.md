@@ -127,8 +127,11 @@ relay (first) or WebRTC (later, if latency matters).
   - [x] **M4-1 Peer colours and presence in the editors** (2026-11-12):
     `presence.js` registry fed by collab; the clip, tracker head and Mixer
     strip someone is editing get their colour and alias.
-  - [ ] **M4-2 Remote cursors and selections**: tracker cursor and roll
-    selection at ~10 Hz, latest wins, never refereed; coloured ghosts.
+  - [x] **M4-2 Remote cursors and selections** (2026-11-12): `cursors.js`;
+    tracker cell, roll selection and picked clips travel at ≤ 10 Hz, latest
+    wins, drawn as coloured ghosts **only inside what is on screen here**
+    (same section / pattern); the local view never follows. A "follow"
+    mode, if ever wanted, is a separate opt-in (user, 2026-11-12).
   - [ ] **M4-3 Soft locks**: someone has an edit open on a pattern, track
     or section → others are warned before editing it. Advisory or
     refusing: user's call when we get there (advisory recommended).

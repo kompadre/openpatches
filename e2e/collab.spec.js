@@ -383,6 +383,59 @@ test('presence in the editors: the other person’s colour on the clip, tracker 
     await other.close();
 });
 
+test('remote cursors: drawn inside what is on screen here, and the view never follows', async ({ page, browser }) => {
+    await openApp(page);
+    await seed(page);
+    const code = await page.evaluate(() => window.__opCollab.host());
+    const other = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+    await other.addInitScript(() => {
+        localStorage.setItem('openpatches_profile', JSON.stringify({ identity: { alias: 'Bob', color: '#d84a6b' } }));
+    });
+    const guest = await guestPage(other, code);
+    await expect(guest.locator('#menu-collab-chip')).toContainText('With Jam');
+    const C = (p) => p.evaluate(async () => {
+        const m = await import('/html/components/cursors.js');
+        return { tracker: m.cursorsIn('tracker'), roll: m.cursorsIn('roll'), section: m.cursorsIn('section') };
+    });
+
+    // Bob picks Riff's clip in his Section pane: the host's clip shows his colour.
+    await guest.locator('.section-clip').first().click();
+    const clip = page.locator('.section-clip.peer-selected');
+    await expect(clip).toHaveCount(1);
+    await expect(clip).toHaveAttribute('data-pickers', 'Bob');
+
+    // Bob moves in his tracker: the host, on the same section, has his cell.
+    await guest.locator('.dock-tab-tracker').click();
+    await guest.locator('.tracker-canvas').click({ position: { x: 36 + 10, y: 16 * 3 + 8 } });   // ruler 36 px, rows 16 px: row 3
+    await expect.poll(async () => (await C(page)).tracker.map((r) => [r.alias, r.where.col])).toEqual([['Bob', 3]]);
+    const hostTabBefore = await page.evaluate(() => document.querySelector('.dock-tab.active').textContent);
+    const hostSectionBefore = await page.evaluate(() => window.__opProject.getSectionId());
+
+    // Bob switches to another section and moves there: the host draws nothing and stays put.
+    await guest.evaluate(() => window.__opProject.addSection({ name: 'B' }, 'section'));
+    await expect.poll(async () => (await C(page)).tracker.filter((r) => r.where.sectionId === hostSectionBefore).length).toBe(0);
+    expect(await page.evaluate(() => window.__opProject.getSectionId())).toBe(hostSectionBefore);
+    expect(await page.evaluate(() => document.querySelector('.dock-tab.active').textContent)).toBe(hostTabBefore);
+    await expect.poll(() => page.evaluate(() => window.__opProject.get().sections.length)).toBe(2);   // the section itself did arrive
+
+    // Bob, back on the first section, selects notes in the roll on Riff: the host's roll, on Riff, hears which.
+    await guest.evaluate((id) => window.__opProject.setSection(id, 'section'), hostSectionBefore);
+    await guest.locator('.dock-tab-pianoroll').click();
+    await guest.evaluate(() => {
+        const roll = window.__opDock._pianoroll;
+        const p = Object.values(window.__opProject.get().patterns)[0];
+        roll.selectNotes(p.notes.slice(0, 1));
+    });
+    await expect.poll(async () => (await C(page)).roll.map((r) => [r.alias, r.where.notes])).toEqual([['Bob', [[0, 60]]]]);
+    await page.screenshot({ path: '/tmp/op-shots/collab-cursors.png' });
+
+    // Bob leaves: his ghosts go.
+    await guest.evaluate(() => window.__opCollab.leave());
+    await expect.poll(async () => { const c = await C(page); return c.tracker.length + c.roll.length + c.section.length; }).toBe(0);
+    expect(guest.opErrors).toEqual([]);
+    await other.close();
+});
+
 test('a wrong code: the dialog says no one is sharing it', async ({ page }) => {
     await openApp(page);
     await page.locator('.menu-item[data-menu="file"] .menu-label').click();

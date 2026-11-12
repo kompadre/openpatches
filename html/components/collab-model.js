@@ -220,6 +220,10 @@ export function divergence(known, project) {
 //                  { t: 'presence', editing } who is editing what:
 //                                             [{ peer, alias, scope }]
 //   both           { t: 'beat', peer }        still here (every 5 s)
+//                  { t: 'cursor', peer, alias, color, where }
+//                                             where I am (cursors.js): editor
+//                                             → position; at most 10 a second,
+//                                             latest wins, never refereed
 //
 //   From the relay itself (no `p`, not readMessage's): { relay: 'left',
 //   peer } when a connection drops; and from relayChannel, locally,
@@ -227,7 +231,7 @@ export function divergence(known, project) {
 //
 // Every message carries `p: PROTOCOL` and `room`.
 
-const TYPES = new Set(['join', 'resync', 'leave', 'snapshot', 'parts', 'bye', 'begin', 'edit', 'ack', 'overridden', 'presence', 'beat']);
+const TYPES = new Set(['join', 'resync', 'leave', 'snapshot', 'parts', 'bye', 'begin', 'edit', 'ack', 'overridden', 'presence', 'beat', 'cursor']);
 
 export function message(room, t, fields = {}) {
     return { p: PROTOCOL, room, t, ...fields };
@@ -246,6 +250,7 @@ export function readMessage(raw, room) {
         || !Array.isArray(raw.accepted) || !Array.isArray(raw.rejected))) return null;
     if (raw.t === 'overridden' && (typeof raw.to !== 'string' || !Array.isArray(raw.rows))) return null;
     if (raw.t === 'presence' && !Array.isArray(raw.editing)) return null;
+    if (raw.t === 'cursor' && (typeof raw.peer !== 'string' || !raw.where || typeof raw.where !== 'object')) return null;
     return raw;
 }
 

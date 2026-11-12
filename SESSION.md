@@ -17,7 +17,33 @@ run `node --check` + `node --test` and tick this file only. (Open: AGENTS.md
 "Keep it current ... in the same commit/change" reads per-change; awaiting
 the user's wording if SESSION.md should be deferred too.)
 
-### Collaborative editing — M1, M2, M3-1/2, M4-1 DONE 2026-11-12; M3-3 parked; next M4-2
+### Collaborative editing — M1, M2, M3-1/2, M4-1/2 DONE 2026-11-12; M3-3 parked; next M4-3 (soft locks) + record mode
+
+**M4-2 — remote cursors** (`cursors.js`; tests `cursors`, `collab` ›
+"cursors travel…"; e2e "remote cursors…"). Rule (user): **the local view
+never follows** — a remote position is drawn only when it lies inside
+what is already on screen here; nothing switches tab, section or
+pattern. Editors `reportCursor(editor, where)` in their draw/render
+(tracker: `{sectionId, slot, lane, col}`; roll: `{patternId, notes:
+[[start, midi]]}` = the selection; section: `{sectionId, clipIds}` =
+picked); collab.js gathers for 100 ms and sends one `cursor` message
+(room broadcast — guests hear each other directly, the host does not
+relay; a joiner gets everyone's last via `sendAllCursors`). Incoming →
+`setRemoteCursor(peer, alias, color, wheres)`; `dropRemoteCursor` on
+leave/drop; `clearRemoteCursors` in `stopTimers`. Editors read
+`cursorsIn(editor, {sectionId|patternId})` and redraw on `onCursors`.
+Drawing: tracker `drawRemoteCursors` (cell outline + alias, before the
+own cursor), roll `drawRemoteSelections` (note outlines + alias, after
+the active notes), section `.peer-selected` class + `data-pickers`.
+Registry is per module: two collabs in one Node process share it (test
+through content, not identity).
+
+**Bug fixed on the way (M2-4):** guests skipped every `section` session
+event, so `addSection`/`renameSection`/`setSectionTempo`/`removeSection`
+never travelled. Now only `saving` and `collab`-sourced events are
+skipped; a plain section switch diffs to nothing and sends nothing.
+
+
 
 **M4-1 — presence in the editors.** `presence.js` is a module registry
 (`setPresence`, `presenceOn({patternIds, trackId, sectionId})`,

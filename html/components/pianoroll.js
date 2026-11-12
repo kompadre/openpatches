@@ -67,6 +67,7 @@ import {
 } from './project-model.js';
 import { msPerColumn } from '../synth/section-sequencer.js';
 import { createTransport } from '../synth/transport.js';
+import { reportCursor, cursorsIn, onCursors } from './cursors.js';
 
 const ROW_H = 20;
 const COL_W = 30;
@@ -873,6 +874,33 @@ export function createPianoroll(opts) {
         }
     }
 
+    /** The others' selected notes — those in the roll on this pattern; nothing follows them. */
+    function drawRemoteSelections(ctx, ox) {
+        const p = activePattern();
+        if (!p) return;
+        for (const r of cursorsIn('roll', { patternId: p.id })) {
+            let labelled = false;
+            for (const [start, midi] of r.where.notes) {
+                const n = notes.find(nn => nn.start === start && nn.midi === midi);
+                const row = NOTES.findIndex(nn => nn.midi === midi);
+                if (!n || row < 0) continue;
+                const x = ox + LABEL_W + start * COL_W;
+                const y = HEADER_H + row * ROW_H;
+                ctx.strokeStyle = r.color;
+                ctx.lineWidth = 2;
+                ctx.strokeRect(x + 0.5, y + 0.5, n.dur * COL_W - 1, ROW_H - 1);
+                ctx.lineWidth = 1;
+                if (!labelled) {
+                    ctx.fillStyle = r.color;
+                    ctx.font = 'bold 9px sans-serif';
+                    ctx.textBaseline = 'bottom';
+                    ctx.fillText(r.alias, x + 2, y - 1);
+                    labelled = true;
+                }
+            }
+        }
+    }
+
     function drawNote(ctx, ox, n, color, active) {
         const r = NOTES.findIndex(nn => nn.midi === n.midi);
         if (r < 0) return;
@@ -905,6 +933,7 @@ export function createPianoroll(opts) {
         }
         const activeColor = slotColor(activeTrackIdx >= 0 ? tracks[activeTrackIdx].slot : currentSlot());
         for (const n of notes) drawNote(ctx, ox, n, activeColor, true);
+        drawRemoteSelections(ctx, ox);
 
         // Ghost note(s): where a move started from.
         if (movingNote && moveCommitted && moveOriginal) {
@@ -1015,7 +1044,10 @@ export function createPianoroll(opts) {
             drawGrid(ctx, gridWidth());
             drawNotes(ctx, gridWidth());
         }
+        const ap = activePattern();
+        reportCursor('roll', ap ? { patternId: ap.id, notes: [...selected].map(n => [n.start, n.midi]) } : null);
     }
+    onCursors(() => draw());
 
     function pixelToCol(px) {
         const col = Math.floor((px - LABEL_W) / COL_W);
