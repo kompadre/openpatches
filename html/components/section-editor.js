@@ -35,7 +35,7 @@
 // pattern to the piano roll via opts.onOpenPattern.
 
 import {
-    addClip, updateClip, removeClip, removeTrack, setTrackSlot, createClip, findClipOverlap,
+    addClip, updateClip, removeClip, removeTrack, setTrackSlot, createClip, findClipOverlap, defaultPatternName,
     clipCols, clipRepeats, sectionLength, createTrack,
     COLS_PER_MEASURE, MAX_SLOTS, MIN_BPM, MAX_BPM,
 } from './project-model.js';
@@ -229,7 +229,7 @@ export function createSectionEditor(opts = {}) {
         let track = currentTrack(session.get());
         if (!track) track = addTrack();          // nothing to land on yet: make the first track
         if (!track) return;
-        const p = session.createPattern({ name: `Pattern ${session.listPatterns().length + 1}` }, 'section-editor');
+        const p = session.createPattern({ name: defaultPatternName(session.get(), sec(), track.slot) }, 'section-editor');
         placeAtEnd(p.id, track.id);
         session.notifyPattern(p.id, 'section-editor');
         render();

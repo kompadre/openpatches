@@ -2,6 +2,12 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-12: Default pattern names — SECTION, slot, index
+
+**A new pattern is named after where it is born**: the section's name (all caps, whitespace dropped), the track's slot number as the heads show it, `_`, and the next index for that pair — `INTRO1_1`, `INTRO1_2`, `DROP3_10`. The index is one past the highest already in the library under that prefix (case-insensitive), so it never repeats while a later one exists. One rule, `defaultPatternName(project, section, slot)` in project-model, used by all three places a pattern is born: Section `+ Pattern`, the Tracker's double-click, and the roll's first note on an empty voice (which used to name it after the voice). Copies (`… copy`) and imports keep their names.
+
+Tests: `project-model` +3 (the format, per-prefix index past gaps and junk, a nameless section); existing section-editor, tracker-view, pattern-editor and e2e `patterns` expectations moved to the new names. 1199 unit.
+
 ## 2026-11-12: Per-track clock divider
 
 **A track can run on a divided clock.** The ÷ button in the Tracker head cycles ÷1 → ÷2 → ÷3 → ÷4 → ÷6 → ÷8 (Shift+click steps back); at ÷n the track's pattern advances one column every n ticks of the section, counted from each clip's start, so it plays n times slower and its notes last n times longer — inside the same clip span (a one-bar clip at ÷2 reaches only the pattern's first half; repeat the clip to hear the rest). Stored as `track.divider` (omitted at 1, clamped 1–8, `dividerOf()`), read **live** by the sequencer like mute/solo, so clicking it mid-playback lands on the next column. No separate playhead in the Section or Tracker views (user's call); the roll's playhead follows the divided column, where the pattern really is.

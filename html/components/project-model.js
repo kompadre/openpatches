@@ -677,6 +677,27 @@ export function removeTrack(project, trackId) {
 }
 
 /** Add a pattern to the project's library. Returns the stored record. */
+/**
+ * The name a new pattern gets: the section's name, the track's slot number
+ * (1-based, as the heads show it), `_`, and the next free index for that
+ * pair — all caps, whitespace dropped: INTRO1_1, INTRO1_2, DROP3_10. The
+ * index is one past the highest already in the library under that prefix,
+ * so deleting or renaming a pattern never makes a name come round twice
+ * while a later one still exists.
+ */
+export function defaultPatternName(project, section, slot) {
+    const base = String(section && section.name || 'Section').replace(/\s+/g, '').toUpperCase() || 'SECTION';
+    const prefix = base + (clampInt(slot, 0, MAX_SLOTS - 1, 0) + 1) + '_';
+    let max = 0;
+    for (const p of Object.values(project.patterns || {})) {
+        const name = String(p.name || '').toUpperCase();
+        if (!name.startsWith(prefix)) continue;
+        const rest = name.slice(prefix.length);
+        if (/^\d+$/.test(rest)) max = Math.max(max, parseInt(rest, 10));
+    }
+    return prefix + (max + 1);
+}
+
 export function addPattern(project, partial = {}) {
     const pattern = createPattern(partial);
     project.patterns[pattern.id] = pattern;

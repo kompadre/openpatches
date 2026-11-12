@@ -534,7 +534,7 @@ describe('patterns', () => {
         h.btn('section-pattern-new').dispatch('click', ev());
         assert.equal(session.listPatterns().length, 2);
         const made = session.listPatterns().find(p => p.id !== h.patterns[0].id);
-        assert.equal(made.name, 'Pattern 2');
+        assert.equal(made.name, h.section().name.replace(/\s+/g, '').toUpperCase() + '2_1', 'section, slot, index');
         const clip = h.section().clips.find(c => c.patternId === made.id);
         assert.ok(clip, 'placed, not just created');
         assert.equal(clip.trackId, h.project().tracks[1].id);

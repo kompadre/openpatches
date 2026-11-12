@@ -184,7 +184,6 @@ relay (first) or WebRTC (later, if latency matters).
 
 - [ ] Import and export **MIDI** (patterns ↔ MIDI files; a section or the piece as a multi-track SMF).
 - [ ] Export (and maybe import) the project as a **Reaper project** (.rpp): tracks, clips as MIDI items, tempo.
-- [ ] Default pattern naming: <<Section name>><<Track slot>>_<<Autoincremented Index>> all caps. Example: INTRO1_1, DROP3_10
 - [ ] Add a Section Clone / Duplicate button
 - [ ] Per section track configuration. 
 - [ ] 

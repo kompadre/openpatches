@@ -511,7 +511,7 @@ describe('renaming the edited pattern from the roll', () => {
         drawNote(h, 48, 0);
         const items = h.legend();
         assert.equal(items[0].querySelector('.pianoroll-legend-pattern'), null, 'ghost track: no field');
-        assert.equal(field(h).textContent, session.listPatterns().find(p => p.name === 'Bass').name);
+        assert.equal(field(h).textContent, session.listPatterns().find(p => p.name === 'SECTION12_1').name);
     });
 
     test('click, type, blur → the store and the legend both have the new name', () => {
@@ -535,10 +535,10 @@ describe('renaming the edited pattern from the roll', () => {
         f.dispatch('click', { stopPropagation() {} });
         f.textContent = 'oops';
         f.dispatch('keydown', { key: 'Escape', stopPropagation() {}, preventDefault() {} });
-        assert.equal(f.textContent, 'Piano');
+        assert.equal(f.textContent, 'SECTION11_1');
         assert.equal(f.contentEditable, 'false');
         f.dispatch('blur');
-        assert.equal(session.listPatterns()[0].name, 'Piano');
+        assert.equal(session.listPatterns()[0].name, 'SECTION11_1');
     });
 });
 

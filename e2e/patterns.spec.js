@@ -33,7 +33,7 @@ test('library drag, clip dots, and the roll\'s Pattern select', async ({ page })
     await openRollTab(page);
     await expect(page.locator('.dock-tab-pianoroll')).toHaveText(/Pattern/);
     const sel = page.locator('.pianoroll-pattern');
-    await expect(sel.locator('option')).toHaveText(['Pattern 1', 'Pattern 2']);
-    await sel.selectOption({ label: 'Pattern 1' });
+    await expect(sel.locator('option')).toHaveText(['SECTION11_1', 'SECTION12_1']);
+    await sel.selectOption({ label: 'SECTION11_1' });
     expect(await page.evaluate(() => window.__opDock._pianoroll.getNotes().map(n => n.midi))).toEqual([60]);
 });

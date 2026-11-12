@@ -83,7 +83,7 @@ import {
 } from './tracker-model.js';
 import {
     COLS_PER_MEASURE, updateClip, clipRepeats, sectionLength, addClip, patternCols,
-    dividerOf,
+    dividerOf, defaultPatternName,
 } from './project-model.js';
 
 const ROW_H = 16;
@@ -1621,7 +1621,7 @@ export function createTracker(opts) {
         // an orphan pattern in the library.
         if (roomAt(t, p.row) < COLS_PER_MEASURE) { say('No room for a bar here: the next clip is in the way'); return; }
         commit();
-        const pattern = session.createPattern({ name: `Pattern ${session.listPatterns().length + 1}`, measures: 1 }, 'tracker');
+        const pattern = session.createPattern({ name: defaultPatternName(session.get(), session.getSection(), t.track.slot), measures: 1 }, 'tracker');
         if (!pattern) return;
         if (!placePattern(t, pattern.id, p.row)) { session.removePattern(pattern.id, 'tracker'); return; }
         say(pattern.name + ' — type notes into it');

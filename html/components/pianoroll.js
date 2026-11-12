@@ -63,7 +63,7 @@ const NOTES = [
 import { selectionMade, onSelectionElsewhere } from './selection-bus.js';
 import {
     COLS_PER_MEASURE, createTrack, addClip, clipCols,
-    MIN_BPM, MAX_BPM,
+    MIN_BPM, MAX_BPM, defaultPatternName,
 } from './project-model.js';
 import { msPerColumn } from '../synth/section-sequencer.js';
 import { createTransport } from '../synth/transport.js';
@@ -232,7 +232,7 @@ export function createPianoroll(opts) {
     function ensureTrackForSlot(slot) {
         let entry = tracks.find(t => t.slot === slot);
         if (entry && entry.pattern) return entry;
-        const pattern = session.createPattern({ name: slotName(slot), measures }, 'roll');
+        const pattern = session.createPattern({ name: defaultPatternName(session.get(), session.getSection(), slot), measures }, 'roll');
         liveCache.set(pattern.id, pattern);
         // Tracks are the project's band; the clip goes in the edited section.
         session.update((project, section) => {

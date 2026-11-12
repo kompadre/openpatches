@@ -194,7 +194,7 @@ describe('tracker view', () => {
         assert.equal(clip.trackId, track.id);
         const made = session.getPattern(clip.patternId);
         assert.equal(made.measures, 1);
-        assert.match(made.name, /^Pattern \d+$/);
+        assert.match(made.name, /^[A-Z0-9]+\d_\d+$/);
         assert.equal(tracker.getCursor().col, 20, 'the cursor waits there to type into it');
         assert.match(q('.tracker-status').textContent, /type notes/);
     });

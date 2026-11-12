@@ -10,7 +10,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-    createProject, createPattern, createTrack, createClip, createSection, MAX_DIVIDER, dividerOf,
+    createProject, createPattern, createTrack, createClip, createSection, MAX_DIVIDER, dividerOf, defaultPatternName,
     normalizeProject, effectiveBpm, audibleTracks, effectiveVolume,
     addClip, updateClip, removeClip, addTrack, removeTrack,
     addPattern, removePattern, patternUsage, addSection, removeSection,
@@ -507,5 +507,26 @@ describe('sections in a piece', () => {
         const s = M.createSection({ bpmEnd: 9999 });
         assert.equal(s.bpmEnd, M.MAX_BPM);
         assert.equal(M.createSection({}).bpmEnd, null);
+    });
+});
+
+describe('default pattern names', () => {
+    const named = (...names) => ({ patterns: Object.fromEntries(names.map((name, i) => [`p${i}`, { name }])) });
+
+    test('section, 1-based slot, _, index — all caps, spaces dropped', () => {
+        assert.equal(defaultPatternName(named(), { name: 'Intro' }, 0), 'INTRO1_1');
+        assert.equal(defaultPatternName(named(), { name: 'Big drop' }, 2), 'BIGDROP3_1');
+    });
+
+    test('the index is one past the highest under the same prefix', () => {
+        const project = named('DROP3_1', 'DROP3_9', 'drop3_4', 'DROP4_20', 'INTRO3_50', 'DROP3_x', 'Riff');
+        assert.equal(defaultPatternName(project, { name: 'Drop' }, 2), 'DROP3_10');
+        assert.equal(defaultPatternName(project, { name: 'Drop' }, 3), 'DROP4_21', 'per slot');
+        assert.equal(defaultPatternName(project, { name: 'Drop' }, 0), 'DROP1_1');
+    });
+
+    test('a nameless section still gives a name', () => {
+        assert.equal(defaultPatternName(named(), { name: '  ' }, 0), 'SECTION1_1');
+        assert.equal(defaultPatternName({}, null, 0), 'SECTION1_1');
     });
 });
