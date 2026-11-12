@@ -35,7 +35,7 @@
 // pattern to the piano roll via opts.onOpenPattern.
 
 import {
-    addClip, updateClip, removeClip, removeTrack, setTrackSlot, createClip, findClipOverlap, defaultPatternName,
+    addClip, updateClip, removeClip, removeTrack, setTrackSlot, createClip, findClipOverlap, defaultPatternName, forkPattern,
     clipCols, clipRepeats, sectionLength, createTrack,
     COLS_PER_MEASURE, MAX_SLOTS, MIN_BPM, MAX_BPM,
 } from './project-model.js';
@@ -909,6 +909,24 @@ export function createSectionEditor(opts = {}) {
             session.notifyPattern(copy.id, 'section-editor');
             render();
         }, 'section-btn section-pattern-dup'));
+        // Save a copy: this section gets its own pattern — every clip of
+        // the pattern here now places the copy; other sections keep the
+        // original. The companion of Duplicate section: that shares the
+        // patterns, this is how one of them then drifts apart.
+        const elsewhere = project.sections.filter(s => s !== sec() && s.clips.some(c => c.patternId === pattern.id)).length;
+        actions.appendChild(button('⎘ Save a copy',
+            elsewhere
+                ? `Give this section its own copy of the pattern: the ${elsewhere} other section${elsewhere > 1 ? 's' : ''} placing it keep the original`
+                : 'Give this section its own copy of the pattern: every clip of it here moves to the copy',
+            () => {
+                let copy = null;
+                change((project, section) => { copy = forkPattern(project, section, pattern.id); });
+                if (!copy) return;
+                selectedPatternId = copy.id;
+                session.notifyPattern(copy.id, 'section-editor');
+                say(`${copy.name} — this section's own copy of ${pattern.name}`);
+                render();
+            }, 'section-btn section-pattern-fork'));
         actions.appendChild(button('Remove clip', 'Remove this clip from the section', () => deleteClip(clip.id), 'section-btn section-clip-remove'));
     }
 

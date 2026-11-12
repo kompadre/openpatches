@@ -10,7 +10,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-    createProject, createPattern, createTrack, createClip, createSection, MAX_DIVIDER, dividerOf, defaultPatternName,
+    createProject, createPattern, createTrack, createClip, createSection, MAX_DIVIDER, dividerOf, defaultPatternName, forkPattern,
     normalizeProject, effectiveBpm, audibleTracks, effectiveVolume,
     addClip, updateClip, removeClip, addTrack, removeTrack,
     addPattern, removePattern, patternUsage, addSection, removeSection, duplicateSection,
@@ -550,5 +550,35 @@ describe('default pattern names', () => {
     test('a nameless section still gives a name', () => {
         assert.equal(defaultPatternName(named(), { name: '  ' }, 0), 'SECTION1_1');
         assert.equal(defaultPatternName({}, null, 0), 'SECTION1_1');
+    });
+});
+
+describe('forkPattern — a section\'s own copy of a pattern', () => {
+    test('copies the pattern and repoints this section\'s clips, other sections keep the original', () => {
+        const { project, pattern, section } = build();
+        addClip(project, section, { trackId: project.tracks[0].id, patternId: pattern.id, startCol: 32, repeats: 2 });
+        const other = addSection(project, { name: 'Drop' });
+        addClip(project, other, { trackId: project.tracks[1].id, patternId: pattern.id, startCol: 0 });
+        pattern.notes.push({ midi: 72, start: 4, dur: 2 });
+
+        const copy = forkPattern(project, section, pattern.id);
+        assert.ok(copy && copy.id !== pattern.id);
+        assert.equal(copy.name, 'SECTION11_1', 'named by the default rule, for the first clip\'s slot');
+        assert.deepEqual(copy.notes, pattern.notes); assert.notEqual(copy.notes, pattern.notes, 'its own notes');
+        assert.equal(copy.color, pattern.color); assert.equal(copy.measures, pattern.measures);
+        assert.ok(section.clips.every(c => c.patternId === copy.id), 'every clip here moved');
+        assert.equal(section.clips.length, 2);
+        assert.equal(other.clips[0].patternId, pattern.id, 'the other section keeps the original');
+        assert.equal(Object.keys(project.patterns).length, 2);
+        assert.equal(project.patterns[copy.id], copy, 'in the library');
+    });
+
+    test('an explicit name wins; nothing to fork gives null', () => {
+        const { project, pattern, section } = build();
+        assert.equal(forkPattern(project, section, pattern.id, 'Mine').name, 'Mine');
+        const empty = addSection(project, { name: 'Empty' });
+        assert.equal(forkPattern(project, empty, pattern.id), null, 'the section does not place it');
+        assert.equal(forkPattern(project, section, 'ghost'), null);
+        assert.equal(forkPattern(project, { clips: [] }, pattern.id), null, 'not this project\'s section');
     });
 });

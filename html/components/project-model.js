@@ -705,6 +705,30 @@ export function addPattern(project, partial = {}) {
 }
 
 /**
+ * Fork a pattern for one section: a copy of it (same notes, kind, colour,
+ * measures), and every clip of *this* section that placed the original now
+ * places the copy. Other sections keep the original. This is how a
+ * duplicated section drifts apart in content, not just in placement: the
+ * pattern in the copy becomes "similar but separate". Named by the usual
+ * default rule for the first clip's slot unless `name` is given. `null` if
+ * the pattern or the section is not here, or the section does not place it.
+ */
+export function forkPattern(project, section, patternId, name) {
+    const src = project.patterns[patternId];
+    if (!src || !section || !project.sections.includes(section)) return null;
+    const clips = section.clips.filter(c => c.patternId === patternId);
+    if (clips.length === 0) return null;
+    const trackById = new Map(project.tracks.map(t => [t.id, t]));
+    const first = trackById.get(clips[0].trackId);
+    const copy = addPattern(project, {
+        ...src, id: undefined, created: undefined, modified: undefined,
+        name: name || defaultPatternName(project, section, first ? first.slot : 0),
+    });
+    for (const c of clips) c.patternId = copy.id;
+    return copy;
+}
+
+/**
  * Remove a pattern and every clip that placed it, in every section. Use
  * `patternUsage()` first if the user should be asked.
  */

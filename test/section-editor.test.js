@@ -571,6 +571,28 @@ describe('patterns', () => {
         assert.equal(h.editor.getSelectedClipId(), placed.id);
     });
 
+    test('Save a copy gives this section its own pattern; every clip of it here follows, other sections do not', () => {
+        const h = build({
+            patterns: [{ name: 'A', notes: [{ midi: 60, start: 0, dur: 1 }] }], tracks: [{ slot: 0 }],
+            clips: [{ track: 0, pattern: 0, at: 0 }, { track: 0, pattern: 0, at: 2 }],
+        });
+        const other = h.project().sections[0];
+        session.addSection({ name: 'Other' }, 'test');
+        session.update((project) => {
+            project.sections[1].clips.push(M.createClip({ trackId: project.tracks[0].id, patternId: h.patterns[0].id, startCol: 0 }));
+        }, 'test');
+        session.setSection(other.id, 'test');
+        h.click(h.clips()[0]);
+        h.btn('section-pattern-fork').dispatch('click', ev());
+        const all = session.listPatterns();
+        assert.equal(all.length, 2);
+        const copy = all.find(p => p.id !== h.patterns[0].id);
+        assert.deepEqual(copy.notes, [{ midi: 60, start: 0, dur: 1 }]);
+        assert.ok(h.section().clips.every(c => c.patternId === copy.id), 'both clips here moved');
+        assert.equal(h.project().sections[1].clips[0].patternId, h.patterns[0].id, 'the other section kept the original');
+        assert.equal(h.clips().length, 2, 'the view redrew with the same two clips');
+    });
+
     test('the name field renames the pattern; every clip of it follows', () => {
         const h = build({ patterns: [{ name: 'A' }], tracks: [{ slot: 0 }], clips: [{ track: 0, pattern: 0, at: 0 }, { track: 0, pattern: 0, at: 2 }] });
         h.click(h.clips()[0]);

@@ -2,6 +2,12 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-12: Section — "Save a copy" of a pattern for this section
+
+**⎘ Save a copy in the selected clip's action bar** gives the section its own pattern: a copy (same notes, kind, colour, measures) joins the library under the default name for that section and slot (`DROP1_2`), and **every clip of the pattern in this section** now places the copy; other sections keep the original. It is the companion of Duplicate section — that shares the patterns, this is how one section then drifts apart in content, not just placement. (The older ⧉ Duplicate stays: it copies the pattern and places the copy at the end of the track.) `forkPattern(project, section, patternId, name?)` in project-model; the button's tooltip says how many other sections keep the original.
+
+Tests: `project-model` +2, `section-editor` +1. 1205 unit.
+
 ## 2026-11-12: Section — Duplicate button
 
 **⎘ in the Section pane's section row** (between `+ Section` and ✕) makes a copy of the section on screen, named `<name> copy`, placed right after it in the piece, and switches to it. The copy has the same tempo, end tempo and loop, and the same clips — each a new clip record placing the **same pattern** (patterns are the library; editing one changes it in both sections, as in two clips of one). `duplicateSection(project, id)` in project-model, `session.duplicateSection(id, source)` announces a `section` event with the copy as the edited one.
