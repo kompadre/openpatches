@@ -117,15 +117,26 @@ relay (first) or WebRTC (later, if latency matters).
     beats every 5 s; the relay's `left` notice or 20 s of silence → a 15 s
     grace, then "The host has gone"; dropped sockets reconnect with backoff;
     a guest back resyncs (pending rebased), a host back re-snapshots all.
-  - [ ] **M3-3 The Go service's relay** (user: not now): same protocol as
+  - [ ] **M3-3 The Go service's relay** (parked by the user 2026-11-12): same protocol as
     the stub — `/api/room/<CODE>?peer=<id>`, forward text frames to the
     room's others, `left` notice on drop; Caddy must proxy the upgrade.
 - [ ] **Listen in** — hear what a collaborator hears, as streamed audio.
   Transport stays local to each peer; nothing plays in sync.
-- [ ] **M4 — Comforts.** Remote cursors/selections, soft locks (presence
-  "Alex is editing Riff" exists since M2; locks would refuse the edit),
-  peer colours on what each person touches. (Following the host's
-  transport was dropped 2026-11-12: transport is local to each peer.)
+- [ ] **M4 — Comforts.** (Following the host's transport was dropped
+  2026-11-12: transport is local to each peer.)
+  - [x] **M4-1 Peer colours and presence in the editors** (2026-11-12):
+    `presence.js` registry fed by collab; the clip, tracker head and Mixer
+    strip someone is editing get their colour and alias.
+  - [ ] **M4-2 Remote cursors and selections**: tracker cursor and roll
+    selection at ~10 Hz, latest wins, never refereed; coloured ghosts.
+  - [ ] **M4-3 Soft locks**: someone has an edit open on a pattern, track
+    or section → others are warned before editing it. Advisory or
+    refusing: user's call when we get there (advisory recommended).
+  - [ ] **Record mode and the others** (user, 2026-11-12): when someone
+    starts recording, everyone else is asked — **accept**, and their
+    interface is blocked for writing while the take runs, or **disregard**,
+    keep editing and risk a big conflict when the take (one large edit,
+    sent at the end) lands. Related to soft locks.
 
 ### Ideas
 

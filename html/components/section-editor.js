@@ -42,6 +42,7 @@ import {
 import { selectionMade, onSelectionElsewhere } from './selection-bus.js';
 import { thumbURL } from './pattern-thumbs.js';
 import { wireDropZone } from './slot-drop.js';
+import { presenceOn, markPresence, onPresence } from './presence.js';
 
 export const MEASURE_W = 48;      // px per measure in the grid (its height, time runs down), at zoom ×1
 const MIN_GRID_MEASURES = 16;     // never show an empty, zero-height grid
@@ -689,6 +690,7 @@ export function createSectionEditor(opts = {}) {
         el.className = 'section-clip' + (clip.id === selectedClipId ? ' selected' : '')
             + (picked.has(clip.id) ? ' picked' : '');
         el.dataset.clipId = clip.id;
+        markPresence(el, presenceOn({ patternIds: [clip.patternId], trackId: clip.trackId }));
         el.style.top = (span.startCol * colH()) + 'px';
         el.style.height = ((span.endCol - span.startCol) * colH() - 2) + 'px';
         el.style.background = pattern.color;
@@ -1449,6 +1451,8 @@ export function createSectionEditor(opts = {}) {
         render();
     });
 
+    // Someone else starts or stops editing: their colour on the clips.
+    const offPresence = onPresence(() => render());
     unsubscribe = session.subscribe((ev) => {
         // Patch and canvas edits belong to the other half of the app.
         if (ev.kind === 'patches') return;
@@ -1477,6 +1481,7 @@ export function createSectionEditor(opts = {}) {
             document.removeEventListener('keydown', onKey);
             unsubscribeBus();
             if (unsubscribe) unsubscribe();
+            offPresence();
             if (unsubscribeTransport) unsubscribeTransport();
         },
     };

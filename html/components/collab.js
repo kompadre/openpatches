@@ -47,6 +47,7 @@ import { readAtoms, readAtom, diffAtoms, groupOps, applyOps } from './collab-ops
 import { createReferee, stampEdit } from './collab-referee.js';
 import { createProject, normalizeProject } from './project-model.js';
 import { profileStore } from './profile-store.js';
+import { setPresence } from './presence.js';
 
 const RECONNECT_MS = 500;      // first retry after a relay socket drops; doubles…
 const RECONNECT_MAX_MS = 5000; // …up to this
@@ -256,6 +257,7 @@ export function createCollab(opts) {
 
     function emit(notice) {
         const s = status();
+        setPresence(role ? s.editing.filter(e => e.peer !== 'host' || role !== 'host') : []);
         if (notice) s.notice = notice;
         for (const fn of [...listeners]) {
             try { fn(s); } catch (e) { console.warn('[collab] listener failed:', e); }
@@ -300,6 +302,11 @@ export function createCollab(opts) {
     function closeChannel() {
         if (ch) { try { ch.close(); } catch { /* already */ } }
         ch = null;
+    }
+
+    function myColor() {
+        const id = profileStore.identity();
+        return id ? id.color : '';
     }
 
     function identity() {
@@ -435,7 +442,7 @@ export function createCollab(opts) {
         } else if (m.t === 'leave') {
             dropPeer(m.peer);
         } else if (m.t === 'begin') {
-            editing.set(m.peer, { alias: typeof m.alias === 'string' ? m.alias : m.peer, scope: m.scope || {}, at: Date.now() });
+            editing.set(m.peer, { alias: typeof m.alias === 'string' ? m.alias : m.peer, color: typeof m.color === 'string' ? m.color : '', scope: m.scope || {}, at: Date.now() });
             sendPresence();
             emit();
         } else if (m.t === 'edit') {
@@ -455,8 +462,8 @@ export function createCollab(opts) {
 
     /** Who is editing what, to every guest (the host's own open edits included). */
     function sendPresence() {
-        const list = [...editing.entries()].map(([p, e]) => ({ peer: p, alias: e.alias, scope: e.scope }));
-        for (const e of (session.openEdits ? session.openEdits() : [])) list.push({ peer: 'host', alias: alias || 'host', scope: e.scope });
+        const list = [...editing.entries()].map(([p, e]) => ({ peer: p, alias: e.alias, color: e.color, scope: e.scope }));
+        for (const e of (session.openEdits ? session.openEdits() : [])) list.push({ peer: 'host', alias: alias || 'host', color: myColor(), scope: e.scope });
         send('presence', { editing: list });
     }
 
@@ -700,7 +707,7 @@ export function createCollab(opts) {
             if (state !== 'watching') return;
             editing.clear();
             for (const e of m.editing) {
-                if (e && typeof e.peer === 'string' && e.peer !== peer) editing.set(e.peer, { alias: String(e.alias || e.peer), scope: e.scope || {}, at: Date.now() });
+                if (e && typeof e.peer === 'string' && e.peer !== peer) editing.set(e.peer, { alias: String(e.alias || e.peer), color: typeof e.color === 'string' ? e.color : '', scope: e.scope || {}, at: Date.now() });
             }
             emit();
         } else if (m.t === 'overridden') {
@@ -775,7 +782,7 @@ export function createCollab(opts) {
         if (ev.kind === 'begin') {
             if (!begun || JSON.stringify(ev.scope || {}) !== begunScope) {
                 begun = true; begunScope = JSON.stringify(ev.scope || {});
-                send('begin', { peer, alias, scope: ev.scope || {} });
+                send('begin', { peer, alias, color: myColor(), scope: ev.scope || {} });
             }
             return;
         }

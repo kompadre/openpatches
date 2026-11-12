@@ -17,7 +17,23 @@ run `node --check` + `node --test` and tick this file only. (Open: AGENTS.md
 "Keep it current ... in the same commit/change" reads per-change; awaiting
 the user's wording if SESSION.md should be deferred too.)
 
-### Collaborative editing — M1, M2 DONE; M3-1, M3-2 DONE 2026-11-12; next M3-3 (Go relay, when the user wants it)
+### Collaborative editing — M1, M2, M3-1/2, M4-1 DONE 2026-11-12; M3-3 parked; next M4-2
+
+**M4-1 — presence in the editors.** `presence.js` is a module registry
+(`setPresence`, `presenceOn({patternIds, trackId, sectionId})`,
+`markPresence(el, people)`, `onPresence`). collab.js writes it on every
+`emit()` (role-less → empty; the host leaves out its own entries; guests
+never get their own back). `begin`/`presence` messages now carry
+`color` (from the profile identity). Marked: Section clips
+(`renderClip`: pattern or track), Tracker heads (track, or any pattern
+placed on it in the edited section), Mixer strips (`entry.id` = track).
+CSS `.peer-editing` = outline in `--peer-color` + an `::after` alias tag
+from `data-peers`; only `.voicebank-item` gets `position: relative`
+(clips and heads are absolute already — do not add it to the base
+rule). Two collabs in one Node process share the registry: test it
+through `status().editing`, not `getPresence()`.
+
+
 
 **M3-2 — links that drop** (collab.js; tests `collab` › "dropped links…",
 "relay channel reconnects"; e2e "a dropped socket reconnects…"):

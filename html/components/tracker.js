@@ -85,6 +85,7 @@ import {
     COLS_PER_MEASURE, updateClip, clipRepeats, sectionLength, addClip, patternCols,
     dividerOf, defaultPatternName,
 } from './project-model.js';
+import { presenceOn, markPresence, onPresence } from './presence.js';
 
 const ROW_H = 16;
 const LANE_W = 46;
@@ -303,6 +304,11 @@ export function createTracker(opts) {
         for (const t of layout) {
             const head = document.createElement('div');
             head.className = 'tracker-head' + (t.track.slot === activeSlot ? ' active' : '');
+            {
+                const sc = session.getSection();
+                const ids = sc ? sc.clips.filter(c => c.trackId === t.track.id).map(c => c.patternId) : [];
+                markPresence(head, presenceOn({ patternIds: ids, trackId: t.track.id }));
+            }
             head.style.left = t.x + 'px';
             head.style.width = t.w + 'px';
             const name = document.createElement('button');
@@ -1730,6 +1736,7 @@ export function createTracker(opts) {
         draw();
     }
 
+    onPresence(() => { if (shown) render(); });
     session.subscribe((ev) => {
         if (ev.kind === 'patches') return;   // canvas drags; nothing of ours
         // Another editor changed a pattern we hold uncommitted: ours is the

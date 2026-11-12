@@ -335,6 +335,54 @@ test('a dropped socket reconnects and catches up; a host that vanishes is notice
     await other.close();
 });
 
+test('presence in the editors: the other person’s colour on the clip, tracker head and strip they work on', async ({ page, browser }) => {
+    await openApp(page);
+    await seed(page);
+    const code = await page.evaluate(() => window.__opCollab.host());
+    const other = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+    await other.addInitScript(() => {
+        localStorage.setItem('openpatches_profile', JSON.stringify({ identity: { alias: 'Bob', color: '#d84a6b' } }));
+    });
+    const guest = await guestPage(other, code);
+    await expect(guest.locator('#menu-collab-chip')).toContainText('With Jam');
+
+    // Bob starts typing into Riff: the host sees his colour on Riff's clip.
+    await guest.evaluate(() => {
+        const p = Object.values(window.__opProject.get().patterns)[0];
+        window.__opProject.beginEdit({ patternId: p.id }, 'tracker');
+    });
+    const clip = page.locator('.section-clip.peer-editing');
+    await expect(clip).toHaveCount(1);
+    await expect(clip).toHaveAttribute('data-peers', 'Bob');
+    expect(await clip.evaluate((el) => el.style.getPropertyValue('--peer-color'))).toBe('#d84a6b');
+    await page.locator('.dock-tab-tracker').click();
+    await expect(page.locator('.tracker-head.peer-editing')).toHaveAttribute('data-peers', 'Bob');
+    await page.screenshot({ path: '/tmp/op-shots/collab-presence.png' });
+
+    // His commit lands: the marks go.
+    await guest.evaluate(() => {
+        const p = Object.values(window.__opProject.get().patterns)[0];
+        p.notes.push({ midi: 64, start: 4, dur: 4 });
+        window.__opProject.touchPattern(p.id, 'tracker');
+    });
+    await expect(page.locator('.peer-editing')).toHaveCount(0);
+
+    // A fader grab marks the strip (a track is a Mixer strip once it has a voice).
+    await page.evaluate(() => window.__opProject.update((p) => { p.tracks[0].voiceData = new Array(128).fill(0); }, 'e2e', 'tracks'));
+    await expect(page.locator('.voicebank-item')).not.toHaveCount(0);
+    await expect.poll(() => guest.evaluate(() => !!window.__opProject.get().tracks[0].voiceData)).toBe(true);
+    await guest.evaluate(() => window.__opProject.beginEdit({ trackId: window.__opProject.get().tracks[0].id }, 'voicebank'));
+    await expect(page.locator('.voicebank-item.peer-editing')).toHaveAttribute('data-peers', 'Bob');
+
+    // Transport stays local: the host playing does not move Bob's.
+    await page.evaluate(() => window.__opDock._pianoroll.getTransport().play());
+    await page.waitForTimeout(300);
+    expect(await guest.evaluate(() => window.__opDock._pianoroll.getTransport().isRunning())).toBe(false);
+    await page.evaluate(() => window.__opDock._pianoroll.getTransport().stop());
+    expect(guest.opErrors).toEqual([]);
+    await other.close();
+});
+
 test('a wrong code: the dialog says no one is sharing it', async ({ page }) => {
     await openApp(page);
     await page.locator('.menu-item[data-menu="file"] .menu-label').click();

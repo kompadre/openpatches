@@ -29,6 +29,7 @@ import { onPatchDroppedOnSlot, wireDropZone } from './slot-drop.js';
 import { voiceKey } from './patch-model.js';
 import { createTrack } from './project-model.js';
 import { fxSummary, openTrackFxPopover, openGlobalFxPopover, closeFxPopover } from './fx-panel.js';
+import { presenceOn, markPresence, onPresence } from './presence.js';
 
 const MAX_SLOTS = 8;
 const DEFAULT_VOLUME = 100;
@@ -171,6 +172,7 @@ export function createVoiceBank(opts) {
                 + (entry && entry.solo ? ' soloed' : '')
                 + (entry && entry.effectiveVolume === 0 && (entry.volume ?? DEFAULT_VOLUME) > 0 ? ' silenced' : '');
             item.dataset.vbIdx = i;
+            if (entry) markPresence(item, presenceOn({ trackId: entry.id }));
 
             // Slot number — doubles as the color chip
             const slotNum = document.createElement('span');
@@ -531,6 +533,8 @@ export function createVoiceBank(opts) {
     // Another editor changed the band, or the project was switched: the
     // strips are a view of the tracks, so re-read them. Our own writes are
     // skipped — re-reading mid-edit would fight the user's drag.
+    // Someone else grabs a fader or re-patches a strip: their colour on it.
+    onPresence(() => render());
     if (session) {
         session.subscribe((ev) => {
             if (ev.kind !== 'project' && ev.kind !== 'tracks') return;

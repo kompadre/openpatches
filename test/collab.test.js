@@ -453,6 +453,22 @@ describe('collab: guest edits', () => {
         assert.equal(s.guest.session.get().bpm, 60);
     });
 
+    test('presence carries colour, the editor’s own entry never comes back to it', async () => {
+        const s = setup();
+        const code = await joined(s);
+        profileStore.setIdentity({ alias: 'Bob', color: '#d84a6b' });
+        const other = await joinedToo(s, code);
+        other.session.beginEdit({ patternId: s.pattern.id }, 'tracker');
+        s.hub.pump(); s.hub.pump();
+        assert.deepEqual(s.host.collab.status().editing.map(e => [e.alias, e.color]), [['Bob', '#d84a6b']]);
+        assert.deepEqual(s.guest.collab.status().editing.map(e => [e.alias, e.color, e.scope.patternId]), [['Bob', '#d84a6b', s.pattern.id]]);
+        assert.deepEqual(other.collab.status().editing, []);
+        other.session.getPattern(s.pattern.id).notes.push({ midi: 64, start: 4, dur: 4 });
+        other.session.touchPattern(s.pattern.id, 'tracker');
+        settle(s);
+        assert.deepEqual(s.guest.collab.status().editing, []);
+    });
+
     test('a missed message with an edit in flight: resync keeps and resends it', async () => {
         const s = setup();
         await joined(s);
