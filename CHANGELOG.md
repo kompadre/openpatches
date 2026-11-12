@@ -2,6 +2,12 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-12: Section — Duplicate button
+
+**⎘ in the Section pane's section row** (between `+ Section` and ✕) makes a copy of the section on screen, named `<name> copy`, placed right after it in the piece, and switches to it. The copy has the same tempo, end tempo and loop, and the same clips — each a new clip record placing the **same pattern** (patterns are the library; editing one changes it in both sections, as in two clips of one). `duplicateSection(project, id)` in project-model, `session.duplicateSection(id, source)` announces a `section` event with the copy as the edited one.
+
+Tests: `project-model` +1, `project-session` +1, `section-editor` +1. 1202 unit.
+
 ## 2026-11-12: Default pattern names — SECTION, slot, index
 
 **A new pattern is named after where it is born**: the section's name (all caps, whitespace dropped), the track's slot number as the heads show it, `_`, and the next index for that pair — `INTRO1_1`, `INTRO1_2`, `DROP3_10`. The index is one past the highest already in the library under that prefix (case-insensitive), so it never repeats while a later one exists. One rule, `defaultPatternName(project, section, slot)` in project-model, used by all three places a pattern is born: Section `+ Pattern`, the Tracker's double-click, and the roll's first note on an empty voice (which used to name it after the voice). Copies (`… copy`) and imports keep their names.

@@ -1284,6 +1284,15 @@ describe('the piece\'s sections', () => {
         assert.equal(h.section().name, 'Section 2');
     });
 
+    test('⎘ duplicates the section on screen and shows the copy', () => {
+        const h = build({ patterns: [{ name: 'A' }], tracks: [{ slot: 0 }], clips: [{ track: 0, pattern: 0, at: 0 }, { track: 0, pattern: 0, at: 2 }] });
+        h.btn('section-duplicate').dispatch('click', ev());
+        assert.deepEqual(opts(h), ['1. Section 1', '2. Section 1 copy']);
+        assert.equal(h.section().name, 'Section 1 copy', 'the copy is on screen');
+        assert.equal(h.clips().length, 2, 'with its clips');
+        assert.equal(h.btn('section-remove').disabled, false);
+    });
+
     test('the tempo fields: blank is the project\'s, the arrow is the end tempo', () => {
         const h = build({ patterns: [{ name: 'A' }], tracks: [{ slot: 0 }], clips: [{ track: 0, pattern: 0, at: 0 }] });
         const start = h.btn('section-bpm-start'), end = h.btn('section-bpm-end');

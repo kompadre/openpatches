@@ -13,7 +13,7 @@ import {
     createProject, createPattern, createTrack, createClip, createSection, MAX_DIVIDER, dividerOf, defaultPatternName,
     normalizeProject, effectiveBpm, audibleTracks, effectiveVolume,
     addClip, updateClip, removeClip, addTrack, removeTrack,
-    addPattern, removePattern, patternUsage, addSection, removeSection,
+    addPattern, removePattern, patternUsage, addSection, removeSection, duplicateSection,
     findClipOverlap, clipCols, clipRepeats, sectionLengthCols, sectionLength,
     getTrackBySlot, getPattern,
     COLS_PER_MEASURE, MAX_SLOTS, MIN_BPM, MAX_BPM, DEFAULT_BPM, SCHEMA_VERSION,
@@ -413,6 +413,28 @@ describe('sections', () => {
         assert.equal(s.name, 'Section 2');
         assert.deepEqual(s.clips, []);
         assert.equal(s.bpm, null, 'it defers to the project until told otherwise');
+    });
+
+    test('duplicating a section copies its clips, tempo and loop right after it, sharing the patterns', () => {
+        const { project, pattern } = build();
+        const first = project.sections[0];
+        addSection(project, { name: 'Last' });
+        first.name = 'Verse'; first.bpm = 100; first.bpmEnd = 110; first.loop = { start: 0, end: 2 };
+        // build() placed one clip at 0 on track 1; a second, cut short, on track 2.
+        addClip(project, first, { trackId: project.tracks[1].id, patternId: pattern.id, startCol: 40, lengthCols: 6 });
+
+        const copy = duplicateSection(project, first.id);
+        assert.deepEqual(project.sections.map(s => s.name), ['Verse', 'Verse copy', 'Last'], 'right after the original');
+        assert.notEqual(copy.id, first.id);
+        assert.equal(copy.bpm, 100); assert.equal(copy.bpmEnd, 110);
+        assert.deepEqual(copy.loop, { start: 0, end: 2 });
+        assert.notEqual(copy.loop, first.loop, 'its own loop object');
+        assert.equal(copy.clips.length, 2);
+        assert.deepEqual(copy.clips.map(c => [c.trackId, c.patternId, c.startCol, c.repeats, c.lengthCols]),
+            first.clips.map(c => [c.trackId, c.patternId, c.startCol, c.repeats, c.lengthCols]), 'same placements of the same patterns');
+        assert.ok(copy.clips.every(c => !first.clips.some(o => o.id === c.id)), 'new clip ids');
+        assert.equal(Object.keys(project.patterns).length, 1, 'no pattern was copied');
+        assert.equal(duplicateSection(project, 'ghost'), null);
     });
 
     test('the last section cannot be removed', () => {

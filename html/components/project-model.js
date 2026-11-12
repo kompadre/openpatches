@@ -733,6 +733,27 @@ export function addSection(project, partial = {}) {
     return section;
 }
 
+/**
+ * A copy of a section, placed right after it in the piece: the same tempo,
+ * loop and clips — each clip a new record pointing at the *same* pattern,
+ * since patterns are the project's library and a section only places them
+ * (editing a pattern changes it in both sections, as it does in two clips of
+ * one section). Named `<name> copy`. `null` if the section is not here.
+ */
+export function duplicateSection(project, sectionId) {
+    const i = project.sections.findIndex(s => s.id === sectionId);
+    if (i < 0) return null;
+    const src = project.sections[i];
+    const copy = createSection({
+        name: `${src.name} copy`,
+        bpm: src.bpm, bpmEnd: src.bpmEnd,
+        loop: src.loop ? { ...src.loop } : null,
+        clips: src.clips.map(c => createClip({ ...c, id: undefined })),
+    });
+    project.sections.splice(i + 1, 0, copy);
+    return copy;
+}
+
 /** Move a section `delta` places along the piece (−1 earlier, +1 later). */
 export function moveSection(project, sectionId, delta) {
     const i = project.sections.findIndex(s => s.id === sectionId);

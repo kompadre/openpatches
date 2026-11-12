@@ -39,6 +39,7 @@
 import {
     createProject, createPattern, getSection, effectiveBpm,
     addSection as addSectionTo, removeSection as removeSectionFrom, moveSection as moveSectionIn,
+    duplicateSection as duplicateSectionIn,
     addPattern, removePattern, patternUsage,
 } from './project-model.js';
 import { profileStore } from './profile-store.js';
@@ -358,6 +359,17 @@ export function createProjectSession(store) {
             const project = store.get();
             if (!project) return null;
             const made = addSectionTo(project, partial || {});
+            sectionId = made.id;
+            changed('section', source, { sectionId: made.id });
+            return made;
+        },
+
+        /** A copy of a section right after it; the copy becomes the edited one. */
+        duplicateSection(id, source) {
+            const project = store.get();
+            if (!project) return null;
+            const made = duplicateSectionIn(project, id);
+            if (!made) return null;
             sectionId = made.id;
             changed('section', source, { sectionId: made.id });
             return made;

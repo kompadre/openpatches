@@ -289,6 +289,11 @@ export function createSectionEditor(opts = {}) {
             pick(null);
             session.addSection({}, 'section-editor');
         }, 'section-btn section-add'));
+        row.appendChild(button('⎘', 'Duplicate this section: a copy of its clips, tempo and loop, right after it', () => {
+            pick(null);
+            if (stamp) cancelStamp();
+            session.duplicateSection(sec().id, 'section-editor');
+        }, 'section-btn section-duplicate'));
         const del = button('✕', 'Remove this section', () => {
             const n = sec().clips.length;
             if (n > 0 && !confirm(`Remove "${sec().name}" and its ${n} clip${n > 1 ? 's' : ''}?`)) return;

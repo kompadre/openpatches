@@ -5730,6 +5730,7 @@ footer {
 }
 .section-pick { flex: 1 1 auto; min-width: 0; }
 .section-move-up, .section-move-down { padding: 0.15rem 0.35rem; font-size: 0.6rem; }
+.section-duplicate { padding: 0.15rem 0.4rem; }
 .section-remove { color: #e9a0a0; }
 .section-remove:hover:not(:disabled) { background: #4a1f2a; }
 .section-bpm-start, .section-bpm-end { width: 3.2rem; }

@@ -99,6 +99,17 @@ describe('the edited section', () => {
         assert.deepEqual(seen, [second.id], 'announced once');
     });
 
+    test('duplicating a section announces the copy as the edited one', async () => {
+        const project = await session.init();
+        const seen = [];
+        session.subscribe((e) => { if (e.kind === 'section') seen.push(e.sectionId); });
+        const copy = session.duplicateSection(project.sections[0].id, 'test');
+        assert.equal(project.sections[1], copy);
+        assert.equal(session.getSectionId(), copy.id);
+        assert.deepEqual(seen, [copy.id]);
+        assert.equal(session.duplicateSection('ghost', 'test'), null);
+    });
+
     test('a section this project does not have is refused', async () => {
         const project = await session.init();
         assert.equal(session.setSection('ghost', 'test'), false);
