@@ -307,3 +307,45 @@ describe('patterns', () => {
         assert.deepEqual(session.get().tracks, []);
     });
 });
+
+describe('open edits: beginEdit, endEdit and a take', () => {
+    function fresh() {
+        const store = createProjectStore({ backend: createMemoryBackend(), intervalMs: 0, bindLifecycle: false });
+        const session = createProjectSession(store);
+        session.adoptNow({ name: 'T', patterns: { p1: { id: 'p1', name: 'A' }, p2: { id: 'p2', name: 'B' } } }, 'test', { write: false });
+        return session;
+    }
+    test('a begin opens; the same source’s change on that pattern closes; others do not', () => {
+        const session = fresh();
+        const heard = [];
+        session.subscribe((ev) => heard.push(ev.kind), { begin: true });
+        const plain = [];
+        session.subscribe((ev) => plain.push(ev.kind));
+        session.beginEdit({ patternId: 'p1' }, 'tracker');
+        session.beginEdit({ patternId: 'p1' }, 'tracker');            // the same edit
+        session.beginEdit({ patternId: 'p2' }, 'tracker');
+        assert.equal(session.openEdits().length, 2);
+        session.touchPattern('p1', 'roll');                            // another source: no
+        assert.equal(session.openEdits().length, 2);
+        session.touchPattern('p1', 'tracker');
+        assert.deepEqual(session.openEdits().map(e => e.scope.patternId), ['p2']);
+        session.update(() => {}, 'tracker');                           // no pattern named: all of the source's
+        assert.equal(session.openEdits().length, 0);
+        assert.deepEqual(heard.filter(k => k === 'begin').length, 2);
+        assert.ok(!plain.includes('begin'), 'the editors never hear a begin');
+    });
+    test('a take ends only by endEdit, whatever is written through meanwhile', () => {
+        const session = fresh();
+        const heard = [];
+        session.subscribe((ev) => heard.push(ev.kind), { begin: true });
+        session.beginEdit({ recording: true }, 'record');
+        assert.ok(session.isRecordingEdit());
+        session.touchPattern('p1', 'roll');
+        session.update(() => {}, 'record');
+        assert.ok(session.isRecordingEdit(), 'still open');
+        assert.equal(session.endEdit('record'), true);
+        assert.ok(!session.isRecordingEdit());
+        assert.equal(session.endEdit('record'), false, 'nothing to end');
+        assert.deepEqual(heard.filter(k => k === 'begin' || k === 'end'), ['begin', 'end']);
+    });
+});

@@ -500,6 +500,72 @@ describe('collab: guest edits', () => {
         s.hub.pump();
     });
 
+    test('a take: everything the recorder writes is held until the take ends, then goes as one edit', async () => {
+        const s = setup();
+        await joined(s);
+        const obj = s.guest.session.getPattern(s.pattern.id);
+        s.guest.session.beginEdit({ recording: true }, 'record');
+        obj.notes.push({ midi: 64, start: 4, dur: 4 });
+        s.guest.session.touchPattern(s.pattern.id, 'roll');            // the recorder writes through the roll…
+        s.guest.session.update((p) => { p.bpm = 99; }, 'transport');    // …and anything else is held too
+        s.guest.session.touchPattern(s.pattern.id, 'roll');            // a plain roll commit does not end the take
+        settle(s); settle(s);
+        assert.deepEqual(notesOf(s.host.session, s.pattern.id), [[60, 0, 4]], 'nothing travelled');
+        assert.equal(s.host.session.get().bpm, 120);
+        assert.equal(s.hub.sent.filter(m => m.t === 'edit').length, 0);
+        assert.ok(s.guest.collab.status().recordingHere);
+        assert.deepEqual(s.host.collab.status().recording.map(r => r.peer), [s.hub.sent.find(m => m.t === 'join').peer]);
+        s.guest.session.endEdit('record');
+        settle(s); settle(s);
+        assert.deepEqual(notesOf(s.host.session, s.pattern.id), [[60, 0, 4], [64, 4, 4]]);
+        assert.equal(s.host.session.get().bpm, 99);
+        assert.equal(s.hub.sent.filter(m => m.t === 'edit').length, 1, 'one edit');
+        assert.equal(s.guest.collab.status().pending, 0);
+        assert.deepEqual(s.host.collab.status().recording, []);
+    });
+
+    test('while someone records, every edit by the others gets a warning — each time; nothing is refused', async () => {
+        const s = setup();
+        const code = await joined(s);
+        profileStore.setIdentity({ alias: 'Bob' });
+        const other = await joinedToo(s, code);
+        other.session.beginEdit({ recording: true }, 'record');
+        s.hub.pump(); s.hub.pump();
+        assert.deepEqual(s.guest.collab.status().recording.map(r => r.alias), ['Bob']);
+        assert.deepEqual(s.host.collab.status().recording.map(r => r.alias), ['Bob']);
+        s.guest.session.update((p) => { p.bpm = 90; }, 'transport');
+        settle(s);
+        s.guest.session.update((p) => { p.name = 'Renamed'; }, 'menu');
+        settle(s);
+        const nags = s.guest.notices.filter(n => /Bob is recording/.test(n));
+        assert.equal(nags.length, 2, 'once per edit sent, not once');
+        assert.equal(s.host.session.get().bpm, 90, 'applied all the same');
+        s.host.session.update((p) => { p.tags = ['x']; }, 'menu');
+        settle(s);
+        assert.ok(s.host.notices.some(n => /Bob is recording/.test(n)), 'the host is warned too');
+        other.session.endEdit('record');
+        settle(s); settle(s);
+        s.guest.session.update((p) => { p.bpm = 80; }, 'transport');
+        settle(s);
+        assert.equal(s.guest.notices.filter(n => /Bob is recording/.test(n)).length, 2, 'the take over, no more');
+    });
+
+    test('an edit under something someone else has open is warned about', async () => {
+        const s = setup();
+        const code = await joined(s);
+        profileStore.setIdentity({ alias: 'Bob' });
+        const other = await joinedToo(s, code);
+        other.session.beginEdit({ patternId: s.pattern.id }, 'tracker');
+        s.hub.pump(); s.hub.pump();
+        s.guest.session.getPattern(s.pattern.id).notes.push({ midi: 64, start: 4, dur: 4 });
+        s.guest.session.touchPattern(s.pattern.id, 'roll');
+        settle(s);
+        assert.ok(s.guest.notices.some(n => /Bob is editing this too/.test(n)));
+        s.guest.session.update((p) => { p.bpm = 90; }, 'transport');
+        settle(s);
+        assert.equal(s.guest.notices.filter(n => /Bob is editing/.test(n)).length, 1, 'something else: no warning');
+    });
+
     test('a missed message with an edit in flight: resync keeps and resends it', async () => {
         const s = setup();
         await joined(s);

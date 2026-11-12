@@ -122,24 +122,13 @@ relay (first) or WebRTC (later, if latency matters).
     room's others, `left` notice on drop; Caddy must proxy the upgrade.
 - [ ] **Listen in** — hear what a collaborator hears, as streamed audio.
   Transport stays local to each peer; nothing plays in sync.
-- [ ] **M4 — Comforts.** (Following the host's transport was dropped
-  2026-11-12: transport is local to each peer.)
-  - [x] **M4-1 Peer colours and presence in the editors** (2026-11-12):
-    `presence.js` registry fed by collab; the clip, tracker head and Mixer
-    strip someone is editing get their colour and alias.
-  - [x] **M4-2 Remote cursors and selections** (2026-11-12): `cursors.js`;
-    tracker cell, roll selection and picked clips travel at ≤ 10 Hz, latest
-    wins, drawn as coloured ghosts **only inside what is on screen here**
-    (same section / pattern); the local view never follows. A "follow"
-    mode, if ever wanted, is a separate opt-in (user, 2026-11-12).
-  - [ ] **M4-3 Soft locks**: someone has an edit open on a pattern, track
-    or section → others are warned before editing it. Advisory or
-    refusing: user's call when we get there (advisory recommended).
-  - [ ] **Record mode and the others** (user, 2026-11-12): when someone
-    starts recording, everyone else is asked — **accept**, and their
-    interface is blocked for writing while the take runs, or **disregard**,
-    keep editing and risk a big conflict when the take (one large edit,
-    sent at the end) lands. Related to soft locks.
+- [x] **M4 — Comforts.** Done 2026-11-12: peer colours and presence in
+  the editors (M4-1), remote cursors and selections drawn only inside
+  what is on screen — the view never follows (M4-2), advisory soft locks
+  that warn on every write while someone else is recording or has the
+  same thing open, and a **take** held as one edit until it ends (M4-3 +
+  record mode). Following the host's transport was dropped: transport is
+  local to each peer. CHANGELOG has the details.
 
 ### Ideas
 

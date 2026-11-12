@@ -268,10 +268,18 @@ test('another machine: a separate browser context joins through the relay, edits
     });
     await expect.poll(() => notes(page)).toEqual([[60, 0, 4], [64, 4, 4], [67, 8, 4]]);
 
-    // A conflict across machines: the host started first; Bob's row names Ann.
-    await setBpm(page, 60);
+    // A conflict across machines: Ann begins first; Bob's change is made during a take of his,
+    // so it is held (and so cannot see Ann's) until the take ends — then it loses, and his row names Ann.
+    // (Two plain writes 30 ms apart raced the 100 ms gathering time under load: Bob could see Ann's
+    // value land first and legitimately overwrite it, with no conflict at all.)
+    await page.evaluate(() => window.__opProject.beginEdit({}, 'transport'));
     await guest.waitForTimeout(30);
+    await guest.evaluate(() => window.__opProject.beginEdit({ recording: true }, 'record'));
     await setBpm(guest, 50);
+    await page.evaluate(() => window.__opProject.update((p) => { p.bpm = 60; p.name = 'Jam at 60'; }, 'transport'));
+    await expect.poll(() => guest.evaluate(() => window.__opProject.get().name)).toBe('Jam at 60');
+    expect(await bpm(guest)).toBe(50);                                 // his own, kept through Ann's parts
+    await guest.evaluate(() => window.__opProject.endEdit('record'));
     await expect.poll(() => bpm(guest)).toBe(60);
     await expect.poll(async () => (await status(guest)).conflicts.map((r) => r.reason)).toEqual([expect.stringMatching(/Ann started first/)]);
 
@@ -432,6 +440,56 @@ test('remote cursors: drawn inside what is on screen here, and the view never fo
     // Bob leaves: his ghosts go.
     await guest.evaluate(() => window.__opCollab.leave());
     await expect.poll(async () => { const c = await C(page); return c.tracker.length + c.roll.length + c.section.length; }).toBe(0);
+    expect(guest.opErrors).toEqual([]);
+    await other.close();
+});
+
+test('a take: held until it ends, the others warned on every write meanwhile, the chip says who records', async ({ page, browser }) => {
+    await openApp(page);
+    await seed(page);
+    await page.evaluate(() => {
+        localStorage.setItem('openpatches_profile', JSON.stringify({
+            ...JSON.parse(localStorage.getItem('openpatches_profile') || '{}'), identity: { alias: 'Ann', color: '#3b8fd1' },
+        }));
+    });
+    const code = await page.evaluate(() => window.__opCollab.host());
+    const other = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+    await other.addInitScript(() => {
+        localStorage.setItem('openpatches_profile', JSON.stringify({ identity: { alias: 'Bob', color: '#d84a6b' } }));
+    });
+    const guest = await guestPage(other, code);
+    await expect(guest.locator('#menu-collab-chip')).toContainText('With Jam');
+
+    // Bob's take begins (what the transport does at the first recorded tick): everyone sees it.
+    await guest.evaluate(() => window.__opProject.beginEdit({ recording: true }, 'record'));
+    await expect(page.locator('#menu-collab-chip')).toContainText('● Bob recording');
+    await page.locator('#menu-collab-chip').click();
+    await expect(page.locator('.collab-editing')).toHaveText(/Bob is recording/);
+    await page.locator('.modal-dialog:has(.collab-dialog) .modal-close').click();
+
+    // What Bob records stays with him until the take ends…
+    await guest.evaluate(() => {
+        const p = Object.values(window.__opProject.get().patterns)[0];
+        p.notes.push({ midi: 64, start: 4, dur: 4 });
+        window.__opProject.touchPattern(p.id, 'roll');
+    });
+    await guest.waitForTimeout(400);
+    expect(await notes(page)).toEqual([[60, 0, 4]]);
+
+    // …while every write of Ann's is warned about, each time, and still applied.
+    const logLines = () => page.evaluate(() => document.getElementById('log').value);
+    await setBpm(page, 100);
+    await expect(page.locator('#menu-collab-chip')).toContainText('Bob is recording');
+    await expect.poll(() => bpm(guest)).toBe(100);
+    await page.waitForTimeout(4200);                                   // the notice fades back to the chip text
+    await setBpm(page, 110);
+    await expect(page.locator('#menu-collab-chip')).toContainText('Bob is recording');
+    await expect.poll(logLines).toMatch(/recording[\s\S]*recording/);   // two warnings in the log
+
+    // The take ends: it arrives as one edit, the chip calms down.
+    await guest.evaluate(() => window.__opProject.endEdit('record'));
+    await expect.poll(() => notes(page)).toEqual([[60, 0, 4], [64, 4, 4]]);
+    await expect(page.locator('#menu-collab-chip')).not.toContainText('recording', { timeout: 6000 });
     expect(guest.opErrors).toEqual([]);
     await other.close();
 });

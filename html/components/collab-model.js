@@ -203,8 +203,11 @@ export function divergence(known, project) {
 //                  { t: 'bye' }               the host stopped sharing
 //
 //   M2 — edits (collab-ops.js, collab-referee.js):
-//   guest → host   { t: 'begin', peer, alias, scope }
+//   guest → host   { t: 'begin', peer, alias, color, scope }
 //                                             I started editing `scope`
+//                                             (`{ recording: true }`: a take —
+//                                             all my writes wait for its end)
+//                  { t: 'end', peer }         …and nothing came of it
 //                  { t: 'edit', peer, project, edit }
 //                                             one committed edit:
 //                                             { id, peer, alias, module,
@@ -231,7 +234,7 @@ export function divergence(known, project) {
 //
 // Every message carries `p: PROTOCOL` and `room`.
 
-const TYPES = new Set(['join', 'resync', 'leave', 'snapshot', 'parts', 'bye', 'begin', 'edit', 'ack', 'overridden', 'presence', 'beat', 'cursor']);
+const TYPES = new Set(['join', 'resync', 'leave', 'snapshot', 'parts', 'bye', 'begin', 'edit', 'ack', 'overridden', 'presence', 'beat', 'cursor', 'end']);
 
 export function message(room, t, fields = {}) {
     return { p: PROTOCOL, room, t, ...fields };
@@ -241,7 +244,7 @@ export function message(room, t, fields = {}) {
 export function readMessage(raw, room) {
     if (!raw || typeof raw !== 'object') return null;
     if (raw.p !== PROTOCOL || raw.room !== room || !TYPES.has(raw.t)) return null;
-    if ((raw.t === 'join' || raw.t === 'resync' || raw.t === 'leave' || raw.t === 'beat') && typeof raw.peer !== 'string') return null;
+    if ((raw.t === 'join' || raw.t === 'resync' || raw.t === 'leave' || raw.t === 'beat' || raw.t === 'end') && typeof raw.peer !== 'string') return null;
     if (raw.t === 'snapshot' && (typeof raw.body !== 'string' || !Number.isInteger(raw.v))) return null;
     if (raw.t === 'parts' && (!Number.isInteger(raw.v) || !raw.changes || typeof raw.changes !== 'object')) return null;
     if (raw.t === 'begin' && typeof raw.peer !== 'string') return null;

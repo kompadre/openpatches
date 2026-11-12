@@ -75,6 +75,7 @@ const clone = (body) => createProject(JSON.parse(JSON.stringify(body)));
 /** The atom prefix an open edit's scope covers, or null for "nothing in particular". */
 function scopePrefix(scope) {
     if (!scope) return null;
+    if (scope.recording) return '';            // a take: everything, until it ends
     if (scope.patternId) return 'pattern/' + scope.patternId + '/';
     if (scope.trackId) return 'track/' + scope.trackId + '/';
     if (scope.sectionId) return 'section/' + scope.sectionId + '/';
@@ -245,6 +246,32 @@ export function createCollab(opts) {
     let begun = false;          // a 'begin' sent, no edit since
     let begunScope = '';
 
+    /** The others recording now: `[{ peer, alias }]`. */
+    function recordingBy() {
+        return [...editing.entries()].filter(([, e]) => e.scope && e.scope.recording).map(([p, e]) => ({ peer: p, alias: e.alias }));
+    }
+
+    /**
+     * Soft locks, advisory and **repeated**: every edit sent while someone
+     * else is recording, or while it touches what someone else has open,
+     * gets a notice — not once, each time, for as long as that lasts.
+     * Nothing is refused: the referee decides when the take lands.
+     */
+    function nagFor(ops) {
+        const rec = recordingBy();
+        if (rec.length) {
+            return rec.map(r => r.alias).join(', ') + (rec.length === 1 ? ' is' : ' are') + ' recording — your change may conflict when the take lands';
+        }
+        for (const [p, e] of editing) {
+            const prefix = scopePrefix(e.scope);
+            if (!prefix) continue;
+            if (ops.some(op => op.atom.startsWith(prefix))) {
+                return e.alias + ' is editing this too — one of you may lose it';
+            }
+        }
+        return null;
+    }
+
     function status() {
         return {
             role, room, state,
@@ -256,6 +283,8 @@ export function createCollab(opts) {
             conflicts: conflicts.slice(),
             pending: pending.length,
             editing: [...editing.entries()].map(([p, e]) => ({ peer: p, ...e })),
+            recording: recordingBy(),
+            recordingHere: !!(session.isRecordingEdit && session.isRecordingEdit()),
         };
     }
 
@@ -343,7 +372,7 @@ export function createCollab(opts) {
 
     /** Atoms under the session's open edits: not to be sent, not to be overwritten. */
     function openPrefixes() {
-        return (session.openEdits ? session.openEdits() : []).map(e => scopePrefix(e.scope)).filter(Boolean);
+        return (session.openEdits ? session.openEdits() : []).map(e => scopePrefix(e.scope)).filter(p => p != null);
     }
     const underOpen = (atom, prefixes) => prefixes.some(p => atom.startsWith(p));
     // The referee's and the parts' version are one counter: `v` here, and
@@ -478,6 +507,8 @@ export function createCollab(opts) {
             if (m.project === hostedId) onGuestEdit(m);   // not one for a project we no longer share
         } else if (m.t === 'cursor') {
             onCursorMessage(m);
+        } else if (m.t === 'end') {
+            if (editing.delete(m.peer)) { sendPresence(); emit(); }
         }
     }
 
@@ -546,7 +577,9 @@ export function createCollab(opts) {
             id: 'h' + (++editSeq), peer: 'host', alias: alias || 'host', module: lastModule,
             base: referee.version, elapsed: takeElapsed(), groups: groupOps(ops),
         }, now());
+        const nag = nagFor(ops);
         const out = referee.judge(edit, shadow);
+        if (nag) emit('⚠ ' + nag);
         if (out.rejected.length) {
             const back = out.rejected.flatMap(r => r.group.map(op => ({ atom: op.atom, before: op.after, after: readAtom(shadow, op.atom) })));
             applyLive(back, { normalize: true });
@@ -559,6 +592,7 @@ export function createCollab(opts) {
     function onHostSession(ev) {
         if (ev.kind === 'saving') return;
         if (ev.kind === 'begin') { noteTouch(ev); sendPresence(); return; }
+        if (ev.kind === 'end') { hint = { all: true }; sendPresence(); flushNow(); return; }
         // Another project opened: that is what is shared now.
         if (ev.kind === 'project' && ev.projectId !== hostedId) {
             hostedId = ev.projectId;
@@ -816,6 +850,11 @@ export function createCollab(opts) {
         }
         if (state !== 'watching') return;
         noteTouch(ev);
+        if (ev.kind === 'end') {
+            if (editTimer != null) clearTimer(editTimer);
+            editTimer = setTimer(sendEdit, 0);
+            return;
+        }
         if (ev.kind === 'begin') {
             if (!begun || JSON.stringify(ev.scope || {}) !== begunScope) {
                 begun = true; begunScope = JSON.stringify(ev.scope || {});
@@ -833,7 +872,12 @@ export function createCollab(opts) {
         if (role !== 'guest' || state !== 'watching' || !session.isGuest() || !knownLive) return;
         const prefixes = openPrefixes();
         const ops = diffAtoms(knownLive, session.get()).filter(op => !underOpen(op.atom, prefixes));
-        if (!ops.length) return;
+        if (!ops.length) {
+            // Begun and nothing came of it (a take with no notes, a press
+            // without an edit): say so, or the others see us editing for ever.
+            if (begun && !session.openEdits().length) { begun = false; send('end', { peer }); }
+            return;
+        }
         const groups = groupOps(ops);
         // `base` is the version we were at when this began, not now: an
         // atom we changed keeps our value through the parts that arrive
@@ -843,10 +887,11 @@ export function createCollab(opts) {
             base: Math.max(0, Math.min(touchBase, gv)), elapsed: takeElapsed(), groups,
         };
         begun = false;
+        const nag = nagFor(ops);
         pending.push({ id: edit.id, ops, groups, module: edit.module });
         for (const op of ops) { if (op.after == null) knownLive.delete(op.atom); else knownLive.set(op.atom, op.after); }
         send('edit', { peer, project: session.getId(), edit });
-        emit();
+        emit(nag ? '⚠ ' + nag : undefined);
     }
 
     function dropOut() {

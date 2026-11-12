@@ -17,7 +17,38 @@ run `node --check` + `node --test` and tick this file only. (Open: AGENTS.md
 "Keep it current ... in the same commit/change" reads per-change; awaiting
 the user's wording if SESSION.md should be deferred too.)
 
-### Collaborative editing — M1, M2, M3-1/2, M4-1/2 DONE 2026-11-12; M3-3 parked; next M4-3 (soft locks) + record mode
+### Collaborative editing — M1–M4 DONE 2026-11-12; only M3-3 (the Go relay) remains, parked
+
+**M4-3 — soft locks and takes** (collab.js, project-session.js; tests
+`collab` › "a take…", "while someone records…", "an edit under
+something…"; `project-session` › "open edits"; e2e "a take…").
+
+- **A take is one edit.** The roll's transport subscriber calls
+  `session.beginEdit({ recording: true }, 'record')` when `pos.recording`
+  turns on and `session.endEdit('record')` when it turns off. A
+  `recording` scope is **not** closed by `changed()` (whatever source the
+  recorder writes through) — only by `endEdit`, which announces `end` to
+  begin-subscribers. `scopePrefix({recording})` is `''` → every atom is
+  under it, so nothing travels during the take; on `end` the guest sends
+  at once (`editTimer` 0) and the host `hint = all` + `flushNow`. The
+  take's long `elapsed` ranks under the 2-minute cap (M2-3). `openPrefixes`
+  filters `p != null`, not `Boolean` — `''` is a real prefix.
+- **Advisory, repeated** (user): `nagFor(ops)` at every `sendEdit` /
+  `judgeOwn` → a notice (`⚠ Bob is recording — your change may conflict
+  when the take lands`; or `Bob is editing this too — one of you may lose
+  it` when an op lies under another peer's open scope). Never refused;
+  the referee decides when the take lands. Scope of the recording warning
+  is **everything** (user: scoping it opens fractal cases).
+- `status().recording` = `[{peer, alias}]` of peers whose presence scope
+  has `recording`; `status().recordingHere`. Chip appends `· ● Bob
+  recording`; the dialog's presence line says "Bob is recording — best
+  not to edit until the take lands". Recorder's `editing` entry clears
+  when its edit lands, or by the new `end {peer}` message when nothing
+  came of the take (`sendEdit` with no ops and `begun`).
+- `session.isRecordingEdit()`; PROTOCOL 2 messages now also `cursor`,
+  `end`.
+
+
 
 **M4-2 — remote cursors** (`cursors.js`; tests `cursors`, `collab` ›
 "cursors travel…"; e2e "remote cursors…"). Rule (user): **the local view

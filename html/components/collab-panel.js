@@ -26,7 +26,8 @@ const NOTICE_MS = 4000;
 /** The chip's words for a status, or '' when there is no session. */
 export function chipText(s) {
     if (!s || !s.role) return '';
-    const warn = s.conflicts && s.conflicts.length ? ` · ⚠ ${s.conflicts.length}` : '';
+    const warn = (s.conflicts && s.conflicts.length ? ` · ⚠ ${s.conflicts.length}` : '')
+        + (s.recording && s.recording.length ? ` · ● ${s.recording.map(r => r.alias).join(', ')} recording` : '');
     if (s.role === 'host') return `⇄ Sharing ${s.room} · ${s.link === 'reconnecting' ? 'reconnecting…' : s.peers + ' in'}${warn}`;
     if (s.state === 'joining') return `⇄ Joining ${s.room}…`;
     if (s.state === 'ended') return '⇄ Session ended';
@@ -96,6 +97,7 @@ export function describePresence(e, body) {
     const what = sc.patternId ? describeAtom('pattern/' + sc.patternId, body)
         : sc.trackId ? describeAtom('track/' + sc.trackId, body)
             : sc.sectionId ? describeAtom('section/' + sc.sectionId, body) : '';
+    if (sc.recording) return (e.alias || e.peer) + ' is recording — best not to edit until the take lands';
     return (e.alias || e.peer) + ' is editing' + (what ? ' ' + what : '');
 }
 

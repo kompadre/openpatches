@@ -2035,6 +2035,10 @@ export function createPianoroll(opts) {
      */
     transport.subscribe((pos) => {
         playing = pos.playing;
+        // A take is one edit (collab): opened at the first tick, held until
+        // the stop, whatever the recorder writes through meanwhile.
+        if (session && session.beginEdit && pos.recording && !recordingActive) session.beginEdit({ recording: true }, 'record');
+        if (session && session.endEdit && !pos.recording && recordingActive) session.endEdit('record');
         recordingActive = pos.recording;
         waitingForClock = !!pos.waiting;
         looping = pos.playing || pos.recording;

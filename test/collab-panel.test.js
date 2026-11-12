@@ -48,6 +48,7 @@ describe('words for atoms, values and presence', () => {
     test('presence', () => {
         assert.equal(describePresence({ alias: 'Bob', scope: { patternId: 'p1' } }, body), 'Bob is editing Riff');
         assert.equal(describePresence({ peer: 'X', scope: {} }, body), 'X is editing');
+        assert.match(describePresence({ alias: 'Bob', scope: { recording: true } }, body), /Bob is recording/);
     });
 });
 
@@ -63,6 +64,7 @@ describe('collab chip', () => {
         assert.equal(chipText({ role: 'guest', state: 'watching', room: 'ABC234', hostName: 'Jam', link: 'reconnecting' }), '⇄ Reconnecting…');
         assert.equal(chipText({ role: 'guest', state: 'watching', room: 'ABC234', hostName: 'Jam', hostAway: true }), '⇄ Waiting for the host…');
         assert.equal(chipText({ role: 'host', room: 'ABC234', peers: 2, link: 'reconnecting' }), '⇄ Sharing ABC234 · reconnecting…');
+        assert.equal(chipText({ role: 'guest', state: 'watching', room: 'ABC234', hostName: 'Jam', recording: [{ alias: 'Bob' }] }), '⇄ With Jam · ● Bob recording');
     });
 
     test('hidden when idle, shown and styled by role; a notice shows for a while and is logged', () => {

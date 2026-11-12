@@ -104,7 +104,7 @@ export function createProjectSession(store) {
     /** An announcement from `source` ends the edits it had begun (on that pattern, or all). */
     function closeEdits(source, detail) {
         for (const [key, e] of open) {
-            if (e.source !== source) continue;
+            if (e.source !== source || e.scope.recording) continue;   // a take ends only by endEdit
             if (detail.patternId && e.scope.patternId && e.scope.patternId !== detail.patternId) continue;
             open.delete(key);
         }
@@ -135,8 +135,30 @@ export function createProjectSession(store) {
             }
         },
 
+        /**
+         * End the edits `source` began, explicitly — how a **take** ends:
+         * `beginEdit({ recording: true }, 'record')` holds everything the
+         * recorder writes (through any source) until this is called, and
+         * then it all travels as one edit. Announces `end` to the same
+         * subscribers that hear `begin`.
+         */
+        endEdit(source) {
+            const project = store.get();
+            let any = false;
+            for (const [key, e] of open) if (e.source === source) { open.delete(key); any = true; }
+            if (!any || !project) return any;
+            const ev = { kind: 'end', source, projectId: project.id };
+            for (const fn of [...beginSubscribers]) {
+                try { fn(ev); } catch (e) { console.warn('[project-session] subscriber failed:', e); }
+            }
+            return true;
+        },
+
         /** The edits begun and not yet announced: `[{ source, scope, since }]`. */
         openEdits() { return [...open.values()]; },
+
+        /** Is a take running here (`beginEdit({ recording: true })`)? */
+        isRecordingEdit() { return [...open.values()].some(e => e.scope.recording); },
 
         /**
          * Open the remembered project, else the most recent, else a new
