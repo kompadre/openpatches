@@ -5,7 +5,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { createProject } from '../html/components/project-model.js';
 import { diffGroups, readAtom, checkInvariants } from '../html/components/collab-ops.js';
-import { createReferee, rank, effectiveStart, PRIORITY_CAP } from '../html/components/collab-referee.js';
+import { createReferee, rank, effectiveStart, stampEdit, PRIORITY_CAP } from '../html/components/collab-referee.js';
 
 const project = () => createProject({
     name: 'Jam',
@@ -54,6 +54,48 @@ describe('ranking', () => {
         assert.equal(effectiveStart({ start: 0, end: PRIORITY_CAP + 5000 }), 5000);
         assert.equal(effectiveStart({ start: 4000, end: 5000 }), 4000);
         assert.equal(effectiveStart({ end: 5000 }), 5000, 'no start: start = end');
+    });
+});
+
+describe('host-stamped times (no clock sync)', () => {
+    const raw = (fields) => ({ id: 'e1', peer: 'B', base: 3, elapsed: 1500, groups: [[{ atom: 'bpm', before: '120', after: '90' }]], ...fields });
+
+    test('end = arrival, start = arrival − elapsed; whatever clock the guest has', () => {
+        const e = stampEdit(raw({ alias: 'Bob', module: 'mixer', start: 99e12 }), 10000);
+        assert.equal(e.end, 10000);
+        assert.equal(e.start, 8500);
+        assert.equal(e.alias, 'Bob');
+        assert.equal(e.module, 'mixer');
+    });
+
+    test('no or negative elapsed → start = end; alias falls back to the peer', () => {
+        assert.equal(stampEdit(raw({ elapsed: undefined }), 10).start, 10);
+        assert.equal(stampEdit(raw({ elapsed: -5 }), 10).start, 10);
+        assert.equal(stampEdit(raw({}), 10).alias, 'B');
+    });
+
+    test('malformed edits are refused', () => {
+        for (const bad of [null, raw({ id: 1 }), raw({ peer: null }), raw({ base: -1 }), raw({ base: 1.5 }),
+            raw({ groups: {} }), raw({ groups: [[]] }), raw({ groups: [[{ atom: 'bpm', before: 1, after: '2' }]] })]) {
+            assert.equal(stampEdit(bad, 10), null);
+        }
+    });
+
+    test('a long recording sent at the end does not win by its old start', () => {
+        const h = host();
+        const m = h.mirror();
+        // B's 10-minute take arrives at 601 s: it counts as begun at 481 s (end − 2 min).
+        // A tweak begun at 400 s beats it, despite the take having begun at 1 s…
+        h.ref.judge(stampEdit({ id: 'a', peer: 'A', base: 0, elapsed: 1000, groups: edit(m, p => { p.bpm = 100; }).groups }, 401000), h.body);
+        const b = h.ref.judge(stampEdit({ id: 'b', peer: 'B', base: 0, elapsed: 600000, groups: edit(m, p => { p.bpm = 90; }).groups }, 601000), h.body);
+        assert.equal(b.rejected.length, 1);
+        assert.equal(h.body.bpm, 100);
+        // …one begun inside the take's last 2 minutes does not.
+        const h2 = host();
+        h2.ref.judge(stampEdit({ id: 'a', peer: 'A', base: 0, elapsed: 1000, groups: edit(m, p => { p.bpm = 100; }).groups }, 591000), h2.body);
+        const b2 = h2.ref.judge(stampEdit({ id: 'b', peer: 'B', base: 0, elapsed: 600000, groups: edit(m, p => { p.bpm = 90; }).groups }, 601000), h2.body);
+        assert.equal(b2.rejected.length, 0);
+        assert.equal(h2.body.bpm, 90);
     });
 });
 

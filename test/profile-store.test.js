@@ -179,6 +179,34 @@ describe('the tag vocabulary', () => {
     });
 });
 
+describe('the collab identity', () => {
+    test('none until chosen; set, read back, forget', () => {
+        assert.equal(profileStore.identity(), null);
+        const id = profileStore.setIdentity({ alias: '  Bob   the  Bass ', color: '#3B8FD1' });
+        assert.deepEqual(id, { alias: 'Bob the Bass', color: '#3b8fd1' });
+        assert.deepEqual(profileStore.identity(), id);
+        profileStore.setIdentity(null);
+        assert.equal(profileStore.identity(), null);
+    });
+
+    test('no alias is refused and changes nothing; a foreign colour falls back to a stable one', () => {
+        profileStore.setIdentity({ alias: 'Ann', color: '#3b8fd1' });
+        assert.equal(profileStore.setIdentity({ alias: '   ' }), null);
+        assert.equal(profileStore.identity().alias, 'Ann');
+        const a = profileStore.setIdentity({ alias: 'Ann', color: 'red' });
+        const b = profileStore.setIdentity({ alias: 'Ann' });
+        assert.equal(a.color, b.color);
+        assert.match(a.color, /^#[0-9a-f]{6}$/);
+    });
+
+    test('aliases are capped; it survives index edits', () => {
+        const id = profileStore.setIdentity({ alias: 'x'.repeat(100) });
+        assert.equal(id.alias.length, 24);
+        profileStore.upsert(entry('a', 'A'));
+        assert.equal(profileStore.identity().alias.length, 24);
+    });
+});
+
 describe('clear', () => {
     test('takes the index, the pointer and the vocabulary together', () => {
         profileStore.upsert(entry('a', 'A'));

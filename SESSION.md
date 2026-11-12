@@ -17,7 +17,31 @@ run `node --check` + `node --test` and tick this file only. (Open: AGENTS.md
 "Keep it current ... in the same commit/change" reads per-change; awaiting
 the user's wording if SESSION.md should be deferred too.)
 
-### Collaborative editing — M1 DONE 2026-11-10; M2-1, M2-2 DONE 2026-11-12 — next M2-3 (clock and identity)
+### Collaborative editing — M1 DONE 2026-11-10; M2-1…M2-3 DONE 2026-11-12 — next M2-4 (wiring)
+
+**Transport is local, clocks are not synchronised** (user, 2026-11-12;
+supersedes TODO.md's ping/pong for M2-3). Sync keeps the projects
+identical; play/stop/record happen only on each peer. A recording session
+is **one big edit**, sent when the take is over and consolidated. Hearing
+what a collaborator hears will be **streamed audio** (TODO.md › Listen
+in). TODO.md still says ping/pong (M2 design, M2-3) and "follow the
+host's transport" (M4): fix both at M2's TODO reconciliation (M4's item
+awaits the user's word).
+
+**M2-3 is in place:**
+
+- `stampEdit(raw, arrivedAt)` (collab-referee.js): a guest sends
+  `elapsed` (how long the edit was open, on its own monotonic clock, e.g.
+  `performance.now()`), never times; the host stamps `end` = arrival,
+  `start` = arrival − elapsed, validates the shape (null if malformed).
+  The host's own edits are stamped the same way with arrivedAt = now.
+  A take's long `elapsed` is bounded by the 2-minute cap: it ranks as begun
+  2 min before it arrived.
+- Identity in the profile (profile-store.js): `identity()` →
+  `{alias, color}` or null; `setIdentity(raw|null)`; `normalizeIdentity`
+  (whitespace collapsed, ≤ 24 chars, colour from `PEER_COLORS` or a stable
+  `defaultPeerColor(alias)`). Asking for it on first Share/Join is M2-5.
+
 
 **M2-1 (atoms and ops) is in `collab-ops.js`** (pure, tested in
 `test/collab-ops.test.js`; nothing wires it yet). What M2-2+ build on:
@@ -81,10 +105,10 @@ result}`. What M2-4/5 build on:
 
 
 TODO.md › Collaborative editing › M2 holds the full agreed design (atoms,
-edits with start/end in host time, the per-atom referee: earliest start
+edits with start/end in host time (host-stamped, see above), the per-atom referee: earliest start
 wins, edit beats delete, per-group acceptance, 2-minute cap; conflicts
 table + Reapply mine; presence). Parked by the user on 2026-11-10 evening;
-M2-1 and M2-2 done (above); **next: M2-3, clock and identity**. What the next agent must
+M2-1…M2-3 done (above); **next: M2-4, wiring**. What the next agent must
 not break:
 
 - **Parts, not operations** (`collab-model.js`): `patterns/<id>`,

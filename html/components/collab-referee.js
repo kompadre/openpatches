@@ -10,6 +10,14 @@
 // keystroke, the press — and when it was committed. `module` is the
 // editor (`tracker`, `roll`, `section`, `mixer`…).
 //
+// **No clocks are synchronised** (transport is local to each peer). A
+// guest sends `elapsed` — how long the edit was open, measured on its own
+// monotonic clock — and the host stamps the times on arrival: `end` =
+// arrival, `start` = arrival − elapsed (`stampEdit`). Offsets cancel; the
+// error is the one-way latency, the same for every edit on that link. A
+// recording is one long edit sent when it is consolidated; the 2-minute
+// cap below keeps its long `elapsed` from winning everything.
+//
 // The referee keeps, per atom, its **last accepted writer**
 // `{ edit, peer, alias, module, start, end, version, after }`, and judges
 // each op by compare-and-set against the body:
@@ -68,6 +76,35 @@ export function rank(a, b, cap = PRIORITY_CAP) {
     const pa = String(a.peer || ''), pb = String(b.peer || '');
     return pa < pb ? -1 : pa > pb ? 1 : 0;
 }
+
+/**
+ * A guest's edit as it arrived, made into one the referee can judge:
+ * validated (null when malformed — what arrives is not trusted) and
+ * stamped in host time. `arrivedAt` is the host's clock now.
+ *
+ * raw: { id, peer, alias?, module?, base, elapsed, groups }
+ */
+export function stampEdit(raw, arrivedAt) {
+    if (!raw || typeof raw !== 'object') return null;
+    if (typeof raw.id !== 'string' || typeof raw.peer !== 'string') return null;
+    if (!Number.isInteger(raw.base) || raw.base < 0 || !Number.isFinite(arrivedAt)) return null;
+    if (!Array.isArray(raw.groups) || !raw.groups.every(validGroup)) return null;
+    const elapsed = Number.isFinite(raw.elapsed) ? Math.max(0, raw.elapsed) : 0;
+    return {
+        id: raw.id,
+        peer: raw.peer,
+        alias: typeof raw.alias === 'string' ? raw.alias : raw.peer,
+        module: typeof raw.module === 'string' ? raw.module : '',
+        base: raw.base,
+        start: arrivedAt - elapsed,
+        end: arrivedAt,
+        groups: raw.groups,
+    };
+}
+
+const textOrNull = (v) => v === null || typeof v === 'string';
+const validGroup = (g) => Array.isArray(g) && g.length > 0 && g.every(op =>
+    op && typeof op === 'object' && typeof op.atom === 'string' && textOrNull(op.before) && textOrNull(op.after));
 
 const side = (edit, op) => ({
     edit: edit.id, peer: edit.peer, alias: edit.alias, module: edit.module,

@@ -177,6 +177,8 @@ relay (first) or WebRTC (later, if latency matters).
 - [ ] **M3 — Real network.** A room relay (`/api/room/{code}` WebSocket in
   the Go service; a dev relay for `server.py`), join by code from another
   machine, heartbeats, reconnect + resync, host-gone handling.
+- [ ] **Listen in** — hear what a collaborator hears, as streamed audio.
+  Transport stays local to each peer; nothing plays in sync.
 - [ ] **M4 — Comforts.** Remote cursors/selections, follow the host's
   transport, soft locks ("Alex is editing Riff"), names and colours.
 

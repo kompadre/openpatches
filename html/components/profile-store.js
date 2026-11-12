@@ -12,6 +12,8 @@
 //     coined. A project exports only the tags it actually uses, and an
 //     import unions those back in here. Tags are just a vocabulary with no
 //     further meaning, so unioning is always safe.
+//   - the **collab identity** — the alias and colour others see in a shared
+//     session (asked on the first Share/Join). Null until chosen.
 //
 // Not here, deliberately: MIDI port selection and output latency, which are
 // properties of the machine and live in midi-manager's own key; and the UI
@@ -30,7 +32,30 @@ function nonEmptyName(name, fallback) {
 }
 
 function emptyProfile() {
-    return { version: PROFILE_VERSION, projects: [], currentProjectId: null, tags: [] };
+    return { version: PROFILE_VERSION, projects: [], currentProjectId: null, tags: [], identity: null };
+}
+
+/** The colours a collaborator may take: distinct on light and dark themes. */
+export const PEER_COLORS = [
+    '#d84a6b', '#e0803a', '#c9a227', '#6fa83b', '#2fa58a', '#3b8fd1', '#6a5fd6', '#b05bc0',
+];
+
+export const MAX_ALIAS = 24;
+
+/** An alias and colour, tidied; null when there is no usable alias. */
+export function normalizeIdentity(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const alias = String(raw.alias == null ? '' : raw.alias).replace(/\s+/g, ' ').trim().slice(0, MAX_ALIAS).trim();
+    if (!alias) return null;
+    const c = String(raw.color || '').toLowerCase();
+    return { alias, color: PEER_COLORS.includes(c) ? c : defaultPeerColor(alias) };
+}
+
+/** A stable default: the same alias always gets the same colour. */
+export function defaultPeerColor(alias) {
+    let h = 0;
+    for (const ch of String(alias)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    return PEER_COLORS[h % PEER_COLORS.length];
 }
 
 /** One index row. Everything a switcher needs and nothing that needs a body. */
@@ -67,6 +92,7 @@ function normalizeProfile(raw) {
         projects,
         currentProjectId: current,
         tags: [...tags].sort(),
+        identity: normalizeIdentity(p.identity),
     };
 }
 
@@ -164,6 +190,20 @@ export const profileStore = {
             const candidate = `${base} ${n}`;
             if (!taken.has(candidate.toLowerCase())) return candidate;
         }
+    },
+
+    // --- Collab identity ---
+
+    /** `{ alias, color }`, or null when none was chosen yet. */
+    identity() { return load().identity; },
+
+    /** Set (or with null, forget) the identity. Returns what was stored. */
+    setIdentity(raw) {
+        const profile = load();
+        profile.identity = raw == null ? null : normalizeIdentity(raw);
+        if (raw != null && !profile.identity) return null;
+        save(profile);
+        return profile.identity;
     },
 
     // --- Tag vocabulary ---
