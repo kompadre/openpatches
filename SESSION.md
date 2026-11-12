@@ -47,7 +47,7 @@ TODO.md › Collaborative editing › M2 holds the full agreed design (atoms,
 edits with start/end in host time, the per-atom referee: earliest start
 wins, edit beats delete, per-group acceptance, 2-minute cap; conflicts
 table + Reapply mine; presence). Parked by the user on 2026-11-10 evening;
-**pick up at phase M2-1 (atoms and ops, pure)**. What the next agent must
+M2-1 done (above); **next: M2-2, the referee**. What the next agent must
 not break:
 
 - **Parts, not operations** (`collab-model.js`): `patterns/<id>`,
