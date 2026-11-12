@@ -125,6 +125,18 @@ describe('diff and groups', () => {
         assert.ok(big.includes('section/s2/clip/c9') && big.includes('section/s2/clip/c9/patternId'));
     });
 
+    test('a deleted pattern takes the clips that played it', () => {
+        const p = project();
+        const q = clone(p);
+        delete q.patterns.p1;
+        q.sections[0].clips = [];
+        q.tracks[0].mute = true;
+        const g = diffGroups(p, q);
+        assert.equal(g.length, 2);
+        const big = g.find(x => x.length > 1).map(op => op.atom);
+        assert.ok(big.includes('pattern/p1') && big.includes('section/s1/clip/c1') && big.includes('section/s1/clip/c1/startCol'));
+    });
+
     test('a clip of an existing pattern is its own group, apart from a new pattern', () => {
         const p = project();
         const q = clone(p);

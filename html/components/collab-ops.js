@@ -20,9 +20,10 @@
 //   canvas/<patches|containers>/<id>/<field>
 //   canvas/<key>                                      any other canvas key, whole
 //
-// Notes are keyed by start and pitch — no note ids; a commit's
-// mergeDuplicates makes the key unique. The lane is not in the key: it is
-// re-derived whenever a pattern is applied to.
+// Notes are keyed by start and pitch — no note ids. A pattern is atomised
+// only once committed (the tracker's mergeDuplicates has run), so one key
+// is one note; the sync debounces until then. The lane is not in the key:
+// it is re-derived whenever a pattern is applied to.
 //
 // A value is **JSON text**; an absent atom is `null` (so a section's
 // `bpm: null` — "the project's tempo" — is the text 'null', not absence).
@@ -33,7 +34,8 @@
 // entity created or deleted with everything under it, a note moved (one
 // pitch deleted and inserted in one pattern), a new pattern with the clip
 // that places it, a section created or deleted with the order. Anything
-// else is a group of one.
+// else is a group of one. (The clip rule runs both ways: a deleted
+// pattern takes the clips that played it, as removePattern does.)
 //
 // Pure: no DOM, no session, no transport.
 
@@ -82,12 +84,7 @@ export function readAtoms(body) {
         const at = 'pattern/' + id;
         atoms.set(at, EXISTS);
         for (const f of PATTERN_FIELDS) put(at + '/' + f, p[f]);
-        for (const n of p.notes || []) {
-            const key = at + '/note/' + noteKey(n);
-            // Before a commit's merge one key may hold two notes: the longer stands.
-            const had = atoms.get(key);
-            if (had == null || Number(had) < n.dur) put(key, n.dur);
-        }
+        for (const n of p.notes || []) put(at + '/note/' + noteKey(n), n.dur);
     }
     for (const t of body.tracks || []) {
         const at = 'track/' + t.id;
@@ -213,9 +210,8 @@ export function readAtom(body, atom) {
     case 'note': {
         const p = pattern();
         if (!p) return null;
-        let dur;
-        for (const n of p.notes || []) if (n.start === a.start && n.midi === a.midi && (dur == null || n.dur > dur)) dur = n.dur;
-        return stable(dur);
+        const n = (p.notes || []).find(n => n.start === a.start && n.midi === a.midi);
+        return n ? stable(n.dur) : null;
     }
     case 'track': return findTrack(body, a.id) ? EXISTS : null;
     case 'trackField': { const t = findTrack(body, a.id); return t ? stable(t[a.field]) : null; }
@@ -298,14 +294,18 @@ export function groupOps(ops) {
         for (const i of [...gone, ...came]) union(i, gone[0]);
     }
 
-    // A new pattern with the clip that places it.
+    // A new pattern with the clip that places it; a deleted pattern with
+    // the clips that played it.
     ops.forEach((op, i) => {
         const a = parseAtom(op.atom);
-        if (!a || a.kind !== 'clipField' || a.field !== 'patternId' || op.after == null) return;
+        if (!a || a.kind !== 'clipField' || a.field !== 'patternId') return;
         const clip = at.get('section/' + a.sectionId + '/clip/' + a.id);
-        if (clip == null || ops[clip].after == null) return;
-        const pat = at.get('pattern/' + parse(op.after));
-        if (pat != null && ops[pat].before == null) union(i, pat);
+        if (clip == null) return;
+        const created = op.after != null && ops[clip].after != null;
+        const deleted = op.after == null && ops[clip].after == null;
+        if (!created && !deleted) return;
+        const pat = at.get('pattern/' + parse(created ? op.after : op.before));
+        if (pat != null && (created ? ops[pat].before == null : ops[pat].after == null)) union(i, pat);
     });
 
     const groups = new Map();

@@ -17,7 +17,7 @@ run `node --check` + `node --test` and tick this file only. (Open: AGENTS.md
 "Keep it current ... in the same commit/change" reads per-change; awaiting
 the user's wording if SESSION.md should be deferred too.)
 
-### Collaborative editing — M1 DONE 2026-11-10; M2-1 DONE 2026-11-12 — next M2-2 (referee)
+### Collaborative editing — M1 DONE 2026-11-10; M2-1, M2-2 DONE 2026-11-12 — next M2-3 (clock and identity)
 
 **M2-1 (atoms and ops) is in `collab-ops.js`** (pure, tested in
 `test/collab-ops.test.js`; nothing wires it yet). What M2-2+ build on:
@@ -41,13 +41,50 @@ the user's wording if SESSION.md should be deferred too.)
   implicated groups, apply the rest for real.
 - Canvas: `canvas/{patches,containers}/<id>[/<field>]`, other canvas keys
   whole; `patch/`, `patchName/`, `job/<id>` whole.
+- **Only committed state is atomised** (user, 2026-11-12): one note key =
+  one note. M2-4 must debounce a guest's send until the pattern being
+  edited is committed (mergeDuplicates has run), never atomise mid-edit.
+- The clip rule runs both ways: a new pattern joins the clip that places
+  it; a deleted pattern takes the clips that played it (so a revived
+  pattern returns with its clips).
+
+**M2-2 (referee) is in `collab-referee.js`** (pure, tested in
+`test/collab-referee.test.js` — every worked example from TODO.md is a
+test). `createReferee({version, cap})` → `judge(edit, body)` mutates the
+host body and returns `{version, accepted, rejected, overridden, applied,
+result}`. What M2-4/5 build on:
+
+- `edit = { id, peer, alias, module, base, start, end, groups }`. `base`
+  is the host version the guest's mirror was at; the referee's `version`
+  counts up by one per edit that changed anything — M2-4 must make it the
+  same counter as the host's `parts` `v`.
+- Per op: CAS against `readAtom`; equal to `after` = agreement (no-op);
+  mismatch is a conflict **only** if the atom's writer has
+  `version > base`; otherwise applied (nobody competes). Ranking in
+  `rank()`: value beats deletion, then `effectiveStart` (= max(start,
+  end − 2 min)), end, peer id. Losing one op loses the group; winning
+  displaces the earlier writer → `overridden: [{atom, mine: writer,
+  theirs: edit-side}]` (rows for the displaced peer).
+- **Tombs**: an accepted group that deletes an entity is stored on that
+  entity's writer record; an edit under a deleted entity (deleted after
+  its base) revives it by applying the tomb reversed, then applies. A
+  delete of an entity edited under after the delete's base is rejected
+  ("edit beats a delete").
+- Invariants: surviving groups applied to a JSON scratch copy;
+  `checkInvariants` violations not already present are matched to groups
+  by `implicates`; those groups are rejected `kind: 'invariant'` with the
+  reason, and the rest re-checked. Then the real `applyOps`.
+- `rejected[].conflicts[] = {atom, mine, theirs}` with `{peer, alias,
+  module, start, end, after}` on both sides — the conflicts table's raw
+  rows. Human labels for atoms ("Riff › note C-4 @ 1.1") are M2-5's.
+- `writerOf(atom)`, `prune(keep)` (bounded memory), `version` get/set.
 
 
 TODO.md › Collaborative editing › M2 holds the full agreed design (atoms,
 edits with start/end in host time, the per-atom referee: earliest start
 wins, edit beats delete, per-group acceptance, 2-minute cap; conflicts
 table + Reapply mine; presence). Parked by the user on 2026-11-10 evening;
-M2-1 done (above); **next: M2-2, the referee**. What the next agent must
+M2-1 and M2-2 done (above); **next: M2-3, clock and identity**. What the next agent must
 not break:
 
 - **Parts, not operations** (`collab-model.js`): `patterns/<id>`,
