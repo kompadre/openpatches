@@ -226,6 +226,21 @@ body {
 .collab-code { font: bold 1.6rem monospace; letter-spacing: 0.25em; color: #8d9; margin: 0.3rem 0; user-select: all; }
 .collab-peers { color: #999; margin: 0.2rem 0 0.5rem; }
 .collab-error { color: #e94560; margin: 0.4rem 0 0; }
+.collab-alias-input { width: 10rem; }
+.collab-swatches { display: flex; gap: 0.25rem; }
+.collab-swatch { width: 1.1rem; height: 1.1rem; border-radius: 50%; border: 2px solid transparent; cursor: pointer; padding: 0; }
+.collab-swatch.selected { border-color: #fff; }
+.collab-presence { margin: 0.3rem 0 0.5rem; }
+.collab-editing { color: #f3c070; font-size: 0.85rem; }
+.collab-conflicts { margin-top: 0.6rem; }
+.collab-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+.collab-table th { text-align: left; color: #999; font-weight: normal; padding: 0.15rem 0.3rem; border-bottom: 1px solid #333; }
+.collab-table td { padding: 0.2rem 0.3rem; border-bottom: 1px solid #222; vertical-align: top; }
+.collab-table .collab-mine { color: #9bd; }
+.collab-table .collab-theirs { color: #f3c070; }
+.collab-table .collab-kept { color: #999; }
+.collab-dialog:has(.collab-table) { max-width: 44rem; }
+
 
 /* ============================================================
    Modal

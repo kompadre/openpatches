@@ -113,7 +113,7 @@ export function createCollab(opts) {
     const peers = new Set();
     let shadow = null;          // the body as the referee has judged it (= what guests have at v)
     let referee = null;
-    const editing = new Map();  // peer → { alias, scope, at }: presence
+    const editing = new Map();  // peer → { alias, scope, at }: presence (host keeps; guests get it relayed)
 
     // Guest
     let peer = null;
@@ -129,6 +129,7 @@ export function createCollab(opts) {
     let knownLive = null;       // atoms: the live body as we last reconciled it
     const pending = [];         // edits sent, no ack yet: { id, ops, groups }
     let begun = false;          // a 'begin' sent, no edit since
+    let begunScope = '';
 
     function status() {
         return {
@@ -266,10 +267,11 @@ export function createCollab(opts) {
             sendSnapshot(m.peer);
             if (fresh) emit();
         } else if (m.t === 'leave') {
-            editing.delete(m.peer);
+            if (editing.delete(m.peer)) sendPresence();
             if (peers.delete(m.peer)) emit();
         } else if (m.t === 'begin') {
             editing.set(m.peer, { alias: typeof m.alias === 'string' ? m.alias : m.peer, scope: m.scope || {}, at: Date.now() });
+            sendPresence();
             emit();
         } else if (m.t === 'edit') {
             if (m.project === hostedId) onGuestEdit(m);   // not one for a project we no longer share
@@ -286,11 +288,18 @@ export function createCollab(opts) {
         });
     }
 
+    /** Who is editing what, to every guest (the host's own open edits included). */
+    function sendPresence() {
+        const list = [...editing.entries()].map(([p, e]) => ({ peer: p, alias: e.alias, scope: e.scope }));
+        for (const e of (session.openEdits ? session.openEdits() : [])) list.push({ peer: 'host', alias: alias || 'host', scope: e.scope });
+        send('presence', { editing: list });
+    }
+
     /** A guest's edit: judged, applied, sent round, answered. */
     function onGuestEdit(m) {
         const edit = stampEdit({ ...m.edit, peer: m.peer }, now());
         if (!edit) return;
-        editing.delete(m.peer);
+        if (editing.delete(m.peer)) sendPresence();
         flushNow();                                   // our own edits first, in order
         const out = referee.judge(edit, shadow);
         if (out.applied.length) {
@@ -346,10 +355,11 @@ export function createCollab(opts) {
 
     function onHostSession(ev) {
         if (ev.kind === 'saving') return;
-        if (ev.kind === 'begin') { noteTouch(ev); return; }
+        if (ev.kind === 'begin') { noteTouch(ev); sendPresence(); return; }
         // Another project opened: that is what is shared now.
         if (ev.kind === 'project' && ev.projectId !== hostedId) {
             hostedId = ev.projectId;
+            editing.clear();
             clearTimer(sendTimer); sendTimer = null; hint = null;
             known = readParts(session.get());
             shadow = clone(session.get());
@@ -471,6 +481,13 @@ export function createCollab(opts) {
         } else if (m.t === 'ack') {
             if (m.to !== peer || state !== 'watching') return;
             onAck(m);
+        } else if (m.t === 'presence') {
+            if (state !== 'watching') return;
+            editing.clear();
+            for (const e of m.editing) {
+                if (e && typeof e.peer === 'string' && e.peer !== peer) editing.set(e.peer, { alias: String(e.alias || e.peer), scope: e.scope || {}, at: Date.now() });
+            }
+            emit();
         } else if (m.t === 'overridden') {
             if (m.to !== peer || state !== 'watching') return;
             const rows = m.rows.filter(r => r && typeof r.atom === 'string' && r.mine && r.theirs);
@@ -551,7 +568,10 @@ export function createCollab(opts) {
         if (state !== 'watching') return;
         noteTouch(ev);
         if (ev.kind === 'begin') {
-            if (!begun) { begun = true; send('begin', { peer, alias, scope: ev.scope || {} }); }
+            if (!begun || JSON.stringify(ev.scope || {}) !== begunScope) {
+                begun = true; begunScope = JSON.stringify(ev.scope || {});
+                send('begin', { peer, alias, scope: ev.scope || {} });
+            }
             return;
         }
         if (editTimer != null) clearTimer(editTimer);
@@ -616,6 +636,28 @@ export function createCollab(opts) {
         flush() { if (role === 'host') flushNow(); else if (role === 'guest') sendEdit(); },
         /** Forget the conflict rows. */
         clearConflicts() { conflicts.length = 0; emit(); },
+        /**
+         * Reapply mine: put a row's values back into the project here, as
+         * a fresh edit on the current version — it goes to the referee
+         * like any other (and may lose again). The row is dropped.
+         */
+        reapply(row) {
+            const i = conflicts.indexOf(row);
+            if (i < 0 || !role || (role === 'guest' && state !== 'watching')) return false;
+            conflicts.splice(i, 1);
+            const body = session.get();
+            const ops = row.mine.map(m => ({ atom: m.atom, before: readAtom(body, m.atom), after: m.value })).filter(op => op.before !== op.after);
+            if (ops.length) {
+                const moved = applyOps(body, ops);
+                if (moved.structure) normalizeProject(body);
+                // Announced from a source of its own, so it travels like an edit made here.
+                if (moved.structure || moved.bench) session.update(() => {}, 'reapply', moved.bench && !moved.structure ? 'patches' : 'project');
+                else for (const id of moved.patterns) session.notifyPattern(id, 'reapply');
+                if (moved.bench) onBench();
+            }
+            emit();
+            return true;
+        },
         /** Page going away: say goodbye so the others are not left waiting. */
         close() {
             if (role === 'host') stopHosting();

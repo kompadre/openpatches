@@ -398,6 +398,54 @@ describe('collab: guest edits', () => {
         assert.equal(s.hub.sent.find(m => m.t === 'edit').edit.alias, 'Bob');
     });
 
+    test('Reapply mine sends the lost value again as a fresh edit; it wins on the current base', async () => {
+        const s = setup();
+        await joined(s);
+        s.host.session.update((p) => { p.bpm = 60; }, 'transport');
+        s.clock.advance(50);
+        s.guest.session.update((p) => { p.bpm = 50; }, 'transport');
+        settle(s); settle(s);
+        assert.equal(s.guest.session.get().bpm, 60);
+        const row = s.guest.collab.status().conflicts[0];
+        assert.ok(s.guest.collab.reapply(row));
+        assert.equal(s.guest.session.get().bpm, 50, 'mine again, at once');
+        assert.deepEqual(s.guest.collab.status().conflicts, []);
+        settle(s); settle(s);
+        assert.equal(s.host.session.get().bpm, 50, 'and the host took it');
+        assert.deepEqual(s.guest.collab.status().conflicts, []);
+        assert.deepEqual(s.host.collab.status().conflicts, [], 'the host had no edit in flight to lose');
+        assert.equal(s.guest.collab.reapply(row), false, 'a row is reapplied once');
+    });
+
+    test('the host can reapply too, and presence is relayed to guests', async () => {
+        const s = setup();
+        const code = await joined(s);
+        const other = await joinedToo(s, code);
+        profileStore.setIdentity({ alias: 'Ann' });
+        // The other guest begins; everyone hears who is editing.
+        other.session.beginEdit({ patternId: s.pattern.id }, 'tracker');
+        s.hub.pump(); s.hub.pump();
+        assert.equal(s.guest.collab.status().editing.length, 1);
+        assert.equal(s.guest.collab.status().editing[0].scope.patternId, s.pattern.id);
+        assert.deepEqual(other.collab.status().editing, [], 'not told about itself');
+        // The host loses a tempo conflict to the other guest (who began first) and reapplies.
+        s.clock.advance(50);
+        s.host.session.update((p) => { p.bpm = 60; }, 'transport');
+        other.session.getPattern(s.pattern.id).notes.push({ midi: 64, start: 4, dur: 4 });
+        other.session.update((p) => { p.bpm = 70; }, 'transport');
+        other.session.touchPattern(s.pattern.id, 'tracker');
+        settle(s); settle(s);
+        assert.equal(s.host.session.get().bpm, 70);
+        assert.deepEqual(s.guest.collab.status().editing, [], 'the edit landed');
+        const rows = s.host.collab.status().conflicts;
+        assert.equal(rows.length, 1);
+        assert.ok(s.host.collab.reapply(rows[0]));
+        settle(s); settle(s);
+        assert.equal(s.host.session.get().bpm, 60);
+        assert.equal(other.session.get().bpm, 60);
+        assert.equal(s.guest.session.get().bpm, 60);
+    });
+
     test('a missed message with an edit in flight: resync keeps and resends it', async () => {
         const s = setup();
         await joined(s);

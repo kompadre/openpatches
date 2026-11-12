@@ -217,10 +217,12 @@ export function divergence(known, project) {
 //                  { t: 'overridden', to, rows }
 //                                             a later edit beat one of
 //                                             yours: [{ atom, mine, theirs }]
+//                  { t: 'presence', editing } who is editing what:
+//                                             [{ peer, alias, scope }]
 //
 // Every message carries `p: PROTOCOL` and `room`.
 
-const TYPES = new Set(['join', 'resync', 'leave', 'snapshot', 'parts', 'bye', 'begin', 'edit', 'ack', 'overridden']);
+const TYPES = new Set(['join', 'resync', 'leave', 'snapshot', 'parts', 'bye', 'begin', 'edit', 'ack', 'overridden', 'presence']);
 
 export function message(room, t, fields = {}) {
     return { p: PROTOCOL, room, t, ...fields };
@@ -238,6 +240,7 @@ export function readMessage(raw, room) {
     if (raw.t === 'ack' && (typeof raw.to !== 'string' || typeof raw.id !== 'string' || !Number.isInteger(raw.v)
         || !Array.isArray(raw.accepted) || !Array.isArray(raw.rejected))) return null;
     if (raw.t === 'overridden' && (typeof raw.to !== 'string' || !Array.isArray(raw.rows))) return null;
+    if (raw.t === 'presence' && !Array.isArray(raw.editing)) return null;
     return raw;
 }
 

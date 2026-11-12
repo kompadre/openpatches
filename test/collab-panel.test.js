@@ -4,12 +4,18 @@ import { test, before, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { installBrowserEnv } from './harness.js';
 
-let chipText, attachCollabChip;
+let chipText, attachCollabChip, describeAtom, describeValue, describePresence;
 
 before(async () => {
     installBrowserEnv();
-    ({ chipText, attachCollabChip } = await import('../html/components/collab-panel.js'));
+    ({ chipText, attachCollabChip, describeAtom, describeValue, describePresence } = await import('../html/components/collab-panel.js'));
 });
+
+const body = {
+    patterns: { p1: { id: 'p1', name: 'Riff' } },
+    tracks: [{ id: 't1', name: 'Keys' }],
+    sections: [{ id: 's1', name: 'Intro' }],
+};
 
 function fakeCollab(initial) {
     let s = { role: null, room: null, state: null, peers: 0, hostName: '', ...initial };
@@ -21,10 +27,36 @@ function fakeCollab(initial) {
     };
 }
 
+describe('words for atoms, values and presence', () => {
+    test('atoms name what the project calls them', () => {
+        assert.equal(describeAtom('pattern/p1/note/20:60', body), 'Riff › C-4 at 2.5');
+        assert.equal(describeAtom('pattern/p1/name', body), 'Riff › name');
+        assert.equal(describeAtom('track/t1/volume', body), 'Keys › volume');
+        assert.equal(describeAtom('track/t1/fx/delayMix', body), 'Keys › effects › delayMix');
+        assert.equal(describeAtom('section/s1/clip/c1/startCol', body), 'Intro › clip › position');
+        assert.equal(describeAtom('bpm', body), 'project › tempo');
+        assert.equal(describeAtom('pattern/zz', body), 'a pattern');
+        assert.equal(describeAtom('nonsense', body), 'nonsense');
+    });
+    test('values read as words', () => {
+        assert.equal(describeValue('"Hook"'), 'Hook');
+        assert.equal(describeValue('90'), '90');
+        assert.equal(describeValue('null'), '—');
+        assert.equal(describeValue(null), 'removed');
+        assert.equal(describeValue('["a","b"]'), '2 items');
+    });
+    test('presence', () => {
+        assert.equal(describePresence({ alias: 'Bob', scope: { patternId: 'p1' } }, body), 'Bob is editing Riff');
+        assert.equal(describePresence({ peer: 'X', scope: {} }, body), 'X is editing');
+    });
+});
+
 describe('collab chip', () => {
     test('words for each moment; none without a session', () => {
         assert.equal(chipText({ role: null }), '');
-        assert.equal(chipText({ role: 'host', room: 'ABC234', peers: 2 }), '⇄ Sharing ABC234 · 2 watching');
+        assert.equal(chipText({ role: 'host', room: 'ABC234', peers: 2 }), '⇄ Sharing ABC234 · 2 in');
+        assert.equal(chipText({ role: 'host', room: 'ABC234', peers: 2, conflicts: [1, 2, 3] }), '⇄ Sharing ABC234 · 2 in · ⚠ 3');
+        assert.equal(chipText({ role: 'guest', state: 'watching', room: 'ABC234', hostName: 'Jam', conflicts: [1] }), '⇄ With Jam · ⚠ 1');
         assert.equal(chipText({ role: 'guest', state: 'joining', room: 'ABC234' }), '⇄ Joining ABC234…');
         assert.equal(chipText({ role: 'guest', state: 'watching', room: 'ABC234', hostName: 'Jam' }), '⇄ With Jam');
         assert.equal(chipText({ role: 'guest', state: 'ended', room: 'ABC234' }), '⇄ Session ended');

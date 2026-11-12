@@ -1,6 +1,7 @@
-// Collaborate, milestone 1: two tabs of one browser. The host shares; a
-// second tab joins by link, mirrors the project live, can play it, and
-// cannot change it. Stopping leaves the guest a choice.
+// Collaborate, two tabs of one browser. The host shares; a second tab
+// joins by link, mirrors the project live, plays it, and edits it —
+// conflicts refereed per atom, with a table and Reapply mine. Stopping
+// leaves the guest a choice.
 
 import { test, expect, openApp } from './fixtures.js';
 
@@ -44,13 +45,19 @@ test('share, join by link, follow live, play; guest edits reach the host; stop, 
     await openApp(page);
     await seed(page);
 
-    // Host: File › Collaborate… › Start sharing.
+    // Host: File › Collaborate… — asked who they are, once — › Start sharing.
     await page.locator('.menu-item[data-menu="file"] .menu-label').click();
     await page.locator('#menu-collab').click();
+    await expect(page.locator('.collab-identity h4')).toHaveText('Who are you?');
     await page.locator('.collab-host-btn').click();
+    await expect(page.locator('.collab-error')).toHaveText('Pick a name first');
+    await page.locator('.collab-alias-input').fill('Ann');
+    await page.locator('.collab-swatch').nth(5).click();
+    await page.locator('.collab-host-btn').click();
+    expect(await page.evaluate(() => JSON.parse(localStorage.getItem('openpatches_profile')).identity)).toEqual({ alias: 'Ann', color: '#3b8fd1' });
     const code = (await page.locator('.collab-code').textContent()).trim();
     expect(code).toMatch(/^[A-Z2-9]{6}$/);
-    await expect(page.locator('#menu-collab-chip')).toContainText('Sharing ' + code + ' · 0 watching');
+    await expect(page.locator('#menu-collab-chip')).toContainText('Sharing ' + code + ' · 0 in');
 
     // Guest: a second tab by link. The URL loses ?join, the project arrives.
     const guest = await guestPage(context, code);
@@ -59,8 +66,8 @@ test('share, join by link, follow live, play; guest edits reach the host; stop, 
     await expect(guest.locator('#menu-status')).toHaveText('Jam');
     expect(await notes(guest)).toEqual([[60, 0, 4]]);
     expect(await guest.evaluate(() => window.__opProject.isGuest())).toBe(true);
-    await expect(page.locator('.collab-peers')).toHaveText('1 person watching');
-    await expect(page.locator('#menu-collab-chip')).toContainText('1 watching');
+    await expect(page.locator('.collab-peers')).toHaveText('1 person in');
+    await expect(page.locator('#menu-collab-chip')).toContainText('1 in');
     await page.screenshot({ path: '/tmp/op-shots/collab-host.png' });
     await page.locator('.modal-dialog:has(.collab-dialog) .modal-close').click();
 
@@ -123,11 +130,113 @@ test('share, join by link, follow live, play; guest edits reach the host; stop, 
     expect(guest.opErrors).toEqual([]);
 });
 
+/** The guest's alias is the same browser's profile; name the host first, then join. */
+async function shared(page, context) {
+    await openApp(page);
+    await seed(page);
+    await page.evaluate(() => {
+        localStorage.setItem('openpatches_profile', JSON.stringify({
+            ...JSON.parse(localStorage.getItem('openpatches_profile') || '{}'), identity: { alias: 'Ann', color: '#3b8fd1' },
+        }));
+    });
+    const code = await page.evaluate(() => window.__opCollab.host());
+    const guest = await guestPage(context, code);
+    await expect(guest.locator('#menu-collab-chip')).toContainText('With Jam');
+    return { code, guest };
+}
+
+const status = (p) => p.evaluate(() => window.__opCollab.status());
+const bpm = (p) => p.evaluate(() => window.__opProject.get().bpm);
+const setBpm = (p, v, begin = false) => p.evaluate(([v, begin]) => {
+    if (begin) window.__opProject.beginEdit({}, 'transport');
+    window.__opProject.update((prj) => { prj.bpm = v; }, 'transport');
+}, [v, begin]);
+
+test('each kind of conflict on purpose: lost, overridden, invariant; the table, Reapply mine, presence', async ({ page, context }) => {
+    const { guest } = await shared(page, context);
+
+    // 1. A conflict the host started first: the guest's edit loses, snaps back, gets a row.
+    await setBpm(page, 60);
+    await guest.waitForTimeout(30);
+    await setBpm(guest, 50);
+    await expect.poll(() => bpm(page)).toBe(60);
+    await expect.poll(() => bpm(guest)).toBe(60);
+    await expect(guest.locator('#menu-collab-chip')).toContainText('⚠ 1');
+    let rows = (await status(guest)).conflicts;
+    expect(rows.length).toBe(1);
+    expect(rows[0].kind).toBe('conflict');
+    expect(rows[0].reason).toMatch(/Ann started first/);
+    expect((await status(page)).conflicts).toEqual([]);
+
+    // The table says what, yours, theirs, kept; Reapply mine sends it again and wins now.
+    await guest.locator('#menu-collab-chip').click();
+    const line = guest.locator('.collab-conflict-row');
+    await expect(line).toHaveCount(1);
+    await expect(line.locator('.collab-what')).toHaveText('project › tempo');
+    await expect(line.locator('.collab-mine')).toContainText('50');
+    await expect(line.locator('.collab-theirs')).toContainText('Ann: 60');
+    await expect(line.locator('.collab-kept')).toContainText('Ann started first');
+    await guest.screenshot({ path: '/tmp/op-shots/collab-conflicts.png' });
+    await line.locator('.collab-reapply-btn').click();
+    await expect(guest.locator('.collab-conflict-row')).toHaveCount(0);
+    await expect.poll(() => bpm(page)).toBe(50);
+    await expect.poll(() => bpm(guest)).toBe(50);
+    expect((await status(guest)).conflicts).toEqual([]);
+    await guest.locator('.modal-dialog:has(.collab-dialog) .modal-close').click();
+
+    // 2. Overridden: the guest begins first, the host edits and lands first, the guest's
+    //    commit beats it — the host gets the row, both end on the guest's value.
+    await setBpm(guest, 90, true);           // began first; sent after the quiet time
+    await page.waitForTimeout(30);
+    await setBpm(page, 80);
+    await expect.poll(() => bpm(guest)).toBe(90);
+    await expect.poll(() => bpm(page)).toBe(90);
+    await expect(page.locator('#menu-collab-chip')).toContainText('⚠ 1');
+    rows = (await status(page)).conflicts;
+    expect(rows[0].kind).toBe('overridden');
+    expect((await status(guest)).conflicts).toEqual([]);
+
+    // 3. An invariant: the host places a second clip at bar 3; the guest, unaware, moves the
+    //    first clip there too — rejected with the reason, the move comes back.
+    await page.evaluate(async () => {
+        const M = await import('/html/components/project-model.js');
+        window.__opProject.update((p, sec) => {
+            M.addClip(p, sec, { trackId: p.tracks[0].id, patternId: Object.keys(p.patterns)[0], startCol: 32 });
+        }, 'section-editor');
+    });
+    await guest.evaluate(() => window.__opProject.update((p, sec) => { sec.clips[0].startCol = 32; }, 'section-editor'));
+    const starts = (p) => p.evaluate(() => window.__opProject.getSection().clips.map((c) => c.startCol).sort((a, b) => a - b));
+    await expect.poll(() => starts(page)).toEqual([0, 32]);
+    await expect.poll(() => starts(guest)).toEqual([0, 32]);
+    await expect.poll(async () => (await status(guest)).conflicts.map((r) => r.kind)).toEqual(['invariant']);
+    expect((await status(guest)).conflicts[0].reason).toMatch(/overlap/);
+
+    // 4. Presence: the guest's first keystroke says so on the host, until the edit lands.
+    await guest.evaluate(() => {
+        const p = Object.values(window.__opProject.get().patterns)[0];
+        window.__opProject.beginEdit({ patternId: p.id }, 'tracker');
+    });
+    await page.locator('#menu-collab-chip').click();
+    await expect(page.locator('.collab-editing')).toHaveText(/is editing Riff/);
+    await guest.evaluate(() => {
+        const p = Object.values(window.__opProject.get().patterns)[0];
+        p.notes.push({ midi: 64, start: 4, dur: 4 });
+        window.__opProject.touchPattern(p.id, 'tracker');
+    });
+    await expect(page.locator('.collab-editing')).toHaveCount(0);
+    await expect.poll(() => notes(page)).toEqual([[60, 0, 4], [64, 4, 4]]);
+
+    expect(guest.opErrors).toEqual([]);
+});
+
 test('a wrong code: the dialog says no one is sharing it', async ({ page }) => {
     await openApp(page);
     await page.locator('.menu-item[data-menu="file"] .menu-label').click();
     await page.locator('#menu-collab').click();
     await page.locator('.collab-code-input').fill('zzzz99');
+    await page.locator('.collab-join-btn').click();
+    await expect(page.locator('.collab-error')).toHaveText('Pick a name first');
+    await page.locator('.collab-alias-input').fill('Bob');
     await page.locator('.collab-join-btn').click();
     await expect(page.locator('#menu-collab-chip')).toContainText('Joining ZZZZ99');
     await expect(page.locator('.collab-error')).toHaveText('No one is sharing with code ZZZZ99', { timeout: 6000 });
