@@ -17,7 +17,33 @@ run `node --check` + `node --test` and tick this file only. (Open: AGENTS.md
 "Keep it current ... in the same commit/change" reads per-change; awaiting
 the user's wording if SESSION.md should be deferred too.)
 
-### Collaborative editing — M1, M2 DONE; M3-1 (relay) DONE 2026-11-12; next M3-2
+### Collaborative editing — M1, M2 DONE; M3-1, M3-2 DONE 2026-11-12; next M3-3 (Go relay, when the user wants it)
+
+**M3-2 — links that drop** (collab.js; tests `collab` › "dropped links…",
+"relay channel reconnects"; e2e "a dropped socket reconnects…"):
+
+- `relayChannel` reconnects a socket that drops **after** opening
+  (500 ms doubling to 5 s; reset on a good open), queues sends meanwhile,
+  calls `onLink(kind)` (`'reconnecting'`), and on reopen delivers
+  `{relay:'reconnected'}` to its own onMessage. Never-opened → fallback
+  as before. It takes `setTimeout/clearTimeout` (collab passes its own).
+- Heartbeats: `beat {peer}` from everyone every `beatMs` (5 s). Host: a
+  guest silent > `silentMs` (20 s) or named by `{relay:'left'}` is
+  `dropPeer`ed; its next beat re-adds it **with a snapshot**. Guest: the
+  host named in `left`, or silent > 20 s → `hostAway` + notice, and after
+  `graceMs` (15 s) `endSession('The host has gone')` (screen kept, as on
+  bye). Any host message (not other guests' join/edit/begin/beat) clears
+  it ("The host is back").
+- Reconnected guest → `resync` (pending edits rebased by the same-project
+  snapshot path); reconnected host → `flushNow` + snapshot to all.
+- `status()` gained `hostAway`; `link` can be `'reconnecting'`. Chip:
+  "Reconnecting…", "Waiting for the host…", host "· reconnecting…".
+- Relay notices have no `p` and are handled **before** `readMessage`.
+- Not covered: a host that comes back after the guest's grace ended
+  (guest is `ended`; rejoin by hand), and the host's own page reload
+  (a new room code — the session is not persisted).
+
+
 
 **M3-1 — the room relay.** `server.py` is now a `ThreadingHTTPServer`
 (each socket holds a thread) with a stdlib WebSocket relay at

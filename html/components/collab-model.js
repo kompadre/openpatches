@@ -219,10 +219,15 @@ export function divergence(known, project) {
 //                                             yours: [{ atom, mine, theirs }]
 //                  { t: 'presence', editing } who is editing what:
 //                                             [{ peer, alias, scope }]
+//   both           { t: 'beat', peer }        still here (every 5 s)
+//
+//   From the relay itself (no `p`, not readMessage's): { relay: 'left',
+//   peer } when a connection drops; and from relayChannel, locally,
+//   { relay: 'reconnected' } when a dropped socket is back.
 //
 // Every message carries `p: PROTOCOL` and `room`.
 
-const TYPES = new Set(['join', 'resync', 'leave', 'snapshot', 'parts', 'bye', 'begin', 'edit', 'ack', 'overridden', 'presence']);
+const TYPES = new Set(['join', 'resync', 'leave', 'snapshot', 'parts', 'bye', 'begin', 'edit', 'ack', 'overridden', 'presence', 'beat']);
 
 export function message(room, t, fields = {}) {
     return { p: PROTOCOL, room, t, ...fields };
@@ -232,7 +237,7 @@ export function message(room, t, fields = {}) {
 export function readMessage(raw, room) {
     if (!raw || typeof raw !== 'object') return null;
     if (raw.p !== PROTOCOL || raw.room !== room || !TYPES.has(raw.t)) return null;
-    if ((raw.t === 'join' || raw.t === 'resync' || raw.t === 'leave') && typeof raw.peer !== 'string') return null;
+    if ((raw.t === 'join' || raw.t === 'resync' || raw.t === 'leave' || raw.t === 'beat') && typeof raw.peer !== 'string') return null;
     if (raw.t === 'snapshot' && (typeof raw.body !== 'string' || !Number.isInteger(raw.v))) return null;
     if (raw.t === 'parts' && (!Number.isInteger(raw.v) || !raw.changes || typeof raw.changes !== 'object')) return null;
     if (raw.t === 'begin' && typeof raw.peer !== 'string') return null;

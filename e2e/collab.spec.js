@@ -285,6 +285,56 @@ test('another machine: a separate browser context joins through the relay, edits
     await other.close();
 });
 
+/** Record a page's sockets, so a test can cut one as a network would. */
+const recordSockets = () => {
+    const Real = window.WebSocket;
+    window.__sockets = [];
+    window.WebSocket = class extends Real {
+        constructor(...a) { super(...a); window.__sockets.push(this); }
+    };
+};
+
+test('a dropped socket reconnects and catches up; a host that vanishes is noticed', async ({ page, browser }) => {
+    await page.addInitScript(recordSockets);
+    await openApp(page);
+    await seed(page);
+    const code = await page.evaluate(() => window.__opCollab.host());
+    await expect.poll(async () => (await status(page)).link).toBe('relay');
+
+    const other = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+    await other.addInitScript(() => {
+        localStorage.setItem('openpatches_profile', JSON.stringify({ identity: { alias: 'Bob', color: '#d84a6b' } }));
+    });
+    await other.addInitScript(recordSockets);
+    const guest = await guestPage(other, code);
+    await expect(guest.locator('#menu-collab-chip')).toContainText('With Jam');
+
+    // Cut the guest's socket. While it is down: an edit on each side.
+    await guest.evaluate(() => window.__sockets.at(-1).close());
+    await expect.poll(async () => (await status(guest)).link).not.toBe('relay');
+    await page.evaluate(() => window.__opProject.update((p) => { p.name = 'Jam renamed'; }, 'e2e'));
+    await guest.evaluate(() => window.__opProject.update((p) => { p.bpm = 77; }, 'transport'));
+
+    // It comes back by itself, resyncs, and its edit gets through.
+    await expect.poll(async () => (await status(guest)).link, { timeout: 10000 }).toBe('relay');
+    expect(await guest.evaluate(() => window.__sockets.length)).toBeGreaterThan(1);
+    await expect.poll(() => guest.evaluate(() => window.__opProject.get().name)).toBe('Jam renamed');
+    await expect.poll(() => bpm(page)).toBe(77);
+    await expect.poll(async () => (await status(guest)).pending).toBe(0);
+
+    // The host's network goes, with no goodbye and no way back: the relay
+    // tells the guest, who says so and waits out the grace period.
+    await page.evaluate(() => {
+        window.WebSocket = class { constructor() { throw new Error('offline'); } };
+        window.__sockets.at(-1).close();
+    });
+    await expect.poll(async () => (await status(guest)).hostAway, { timeout: 10000 }).toBe(true);
+    expect((await status(guest)).state).toBe('watching');
+    await expect(guest.locator('#menu-collab-chip')).toContainText(/not answering|Waiting for the host/);
+    expect(guest.opErrors).toEqual([]);
+    await other.close();
+});
+
 test('a wrong code: the dialog says no one is sharing it', async ({ page }) => {
     await openApp(page);
     await page.locator('.menu-item[data-menu="file"] .menu-label').click();

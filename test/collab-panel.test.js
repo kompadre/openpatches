@@ -60,6 +60,9 @@ describe('collab chip', () => {
         assert.equal(chipText({ role: 'guest', state: 'joining', room: 'ABC234' }), '⇄ Joining ABC234…');
         assert.equal(chipText({ role: 'guest', state: 'watching', room: 'ABC234', hostName: 'Jam' }), '⇄ With Jam');
         assert.equal(chipText({ role: 'guest', state: 'ended', room: 'ABC234' }), '⇄ Session ended');
+        assert.equal(chipText({ role: 'guest', state: 'watching', room: 'ABC234', hostName: 'Jam', link: 'reconnecting' }), '⇄ Reconnecting…');
+        assert.equal(chipText({ role: 'guest', state: 'watching', room: 'ABC234', hostName: 'Jam', hostAway: true }), '⇄ Waiting for the host…');
+        assert.equal(chipText({ role: 'host', room: 'ABC234', peers: 2, link: 'reconnecting' }), '⇄ Sharing ABC234 · reconnecting…');
     });
 
     test('hidden when idle, shown and styled by role; a notice shows for a while and is logged', () => {

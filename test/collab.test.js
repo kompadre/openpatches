@@ -25,13 +25,17 @@ function createHub() {
     let dropNext = 0;
     const hub = {
         sent: [],
-        open(room, onMessage) {
+        byPeer: new Map(),
+        muted: new Set(),
+        open(room, onMessage, o = {}) {
             if (!rooms.has(room)) rooms.set(room, new Set());
-            const me = { onMessage };
+            const me = { onMessage, peer: o.peer };
+            if (o.peer) hub.byPeer.set(o.peer, me);
             rooms.get(room).add(me);
             return {
                 send(msg) {
                     hub.sent.push(msg);
+                    if (hub.muted.has(me.peer)) return;
                     if (dropNext > 0) { dropNext--; return; }
                     const copy = JSON.parse(JSON.stringify(msg));   // structured clone, near enough
                     for (const other of rooms.get(room)) if (other !== me) queue.push(() => other.onMessage(copy));
@@ -40,6 +44,8 @@ function createHub() {
             };
         },
         pump() { while (queue.length) queue.shift()(); },
+        /** What the relay (or the channel) says, straight to one peer. */
+        notify(peer, notice) { queue.push(() => hub.byPeer.get(peer).onMessage(notice)); },
         drop(n = 1) { dropNext = n; },
     };
     return hub;
@@ -73,7 +79,8 @@ function setup() {
         const session = makeProjectSession({ name });
         let bench = 0;
         const collab = createCollab({
-            session, openChannel: hub.open, random, sendMs: 100, now: clock.now,
+            session, openChannel: hub.open, random, sendMs: 100, now: clock.now, clock: clock.now,
+            beatMs: 5000, silentMs: 20000, graceMs: 15000,
             setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout,
             onBench: () => { bench++; },
         });
@@ -613,6 +620,125 @@ describe('collab: the relay channel', () => {
         const fallback = fakeFallback();
         const ch = relayChannel('ABC234', () => {}, { WebSocketImpl: null, fallback });
         if (typeof WebSocket === 'undefined') assert.equal(ch.kind, 'local');
+        ch.close();
+    });
+});
+
+describe('collab: dropped links, heartbeats, a host gone', () => {
+    const guestPeer = (s) => s.hub.sent.find(m => m.t === 'join').peer;
+
+    test('the relay says the host left: the guest waits the grace period, then the session ends', async () => {
+        const s = setup();
+        await joined(s);
+        s.hub.notify(guestPeer(s), { relay: 'left', peer: 'host' });
+        s.hub.pump();
+        assert.equal(s.guest.collab.status().hostAway, true);
+        assert.ok(s.guest.notices.some(n => /not answering/.test(n)));
+        assert.equal(s.guest.collab.status().state, 'watching', 'still in, for now');
+        s.host.collab.close();                    // really gone (its bye is lost too)
+        s.clock.advance(15000);
+        assert.equal(s.guest.collab.status().state, 'ended');
+        assert.ok(s.guest.notices.includes('The host has gone'));
+        assert.equal(s.guest.session.isGuest(), true, 'what is on screen stays');
+    });
+
+    test('the host back within the grace period: the session goes on', async () => {
+        const s = setup();
+        await joined(s);
+        s.hub.notify(guestPeer(s), { relay: 'left', peer: 'host' });
+        s.hub.pump();
+        s.clock.advance(5000);                    // the host's beat arrives
+        s.hub.pump();
+        assert.equal(s.guest.collab.status().hostAway, false);
+        assert.ok(s.guest.notices.includes('The host is back'));
+        s.clock.advance(15000);
+        s.hub.pump();
+        assert.equal(s.guest.collab.status().state, 'watching');
+    });
+
+    test('a silent host (no beats) is taken for gone after silence + grace', async () => {
+        const s = setup();
+        await joined(s);
+        s.hub.muted.add('host');
+        for (let t = 0; t < 25000; t += 5000) { s.clock.advance(5000); s.hub.pump(); }
+        assert.equal(s.guest.collab.status().hostAway, true);
+        for (let t = 0; t < 15000; t += 5000) { s.clock.advance(5000); s.hub.pump(); }
+        assert.equal(s.guest.collab.status().state, 'ended');
+    });
+
+    test('a guest whose link came back resyncs, and an edit lost on the way is sent again', async () => {
+        const s = setup();
+        await joined(s);
+        s.hub.muted.add(guestPeer(s));            // the guest's socket is down…
+        s.guest.session.update((p) => { p.bpm = 77; }, 'transport');
+        s.clock.advance(100);
+        s.hub.muted.delete(guestPeer(s));         // …and back
+        s.hub.notify(guestPeer(s), { relay: 'reconnected' });
+        s.hub.pump(); s.hub.pump();                // resync → snapshot
+        settle(s); settle(s);
+        assert.equal(s.host.session.get().bpm, 77);
+        assert.equal(s.guest.collab.status().pending, 0);
+        assert.ok(s.hub.sent.some(m => m.t === 'resync'));
+    });
+
+    test('a host whose link came back sends everyone the whole project', async () => {
+        const s = setup();
+        await joined(s);
+        s.hub.muted.add('host');
+        s.host.session.update((p) => { p.name = 'Renamed while away'; }, 'test');
+        s.clock.advance(100);
+        s.hub.muted.delete('host');
+        s.hub.notify('host', { relay: 'reconnected' });
+        s.hub.pump(); s.hub.pump();
+        assert.equal(s.guest.session.get().name, 'Renamed while away');
+    });
+
+    test('the host counts out a guest the relay says left, or one gone silent; a beat brings it back', async () => {
+        const s = setup();
+        await joined(s);
+        s.hub.notify('host', { relay: 'left', peer: guestPeer(s) });
+        s.hub.pump();
+        assert.equal(s.host.collab.status().peers, 0);
+        s.clock.advance(5000);                    // the guest was only blipped: its beat
+        s.hub.pump(); s.hub.pump();
+        assert.equal(s.host.collab.status().peers, 1, 'back in, and caught up');
+        s.hub.muted.add(guestPeer(s));
+        for (let t = 0; t < 30000; t += 5000) { s.clock.advance(5000); s.hub.pump(); }
+        assert.equal(s.host.collab.status().peers, 0, 'silent too long');
+    });
+});
+
+describe('collab: the relay channel reconnects', () => {
+    test('a drop after open: queued, retried with backoff, flushed on reopen, told', () => {
+        const made = [];
+        class WS {
+            constructor(url) { this.url = url; this.sent = []; made.push(this); }
+            send(t) { this.sent.push(t); }
+            close() {}
+        }
+        const timers = [];
+        const links = [];
+        const got = [];
+        const ch = relayChannel('ABC234', (m) => got.push(m), {
+            WebSocketImpl: WS, url: 'ws://x', onLink: (k) => links.push(k),
+            setTimeout: (fn, ms) => { timers.push({ fn, ms }); return timers.length; }, clearTimeout: () => {},
+        });
+        made[0].onopen();
+        made[0].onclose();                         // dropped
+        assert.equal(ch.kind, 'reconnecting');
+        ch.send({ t: 'beat', peer: 'p' });
+        assert.equal(timers[0].ms, 500);
+        timers.shift().fn();                       // retry 1…
+        made[1].onclose();                         // …fails
+        assert.equal(timers[0].ms, 1000, 'backs off');
+        timers.shift().fn();
+        made[2].onopen();
+        assert.equal(ch.kind, 'relay');
+        assert.deepEqual(made[2].sent.map(JSON.parse), [{ t: 'beat', peer: 'p' }]);
+        assert.deepEqual(got, [{ relay: 'reconnected' }]);
+        assert.deepEqual(links, ['relay', 'reconnecting', 'relay']);
+        made[2].onclose();
+        assert.equal(timers[0].ms, 500, 'backoff starts over after a good open');
         ch.close();
     });
 });

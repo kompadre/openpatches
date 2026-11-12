@@ -48,6 +48,11 @@ import { createReferee, stampEdit } from './collab-referee.js';
 import { createProject, normalizeProject } from './project-model.js';
 import { profileStore } from './profile-store.js';
 
+const RECONNECT_MS = 500;      // first retry after a relay socket drops; doubles…
+const RECONNECT_MAX_MS = 5000; // …up to this
+const BEAT_MS = 5000;          // everyone says "still here" this often
+const SILENT_MS = 20000;       // nothing heard from a peer for this long: it may be gone
+const GRACE_MS = 15000;        // the host gone (left, or silent): wait this long before ending
 const SEND_MS = 100;            // changes gathered this long before sending
 const JOIN_TIMEOUT_MS = 3000;   // guest: no snapshot by then, no one is sharing
 const MAX_CONFLICTS = 200;      // rows kept in status().conflicts
@@ -83,56 +88,86 @@ export function relayUrl(room, peer, loc = globalThis.location) {
 /**
  * Through the room relay (server.py › /api/room/<code>: a WebSocket that
  * forwards each message to the room's other connections). What is sent
- * before the socket opens is queued. A relay that cannot be reached at
- * all — the production service has none yet — falls back to `fallback`
- * (a BroadcastChannel), queue and all, so tabs of one browser still work.
- * `kind`: 'relay', 'local' (fell back), or 'connecting'.
+ * while the socket is not open is queued. A relay that cannot be reached
+ * at all — the production service has none yet — falls back to
+ * `fallback` (a BroadcastChannel), queue and all, so tabs of one browser
+ * still work. A socket that drops **after** it opened is reconnected,
+ * backing off from RECONNECT_MS to RECONNECT_MAX_MS; `onLink(kind)` says
+ * so. `kind`: 'connecting', 'relay', 'reconnecting', or 'local'.
  */
-export function relayChannel(room, onMessage, { peer, WebSocketImpl, fallback = broadcastChannel, url } = {}) {
+export function relayChannel(room, onMessage, {
+    peer, WebSocketImpl, fallback = broadcastChannel, url, onLink = () => {},
+    setTimeout: setT = (fn, ms) => setTimeout(fn, ms), clearTimeout: clearT = (t) => clearTimeout(t),
+} = {}) {
     const WS = WebSocketImpl || (typeof WebSocket !== 'undefined' ? WebSocket : null);
     let queue = [];
     let alt = null;
     let ws = null;
-    let opened = false;
+    let everOpened = false;
+    let isOpen = false;
     let closed = false;
+    let retry = null;
+    let delay = RECONNECT_MS;
+    let kind = 'connecting';
+    const link = (k) => { if (k !== kind) { kind = k; onLink(k); } };
     function toFallback() {
         if (closed || alt) return;
         ws = null;
         alt = fallback(room, onMessage);
         for (const m of queue) alt.send(m);
-        queue = null;
+        queue = [];
+        link('local');
     }
-    if (!WS) toFallback();
-    else {
-        try { ws = new WS(url || relayUrl(room, peer)); } catch { toFallback(); }
-        if (ws) {
-            ws.onopen = () => {
-                opened = true;
-                for (const m of queue) ws.send(JSON.stringify(m));
-                queue = null;
-            };
-            ws.onmessage = (e) => {
-                let m;
-                try { m = JSON.parse(e.data); } catch { return; }
-                onMessage(m);
-            };
-            ws.onerror = () => { if (!opened) toFallback(); };
-            ws.onclose = () => { if (!opened) toFallback(); };
+    function dropped() {
+        if (closed || alt) return;
+        isOpen = false;
+        ws = null;
+        if (!everOpened) { toFallback(); return; }
+        link('reconnecting');
+        if (retry == null) {
+            retry = setT(() => { retry = null; connect(); }, delay);
+            delay = Math.min(delay * 2, RECONNECT_MAX_MS);
         }
     }
+    function connect() {
+        if (closed) return;
+        let sock;
+        try { sock = new WS(url || relayUrl(room, peer)); } catch { dropped(); return; }
+        ws = sock;
+        sock.onopen = () => {
+            if (ws !== sock) return;
+            isOpen = true;
+            const again = everOpened;
+            everOpened = true;
+            delay = RECONNECT_MS;
+            const q = queue; queue = [];
+            for (const m of q) sock.send(JSON.stringify(m));
+            link('relay');
+            if (again) onMessage({ relay: 'reconnected' });
+        };
+        sock.onmessage = (e) => {
+            let m;
+            try { m = JSON.parse(e.data); } catch { return; }
+            onMessage(m);
+        };
+        sock.onerror = () => { if (ws === sock) dropped(); };
+        sock.onclose = () => { if (ws === sock) dropped(); };
+    }
+    if (!WS) toFallback(); else connect();
     return {
         send(msg) {
             if (alt) alt.send(msg);
-            else if (queue) queue.push(msg);
-            else if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg));
+            else if (isOpen && ws) ws.send(JSON.stringify(msg));
+            else queue.push(msg);
         },
         close() {
             closed = true;
-            queue = null;
+            queue = [];
+            clearT(retry); retry = null;
             if (alt) alt.close();
-            if (ws) { ws.onclose = null; ws.onerror = null; try { ws.close(); } catch { /* already */ } }
+            if (ws) { const w = ws; ws = null; try { w.close(); } catch { /* already */ } }
         },
-        get kind() { return alt ? 'local' : opened ? 'relay' : 'connecting'; },
+        get kind() { return kind; },
     };
 }
 
@@ -154,8 +189,17 @@ export function createCollab(opts) {
     const clearTimer = opts.clearTimeout || ((t) => clearTimeout(t));
     const sendMs = opts.sendMs == null ? SEND_MS : opts.sendMs;
     const joinTimeoutMs = opts.joinTimeoutMs == null ? JOIN_TIMEOUT_MS : opts.joinTimeoutMs;
+    const beatMs = opts.beatMs == null ? BEAT_MS : opts.beatMs;
+    const silentMs = opts.silentMs == null ? SILENT_MS : opts.silentMs;
+    const graceMs = opts.graceMs == null ? GRACE_MS : opts.graceMs;
+    const clock = opts.clock || (() => Date.now());
 
     let role = null;            // null | 'host' | 'guest'
+    let beatTimer = null;
+    let graceTimer = null;      // guest: the host may be gone
+    let hostAway = false;
+    let heardHost = 0;          // guest: when the host last said anything (clock())
+    const heardPeer = new Map();// host: peer → when last heard
     let room = null;
     let ch = null;
     let alias = '';
@@ -201,6 +245,7 @@ export function createCollab(opts) {
             role, room, state,
             peers: peers.size,
             link: ch ? (ch.kind || 'local') : null,
+            hostAway,
             hostName,
             alias,
             conflicts: conflicts.slice(),
@@ -219,6 +264,37 @@ export function createCollab(opts) {
 
     function send(t, fields) {
         if (ch) ch.send(message(room, t, fields));
+    }
+
+    function openLink(onMsg, p) {
+        return openChannel(room, onMsg, {
+            peer: p, setTimeout: setTimer, clearTimeout: clearTimer,
+            onLink: () => emit(),
+        });
+    }
+
+    /** Every beatMs: say we are here, and look for who has gone quiet. */
+    function startBeats() {
+        clearTimer(beatTimer);
+        const tick = () => {
+            beatTimer = setTimer(tick, beatMs);
+            if (!role) return;
+            if (role === 'host') {
+                send('beat', { peer: 'host' });
+                const t = clock();
+                for (const [p, at] of heardPeer) if (t - at > silentMs) dropPeer(p);
+            } else if (state === 'watching') {
+                send('beat', { peer });
+                if (clock() - heardHost > silentMs) hostMaybeGone();
+            }
+        };
+        beatTimer = setTimer(tick, beatMs);
+    }
+
+    function stopTimers() {
+        clearTimer(beatTimer); beatTimer = null;
+        clearTimer(graceTimer); graceTimer = null;
+        hostAway = false;
     }
 
     function closeChannel() {
@@ -318,14 +394,38 @@ export function createCollab(opts) {
         shadow = clone(project);
         referee = createReferee({ version: 0 });
         firstTouch = null;
-        ch = openChannel(room, onHostMessage, { peer: 'host' });
+        heardPeer.clear();
+        ch = openLink(onHostMessage, 'host');
+        startBeats();
         emit();
         return room;
     }
 
+    /** A guest gone: out of the count and of presence. */
+    function dropPeer(p) {
+        heardPeer.delete(p);
+        if (editing.delete(p)) sendPresence();
+        if (peers.delete(p)) emit();
+    }
+
     function onHostMessage(raw) {
+        if (role !== 'host') return;
+        if (raw && raw.relay === 'left' && typeof raw.peer === 'string') { dropPeer(raw.peer); return; }
+        if (raw && raw.relay === 'reconnected') {
+            // We were away: what was sent meanwhile may be lost. Everyone gets it all again.
+            flushNow();
+            sendSnapshot(null);
+            return;
+        }
         const m = readMessage(raw, room);
-        if (!m || role !== 'host') return;
+        if (!m) return;
+        if (typeof m.peer === 'string' && m.peer !== 'host' && m.t !== 'leave') {
+            heardPeer.set(m.peer, clock());
+            if (m.t === 'beat' && !peers.has(m.peer)) {
+                // A guest we had counted out (silent, or the relay said left) is back: catch it up.
+                peers.add(m.peer); flushNow(); sendSnapshot(m.peer); emit();
+            }
+        }
         if (m.t === 'join' || m.t === 'resync') {
             const fresh = !peers.has(m.peer);
             peers.add(m.peer);
@@ -333,8 +433,7 @@ export function createCollab(opts) {
             sendSnapshot(m.peer);
             if (fresh) emit();
         } else if (m.t === 'leave') {
-            if (editing.delete(m.peer)) sendPresence();
-            if (peers.delete(m.peer)) emit();
+            dropPeer(m.peer);
         } else if (m.t === 'begin') {
             editing.set(m.peer, { alias: typeof m.alias === 'string' ? m.alias : m.peer, scope: m.scope || {}, at: Date.now() });
             sendPresence();
@@ -458,8 +557,9 @@ export function createCollab(opts) {
         flushNow();
         send('bye');
         closeChannel();
+        stopTimers();
         role = null; room = null; known = null; shadow = null; referee = null;
-        peers.clear(); editing.clear();
+        peers.clear(); editing.clear(); heardPeer.clear();
         emit();
     }
 
@@ -488,15 +588,64 @@ export function createCollab(opts) {
             emit('No one is sharing with code ' + code);
             if (j) j.reject(new Error('No one is sharing with code ' + code));
         }, joinTimeoutMs);
-        ch = openChannel(room, onGuestMessage, { peer });
+        ch = openLink(onGuestMessage, peer);
+        heardHost = clock();
+        startBeats();
         emit();
         send('join', { peer });
         return done;
     }
 
+    /** The host may be gone: say so, and end after the grace period unless it speaks. */
+    function hostMaybeGone() {
+        if (state !== 'watching' || graceTimer != null) return;
+        hostAway = true;
+        emit('The host is not answering — waiting for them');
+        graceTimer = setTimer(() => {
+            graceTimer = null;
+            if (state !== 'watching') return;
+            endSession('The host has gone');
+        }, graceMs);
+    }
+
+    function hostHeard() {
+        heardHost = clock();
+        if (graceTimer != null || hostAway) {
+            clearTimer(graceTimer); graceTimer = null;
+            hostAway = false;
+            emit('The host is back');
+        }
+    }
+
+    /** The session is over for us; what is on screen stays. */
+    function endSession(notice) {
+        const wasJoining = state === 'joining';
+        state = 'ended';
+        clearTimer(joinTimer); joinTimer = null;
+        clearTimer(editTimer); editTimer = null;
+        stopTimers();
+        closeChannel();
+        if (wasJoining) {
+            const j = joined;
+            dropOut();
+            if (j) j.reject(new Error(notice));
+        }
+        emit(notice);
+    }
+
     function onGuestMessage(raw) {
+        if (role !== 'guest') return;
+        if (raw && raw.relay === 'left') { if (raw.peer === 'host') hostMaybeGone(); return; }
+        if (raw && raw.relay === 'reconnected') {
+            // We were away: ask for it all; pending edits are rebased on what comes back.
+            if (state === 'watching') { resyncing = true; send('resync', { peer }); }
+            return;
+        }
         const m = readMessage(raw, room);
-        if (!m || role !== 'guest') return;
+        if (!m) return;
+        if (m.t !== 'join' && m.t !== 'resync' && m.t !== 'leave' && m.t !== 'edit' && m.t !== 'begin'
+            && !(m.t === 'beat' && m.peer !== 'host')) hostHeard();
+        if (m.t === 'beat') return;
         if (m.t === 'snapshot') {
             if (m.to != null && m.to !== peer) return;
             if (state === 'ended') return;
@@ -562,17 +711,7 @@ export function createCollab(opts) {
             emit(rows.length === 1 ? 'A later edit beat one of yours — see Collaborate' : 'Later edits beat ' + rows.length + ' of yours — see Collaborate');
         } else if (m.t === 'bye') {
             if (state !== 'watching' && state !== 'joining') return;
-            const wasJoining = state === 'joining';
-            state = 'ended';
-            clearTimer(joinTimer); joinTimer = null;
-            clearTimer(editTimer); editTimer = null;
-            closeChannel();
-            if (wasJoining) {
-                const j = joined;
-                dropOut();
-                if (j) j.reject(new Error('The host stopped sharing'));
-            }
-            emit('The host stopped sharing');
+            endSession('The host stopped sharing');
         }
     }
 
@@ -667,6 +806,7 @@ export function createCollab(opts) {
     }
 
     function dropOut() {
+        stopTimers();
         clearTimer(joinTimer); joinTimer = null;
         clearTimer(editTimer); editTimer = null;
         closeChannel();

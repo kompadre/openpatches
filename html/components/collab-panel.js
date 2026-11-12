@@ -27,9 +27,11 @@ const NOTICE_MS = 4000;
 export function chipText(s) {
     if (!s || !s.role) return '';
     const warn = s.conflicts && s.conflicts.length ? ` · ⚠ ${s.conflicts.length}` : '';
-    if (s.role === 'host') return `⇄ Sharing ${s.room} · ${s.peers} in${warn}`;
+    if (s.role === 'host') return `⇄ Sharing ${s.room} · ${s.link === 'reconnecting' ? 'reconnecting…' : s.peers + ' in'}${warn}`;
     if (s.state === 'joining') return `⇄ Joining ${s.room}…`;
     if (s.state === 'ended') return '⇄ Session ended';
+    if (s.link === 'reconnecting') return '⇄ Reconnecting…' + warn;
+    if (s.hostAway) return '⇄ Waiting for the host…' + warn;
     return `⇄ With ${s.hostName || s.room}${warn}`;
 }
 
