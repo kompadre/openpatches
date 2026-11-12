@@ -2,6 +2,12 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-12: Per-track clock divider
+
+**A track can run on a divided clock.** The ÷ button in the Tracker head cycles ÷1 → ÷2 → ÷3 → ÷4 → ÷6 → ÷8 (Shift+click steps back); at ÷n the track's pattern advances one column every n ticks of the section, counted from each clip's start, so it plays n times slower and its notes last n times longer — inside the same clip span (a one-bar clip at ÷2 reaches only the pattern's first half; repeat the clip to hear the rest). Stored as `track.divider` (omitted at 1, clamped 1–8, `dividerOf()`), read **live** by the sequencer like mute/solo, so clicking it mid-playback lands on the next column. No separate playhead in the Section or Tracker views (user's call); the roll's playhead follows the divided column, where the pattern really is.
+
+Tests: `section-sequencer` +6 (÷2 events and durations, ÷3 from the clip start, a stretched note cut at the clip end, live and junk dividers, the divided `locate`, the piece sequence); `project-model` +1; `tracker-view` +1 (the button cycles, Shift steps back, ÷1 not stored). 1196 unit.
+
 ## 2026-11-10: Collaborate — milestone 2 designed (no code)
 
 The guest-edits milestone was worked out with the user and recorded in TODO.md › Collaborative editing › M2, every recommendation accepted: edits split into **atomic ops** (a note keyed by start+pitch, a track field, a clip field, an fx parameter…) with compare-and-set before/after values, so compatible changes to one pattern merge; moves grouped so they cannot half-apply. Conflicts are detected by **versions** (the atom's last writer landed after the edit's base) and decided by **earliest start** in host-clock time (then end, then peer), with **edit beating delete**, per-group acceptance, invariants checked after merging, and a 2-minute cap on an open edit's priority. Whoever loses (or is overridden) gets a row in a conflicts table — alias, module, start–end, value — with **Reapply mine**; "X is editing Y" presence comes with it. Five phases; parked to resume at M2-1.

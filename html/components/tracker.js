@@ -83,6 +83,7 @@ import {
 } from './tracker-model.js';
 import {
     COLS_PER_MEASURE, updateClip, clipRepeats, sectionLength, addClip, patternCols,
+    dividerOf,
 } from './project-model.js';
 
 const ROW_H = 16;
@@ -95,6 +96,7 @@ const COMMIT_MS = 3000;  // quiet time before an edited pattern is committed
 const MERGE = '#f0a030';  // doubled notes about to merge, and the merge itself
 const GHOST_FRAMES = 12;  // the merge, shown: the doubles slide into the kept note and fade
 const GHOST_STEP_MS = 35;
+const DIVIDERS = [1, 2, 3, 4, 6, 8]; // the clock dividers the head's ÷ button cycles through
 const HOLD_MS = 1000;    // a still press this long arms a move (a note, or the selection)
 const FOLLOW_KEY = 'openpatches_tracker_follow';
 
@@ -324,6 +326,27 @@ export function createTracker(opts) {
                 }, 'tracker');
             });
             head.appendChild(mode);
+            // Clock divider: ÷1 plays every tick; ÷n advances this track's
+            // pattern one column every n ticks of the section (it plays n
+            // times slower, notes n times longer, in the same clip span).
+            // Click cycles; Shift+click cycles back.
+            const div = dividerOf(t.track.divider);
+            const divBtn = document.createElement('button');
+            divBtn.className = 'tracker-divider' + (div > 1 ? ' active' : '');
+            divBtn.textContent = '÷' + div;
+            divBtn.title = div > 1
+                ? `Clock divider ÷${div}: this track advances one column every ${div} ticks — click for the next, Shift+click for the previous`
+                : 'Clock divider ÷1: this track plays every tick — click to slow it (÷2, ÷3, …), Shift+click to go back';
+            divBtn.addEventListener('click', (e) => {
+                const i = DIVIDERS.indexOf(div);
+                const next = DIVIDERS[(i + (e.shiftKey ? -1 : 1) + DIVIDERS.length) % DIVIDERS.length];
+                session.update((project) => {
+                    const tr = project.tracks.find(o => o.id === t.track.id);
+                    if (!tr) return;
+                    if (next > 1) tr.divider = next; else delete tr.divider;
+                }, 'tracker');
+            });
+            head.appendChild(divBtn);
             heads.appendChild(head);
         }
     }

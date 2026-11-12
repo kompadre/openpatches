@@ -90,6 +90,26 @@ describe('tracker view', () => {
             'expanded is the default and is not stored');
     });
 
+    test('the ÷ button cycles the track\'s clock divider through the session, packed', () => {
+        const { track } = seedPattern(session, { notes: [{ midi: 60, start: 0, dur: 4 }] });
+        const { q } = build();
+        assert.equal(q('.tracker-divider').textContent, '÷1', 'every tick by default');
+        assert.equal(q('.tracker-divider').className.includes('active'), false);
+        q('.tracker-divider').dispatch('click');
+        assert.equal(session.get().tracks.find(t => t.id === track.id).divider, 2);
+        assert.equal(q('.tracker-divider').textContent, '÷2', 'the head follows the session event');
+        assert.equal(q('.tracker-divider').className.includes('active'), true);
+        q('.tracker-divider').dispatch('click');
+        assert.equal(session.get().tracks.find(t => t.id === track.id).divider, 3);
+        q('.tracker-divider').dispatch('click', { shiftKey: true });
+        assert.equal(session.get().tracks.find(t => t.id === track.id).divider, 2, 'Shift+click steps back');
+        q('.tracker-divider').dispatch('click', { shiftKey: true });
+        assert.equal('divider' in session.get().tracks.find(t => t.id === track.id), false,
+            '÷1 is the default and is not stored');
+        q('.tracker-divider').dispatch('click', { shiftKey: true });
+        assert.equal(q('.tracker-divider').textContent, '÷8', 'back wraps to the largest');
+    });
+
     test('clicking a head selects that voice', () => {
         seedPattern(session, { slot: 1, notes: [] });
         const { q, calls } = build();

@@ -5535,6 +5535,20 @@ footer {
     cursor: pointer;
 }
 .tracker-mode:hover { border-color: #888; color: #ddd; }
+.tracker-divider {
+    flex-shrink: 0;
+    background: none;
+    border: 1px solid #3a3a55;
+    border-radius: 3px;
+    color: #9ab;
+    font-size: 0.65rem;
+    line-height: 1;
+    padding: 2px 3px;
+    cursor: pointer;
+    font-variant-numeric: tabular-nums;
+}
+.tracker-divider:hover { border-color: #888; color: #ddd; }
+.tracker-divider.active { border-color: #e9a045; color: #ffd08a; }
 
 .tracker-canvas {
     position: absolute;

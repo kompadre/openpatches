@@ -10,7 +10,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-    createProject, createPattern, createTrack, createClip, createSection,
+    createProject, createPattern, createTrack, createClip, createSection, MAX_DIVIDER, dividerOf,
     normalizeProject, effectiveBpm, audibleTracks, effectiveVolume,
     addClip, updateClip, removeClip, addTrack, removeTrack,
     addPattern, removePattern, patternUsage, addSection, removeSection,
@@ -59,6 +59,19 @@ describe('createProject', () => {
         assert.equal(createProject({ bpm: null }).bpm, DEFAULT_BPM);
         assert.equal(createTrack({ volume: null }).volume, DEFAULT_VOLUME);
         assert.equal(createTrack({ slot: null }).slot, 0);
+    });
+
+    test('a track\'s clock divider is stored only when it divides', () => {
+        assert.equal('divider' in createTrack({}), false, 'the default, 1, is not stored');
+        assert.equal('divider' in createTrack({ divider: 1 }), false);
+        assert.equal(createTrack({ divider: 3 }).divider, 3);
+        assert.equal(createTrack({ divider: 2.6 }).divider, 3, 'rounded to a whole number of ticks');
+        assert.equal(createTrack({ divider: 99 }).divider, MAX_DIVIDER, 'clamped');
+        assert.equal('divider' in createTrack({ divider: 0 }), false);
+        assert.equal('divider' in createTrack({ divider: -2 }), false);
+        assert.equal('divider' in createTrack({ divider: 'two' }), false);
+        assert.equal(dividerOf(undefined), 1);
+        assert.equal(dividerOf(4), 4);
     });
 
     test('round-trips through JSON unchanged — bodies are stored as JSON', () => {

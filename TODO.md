@@ -187,5 +187,4 @@ relay (first) or WebRTC (later, if latency matters).
 - [ ] Default pattern naming: <<Section name>><<Track slot>>_<<Autoincremented Index>> all caps. Example: INTRO1_1, DROP3_10
 - [ ] Add a Section Clone / Duplicate button
 - [ ] Per section track configuration. 
-- [ ] Per track param "Skip tick". Make a track systematically ignore (n-1)/n of ticks. By default n = 1 (0/1 skipped). Other values can be 2 (1/2), 3 (2/3) every second, 3 = play the first, ignore last two.
 - [ ] 

@@ -17,12 +17,32 @@
 //    a store read. Editing a pattern or a clip needs a rebuild; the
 //    transport re-creates on every change notification, which is cheap.
 //  - Mute/solo are read **live** off the project's tracks, so toggling them
-//    mid-playback takes effect on the next column without a rebuild.
+//    mid-playback takes effect on the next column without a rebuild. So is
+//    a track's clock divider (see `trackColumn`).
 
 import {
     COLS_PER_MEASURE, clipCols, patternCols as patternColsOf,
-    audibleTracks, getPattern as getProjectPattern, pieceLayout,
+    audibleTracks, getPattern as getProjectPattern, pieceLayout, dividerOf,
 } from '../components/project-model.js';
+
+/**
+ * Where a placement's pattern is at section column `col`, under the track's
+ * clock divider: a track divided by n advances its pattern one column every
+ * n ticks, counted from the clip's start, so the pattern plays n times
+ * slower inside the clip's span (a one-bar clip at ÷2 plays the pattern's
+ * first half). `local` is the pattern-local column; `tick` says whether the
+ * pattern advanced on this column at all — only then can a note start.
+ * The divider is read live off the track, like mute and solo.
+ */
+function trackColumn(p, col) {
+    const d = dividerOf(p.track.divider);
+    const since = col - p.startCol;
+    return {
+        local: Math.floor(since / d) % p.patternCols,
+        tick: since % d === 0,
+        divider: d,
+    };
+}
 
 /**
  * The ids of the tracks that may sound. The rule itself lives in
@@ -194,15 +214,18 @@ export function createSectionSequence(project, section, opts = {}) {
             for (const p of placementsAt(col)) {
                 if (opts.onlyTrackId && p.track.id !== opts.onlyTrackId) continue;
                 if (!audible.has(p.track.id)) continue;
-                const local = (col - p.startCol) % p.patternCols;
+                const { local, tick, divider } = trackColumn(p, col);
+                if (!tick) continue;
                 const notes = p.notesByCol.get(local);
                 if (!notes) continue;
                 for (const n of notes) {
                     events.push({
                         midi: n.midi,
-                        // Cut at the clip's end: a clip stopped part-way
-                        // through its pattern takes its notes with it.
-                        dur: Math.min(n.dur, p.endCol - col),
+                        // A divided track's notes last as many ticks as the
+                        // pattern is slowed by. Cut at the clip's end: a clip
+                        // stopped part-way through its pattern takes its
+                        // notes with it.
+                        dur: Math.min(n.dur * divider, p.endCol - col),
                         slot: p.track.slot,
                         trackId: p.track.id,
                         clipId: p.clip.id,
@@ -220,6 +243,8 @@ export function createSectionSequence(project, section, opts = {}) {
          * Where the playhead is, for drawing: the measure and the
          * pattern-local column on every track that has a clip under it.
          * Muted tracks are included — the playhead still moves over them.
+         * A divided track's pattern column is the divided one — where its
+         * pattern really is — so the roll's playhead matches what sounds.
          */
         locate(col) {
             const tracks = {};
@@ -227,7 +252,7 @@ export function createSectionSequence(project, section, opts = {}) {
                 tracks[p.track.id] = {
                     clipId: p.clip.id,
                     patternId: p.pattern.id,
-                    patternCol: (col - p.startCol) % p.patternCols,
+                    patternCol: trackColumn(p, col).local,
                 };
             }
             return {
