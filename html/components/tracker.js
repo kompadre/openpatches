@@ -847,6 +847,9 @@ export function createTracker(opts) {
     }
 
     function edited(pattern) {
+        // The first keystroke into a pattern opens an edit; the commit
+        // (touchPattern below) closes it. Nothing of it travels in between.
+        if (!dirty.has(pattern.id) && session.beginEdit) session.beginEdit({ patternId: pattern.id }, 'tracker');
         dirty.set(pattern.id, pattern);
         // Audible on the next pass without waiting for the commit.
         if (transport && transport.refresh) transport.refresh();

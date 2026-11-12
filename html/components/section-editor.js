@@ -750,6 +750,7 @@ export function createSectionEditor(opts = {}) {
             // (and is refused there, with the reason, if it would overlap).
             if (stamp) { placeStamp(e); return; }
             if (e.shiftKey) return;                  // Shift-click toggles; the click does it
+            if (session.beginEdit) session.beginEdit({ sectionId: sec().id }, 'section-editor');
             if (mode === 'move' && lastPress.clipId === clip.id && Date.now() - lastPress.at < DOUBLE_TAP_MS) {
                 lastPress = { clipId: null, at: 0 };
                 deleteClip(clip.id);

@@ -40,7 +40,7 @@ async function guestPage(context, code) {
     return page;
 }
 
-test('share, join by link, follow live, play; guest edits are undone; stop, keep a copy', async ({ page, context }) => {
+test('share, join by link, follow live, play; guest edits reach the host; stop, keep a copy', async ({ page, context }) => {
     await openApp(page);
     await seed(page);
 
@@ -54,7 +54,7 @@ test('share, join by link, follow live, play; guest edits are undone; stop, keep
 
     // Guest: a second tab by link. The URL loses ?join, the project arrives.
     const guest = await guestPage(context, code);
-    await expect(guest.locator('#menu-collab-chip')).toContainText('Watching Jam · view only');
+    await expect(guest.locator('#menu-collab-chip')).toContainText('With Jam');
     expect(new URL(guest.url()).search).toBe('');
     await expect(guest.locator('#menu-status')).toHaveText('Jam');
     expect(await notes(guest)).toEqual([[60, 0, 4]]);
@@ -93,16 +93,17 @@ test('share, join by link, follow live, play; guest edits are undone; stop, keep
     expect(await guest.evaluate(() => window.__opDock._pianoroll.getTransport().isRunning())).toBe(true);
     await guest.evaluate(() => window.__opDock._pianoroll.getTransport().stop());
 
-    // A guest edit is undone, and the chip says why.
+    // A guest edit reaches the host, and stays on the guest.
     await guest.evaluate(() => {
         const p = Object.values(window.__opProject.get().patterns)[0];
-        p.notes.length = 0;
+        p.notes.push({ midi: 64, start: 4, dur: 4 });
         window.__opProject.touchPattern(p.id, 'tracker');
     });
-    await expect(guest.locator('#menu-collab-chip')).toContainText('View only');
-    await guest.screenshot({ path: '/tmp/op-shots/collab-guest-notice.png', clip: { x: 0, y: 0, width: 1280, height: 40 } });
-    expect(await notes(guest)).toEqual([[60, 0, 4], [67, 8, 4]]);
-    expect(await notes(page)).toEqual([[60, 0, 4], [67, 8, 4]]);
+    await expect.poll(() => notes(page)).toEqual([[60, 0, 4], [64, 4, 4], [67, 8, 4]]);
+    await expect.poll(() => guest.evaluate(() => window.__opCollab.status().pending)).toBe(0);
+    expect(await notes(guest)).toEqual([[60, 0, 4], [64, 4, 4], [67, 8, 4]]);
+    expect(await guest.evaluate(() => window.__opCollab.status().conflicts)).toEqual([]);
+    await guest.screenshot({ path: '/tmp/op-shots/collab-guest-edit.png', clip: { x: 0, y: 0, width: 1280, height: 40 } });
 
     // Host stops: the guest still sees the project, and keeps a copy.
     await page.evaluate(() => window.__opCollab.stopHosting());
@@ -116,7 +117,7 @@ test('share, join by link, follow live, play; guest edits are undone; stop, keep
     expect(copy.guest).toBe(false);
     expect(copy.id).not.toBe(hostId);
     expect(copy.name).toMatch(/^Jam/);
-    expect(await notes(guest)).toEqual([[60, 0, 4], [67, 8, 4]]);
+    expect(await notes(guest)).toEqual([[60, 0, 4], [64, 4, 4], [67, 8, 4]]);
     await expect(page.locator('#menu-collab-chip')).toBeHidden();
 
     expect(guest.opErrors).toEqual([]);

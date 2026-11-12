@@ -17,7 +17,63 @@ run `node --check` + `node --test` and tick this file only. (Open: AGENTS.md
 "Keep it current ... in the same commit/change" reads per-change; awaiting
 the user's wording if SESSION.md should be deferred too.)
 
-### Collaborative editing — M1 DONE 2026-11-10; M2-1…M2-3 DONE 2026-11-12 — next M2-4 (wiring)
+### Collaborative editing — M1 DONE 2026-11-10; M2-1…M2-4 DONE 2026-11-12 — next M2-5 (UI), M2's last phase
+
+**M2-4 (wiring) is in `collab.js`** (tests: `test/collab.test.js` ›
+"guest edits"; e2e `e2e/collab.spec.js` updated and green). How it hangs
+together — what M2-5 and M3 must not break:
+
+- `session.beginEdit(scope, source)` (project-session.js): opens an edit
+  keyed source+scope; any `changed()` from that source (for a pattern
+  scope: that pattern) closes it. `openEdits()` lists them. `'begin'`
+  events go **only** to `subscribe(fn, { begin: true })` subscribers
+  (collab) — the editors never see them (a press must not redraw; a
+  drag's DOM must not be rebuilt). Hooks: tracker `edited()` (first
+  keystroke per pattern), roll canvas mousedown/touchstart, section
+  editor `startDrag`, voicebank fader `handleVolStart`. All guarded with
+  `session.beginEdit &&` for stub sessions.
+- **Nothing is sent from under an open edit**: `openPrefixes()` →
+  `pattern/<id>/`, `track/<id>/`, `section/<id>/`; ops under them are
+  left out of the diff (host's `judgeOwn` and guest's `sendEdit`) until
+  the commit closes the scope. This is the "debounce until committed".
+- **Guest**: `confirmed` (own deep copy of the host's body — the
+  factories keep bench maps by reference, so `clone()` not
+  `createProject(body)`), `pending` (sent edits: {id, ops, groups,
+  module}), `knownLive` (atoms of the live body as last reconciled =
+  confirmed + pending). `sendEdit` = diff(knownLive, live) minus open
+  scopes, debounced `sendMs` after the last non-collab session event;
+  `base` = version at the **first touch** since the last send
+  (`touchBase`), not now — a dirty atom keeps the old value through
+  incoming parts, so its before is that version's. `reconcile()` on every
+  parts/ack/resync: dirty = diff(knownLive, live); apply diff(knownLive,
+  expected) except dirty atoms; knownLive := expected with dirty atoms'
+  old values kept. Rejected groups thus snap to the host's value on the
+  ack's reconcile. Resync snapshot of the same project: pending edits are
+  rebased (knownLive gets their `before`s back → dirty → resent); a
+  different project: `joinAsGuest`, pending dropped. Edits carry
+  `project`; the host ignores one for a project it no longer shares.
+- **Host**: `shadow` body + `referee`; **one version counter**: `v`
+  (parts) — `referee.version = v` after each parts send. `flushNow()` =
+  `judgeOwn()` (host's own diff(shadow, live) as an edit by peer 'host',
+  base = referee.version; losing groups are put back in live from shadow
+  + rows + notice) then parts. `onGuestEdit`: flushNow (own edits first),
+  `stampEdit` with `now()`, judge against shadow, `applyLive(out.applied)`
+  (source 'collab'), flushNow, then `ack {to, id, v, accepted: [i],
+  rejected: [{i, kind, reason, conflicts}]}` by group index;
+  `overridden` rows go to the displaced peer (host's own → its rows).
+- `status()` now has `alias`, `conflicts` (rows: {kind: conflict |
+  invariant | overridden, reason, edit, module, atoms, mine: [{atom,
+  value}], theirs: [{atom, value, alias, module, start, end}], kept, at};
+  capped at 200; `clearConflicts()`), `pending`, `editing` (host-side
+  presence from `begin` messages: [{peer, alias, scope, at}]; cleared by
+  that peer's edit/leave). Guests do not get presence yet (M2-5).
+- Chip/dialog: `chipText` guest = `⇄ With <host> · ⚠ n`; notices "Your
+  edit lost a conflict — see Collaborate" / "A later edit beat one of
+  yours". Conflicts table, Reapply mine, identity prompt, presence
+  display, two-tab e2e of each conflict kind: **M2-5**.
+- PROTOCOL bumped to 2 (new message types `begin`, `edit`, `ack`,
+  `overridden`).
+
 
 **Transport is local, clocks are not synchronised** (user, 2026-11-12;
 supersedes TODO.md's ping/pong for M2-3). Sync keeps the projects
@@ -108,7 +164,7 @@ TODO.md › Collaborative editing › M2 holds the full agreed design (atoms,
 edits with start/end in host time (host-stamped, see above), the per-atom referee: earliest start
 wins, edit beats delete, per-group acceptance, 2-minute cap; conflicts
 table + Reapply mine; presence). Parked by the user on 2026-11-10 evening;
-M2-1…M2-3 done (above); **next: M2-4, wiring**. What the next agent must
+M2-1…M2-4 done (above); **next: M2-5, UI — M2's last phase: full Playwright, HEARME, CHANGELOG, TODO reconciliation (ping/pong → host-stamped; M4 'follow the host's transport' awaits the user's word)**. What the next agent must
 not break:
 
 - **Parts, not operations** (`collab-model.js`): `patterns/<id>`,
@@ -127,10 +183,10 @@ not break:
   journaled or upserted into the profile. Any `open`/`adoptNow` ends it.
   `session.joinAsGuest/leaveGuest/isGuest`; `changed()` and `adopted()`
   skip the profile while guest.
-- **View only in M1**: a guest's non-`collab` data event schedules a revert
-  (`divergence` vs the mirror). M2-4 replaces it with "send to host".
-- **M1 applies host parts whole** (a pattern's notes array refilled); M2's
-  guest must merge per atom instead, or a pending tracker edit is wiped.
+- ~~View only~~: gone in M2-4 (`divergence` is unused by collab.js now;
+  still exported from collab-model.js and tested).
+- Guests merge host parts **per atom** (M2-4 `reconcile`); `applyParts`
+  is used only on the guest's `confirmed` shadow, never on the live body.
 - Same-browser caveat: two tabs share localStorage/IndexedDB, so a guest
   tab boots into whatever project the profile says is current (often the
   host's) before joining, and "back to my project" returns there. Fine for

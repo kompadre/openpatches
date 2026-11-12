@@ -14,6 +14,12 @@
 //   'pattern'  — one pattern's notes changed (the roll, mid-edit)
 //   'tracks'   — the band changed: added, removed, renamed, re-patched
 //   'saving'   — a write started or finished (for the save indicator)
+//   'begin'    — an editor started an edit it has not announced yet (the
+//                tracker's first keystroke, the roll's press): see
+//                beginEdit. Nothing in the body has changed yet, so only
+//                subscribers that ask for it (`subscribe(fn, { begin:
+//                true })` — a collab session) hear it; the editors do not
+//                redraw for a press.
 //
 // ## Guest mode
 //
@@ -50,6 +56,10 @@ export function createProjectSession(store) {
     let guestOf = null;
     const isGuest = () => !!(store.isEphemeral && store.isEphemeral());
     const subscribers = new Set();
+    const beginSubscribers = new Set();
+    // Edits begun and not yet announced, by source + scope (see beginEdit).
+    const open = new Map();
+    const now = () => (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now());
 
     function notify(kind, detail = {}) {
         for (const fn of [...subscribers]) {
@@ -75,6 +85,7 @@ export function createProjectSession(store) {
     function changed(kind, source, detail = {}) {
         const project = store.get();
         if (!project) return null;
+        closeEdits(source, detail);
         store.touch(kind);
         if (!isGuest()) profileStore.upsert(project);
         notify(kind, { source, projectId: project.id, ...detail });
@@ -90,7 +101,43 @@ export function createProjectSession(store) {
         }
     });
 
+    /** An announcement from `source` ends the edits it had begun (on that pattern, or all). */
+    function closeEdits(source, detail) {
+        for (const [key, e] of open) {
+            if (e.source !== source) continue;
+            if (detail.patternId && e.scope.patternId && e.scope.patternId !== detail.patternId) continue;
+            open.delete(key);
+        }
+    }
+
     const api = {
+        /**
+         * An edit has begun that the body will not announce until it is
+         * done — the tracker's first keystroke into a pattern (announced
+         * when typing stops and the doubles are merged), the roll's press,
+         * a fader grabbed. `scope` names what it is on: `{patternId}`,
+         * `{trackId}`, `{sectionId}` or `{}`. Until the same source
+         * announces a change (`changed` with that source and, for a
+         * pattern, that pattern), the edit is **open**: a collab session
+         * sends nothing from under its scope and dates the edit from
+         * here. A second begin on an open scope is the same edit.
+         */
+        beginEdit(scope, source) {
+            const project = store.get();
+            if (!project) return;
+            const sc = scope && typeof scope === 'object' ? scope : {};
+            const key = source + ':' + JSON.stringify(sc);
+            if (open.has(key)) return;
+            open.set(key, { source, scope: sc, since: now() });
+            const ev = { kind: 'begin', source, scope: sc, projectId: project.id };
+            for (const fn of [...beginSubscribers]) {
+                try { fn(ev); } catch (e) { console.warn('[project-session] subscriber failed:', e); }
+            }
+        },
+
+        /** The edits begun and not yet announced: `[{ source, scope, since }]`. */
+        openEdits() { return [...open.values()]; },
+
         /**
          * Open the remembered project, else the most recent, else a new
          * empty one. Idempotent, and always leaves a project open — the app
@@ -318,6 +365,7 @@ export function createProjectSession(store) {
          */
         joinAsGuest(body, { sectionId: wanted } = {}, source) {
             if (!isGuest()) guestOf = store.getId();
+            open.clear();
             store.adoptEphemeral(createProject(body || {}));
             const project = store.get();
             sectionId = wanted && getSection(project, wanted) ? wanted : project.sections[0].id;
@@ -444,9 +492,10 @@ export function createProjectSession(store) {
         /** Resolves when no write is in flight — what Play waits on. */
         whenIdle() { return store.whenIdle(); },
 
-        subscribe(fn) {
+        subscribe(fn, { begin = false } = {}) {
             subscribers.add(fn);
-            return () => subscribers.delete(fn);
+            if (begin) beginSubscribers.add(fn);
+            return () => { subscribers.delete(fn); beginSubscribers.delete(fn); };
         },
     };
 
@@ -466,6 +515,7 @@ export function createProjectSession(store) {
      * editors always have something to render.
      */
     function adopted(source) {
+        open.clear();
         if (!store.get()) return createProject({ name: 'Untitled project' });
         const project = store.get();
         sectionId = project.sections[0].id;

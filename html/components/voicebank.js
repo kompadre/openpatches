@@ -287,6 +287,7 @@ export function createVoiceBank(opts) {
                 function handleVolStart(e) {
                     if (e.type === 'mousedown' && e.button !== 0) return;
                     if (e.type === 'touchstart') e.preventDefault();
+                    if (session && session.beginEdit) session.beginEdit({ trackId: entry.id }, 'voicebank');
                     const rect = fader.getBoundingClientRect();
                     const across = rect.width > rect.height;
                     let didDrag = false;

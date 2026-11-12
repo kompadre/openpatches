@@ -29,7 +29,7 @@ import {
 } from './project-model.js';
 
 /** Bumped when messages change shape; peers on another version are ignored. */
-export const PROTOCOL = 1;
+export const PROTOCOL = 2;
 
 const MAPPED = ['patterns', 'patches'];
 const SKIP = new Set(['id', 'created', 'modified', 'schemaVersion']);
@@ -202,9 +202,25 @@ export function divergence(known, project) {
 //                  { t: 'parts', v, changes } what changed; v counts up by 1
 //                  { t: 'bye' }               the host stopped sharing
 //
+//   M2 — edits (collab-ops.js, collab-referee.js):
+//   guest → host   { t: 'begin', peer, alias, scope }
+//                                             I started editing `scope`
+//                  { t: 'edit', peer, project, edit }
+//                                             one committed edit:
+//                                             { id, peer, alias, module,
+//                                               base, elapsed, groups }
+//   host → guest   { t: 'ack', to, id, v, accepted: [i…],
+//                    rejected: [{ i, kind, reason, conflicts }] }
+//                                             the verdict on edit `id`,
+//                                             by group index; `v` is the
+//                                             version its changes are in
+//                  { t: 'overridden', to, rows }
+//                                             a later edit beat one of
+//                                             yours: [{ atom, mine, theirs }]
+//
 // Every message carries `p: PROTOCOL` and `room`.
 
-const TYPES = new Set(['join', 'resync', 'leave', 'snapshot', 'parts', 'bye']);
+const TYPES = new Set(['join', 'resync', 'leave', 'snapshot', 'parts', 'bye', 'begin', 'edit', 'ack', 'overridden']);
 
 export function message(room, t, fields = {}) {
     return { p: PROTOCOL, room, t, ...fields };
@@ -217,6 +233,11 @@ export function readMessage(raw, room) {
     if ((raw.t === 'join' || raw.t === 'resync' || raw.t === 'leave') && typeof raw.peer !== 'string') return null;
     if (raw.t === 'snapshot' && (typeof raw.body !== 'string' || !Number.isInteger(raw.v))) return null;
     if (raw.t === 'parts' && (!Number.isInteger(raw.v) || !raw.changes || typeof raw.changes !== 'object')) return null;
+    if (raw.t === 'begin' && typeof raw.peer !== 'string') return null;
+    if (raw.t === 'edit' && (typeof raw.peer !== 'string' || !raw.edit || typeof raw.edit !== 'object')) return null;
+    if (raw.t === 'ack' && (typeof raw.to !== 'string' || typeof raw.id !== 'string' || !Number.isInteger(raw.v)
+        || !Array.isArray(raw.accepted) || !Array.isArray(raw.rejected))) return null;
+    if (raw.t === 'overridden' && (typeof raw.to !== 'string' || !Array.isArray(raw.rows))) return null;
     return raw;
 }
 

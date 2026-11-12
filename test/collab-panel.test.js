@@ -26,7 +26,7 @@ describe('collab chip', () => {
         assert.equal(chipText({ role: null }), '');
         assert.equal(chipText({ role: 'host', room: 'ABC234', peers: 2 }), '⇄ Sharing ABC234 · 2 watching');
         assert.equal(chipText({ role: 'guest', state: 'joining', room: 'ABC234' }), '⇄ Joining ABC234…');
-        assert.equal(chipText({ role: 'guest', state: 'watching', room: 'ABC234', hostName: 'Jam' }), '⇄ Watching Jam · view only');
+        assert.equal(chipText({ role: 'guest', state: 'watching', room: 'ABC234', hostName: 'Jam' }), '⇄ With Jam');
         assert.equal(chipText({ role: 'guest', state: 'ended', room: 'ABC234' }), '⇄ Session ended');
     });
 
@@ -44,12 +44,12 @@ describe('collab chip', () => {
         collab.set({ role: 'guest', state: 'watching', room: 'ABC234', hostName: 'Jam' });
         assert.equal(chip.style.display, '');
         assert.ok(chip.classList.contains('collab-guest'));
-        collab.set({}, 'View only — your edit was undone');
-        assert.equal(chip.textContent, 'View only — your edit was undone');
+        collab.set({}, 'Your edit lost a conflict — see Collaborate');
+        assert.equal(chip.textContent, 'Your edit lost a conflict — see Collaborate');
         assert.ok(chip.classList.contains('collab-notice'));
-        assert.deepEqual(log, ['Collab: View only — your edit was undone']);
+        assert.deepEqual(log, ['Collab: Your edit lost a conflict — see Collaborate']);
         timer();
-        assert.equal(chip.textContent, '⇄ Watching Jam · view only');
+        assert.equal(chip.textContent, '⇄ With Jam');
         chip.dispatch('click');
         assert.equal(opened, 1);
     });

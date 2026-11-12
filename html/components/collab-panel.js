@@ -4,11 +4,11 @@
 //   idle      Start sharing this project · Join with a code
 //   sharing   the code, who is watching, a watching tab, Stop sharing
 //   joining   …and Cancel
-//   watching  whose project, view only · Keep a copy · Leave
+//   watching  whose project, editing together · Keep a copy · Leave
 //   ended     the host stopped · Keep a copy · Back to my project
 //
-// Notices from the session (a reverted edit, a host gone) show in the chip
-// for a moment and go to the log.
+// Notices from the session (a lost conflict, a host gone) show in the chip
+// for a moment and go to the log. The conflicts table is M2-5.
 
 import { openModal, el } from './modal.js';
 import { readCode } from './collab-model.js';
@@ -21,7 +21,8 @@ export function chipText(s) {
     if (s.role === 'host') return `⇄ Sharing ${s.room} · ${s.peers} watching`;
     if (s.state === 'joining') return `⇄ Joining ${s.room}…`;
     if (s.state === 'ended') return '⇄ Session ended';
-    return `⇄ Watching ${s.hostName || s.room} · view only`;
+    const warn = s.conflicts && s.conflicts.length ? ` · ⚠ ${s.conflicts.length}` : '';
+    return `⇄ With ${s.hostName || s.room}${warn}`;
 }
 
 /**
@@ -120,7 +121,7 @@ export function openCollabDialog({ collab, session, appendLog = () => {}, openTa
                 body.appendChild(el('p', null, ended
                     ? 'The host stopped sharing. What is on screen is still their project, as it was.'
                     : 'Watching “' + (s.hostName || s.room) + '” (code ' + s.room + '). '
-                        + 'It plays here; edits stay with the host for now — yours are undone.'));
+                        + 'Your edits go to the host; when two of you change the same thing, the one who started first keeps it.'));
                 body.appendChild(row(
                     button('Keep a copy', 'collab-copy-btn', async () => {
                         await collab.leave({ keepCopy: true });

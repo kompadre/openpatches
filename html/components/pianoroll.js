@@ -728,6 +728,12 @@ export function createPianoroll(opts) {
      * edit, so it also rebuilds the sequence (the sequencer snapshots
      * patterns; an edit must be audible on the next pass).
      */
+    /** A press on the grid: an edit may follow, dated from here (collab). */
+    function beginEdit() {
+        const p = activePattern();
+        if (p && session.beginEdit) session.beginEdit({ patternId: p.id }, 'roll');
+    }
+
     function saveState(patterns) {
         const list = patterns || (activePattern() ? [activePattern()] : []);
         try {
@@ -1415,6 +1421,7 @@ export function createPianoroll(opts) {
         const col = pixelToCol(x);
 
         if (col < 0) return;
+        beginEdit();
 
         // The header strip belongs to the playhead: while a step record is
         // armed it is the cursor's drag handle, and it never draws notes —
@@ -1693,6 +1700,7 @@ export function createPianoroll(opts) {
 
     canvas.addEventListener('touchstart', (e) => {
         e.preventDefault();
+        beginEdit();
         const touch = e.touches[0];
         const rect = canvas.getBoundingClientRect();
         const x = touch.clientX - rect.left;
