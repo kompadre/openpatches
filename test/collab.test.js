@@ -6,11 +6,11 @@ import { test, before, beforeEach, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { installBrowserEnv } from './harness.js';
 
-let createCollab, makeProjectSession, seedPattern, profileStore, createTrack, addClip;
+let createCollab, relayChannel, relayUrl, makeProjectSession, seedPattern, profileStore, createTrack, addClip;
 
 before(async () => {
     installBrowserEnv();
-    ({ createCollab } = await import('../html/components/collab.js'));
+    ({ createCollab, relayChannel, relayUrl } = await import('../html/components/collab.js'));
     ({ makeProjectSession, seedPattern } = await import('./project-fixture.js'));
     ({ profileStore } = await import('../html/components/profile-store.js'));
     ({ createTrack, addClip } = await import('../html/components/project-model.js'));
@@ -543,5 +543,76 @@ describe('collab: ending', () => {
         g2.host.collab.close();
         g2.hub.pump();
         assert.equal(g2.guest.collab.status().state, 'ended');
+    });
+});
+
+describe('collab: the relay channel', () => {
+    /** A WebSocket stand-in that the test opens, fails or feeds by hand. */
+    function fakeWs() {
+        const made = [];
+        class WS {
+            constructor(url) { this.url = url; this.sent = []; this.readyState = 0; made.push(this); }
+            send(text) { this.sent.push(text); }
+            close() { this.readyState = 3; this.closed = true; }
+            open() { this.readyState = 1; this.onopen && this.onopen(); }
+            fail() { this.onerror && this.onerror(); this.onclose && this.onclose(); }
+            feed(text) { this.onmessage && this.onmessage({ data: text }); }
+        }
+        return { WS, made };
+    }
+    const fakeFallback = () => {
+        const sent = [];
+        const fn = (room, onMessage) => { fn.room = room; fn.onMessage = onMessage; return { send: (m) => sent.push(m), close() { fn.closed = true; } }; };
+        fn.sent = sent;
+        return fn;
+    };
+
+    test('the url is this server’s, ws or wss, with the peer', () => {
+        assert.equal(relayUrl('ABC234', 'host', { protocol: 'http:', host: 'localhost:8000' }), 'ws://localhost:8000/api/room/ABC234?peer=host');
+        assert.equal(relayUrl('ABC234', '', { protocol: 'https:', host: 'op.example' }), 'wss://op.example/api/room/ABC234');
+    });
+
+    test('sends before open are queued, then go as JSON; what arrives is parsed; junk is dropped', () => {
+        const { WS, made } = fakeWs();
+        const got = [];
+        const ch = relayChannel('ABC234', (m) => got.push(m), { peer: 'p1', WebSocketImpl: WS, url: 'ws://x/api/room/ABC234' });
+        assert.equal(ch.kind, 'connecting');
+        ch.send({ t: 'join', peer: 'p1' });
+        assert.deepEqual(made[0].sent, []);
+        made[0].open();
+        assert.equal(ch.kind, 'relay');
+        assert.deepEqual(made[0].sent.map(JSON.parse), [{ t: 'join', peer: 'p1' }]);
+        ch.send({ t: 'leave', peer: 'p1' });
+        assert.equal(made[0].sent.length, 2);
+        made[0].feed('{"t":"bye"}');
+        made[0].feed('not json');
+        assert.deepEqual(got, [{ t: 'bye' }]);
+        ch.close();
+        assert.ok(made[0].closed);
+    });
+
+    test('no relay: falls back to the local channel, queue and all', () => {
+        const { WS, made } = fakeWs();
+        const fallback = fakeFallback();
+        const got = [];
+        const ch = relayChannel('ABC234', (m) => got.push(m), { WebSocketImpl: WS, fallback, url: 'ws://x' });
+        ch.send({ t: 'join', peer: 'p1' });
+        made[0].fail();
+        assert.equal(ch.kind, 'local');
+        assert.equal(fallback.room, 'ABC234');
+        assert.deepEqual(fallback.sent, [{ t: 'join', peer: 'p1' }]);
+        ch.send({ t: 'leave', peer: 'p1' });
+        assert.equal(fallback.sent.length, 2);
+        fallback.onMessage({ t: 'bye' });
+        assert.deepEqual(got, [{ t: 'bye' }]);
+        ch.close();
+        assert.ok(fallback.closed);
+    });
+
+    test('no WebSocket at all: local from the start', () => {
+        const fallback = fakeFallback();
+        const ch = relayChannel('ABC234', () => {}, { WebSocketImpl: null, fallback });
+        if (typeof WebSocket === 'undefined') assert.equal(ch.kind, 'local');
+        ch.close();
     });
 });

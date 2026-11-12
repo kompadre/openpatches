@@ -1,4 +1,5 @@
-// Collaborate, two tabs of one browser. The host shares; a second tab
+// Collaborate: two tabs of one browser, and two browser contexts (as two
+// machines) through the server's room relay. The host shares; a second tab
 // joins by link, mirrors the project live, plays it, and edits it —
 // conflicts refereed per atom, with a table and Reapply mine. Stopping
 // leaves the guest a choice.
@@ -227,6 +228,61 @@ test('each kind of conflict on purpose: lost, overridden, invariant; the table, 
     await expect.poll(() => notes(page)).toEqual([[60, 0, 4], [64, 4, 4]]);
 
     expect(guest.opErrors).toEqual([]);
+});
+
+test('another machine: a separate browser context joins through the relay, edits, and conflicts', async ({ page, browser }) => {
+    // A second context shares no storage and no BroadcastChannel with the
+    // first — as far as the app can tell, another computer. Only the
+    // server's room relay (server.py › /api/room/<code>) can join them.
+    await openApp(page);
+    await seed(page);
+    await page.evaluate(() => {
+        localStorage.setItem('openpatches_profile', JSON.stringify({
+            ...JSON.parse(localStorage.getItem('openpatches_profile') || '{}'), identity: { alias: 'Ann', color: '#3b8fd1' },
+        }));
+    });
+    const code = await page.evaluate(() => window.__opCollab.host());
+    await expect.poll(async () => (await status(page)).link).toBe('relay');
+
+    const other = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+    await other.addInitScript(() => {
+        localStorage.setItem('openpatches_profile', JSON.stringify({ identity: { alias: 'Bob', color: '#d84a6b' } }));
+    });
+    const guest = await guestPage(other, code);
+    await expect(guest.locator('#menu-collab-chip')).toContainText('With Jam');
+    expect((await status(guest)).link).toBe('relay');
+    expect(await notes(guest)).toEqual([[60, 0, 4]]);
+    await expect.poll(async () => (await status(page)).peers).toBe(1);
+
+    // Both ways: the host's edit arrives; the guest's edit lands on the host.
+    await page.evaluate(() => {
+        const p = Object.values(window.__opProject.get().patterns)[0];
+        p.notes.push({ midi: 67, start: 8, dur: 4 });
+        window.__opProject.touchPattern(p.id, 'roll');
+    });
+    await expect.poll(() => notes(guest)).toEqual([[60, 0, 4], [67, 8, 4]]);
+    await guest.evaluate(() => {
+        const p = Object.values(window.__opProject.get().patterns)[0];
+        p.notes.push({ midi: 64, start: 4, dur: 4 });
+        window.__opProject.touchPattern(p.id, 'roll');
+    });
+    await expect.poll(() => notes(page)).toEqual([[60, 0, 4], [64, 4, 4], [67, 8, 4]]);
+
+    // A conflict across machines: the host started first; Bob's row names Ann.
+    await setBpm(page, 60);
+    await guest.waitForTimeout(30);
+    await setBpm(guest, 50);
+    await expect.poll(() => bpm(guest)).toBe(60);
+    await expect.poll(async () => (await status(guest)).conflicts.map((r) => r.reason)).toEqual([expect.stringMatching(/Ann started first/)]);
+
+    // Guest's own identity came from its own profile, not the host's.
+    expect(await guest.evaluate(() => window.__opCollab.status().alias)).toBe('Bob');
+
+    // The host stops: the other machine is told.
+    await page.evaluate(() => window.__opCollab.stopHosting());
+    await expect(guest.locator('#menu-collab-chip')).toContainText(/Session ended|host stopped/);
+    expect(guest.opErrors).toEqual([]);
+    await other.close();
 });
 
 test('a wrong code: the dialog says no one is sharing it', async ({ page }) => {

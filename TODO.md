@@ -110,6 +110,15 @@ relay (first) or WebRTC (later, if latency matters).
 - [ ] **M3 — Real network.** A room relay (`/api/room/{code}` WebSocket in
   the Go service; a dev relay for `server.py`), join by code from another
   machine, heartbeats, reconnect + resync, host-gone handling.
+  - [x] **M3-1 Relay + join from another machine** (2026-11-12): stdlib
+    WebSocket relay in `server.py`; `relayChannel` in collab.js (falls
+    back to BroadcastChannel with no relay); e2e with two browser contexts.
+  - [ ] **M3-2 Heartbeats, reconnect + resync, host-gone**: use the relay's
+    `{relay:'left', peer}` notice; reconnect the socket and resync with
+    pending edits rebased; a grace period before "the host has gone".
+  - [ ] **M3-3 The Go service's relay** (user: not now): same protocol as
+    the stub — `/api/room/<CODE>?peer=<id>`, forward text frames to the
+    room's others, `left` notice on drop; Caddy must proxy the upgrade.
 - [ ] **Listen in** — hear what a collaborator hears, as streamed audio.
   Transport stays local to each peer; nothing plays in sync.
 - [ ] **M4 — Comforts.** Remote cursors/selections, soft locks (presence

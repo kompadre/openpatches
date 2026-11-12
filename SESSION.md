@@ -17,7 +17,28 @@ run `node --check` + `node --test` and tick this file only. (Open: AGENTS.md
 "Keep it current ... in the same commit/change" reads per-change; awaiting
 the user's wording if SESSION.md should be deferred too.)
 
-### Collaborative editing — M1, M2 DONE 2026-11-12; next M3 (real network)
+### Collaborative editing — M1, M2 DONE; M3-1 (relay) DONE 2026-11-12; next M3-2
+
+**M3-1 — the room relay.** `server.py` is now a `ThreadingHTTPServer`
+(each socket holds a thread) with a stdlib WebSocket relay at
+`/api/room/<CODE>?peer=<id>` (code `[A-Z0-9]{4,12}`): forwards each text
+message unchanged to the room's other connections, never echoes, answers
+pings, 32 MB message cap, and on a drop sends the others
+`{"relay":"left","peer":id}` (no `p`, so `readMessage` ignores it today —
+M3-2 consumes it). The Go service is **not** touched (user, 2026-11-12):
+in production `/api/room` is absent, so the client falls back.
+
+- `relayChannel(room, onMessage, {peer})` is collab.js's default
+  channel: queues sends until open, JSON over the socket; if the socket
+  errors/closes **before** opening, it switches to `broadcastChannel`
+  with the queue. `kind`: `'connecting' | 'relay' | 'local'`, shown as
+  `status().link`. A drop **after** opening is not handled yet (M3-2).
+- The host opens with `peer: 'host'`; guests with their peer id.
+- e2e `collab` › "another machine" uses `browser.newContext()` — no
+  shared storage or BroadcastChannel — so it passes only via the relay.
+- The dialog's hint no longer says "other computers come next".
+
+
 
 TODO.md › Collaborative editing has M3/M4; CHANGELOG 2026-11-12 has M2 as
 built. What the next agent must not break (the standing shape):

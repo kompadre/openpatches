@@ -251,7 +251,7 @@ export function openCollabDialog({ collab, session, appendLog = () => {}, openTa
                 body.appendChild(el('h4', null, 'Share this project'));
                 body.appendChild(el('p', 'collab-hint',
                     'Others can edit “' + (session.get() ? session.get().name : '') + '” with you, live. '
-                    + 'For now they join from this browser (another tab or window); other computers come next.'));
+                    + 'They join with the code — from another tab, or another computer using this same server.'));
                 body.appendChild(row(button('Start sharing', 'collab-host-btn', () => {
                     if (!who.save()) return;
                     try {

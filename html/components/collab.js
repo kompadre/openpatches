@@ -30,9 +30,11 @@
 // own monotonic clock); the host dates it on arrival. Hearing what another
 // peer hears is streamed audio, later.
 //
-// **Transport-agnostic.** `openChannel(room, onMessage)` returns
-// `{ send(msg), close() }` and delivers what the *other* peers in the room
-// send. `broadcastChannel` below joins tabs of one browser; a WebSocket
+// **Transport-agnostic.** `openChannel(room, onMessage, { peer })` returns
+// `{ send(msg), close(), kind }` and delivers what the *other* peers in the
+// room send. `relayChannel` (the default) goes through the server's room
+// relay — other machines — and falls back to `broadcastChannel`, which
+// joins tabs of one browser, when there is no relay; a WebSocket
 // relay or a WebRTC data channel is the same shape. Messages are plain
 // JSON (collab-model.js › Messages), and whatever arrives is checked
 // before it is believed.
@@ -71,17 +73,80 @@ function scopePrefix(scope) {
     return null;
 }
 
+/** The relay's address for a room, on the server this page came from. */
+export function relayUrl(room, peer, loc = globalThis.location) {
+    const scheme = loc.protocol === 'https:' ? 'wss:' : 'ws:';
+    return scheme + '//' + loc.host + '/api/room/' + encodeURIComponent(room)
+        + (peer ? '?peer=' + encodeURIComponent(peer) : '');
+}
+
+/**
+ * Through the room relay (server.py › /api/room/<code>: a WebSocket that
+ * forwards each message to the room's other connections). What is sent
+ * before the socket opens is queued. A relay that cannot be reached at
+ * all — the production service has none yet — falls back to `fallback`
+ * (a BroadcastChannel), queue and all, so tabs of one browser still work.
+ * `kind`: 'relay', 'local' (fell back), or 'connecting'.
+ */
+export function relayChannel(room, onMessage, { peer, WebSocketImpl, fallback = broadcastChannel, url } = {}) {
+    const WS = WebSocketImpl || (typeof WebSocket !== 'undefined' ? WebSocket : null);
+    let queue = [];
+    let alt = null;
+    let ws = null;
+    let opened = false;
+    let closed = false;
+    function toFallback() {
+        if (closed || alt) return;
+        ws = null;
+        alt = fallback(room, onMessage);
+        for (const m of queue) alt.send(m);
+        queue = null;
+    }
+    if (!WS) toFallback();
+    else {
+        try { ws = new WS(url || relayUrl(room, peer)); } catch { toFallback(); }
+        if (ws) {
+            ws.onopen = () => {
+                opened = true;
+                for (const m of queue) ws.send(JSON.stringify(m));
+                queue = null;
+            };
+            ws.onmessage = (e) => {
+                let m;
+                try { m = JSON.parse(e.data); } catch { return; }
+                onMessage(m);
+            };
+            ws.onerror = () => { if (!opened) toFallback(); };
+            ws.onclose = () => { if (!opened) toFallback(); };
+        }
+    }
+    return {
+        send(msg) {
+            if (alt) alt.send(msg);
+            else if (queue) queue.push(msg);
+            else if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg));
+        },
+        close() {
+            closed = true;
+            queue = null;
+            if (alt) alt.close();
+            if (ws) { ws.onclose = null; ws.onerror = null; try { ws.close(); } catch { /* already */ } }
+        },
+        get kind() { return alt ? 'local' : opened ? 'relay' : 'connecting'; },
+    };
+}
+
 /**
  * @param {object} opts
  * @param {object} opts.session          the project session
- * @param {Function} [opts.openChannel]  (room, onMessage) → { send, close }
+ * @param {Function} [opts.openChannel]  (room, onMessage, { peer }) → { send, close, kind }
  * @param {Function} [opts.onBench]      the patch side changed: redraw the canvas
  * @param {Function} [opts.random]       for room codes and peer ids
  * @param {Function} [opts.now]          a monotonic clock in ms (performance.now)
  */
 export function createCollab(opts) {
     const { session } = opts;
-    const openChannel = opts.openChannel || broadcastChannel;
+    const openChannel = opts.openChannel || relayChannel;
     const onBench = opts.onBench || (() => {});
     const random = opts.random || Math.random;
     const now = opts.now || (() => (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now()));
@@ -135,6 +200,7 @@ export function createCollab(opts) {
         return {
             role, room, state,
             peers: peers.size,
+            link: ch ? (ch.kind || 'local') : null,
             hostName,
             alias,
             conflicts: conflicts.slice(),
@@ -252,7 +318,7 @@ export function createCollab(opts) {
         shadow = clone(project);
         referee = createReferee({ version: 0 });
         firstTouch = null;
-        ch = openChannel(room, onHostMessage);
+        ch = openChannel(room, onHostMessage, { peer: 'host' });
         emit();
         return room;
     }
@@ -422,7 +488,7 @@ export function createCollab(opts) {
             emit('No one is sharing with code ' + code);
             if (j) j.reject(new Error('No one is sharing with code ' + code));
         }, joinTimeoutMs);
-        ch = openChannel(room, onGuestMessage);
+        ch = openChannel(room, onGuestMessage, { peer });
         emit();
         send('join', { peer });
         return done;
