@@ -17,7 +17,31 @@ run `node --check` + `node --test` and tick this file only. (Open: AGENTS.md
 "Keep it current ... in the same commit/change" reads per-change; awaiting
 the user's wording if SESSION.md should be deferred too.)
 
-### Collaborative editing — M1 DONE 2026-11-10; M2 designed, parked — resume at M2-1
+### Collaborative editing — M1 DONE 2026-11-10; M2-1 DONE 2026-11-12 — next M2-2 (referee)
+
+**M2-1 (atoms and ops) is in `collab-ops.js`** (pure, tested in
+`test/collab-ops.test.js`; nothing wires it yet). What M2-2+ build on:
+
+- Atom values are **JSON text with sorted keys**; absent = `null`
+  (a section's `bpm: null` is the text `'null'`). `readAtoms(body)`,
+  `readAtom(body, atom)` (the referee's "current"), `parseAtom`, `ownerOf`.
+- `diffAtoms(a, b)` → ops `{atom, before, after}`; `groupOps` /
+  `diffGroups`: an existence op pulls everything under it (clip fields →
+  clip → section), a section add/delete pulls `sections/order`, a note
+  move (same pitch out+in in one pattern) is one group, a new pattern
+  joins the clip that places it.
+- `applyOps` does **not** check `before` (the referee's job): creations
+  (parents first) → fields/notes/order/bench → deletions; skips ops on
+  missing entities (`skipped`); patterns in place + `relane`; touched
+  tracks/sections/clips refilled through their factories.
+- `checkInvariants(body)` → `{reason, atoms}` (slot clash, > 8 tracks,
+  orphan clip, clip overlap incl. pattern `measures`, note outside the
+  pattern); `implicates(violation, group)` matches by atom or prefix.
+  Intended flow: apply candidate groups to a scratch copy, check, reject
+  implicated groups, apply the rest for real.
+- Canvas: `canvas/{patches,containers}/<id>[/<field>]`, other canvas keys
+  whole; `patch/`, `patchName/`, `job/<id>` whole.
+
 
 TODO.md › Collaborative editing › M2 holds the full agreed design (atoms,
 edits with start/end in host time, the per-atom referee: earliest start
