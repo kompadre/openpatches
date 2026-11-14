@@ -2118,39 +2118,153 @@ h1 {
     border-color: #555;
 }
 
-/* The strip's FX button: four letters, lit for the effects that are on. */
-.voicebank-fx {
+/* The readout line under the fader: volume, then the FX button. */
+.voicebank-meta {
     display: flex;
+    align-items: center;
     justify-content: center;
-    gap: 2px;
+    gap: 6px;
     width: 100%;
-    max-width: 72px;
-    padding: 2px 3px;
+}
+
+/* The strip's FX button. Its colour IS the state: neutral at nothing on,
+   then green, warming to orange as the rack fills. The question a mixer
+   gets scanned for is "which tracks are processed" — hue answers that
+   across eight strips at once, where a number has to be read one at a
+   time. Which effects they are lives in .fx-tip on hover.
+
+   The ramp lifts luminance as well as shifting hue, and the nought state
+   is the only one with no glow, so the distinction that matters most —
+   plain vs processed — does not rest on hue alone. */
+.voicebank-fx {
+    --fx-tint: #9aa0b8;      /* readable, deliberately unexciting */
+    --fx-glow: none;
+    --fx-edge: #333;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1px 5px;
     background: #1a1a2e;
-    border: 1px solid #333;
+    border: 1px solid var(--fx-edge);
     border-radius: 3px;
     cursor: pointer;
+    transition: color 0.12s, border-color 0.12s, text-shadow 0.12s;
+}
+
+.voicebank-fx[data-fx-count="1"] {
+    --fx-tint: #4fd38a;
+    --fx-glow: 0 0 4px rgba(79, 211, 138, 0.45);
+    --fx-edge: #2f6b4c;
+}
+
+.voicebank-fx[data-fx-count="2"] {
+    --fx-tint: #9bdc55;
+    --fx-glow: 0 0 5px rgba(155, 220, 85, 0.5);
+    --fx-edge: #52732f;
+}
+
+.voicebank-fx[data-fx-count="3"] {
+    --fx-tint: #ffc34d;
+    --fx-glow: 0 0 6px rgba(255, 195, 77, 0.55);
+    --fx-edge: #7d6124;
+}
+
+.voicebank-fx[data-fx-count="4"] {
+    --fx-tint: #ff9335;
+    --fx-glow: 0 0 7px rgba(255, 147, 53, 0.65);
+    --fx-edge: #8a4f1c;
 }
 
 .voicebank-fx:hover {
-    border-color: #555;
+    border-color: #666;
 }
 
-.voicebank-fx.on {
-    border-color: #4f5d8a;
+.voicebank-fx:focus-visible {
+    outline: 1px solid #8fb3ff;
+    outline-offset: 1px;
 }
 
-.voicebank-fx-letter {
-    flex: 1 1 0;
-    font-size: 0.55rem;
+.voicebank-fx-label {
+    font-size: 0.6rem;
     font-weight: 700;
-    line-height: 1.2;
-    color: #444;
-    text-align: center;
+    letter-spacing: 0.06em;
+    line-height: 1.3;
+    color: var(--fx-tint);
+    text-shadow: var(--fx-glow);
 }
 
-.voicebank-fx-letter.on {
+/* Hover tooltip for the strip's FX button. */
+.fx-tip {
+    position: fixed;
+    z-index: 1001;
+    width: 150px;
+    padding: 5px 7px;
+    background: #0f0f1e;
+    border: 1px solid #3a3a55;
+    border-radius: 4px;
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.6);
+    color: #999;
+    font-size: 0.62rem;
+    line-height: 1.5;
+    /* It follows the cursor's target and must never eat the click. */
+    pointer-events: none;
+}
+
+.fx-tip-head {
+    margin-bottom: 3px;
+    padding-bottom: 3px;
+    border-bottom: 1px solid #2a2a40;
+    color: #ddd;
+    font-weight: 700;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.fx-tip-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    color: #5c5c70;
+}
+
+.fx-tip-row.on {
     color: #8fb3ff;
+}
+
+.fx-tip-row.soon {
+    color: #4a4a5c;
+    font-style: italic;
+}
+
+.fx-tip-state {
+    flex: 0 0 auto;
+}
+
+.fx-tip-hint {
+    margin-top: 3px;
+    padding-top: 3px;
+    border-top: 1px solid #2a2a40;
+    color: #666;
+}
+
+/* A placeholder section in the popover: visible, never operable. */
+.fx-section.disabled {
+    opacity: 0.45;
+}
+
+.fx-section.disabled .fx-section-head {
+    cursor: default;
+}
+
+.fx-section-soon {
+    margin-left: auto;
+    padding: 0 4px;
+    border: 1px solid #3a3a55;
+    border-radius: 6px;
+    color: #777;
+    font-size: 0.55rem;
+    font-style: italic;
 }
 
 .fx-pop {
@@ -2965,7 +3079,8 @@ h1 {
 }
 
 .bpane .voicebank-fader { min-height: 36px; }
-.bpane .voicebank-fx { padding: 1px 3px; }
+/* .voicebank-fx needs no bpane override: it is sized by its own padding
+   now rather than stretching to the strip's width. */
 
 .bpane .dock-log {
     min-width: 0;
@@ -4971,10 +5086,10 @@ footer {
         min-height: 64px;
         max-height: 96px;
         display: grid;
-        grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+        grid-template-columns: auto minmax(0, 1fr) auto auto;
         grid-template-areas:
-            "num   name  vol   fx    ctrl"
-            "fader fader fader fader fader";
+            "num   name  meta  ctrl"
+            "fader fader fader fader";
         grid-template-rows: auto 1fr;
         align-items: center;
         gap: 6px 8px;
@@ -4996,7 +5111,7 @@ footer {
         grid-area: name;
         font-size: 0.8rem;
     }
-    .dock-panel-mixer .voicebank-fx { grid-area: fx; }
+    .dock-panel-mixer .voicebank-meta { grid-area: meta; width: auto; gap: 8px; }
     .dock-panel-mixer .voicebank-strip-controls { grid-area: ctrl; gap: 6px; }
     .dock-panel-mixer .voicebank-mute,
     .dock-panel-mixer .voicebank-solo,
@@ -5019,11 +5134,12 @@ footer {
         width: calc(var(--vol, 0) * 100%);
     }
     .dock-panel-mixer .voicebank-vol {
-        grid-area: vol;
         font-size: 0.75rem;
         min-width: 2em;
         text-align: right;
     }
+    .dock-panel-mixer .voicebank-fx { padding: 2px 7px; }
+    .dock-panel-mixer .voicebank-fx-label { font-size: 0.7rem; }
 
     /* Keyboard recording controls */
     .kb-controls {

@@ -279,15 +279,82 @@ test.describe('the Mixer’s effect controls', () => {
         await expect(pop.locator('.fx-pop-title')).toContainText('1 ');
 
         await pop.locator('.fx-toggle[data-flag="delay"]').check();
-        await expect(strip.locator('.voicebank-fx-letter[data-flag="delay"]')).toHaveClass(/on/);
+        await expect(strip.locator('.voicebank-fx')).toHaveClass(/on/);
+        await expect(strip.locator('.voicebank-fx')).toHaveAttribute('data-fx-count', '1');
         expect(await page.evaluate(() => window.__opFx.list().tracks.find(t => t.slot === 0).delay)).toBe(true);
 
-        // The popover survived the strip re-rendering its letters.
+        // The popover survived the strip re-rendering its button.
         await expect(pop).toBeVisible();
         await page.screenshot({ path: 'test-results/fx-popover.png' });
 
         await pop.locator('.fx-toggle[data-flag="delay"]').uncheck();
-        await expect(strip.locator('.voicebank-fx-letter[data-flag="delay"]')).not.toHaveClass(/on/);
+        await expect(strip.locator('.voicebank-fx')).not.toHaveClass(/on/);
+        await expect(strip.locator('.voicebank-fx')).toHaveAttribute('data-fx-count', '0');
+    });
+
+    test('the FX button is tinted by how many effects are on', async ({ page }) => {
+        await mixerWithVoices(page);
+        const strip = page.locator('.voicebank-item').first();
+        const tint = () => strip.locator('.voicebank-fx-label')
+            .evaluate(el => getComputedStyle(el).color);
+
+        // Nothing on: neutral, and plainly readable rather than dimmed out.
+        const neutral = await tint();
+        expect(neutral).toBe('rgb(154, 160, 184)');
+
+        await strip.locator('.voicebank-fx').click();
+        await page.locator('.fx-pop-track .fx-toggle[data-flag="delay"]').check();
+        const one = await tint();
+        expect(one).not.toBe(neutral);
+
+        await page.locator('.fx-pop-track .fx-toggle[data-flag="drive"]').check();
+        await page.locator('.fx-pop-track .fx-toggle[data-flag="comp"]').check();
+        await page.locator('.fx-pop-track .fx-toggle[data-flag="send"]').check();
+        await expect(strip.locator('.voicebank-fx')).toHaveAttribute('data-fx-count', '4');
+        const four = await tint();
+        expect(four).not.toBe(one);
+        // Warmer at four than at one: red up, blue down.
+        const rgb = (s) => s.match(/\d+/g).map(Number);
+        expect(rgb(four)[0]).toBeGreaterThan(rgb(one)[0]);
+        expect(rgb(four)[2]).toBeLessThan(rgb(one)[2]);
+    });
+
+    test('hovering the FX button tells you which effects are on', async ({ page }) => {
+        await mixerWithVoices(page);
+        const strip = page.locator('.voicebank-item').first();
+        await strip.locator('.voicebank-fx').click();
+        await page.locator('.fx-pop-track .fx-toggle[data-flag="comp"]').check();
+        await page.keyboard.press('Escape');
+        await expect(page.locator('.fx-pop')).toHaveCount(0);
+
+        // No tooltip until the pointer actually rests on the button.
+        await expect(page.locator('.fx-tip')).toHaveCount(0);
+        await strip.locator('.voicebank-fx').hover();
+        const tip = page.locator('.fx-tip');
+        await expect(tip).toBeVisible();
+        await expect(tip.locator('.fx-tip-row[data-flag="comp"]')).toHaveText(/Compressor\s*On/);
+        await expect(tip.locator('.fx-tip-row[data-flag="delay"]')).toHaveText(/Delay\s*–/);
+        // The effect that does not exist yet is named, not offered.
+        await expect(tip.locator('.fx-tip-row[data-flag="crush"]')).toHaveText(/Bit crusher\s*Soon/);
+        await page.screenshot({ path: 'test-results/fx-tooltip.png' });
+
+        // Moving away takes it with you; clicking opens the popover instead.
+        await page.mouse.move(700, 300);
+        await expect(tip).toHaveCount(0);
+        await strip.locator('.voicebank-fx').click();
+        await expect(page.locator('.fx-pop-track')).toBeVisible();
+        await expect(page.locator('.fx-tip')).toHaveCount(0);
+    });
+
+    test('the bit crusher is shown as not yet available', async ({ page }) => {
+        await mixerWithVoices(page);
+        await page.locator('.voicebank-item').first().locator('.voicebank-fx').click();
+        const section = page.locator('.fx-pop-track .fx-section[data-flag="crush"]');
+        await expect(section).toBeVisible();
+        await expect(section.locator('.fx-section-label')).toHaveText('Bit crusher');
+        await expect(section.locator('.fx-section-soon')).toHaveText('Soon');
+        await expect(section.locator('.fx-toggle')).toBeDisabled();
+        await expect(section.locator('.fx-row')).toHaveCount(0);
     });
 
     test('a slider commits on release and keeps its fraction', async ({ page }) => {
@@ -335,6 +402,10 @@ test.describe('the Mixer’s effect controls', () => {
 
         await openApp(page);
         await openMixerTab(page);
-        await expect(page.locator('.voicebank-item').first().locator('.voicebank-fx-letter[data-flag="drive"]')).toHaveClass(/on/);
+        const strip = page.locator('.voicebank-item').first();
+        await expect(strip.locator('.voicebank-fx')).toHaveClass(/on/);
+        await expect(strip.locator('.voicebank-fx')).toHaveAttribute('data-fx-count', '1');
+        await strip.locator('.voicebank-fx').hover();
+        await expect(page.locator('.fx-tip .fx-tip-row[data-flag="drive"]')).toHaveText(/Drive\s*On/);
     });
 });

@@ -28,7 +28,10 @@
 import { onPatchDroppedOnSlot, wireDropZone } from './slot-drop.js';
 import { voiceKey } from './patch-model.js';
 import { createTrack } from './project-model.js';
-import { fxSummary, openTrackFxPopover, openGlobalFxPopover, closeFxPopover } from './fx-panel.js';
+import {
+    fxOnCount, fxSummaryText, wireFxTooltip, hideFxTooltip,
+    openTrackFxPopover, openGlobalFxPopover, closeFxPopover,
+} from './fx-panel.js';
 import { presenceOn, markPresence, onPresence } from './presence.js';
 
 const MAX_SLOTS = 8;
@@ -162,6 +165,10 @@ export function createVoiceBank(opts) {
 
     function render() {
         reindexColors();
+        // Every strip is rebuilt below, so the button a tooltip is anchored
+        // to is about to stop existing. Left alone it would hang in the
+        // corner over nothing until the next mouseleave that never comes.
+        hideFxTooltip();
         list.innerHTML = '';
         for (let i = 0; i < MAX_SLOTS; i++) {
             const entry = entries[i];
@@ -200,24 +207,39 @@ export function createVoiceBank(opts) {
                 fader.appendChild(overlay);
                 item.appendChild(fader);
 
+                // The readout line: volume on the left, FX on the right.
+                // FX used to own a row of its own, which on a 170px strip
+                // was a whole band of height spent on two glyphs. It is a
+                // small control and it now sits beside the number.
+                const meta = document.createElement('div');
+                meta.className = 'voicebank-meta';
+
                 const volEl = document.createElement('span');
                 volEl.className = 'voicebank-vol';
                 volEl.textContent = entry.volume ?? DEFAULT_VOLUME;
-                item.appendChild(volEl);
+                meta.appendChild(volEl);
 
-                // FX: four letters, lit for the effects that are on. The
-                // controls open in a popover — a strip has no room for them.
-                const summary = fxSummary(trackFx(i));
+                // FX: one button whose COLOUR is the state — neutral and
+                // plainly readable at nothing on, then tinted green and
+                // warming to orange as effects stack up. Which effects
+                // those are is in the hover tooltip, and the controls open
+                // in a popover — a strip has no room for either. No
+                // `title`: the native tooltip would race the real one and
+                // win, slowly. The state lives in aria-label.
+                const onCount = fxOnCount(trackFx(i));
                 const fxBtn = document.createElement('button');
-                fxBtn.className = 'voicebank-fx' + (summary.some(l => l.on) ? ' on' : '');
-                fxBtn.title = 'Effects: ' + (summary.filter(l => l.on).map(l => l.label).join(', ') || 'none');
-                for (const l of summary) {
-                    const letter = document.createElement('span');
-                    letter.className = 'voicebank-fx-letter' + (l.on ? ' on' : '');
-                    letter.dataset.flag = l.flag;
-                    letter.textContent = l.letter;
-                    fxBtn.appendChild(letter);
-                }
+                fxBtn.className = 'voicebank-fx' + (onCount ? ' on' : '');
+                // CSS picks the tint off this; keeping the ramp in the
+                // stylesheet means the palette is tunable without a rebuild.
+                fxBtn.dataset.fxCount = String(onCount);
+                fxBtn.setAttribute('aria-label',
+                    `${fxSummaryText(trackFx(i))}. Click to edit.`);
+                const fxLabel = document.createElement('span');
+                fxLabel.className = 'voicebank-fx-label';
+                fxLabel.textContent = 'FX';
+                fxBtn.appendChild(fxLabel);
+                // Read at show time: the strip outlives a popover commit.
+                wireFxTooltip(fxBtn, () => (i + 1) + ' ' + entry.name, () => trackFx(i));
                 fxBtn.addEventListener('click', (e) => {
                     e.stopPropagation();
                     if (!session) return;
@@ -226,7 +248,8 @@ export function createVoiceBank(opts) {
                         onLive: onFxLive ? (field, value) => onFxLive(i, field, value) : null,
                     });
                 });
-                item.appendChild(fxBtn);
+                meta.appendChild(fxBtn);
+                item.appendChild(meta);
 
                 // M / S / preview / remove
                 const controls = document.createElement('div');

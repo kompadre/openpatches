@@ -280,8 +280,21 @@ Live state only — what a future change could trip over:
 - **Fractional fields use `clampNum`, not `clampInt`.** `duckSource` is
   validated against real slots, never clamped.
 - **Popover commits are source `voicebank-fx`**; the Mixer ignores
-  `voicebank` (its own fader writes) but redraws letters on `-fx`. The
-  popover is for the *slot* and re-reads the track on every write.
+  `voicebank` (its own fader writes) but redraws the FX button on `-fx`.
+  The popover is for the *slot* and re-reads the track on every write.
+- **The strip's FX button encodes its state as colour**, off `data-fx-count`
+  (0..4): neutral `#9aa0b8`, then green warming to orange, with a glow from
+  1 up. The ramp lives in `style.css`, not JS. It shares the volume line
+  (`.voicebank-meta`), so the strip is one row shorter than it was.
+- **`fxSummary` skips `disabled` sections.** The Bit crusher is a
+  placeholder: no params, no persisted flag, no change listener, nothing in
+  `fx_params.h` — so there is no field for a saved project to carry and
+  nothing to migrate when the real effect lands.
+- **`BlockCoef(sr, ms)` takes a RECOVERY time, not a time constant** (the
+  `3.0f` in the exponent). Shared by the ducker and the per-channel
+  compressor; without it a dialled 180 ms duck release let go over ~540 ms.
+  The compressor envelope is still block-rate (~1.45 ms), so its attack
+  dial cannot mean anything below that — it is glue, not a limiter.
 - **The generic `button {}` rule is a large pink pill**; every small Mixer
   control overrides it.
 - **Pre-existing, untouched:** 390 px phone, the M/S/▶/× row overflows an

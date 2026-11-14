@@ -17,6 +17,7 @@ import { installBrowserEnv } from './harness.js';
 
 let createVoiceBank, makeProjectSession, createTrack;
 let TRACK_SECTIONS, GLOBAL_SECTIONS, fxSummary, closeFxPopover;
+let fxOnCount, fxSummaryText, hideFxTooltip;
 let FX_FIELDS, FX_GLOBAL_FIELDS, FX_RANGES;
 
 before(async () => {
@@ -24,7 +25,8 @@ before(async () => {
     ({ createVoiceBank } = await import('../html/components/voicebank.js'));
     ({ makeProjectSession } = await import('./project-fixture.js'));
     ({ createTrack } = await import('../html/components/project-model.js'));
-    ({ TRACK_SECTIONS, GLOBAL_SECTIONS, fxSummary, closeFxPopover } =
+    ({ TRACK_SECTIONS, GLOBAL_SECTIONS, fxSummary, closeFxPopover,
+       fxOnCount, fxSummaryText, hideFxTooltip } =
         await import('../html/components/fx-panel.js'));
     ({ FX_FIELDS, FX_GLOBAL_FIELDS, FX_RANGES } = await import('../html/synth/fx-params.js'));
 });
@@ -32,6 +34,7 @@ before(async () => {
 beforeEach(() => {
     localStorage.clear();
     closeFxPopover();
+    hideFxTooltip();
     document.body.children.length = 0;
 });
 
@@ -72,8 +75,23 @@ describe('the panel covers the engine', () => {
         assert.equal(new Set(listed).size, listed.length, 'a field appears twice');
     });
 
-    test('every section switches a real flag', () => {
-        for (const s of TRACK_SECTIONS) assert.ok(s.flag in { delay: 1, drive: 1, comp: 1, send: 1 }, s.flag);
+    test('every live section switches a real flag', () => {
+        for (const s of TRACK_SECTIONS) {
+            if (s.disabled) continue;
+            assert.ok(s.flag in { delay: 1, drive: 1, comp: 1, send: 1 }, s.flag);
+        }
+    });
+
+    test('a placeholder section carries no parameters and no engine flag', () => {
+        // The whole point of the placeholder: it must not have leaked into
+        // the persisted contract. A field here would end up in saved
+        // projects and in the enable mask.
+        const placeholders = TRACK_SECTIONS.filter(s => s.disabled);
+        assert.ok(placeholders.length > 0, 'there is a placeholder to check');
+        for (const s of placeholders) {
+            assert.deepEqual(s.params, [], `${s.flag} must have no params`);
+            assert.ok(!(s.flag in FX_FIELDS), `${s.flag} must not be a saved field`);
+        }
     });
 
     test('every global parameter is in exactly one section, or is the duck source', () => {
@@ -82,25 +100,80 @@ describe('the panel covers the engine', () => {
         assert.deepEqual(listed.slice().sort(), expected.sort());
     });
 
-    test('fxSummary lights the letters of the effects that are on', () => {
+    test('fxSummary flags the effects that are on, and skips placeholders', () => {
         const on = fxSummary({ delay: true, comp: true }).filter(l => l.on).map(l => l.letter);
         assert.deepEqual(on, ['D', 'C']);
         assert.deepEqual(fxSummary(null).map(l => l.on), [false, false, false, false]);
         // A stored "1" is not on — only a real true.
         assert.deepEqual(fxSummary({ delay: 1 }).map(l => l.on), [false, false, false, false]);
+        // The placeholder is not one of the four: it can never be on, so
+        // counting it would overstate what the track is doing.
+        assert.deepEqual(fxSummary({ crush: true }).map(l => l.on), [false, false, false, false]);
+        assert.equal(fxOnCount({ crush: true }), 0);
+    });
+
+    test('fxSummaryText names the effects that are on', () => {
+        assert.equal(fxSummaryText({ delay: true, comp: true }),
+            'Effects: Delay, Compressor');
+        assert.equal(fxSummaryText(null), 'Effects: none');
     });
 });
 
 describe('the strip', () => {
-    test('shows an FX button with the lit letters of its track', () => {
-        const session = seed([{ id: 'a', slot: 0, fx: { delay: true } }, { id: 'b', slot: 1 }]);
+    test('shows one FX button, not a letter per effect, and no count', () => {
+        const session = seed([
+            { id: 'a', slot: 0, fx: { delay: true, comp: true } },
+            { id: 'b', slot: 1 },
+        ]);
         const bank = createVoiceBank({ session });
         const items = bank.querySelectorAll('.voicebank-item');
-        const lit = (i) => items[i].querySelectorAll('.voicebank-fx-letter').filter(l => l.classList.contains('on')).map(l => l.textContent);
-        assert.deepEqual(lit(0), ['D']);
-        assert.deepEqual(lit(1), []);
-        assert.ok(items[0].querySelector('.voicebank-fx').classList.contains('on'));
-        assert.ok(!items[1].querySelector('.voicebank-fx').classList.contains('on'));
+        const fxOf = (i) => items[i].querySelector('.voicebank-fx');
+
+        assert.equal(fxOf(0).querySelectorAll('.voicebank-fx-letter').length, 0,
+            'the per-effect letters are gone');
+        assert.equal(fxOf(0).querySelectorAll('.voicebank-fx-count').length, 0,
+            'the count badge is gone — colour carries it');
+        assert.equal(fxOf(0).querySelector('.voicebank-fx-label').textContent, 'FX');
+        assert.ok(fxOf(0).classList.contains('on'));
+        assert.ok(!fxOf(1).classList.contains('on'));
+    });
+
+    test('the button carries its count as data-fx-count, for the tint', () => {
+        // CSS ramps the colour off this, so it has to track the rack
+        // exactly — including the nought that paints the neutral state.
+        const session = seed([
+            { id: 'a', slot: 0 },
+            { id: 'b', slot: 1, fx: { delay: true } },
+            { id: 'c', slot: 2, fx: { delay: true, drive: true, comp: true, send: true } },
+            // A placeholder flag must not tint anything: it is not an effect.
+            { id: 'd', slot: 3, fx: { crush: true } },
+        ]);
+        const bank = createVoiceBank({ session });
+        const items = bank.querySelectorAll('.voicebank-item');
+        const count = (i) => items[i].querySelector('.voicebank-fx').dataset.fxCount;
+        assert.equal(count(0), '0');
+        assert.equal(count(1), '1');
+        assert.equal(count(2), '4');
+        assert.equal(count(3), '0');
+    });
+
+    test('the FX button shares the volume line rather than owning a row', () => {
+        const session = seed([{ id: 'a', slot: 0 }]);
+        const bank = createVoiceBank({ session });
+        const item = bank.querySelectorAll('.voicebank-item')[0];
+        const meta = item.querySelector('.voicebank-meta');
+        assert.ok(meta, 'the readout line is there');
+        assert.ok(meta.querySelector('.voicebank-vol'), 'volume sits on it');
+        assert.ok(meta.querySelector('.voicebank-fx'), 'and so does FX');
+    });
+
+    test('the button carries its state in aria-label, and sets no title', () => {
+        // A native `title` would race the real tooltip and win, slowly.
+        const session = seed([{ id: 'a', slot: 0, fx: { drive: true } }]);
+        const bank = createVoiceBank({ session });
+        const btn = bank.querySelectorAll('.voicebank-item')[0].querySelector('.voicebank-fx');
+        assert.equal(btn._attrs['aria-label'], 'Effects: Drive. Click to edit.');
+        assert.ok(!btn.title);
     });
 
     test('an empty slot has no FX button', () => {
@@ -109,6 +182,68 @@ describe('the strip', () => {
         const items = bank.querySelectorAll('.voicebank-item');
         assert.equal(items[0].querySelector('.voicebank-fx'), null);
         assert.ok(items[2].querySelector('.voicebank-fx'));
+    });
+
+    test('focus raises the tooltip, naming every effect and its state', () => {
+        // Focus, not hover: a keyboard focus is deliberate, so it skips the
+        // dwell delay that stops a mouse sweep strobing eight tooltips.
+        const session = seed([{ id: 'a', name: 'Kick', slot: 0, fx: { delay: true } }]);
+        const bank = createVoiceBank({ session });
+        const btn = bank.querySelectorAll('.voicebank-item')[0].querySelector('.voicebank-fx');
+
+        btn.dispatch('focus');
+        const tip = document.body.querySelector('.fx-tip');
+        assert.ok(tip, 'the tooltip appeared');
+        assert.equal(tip.querySelector('.fx-tip-head').textContent, '1 Kick');
+
+        const rows = tip.querySelectorAll('.fx-tip-row')
+            .map(r => [r.dataset.flag, r.querySelector('.fx-tip-state').textContent]);
+        assert.deepEqual(rows, [
+            ['delay', 'On'], ['drive', '–'], ['comp', '–'],
+            ['send', '–'], ['crush', 'Soon'],
+        ]);
+
+        btn.dispatch('blur');
+        assert.equal(document.body.querySelector('.fx-tip'), null, 'blur took it away');
+    });
+
+    test('the tooltip reads the track at show time, not at render time', () => {
+        const session = seed([{ id: 'a', name: 'Kick', slot: 0 }]);
+        const bank = createVoiceBank({ session });
+        const btn = () => bank.querySelectorAll('.voicebank-item')[0].querySelector('.voicebank-fx');
+
+        const state = () => {
+            const t = document.body.querySelector('.fx-tip');
+            return t.querySelectorAll('.fx-tip-row').find(r => r.dataset.flag === 'comp')
+                .querySelector('.fx-tip-state').textContent;
+        };
+        btn().dispatch('focus');
+        assert.equal(state(), '–');
+        btn().dispatch('blur');
+
+        session.update((p) => { p.tracks[0].fx.comp = true; }, 'voicebank-fx', 'tracks');
+        btn().dispatch('focus');
+        assert.equal(state(), 'On');
+    });
+
+    test('opening the popover takes the tooltip away', () => {
+        const session = seed([{ id: 'a', slot: 0 }]);
+        const bank = createVoiceBank({ session });
+        const btn = bank.querySelectorAll('.voicebank-item')[0].querySelector('.voicebank-fx');
+        btn.dispatch('focus');
+        assert.ok(document.body.querySelector('.fx-tip'));
+        btn.dispatch('click', { stopPropagation() {} });
+        assert.equal(document.body.querySelector('.fx-tip'), null);
+        assert.ok(popover(), 'and the popover is what is left');
+    });
+
+    test('a re-render takes the tooltip away with the button it pointed at', () => {
+        const session = seed([{ id: 'a', slot: 0 }]);
+        const bank = createVoiceBank({ session });
+        bank.querySelectorAll('.voicebank-item')[0].querySelector('.voicebank-fx').dispatch('focus');
+        assert.ok(document.body.querySelector('.fx-tip'));
+        session.update((p) => { p.tracks[0].fx.send = true; }, 'voicebank-fx', 'tracks');
+        assert.equal(document.body.querySelector('.fx-tip'), null);
     });
 
     test('the header has the Reverb · Duck button and still says Mixer', () => {
@@ -127,7 +262,8 @@ describe('the track popover', () => {
         assert.equal(pop.dataset.slot, '0');
         const toggles = pop.querySelectorAll('.fx-toggle');
         assert.deepEqual(toggles.map(t => [t.dataset.flag, !!t.checked]),
-            [['delay', true], ['drive', false], ['comp', false], ['send', false]]);
+            [['delay', true], ['drive', false], ['comp', false], ['send', false],
+             ['crush', false]]);
         assert.equal(row(pop, 'delayTime').querySelector('.fx-range').value, '125');
         assert.equal(row(pop, 'delayTime').querySelector('.fx-row-value').textContent, '125 ms');
     });
@@ -187,7 +323,7 @@ describe('the track popover', () => {
         assert.equal(fx.delayMix, 0.9);
     });
 
-    test('the strip’s letters follow a commit', () => {
+    test('the strip’s count follows a commit', () => {
         const session = seed([{ id: 'a', slot: 0 }]);
         const bank = createVoiceBank({ session });
         const pop = openStrip(bank, 0);
@@ -196,9 +332,33 @@ describe('the track popover', () => {
         toggle.checked = true;
         toggle.dispatch('change');
 
-        const lit = bank.querySelectorAll('.voicebank-item')[0]
-            .querySelectorAll('.voicebank-fx-letter').filter(l => l.classList.contains('on')).map(l => l.textContent);
-        assert.deepEqual(lit, ['C']);
+        const btn = bank.querySelectorAll('.voicebank-item')[0].querySelector('.voicebank-fx');
+        assert.equal(btn.dataset.fxCount, '1');
+        assert.ok(btn.classList.contains('on'));
+        assert.equal(btn._attrs['aria-label'], 'Effects: Compressor. Click to edit.');
+    });
+
+    test('the bit crusher placeholder shows, disabled, and writes nothing', () => {
+        const session = seed([{ id: 'a', slot: 0 }]);
+        const events = [];
+        session.subscribe(ev => events.push(ev.source));
+        const bank = createVoiceBank({ session });
+        const pop = openStrip(bank, 0);
+
+        const section = pop.querySelectorAll('.fx-section').find(s => s.dataset.flag === 'crush');
+        assert.ok(section, 'the placeholder section is there');
+        assert.ok(section.classList.contains('disabled'));
+        assert.equal(section.querySelector('.fx-section-label').textContent, 'Bit crusher');
+        assert.equal(section.querySelector('.fx-section-soon').textContent, 'Soon');
+        assert.equal(section.querySelectorAll('.fx-row').length, 0, 'no controls yet');
+
+        const toggle = section.querySelector('.fx-toggle');
+        assert.equal(toggle.disabled, true);
+        // Even forced, it has no listener and so no path into the project.
+        toggle.checked = true;
+        toggle.dispatch('change');
+        assert.equal(track(session, 0).fx.crush, undefined);
+        assert.ok(!events.includes('voicebank-fx'), 'nothing was committed');
     });
 
     test('writes go to whichever track is on the slot NOW', () => {
