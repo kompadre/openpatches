@@ -24,10 +24,15 @@ static inline int clampi(int v, int lo, int hi) {
 }
 
 // One-pole smoothing coefficient for an envelope updated once per block.
+//
+// `ms` is a RECOVERY time, not the one-pole's time constant: the envelope
+// covers ~95% of the distance to its target within it. Without the 3x the
+// dial reads as a time constant, which lands ~2.5x short of what the user
+// hears — a 180 ms duck release let go over roughly half a second.
 static float BlockCoef(double sample_rate, float ms) {
   if (ms < 0.01f) ms = 0.01f;
   float block_period = (float)(N / sample_rate);
-  return expf(-block_period / (ms * 0.001f));
+  return expf(-3.0f * block_period / (ms * 0.001f));
 }
 
 static inline float DbToGain(float db) {
@@ -225,8 +230,15 @@ float FxRack::DuckGain(const float in[FX_CHANNELS][N]) {
   if (duck_source_ < 0 || duck_amount_db_ <= 0.0f) return 1.0f;
   // Follows the source PRE-effects: how hard the part was played, not how
   // loud its delay tail happens to be.
+  //
+  // The depth tracks how far over the threshold the source actually is,
+  // rather than latching to the full amount the moment it crosses. A gate
+  // held full depth for as long as the source stayed above threshold —
+  // which, for a patch that sustains, is the note's whole gate length, so
+  // the duck read as following note duration instead of the transient.
   float db = PeakDb(in[duck_source_]);
-  float target = db > duck_threshold_db_ ? duck_amount_db_ : 0.0f;
+  float over = db - duck_threshold_db_;
+  float target = over > 0.0f ? clampf(over, 0.0f, duck_amount_db_) : 0.0f;
   float coef = target > duck_reduction_db_ ? duck_attack_coef_
                                            : duck_release_coef_;
   duck_reduction_db_ = target + (duck_reduction_db_ - target) * coef;

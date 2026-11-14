@@ -280,6 +280,53 @@ describe('ducking', () => {
             `(${rms(open).toFixed(0)} -> ${rms(ducked).toFixed(0)})`);
         fxOff();
     });
+
+    test('it lets go within the release it was given', () => {
+        // The release dial is a recovery time, not a one-pole time
+        // constant. It used to be the latter, so a kick set to release in
+        // 180 ms went on holding the mix down for better than half a
+        // second — the duck read as following the note rather than the
+        // transient. Struck together and with the source released early,
+        // the mix past twice the dialled release is the victim alone, so
+        // comparing it against a duck-off render of the same notes
+        // recovers what is left of the gain reduction.
+        const RELEASE_MS = 180;
+        const GATE = Math.round(SR * 0.03);
+        const TOTAL = Math.round(SR * 0.6);
+        const FROM = Math.round(SR * RELEASE_MS * 2 / 1000); // 360 ms
+
+        const take = (amount) => {
+            exp.reset_engine();
+            exp.set_global_fx_param(FxGlobalParam.FX_G_DUCK_SOURCE, 0);
+            exp.set_global_fx_param(FxGlobalParam.FX_G_DUCK_AMOUNT, amount);
+            exp.set_global_fx_param(FxGlobalParam.FX_G_DUCK_THRESHOLD, -30);
+            exp.set_global_fx_param(FxGlobalParam.FX_G_DUCK_ATTACK, 5);
+            exp.set_global_fx_param(FxGlobalParam.FX_G_DUCK_RELEASE, RELEASE_MS);
+            loadVoice(0);
+            loadVoice(1);
+            noteOn(0, 36, 110);
+            noteOn(1, 72, 100);
+            const head = render(GATE);
+            exp.send_midi(0x80, 36, 0);       // source off: only its tail left
+            const tail = render(TOTAL - GATE);
+            const all = new Int16Array(TOTAL);
+            all.set(head, 0);
+            all.set(tail, GATE);
+            return all;
+        };
+
+        fxOff();
+        const ducked = take(12);
+        const open = take(0);
+
+        const left = 20 * Math.log10(
+            rms(open.subarray(FROM)) / (rms(ducked.subarray(FROM)) + 1e-9));
+        assert.ok(left < 0.5,
+            `${RELEASE_MS} ms after release the duck should be done, but ` +
+            `${left.toFixed(1)} dB of reduction was still on the mix at ` +
+            `${(FROM / SR * 1000).toFixed(0)} ms`);
+        fxOff();
+    });
 });
 
 describe('reset_engine and fx state', () => {
