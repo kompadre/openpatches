@@ -2,6 +2,14 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-15: Mixer strip — FX joins the action row; remove moves to the corner and asks first
+
+**The strip's action row is now M · S · ▶ · FX**, the four things done to the sound. FX left the volume line (`.voicebank-meta` now holds only the number) and is reshaped to the row's 18 px height (28 px on a phone). **Remove (×) left the row** for the strip's top-right corner. It is structural rather than a mix action, the only strip button that clicking again cannot undo, and it sat 3 px from preview. It stays dim but always visible, since touch has no hover, and is last in the DOM so Tab reaches it after the row. **Remove now asks first** with `confirm()`, naming the slot and track. The collab presence badge (`.peer-editing::after`) moves to the strip's top *left* so the corner stays the ×'s. On the phone rows, the controls leave 32 px on the right for it.
+
+Files: `html/components/voicebank.js`, `html/style.css`.
+
+Tests: `fx-panel` layout test rewritten (FX in the action row, remove on the strip but outside it); e2e `voicebank` +1 (cancelling the confirm keeps the track, and the prompt names it), with the existing remove test accepting the dialog. 1308 unit, 144 e2e.
+
 ## 2026-11-14: Ducking follows the transient; the Mixer's FX control is one button
 
 **Ducking let go far too slowly, and held flat for a whole note.** Two causes, both measured against the real `msfa.wasm`. `BlockCoef` returned `exp(-block/ms)` — a one-pole *time constant*, so a dialled 180 ms release took ~2.5x that to become inaudible: an 81 ms kick produced 540 ms of ducking. And `DuckGain`'s target was a gate (`db > threshold ? amount : 0`), so the full depth was held for as long as the source stayed over a −30 dBFS threshold, which for a patch that sustains is the note's whole gate length — the duck read as following note duration rather than the hit. Fixed by scaling the coefficient to a ~95 % recovery (`-3.0f * block_period / ms`) and by making the target track how far over the threshold the source actually is. Measured end to end, same dialled 180 ms: audible duck 540 → 241 ms, >3 dB 341 → 176 ms. `BlockCoef` is shared, so the per-channel compressor's attack and release now mean what they say too; its envelope is still block-rate (~1.45 ms), so it remains glue and not a limiter.

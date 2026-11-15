@@ -157,14 +157,17 @@ describe('the strip', () => {
         assert.equal(count(3), '0');
     });
 
-    test('the FX button shares the volume line rather than owning a row', () => {
+    test('FX joins M / S / preview in the action row; remove sits apart', () => {
         const session = seed([{ id: 'a', slot: 0 }]);
         const bank = createVoiceBank({ session });
         const item = bank.querySelectorAll('.voicebank-item')[0];
         const meta = item.querySelector('.voicebank-meta');
-        assert.ok(meta, 'the readout line is there');
-        assert.ok(meta.querySelector('.voicebank-vol'), 'volume sits on it');
-        assert.ok(meta.querySelector('.voicebank-fx'), 'and so does FX');
+        assert.ok(meta.querySelector('.voicebank-vol'), 'volume sits on the readout line');
+        assert.equal(meta.querySelector('.voicebank-fx'), null, 'FX no longer does');
+        const controls = item.querySelector('.voicebank-strip-controls');
+        assert.ok(controls.querySelector('.voicebank-fx'), 'FX is in the action row');
+        assert.equal(controls.querySelector('.voicebank-remove'), null, 'remove is not');
+        assert.ok(item.querySelector('.voicebank-remove'), 'remove is still on the strip');
     });
 
     test('the button carries its state in aria-label, and sets no title', () => {

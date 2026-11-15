@@ -1908,6 +1908,7 @@ h1 {
 }
 
 .voicebank-item {
+    position: relative;   /* the corner remove button */
     flex: 1 1 0;
     min-width: 0;
     max-width: 110px;
@@ -2066,7 +2067,12 @@ h1 {
     color: #4caf50;
 }
 
+/* Remove: in the strip's top-right corner, away from the action row.
+   Dim but always visible — touch has no hover to reveal it. */
 .voicebank-remove {
+    position: absolute;
+    top: 2px;
+    right: 2px;
     width: 18px;
     height: 18px;
     padding: 0;
@@ -2143,7 +2149,11 @@ h1 {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 1px 5px;
+    /* In the M / S / preview row: same height, a little wider for two letters. */
+    box-sizing: border-box;
+    height: 18px;
+    min-width: 18px;
+    padding: 0 3px;
     background: #1a1a2e;
     border: 1px solid var(--fx-edge);
     border-radius: 3px;
@@ -5112,7 +5122,10 @@ footer {
         font-size: 0.8rem;
     }
     .dock-panel-mixer .voicebank-meta { grid-area: meta; width: auto; gap: 8px; }
-    .dock-panel-mixer .voicebank-strip-controls { grid-area: ctrl; gap: 6px; }
+    /* Room on the right for the corner remove button. */
+    .dock-panel-mixer .voicebank-strip-controls { grid-area: ctrl; gap: 6px; margin-right: 32px; }
+    .dock-panel-mixer .voicebank-remove { top: 6px; right: 6px; }
+    .dock-panel-mixer .voicebank-fx { height: 28px; min-width: 28px; }
     .dock-panel-mixer .voicebank-mute,
     .dock-panel-mixer .voicebank-solo,
     .dock-panel-mixer .voicebank-play,
@@ -5899,7 +5912,8 @@ footer {
 /* Collab presence (presence.js): someone else is editing this. */
 .peer-editing { outline: 2px solid var(--peer-color, #f0a030); outline-offset: -2px; }
 /* Clips and tracker heads are absolutely placed already; a strip is not. */
-.voicebank-item.peer-editing { position: relative; }
+/* On a strip the top-right corner is the remove button's: the badge goes left. */
+.voicebank-item.peer-editing::after { right: auto; left: 0.15rem; }
 .peer-editing::after {
     content: attr(data-peers); position: absolute; top: -0.1rem; right: 0.15rem; z-index: 2;
     font-size: 0.6rem; line-height: 1; padding: 0.1rem 0.25rem; border-radius: 2px;

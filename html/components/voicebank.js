@@ -207,10 +207,7 @@ export function createVoiceBank(opts) {
                 fader.appendChild(overlay);
                 item.appendChild(fader);
 
-                // The readout line: volume on the left, FX on the right.
-                // FX used to own a row of its own, which on a 170px strip
-                // was a whole band of height spent on two glyphs. It is a
-                // small control and it now sits beside the number.
+                // The readout line: the volume number alone under the fader.
                 const meta = document.createElement('div');
                 meta.className = 'voicebank-meta';
 
@@ -248,10 +245,10 @@ export function createVoiceBank(opts) {
                         onLive: onFxLive ? (field, value) => onFxLive(i, field, value) : null,
                     });
                 });
-                meta.appendChild(fxBtn);
                 item.appendChild(meta);
 
-                // M / S / preview / remove
+                // M / S / preview / FX: the four things done to the sound.
+                // Remove is not one of them and lives in the corner.
                 const controls = document.createElement('div');
                 controls.className = 'voicebank-strip-controls';
 
@@ -284,18 +281,23 @@ export function createVoiceBank(opts) {
                     if (onPreview) onPreview(entry, i);
                 });
                 controls.appendChild(playBtn);
+                controls.appendChild(fxBtn);
+                item.appendChild(controls);
 
+                // Remove: structural, not a mix action, and the only strip
+                // button that cannot be undone by clicking it again — so it
+                // sits apart, in the top-right corner, and asks first. Last
+                // in the DOM so Tab reaches it after the row.
                 const removeBtn = document.createElement('button');
                 removeBtn.className = 'voicebank-remove';
                 removeBtn.textContent = '×';
-                removeBtn.title = 'Remove';
+                removeBtn.title = 'Remove track';
                 removeBtn.addEventListener('click', (e) => {
                     e.stopPropagation();
+                    if (!confirm(`Remove track ${i + 1} "${entry.name}" from the mixer?`)) return;
                     removeEntry(entry.id);
                 });
-                controls.appendChild(removeBtn);
-
-                item.appendChild(controls);
+                item.appendChild(removeBtn);
 
                 // Click anywhere else on the strip to select
                 item.addEventListener('click', (e) => {

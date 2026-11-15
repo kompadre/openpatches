@@ -172,6 +172,7 @@ test.describe('the Mixer', () => {
         await openMixerTab(page);
 
         const names = (await bankState(page)).map(e => e.name);
+        page.once('dialog', d => d.accept());
         await page.locator('.voicebank-item').nth(1).locator('.voicebank-remove').click();
 
         const after = await bankState(page);
@@ -181,5 +182,20 @@ test.describe('the Mixer', () => {
         ]);
         // The third voice still wears slot 3 on its row.
         await expect(rows.nth(2).locator('.patch-slot-badge')).toHaveText('3');
+    });
+
+    test('removing asks first — cancel keeps the track', async ({ page }) => {
+        await openApp(page);
+        await importDemoBank(page);
+        await assignRowToSlot(page.locator('.patch-row').nth(0), 1);
+        await openMixerTab(page);
+
+        const before = await bankState(page);
+        let message = '';
+        page.once('dialog', d => { message = d.message(); d.dismiss(); });
+        await page.locator('.voicebank-item').first().locator('.voicebank-remove').click();
+
+        expect(message).toContain(before[0].name);
+        expect(await bankState(page)).toEqual(before);
     });
 });
