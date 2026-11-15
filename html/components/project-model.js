@@ -907,23 +907,6 @@ export function removeEntry(project, entryId) {
 }
 
 /**
- * Move a section `delta` places along the library (−1 earlier, +1 later),
- * and its first entry the same distance along the piece. Transitional: it
- * is what the old ▲/▼ mean while library and piece are still one list on
- * screen — the same thing as before when every section is placed once.
- */
-export function moveSection(project, sectionId, delta) {
-    const i = project.sections.findIndex(s => s.id === sectionId);
-    const j = i + delta;
-    if (i < 0 || j < 0 || j >= project.sections.length) return false;
-    const [s] = project.sections.splice(i, 1);
-    project.sections.splice(j, 0, s);
-    const e = project.arrangement.findIndex(x => x.sectionId === sectionId);
-    if (e >= 0) moveEntry(project, project.arrangement[e].id, e + delta);
-    return true;
-}
-
-/**
  * The piece: every entry end to end, each starting on the bar after the
  * previous one ends (sections are whole bars long when played, as a section
  * alone is). Empty sections take no room. `startCol` is where each begins

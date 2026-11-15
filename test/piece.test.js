@@ -13,7 +13,7 @@ import { readAtoms, diffGroups, applyOps, checkInvariants } from '../html/compon
 
 const {
     createProject, createPattern, createTrack, addClip, addSection, removeSection, duplicateSection,
-    moveSection, placeSection, moveEntry, removeEntry, copyEntry, sectionUsage, pieceLayout,
+    placeSection, moveEntry, removeEntry, copyEntry, sectionUsage, pieceLayout,
     normalizeProject, SCHEMA_VERSION, SECTION_COLORS,
 } = M;
 
@@ -161,13 +161,6 @@ describe('placing, moving, removing, copying', () => {
         duplicateSection(p, lone.id);
         assert.equal(order(p).at(-1), 'Lone copy');
         assert.ok(copy);
-    });
-
-    test('moveSection (transitional ▲/▼) moves library and piece together when placed once', () => {
-        const { p, verse, chorus } = song();
-        assert.equal(moveSection(p, chorus.id, -1), true);
-        assert.deepEqual(p.sections.map(s => s.id), [chorus.id, verse.id]);
-        assert.deepEqual(order(p), ['Chorus', 'Verse']);
     });
 });
 

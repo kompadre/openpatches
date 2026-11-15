@@ -44,7 +44,7 @@
 
 import {
     createProject, createPattern, getSection, effectiveBpm,
-    addSection as addSectionTo, removeSection as removeSectionFrom, moveSection as moveSectionIn,
+    addSection as addSectionTo, removeSection as removeSectionFrom,
     duplicateSection as duplicateSectionIn,
     placeSection as placeSectionIn, moveEntry as moveEntryIn, removeEntry as removeEntryIn,
     copyEntry as copyEntryIn, sectionUsage as sectionUsageIn,
@@ -460,19 +460,6 @@ export function createProjectSession(store) {
             changed('section', source, { sectionId });
             return true;
         },
-
-        /** Move a section earlier (−1) or later (+1) in the piece. */
-        moveSection(id, delta, source) {
-            const project = store.get();
-            if (!project || !moveSectionIn(project, id, delta)) return false;
-            changed('section', source, { sectionId });
-            return true;
-        },
-
-        // --- The piece (the arrangement) ---
-        //
-        // Every one is a `section` event, so the editors and collab that
-        // already follow section changes follow these too.
 
         /** Entry ids placing a section, in piece order (empty: unused). */
         sectionUsage(id) {

@@ -70,6 +70,30 @@ export const SNAPS = [
 export const DEFAULT_SNAP = 8;   // 1/2
 export const ZOOMS = [1, 2, 4, 8];
 
+/**
+ * Where a block dropped at (x, y) goes in the Piece strip, which wraps.
+ * `rects` are the blocks' boxes in piece order. The row is the one the
+ * pointer is in (else the nearest); inside it, before the first block
+ * whose middle is right of x, else after the row's last. Returns the
+ * insertion index (0…n, in the list *with* the dragged block still in it)
+ * and where to draw the marker: `{ index, anchor, side }`.
+ */
+export function dropIndex(rects, x, y) {
+    if (!rects.length) return { index: 0, anchor: -1, side: 'before' };
+    let row = rects.map((r, i) => i).filter(i => y >= rects[i].top && y <= rects[i].bottom);
+    if (!row.length) {
+        const dist = (r) => (y < r.top ? r.top - y : y - r.bottom);
+        let best = 0;
+        rects.forEach((r, i) => { if (dist(r) < dist(rects[best])) best = i; });
+        row = rects.map((r, i) => i).filter(i => rects[i].top === rects[best].top);
+    }
+    for (const i of row) {
+        if (x < (rects[i].left + rects[i].right) / 2) return { index: i, anchor: i, side: 'before' };
+    }
+    const last = row[row.length - 1];
+    return { index: last + 1, anchor: last, side: 'after' };
+}
+
 function loadNum(key, allowed, fallback) {
     try {
         const v = Number(localStorage.getItem(key));
@@ -288,7 +312,196 @@ export function createSectionEditor(opts = {}) {
         session.setSection(id, 'section-editor');
     }
 
+    // --- Acting on blocks (buttons, keys, drag and the block menu share these) ---
+
+    // Set by a keyboard action on a block, so the re-render can give the
+    // picked block focus back — the old button is gone by then.
+    let refocusBlock = false;
+
+    /**
+     * Take a placement out of the piece. With `walk` (the Delete key) the
+     * neighbour inherits the pick, so Delete, Delete walks the piece; from
+     * the button or the menu the section stays on screen.
+     */
+    function unplaceEntry(entryId, { walk = false } = {}) {
+        if (!entryId) return;
+        const project = session.get();
+        const i = project.arrangement.findIndex(e => e.id === entryId);
+        const next = project.arrangement[i + 1] || project.arrangement[i - 1] || null;
+        session.removeEntry(entryId, 'section-editor');
+        if (walk && next) pickSection(next.sectionId, next.id);
+    }
+
+    function copyPlacement(entryId) {
+        pick(null);
+        if (stamp) cancelStamp();
+        if (entryId) session.copyEntry(entryId, 'section-editor');
+        else session.duplicateSection(sec().id, 'section-editor');
+    }
+
+    function confirmRemoveSection(section) {
+        const project = session.get();
+        if (project.sections.length <= 1) return;
+        const n = section.clips.length;
+        const placed = sectionUsage(project, section.id).length;
+        const what = [n ? `its ${n} clip${n > 1 ? 's' : ''}` : '', placed ? `its ${placed} place${placed > 1 ? 's' : ''} in the piece` : '']
+            .filter(Boolean).join(' and ');
+        if (!confirm(`Remove section "${section.name}"${what ? ' with ' + what : ''}? This cannot be undone.`)) return;
+        pick(null);
+        pickedEntryId = null;
+        session.removeSection(section.id, 'section-editor');
+    }
+
+    // The block menu (right-click): what can be done to one placement.
+    let closeBlockMenu = null;
+
+    function openBlockMenu(part, x, y) {
+        if (closeBlockMenu) closeBlockMenu();
+        const project = session.get();
+        const menu = document.createElement('div');
+        menu.className = 'section-piece-menu';
+        menu.setAttribute('role', 'menu');
+        const item = (label, title, cls, onPick, disabled = false) => {
+            const b = document.createElement('button');
+            b.className = 'section-piece-menu-item ' + cls;
+            b.textContent = label;
+            b.title = title;
+            b.disabled = disabled;
+            b.setAttribute('role', 'menuitem');
+            b.addEventListener('click', (e) => { e.stopPropagation(); close(); onPick(); });
+            menu.appendChild(b);
+        };
+        item('⎘ Make a copy', 'This block plays a copy of the section; the others keep the original',
+            'section-piece-menu-copy', () => copyPlacement(part.entry.id));
+        item('− Remove from piece', 'The section stays in the list (Delete)',
+            'section-piece-menu-unplace', () => unplaceEntry(part.entry.id));
+        item('✕ Remove section…', 'From the project, with every place it has in the piece — asks first',
+            'section-piece-menu-remove', () => confirmRemoveSection(part.section), project.sections.length <= 1);
+        menu.style.left = x + 'px';
+        menu.style.top = y + 'px';
+        document.body.appendChild(menu);
+        // Keep it on screen.
+        const r = menu.getBoundingClientRect ? menu.getBoundingClientRect() : null;
+        if (r && typeof window !== 'undefined') {
+            if (r.right > window.innerWidth) menu.style.left = Math.max(0, x - r.width) + 'px';
+            if (r.bottom > window.innerHeight) menu.style.top = Math.max(0, y - r.height) + 'px';
+        }
+        const outside = (e) => { if (!menu.contains(e.target)) close(); };
+        const onEsc = (e) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+        function close() {
+            if (menu.parentNode) menu.parentNode.removeChild(menu);
+            document.removeEventListener('pointerdown', outside, true);
+            document.removeEventListener('keydown', onEsc, true);
+            closeBlockMenu = null;
+        }
+        document.addEventListener('pointerdown', outside, true);
+        document.addEventListener('keydown', onEsc, true);
+        closeBlockMenu = close;
+        const first = menu.querySelector('button');
+        if (first && first.focus) first.focus();
+    }
+
+    // Dragging a block: reorder, or with Alt place the section again there.
+    // Starts only past a few pixels, so a click still picks.
+    const DRAG_SLOP = 4;
+    let suppressBlockClick = false;
+
+    function startBlockDrag(e, part, b, strip) {
+        if (e.button !== 0) return;
+        const project = session.get();
+        const from = project.arrangement.findIndex(x => x.id === part.entry.id);
+        const x0 = e.clientX, y0 = e.clientY;
+        let dragging = false, drop = null, alt = false;
+        const marker = document.createElement('div');
+        marker.className = 'section-piece-marker';
+
+        function rects() {
+            return Array.from(strip.querySelectorAll('.section-piece-block')).map(el => el.getBoundingClientRect());
+        }
+        function show(ev) {
+            const rs = rects();
+            drop = dropIndex(rs, ev.clientX, ev.clientY);
+            alt = ev.altKey;
+            strip.classList.toggle('drag-copy', alt);
+            const base = strip.getBoundingClientRect();
+            const r = rs[drop.anchor];
+            if (!r) { marker.style.display = 'none'; return; }
+            marker.style.display = '';
+            marker.style.left = ((drop.side === 'before' ? r.left - 3 : r.right + 1) - base.left) + 'px';
+            marker.style.top = (r.top - base.top) + 'px';
+            marker.style.height = r.height + 'px';
+        }
+        function move(ev) {
+            if (!dragging) {
+                if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < DRAG_SLOP) return;
+                dragging = true;
+                b.classList.add('dragging');
+                strip.classList.add('drag-active');
+                strip.appendChild(marker);
+            }
+            show(ev);
+        }
+        function end() {
+            document.removeEventListener('pointermove', move);
+            document.removeEventListener('pointerup', up);
+            document.removeEventListener('keydown', esc, true);
+            b.classList.remove('dragging');
+            strip.classList.remove('drag-active', 'drag-copy');
+            if (marker.parentNode) marker.parentNode.removeChild(marker);
+        }
+        function up(ev) {
+            end();
+            if (!dragging || !drop) return;
+            suppressBlockClick = true;
+            setTimeout(() => { suppressBlockClick = false; }, 0);
+            if (alt || ev.altKey) {
+                const entry = session.placeSection(part.section.id, drop.index, 'section-editor');
+                if (entry) pickSection(part.section.id, entry.id);
+                return;
+            }
+            const to = drop.index > from ? drop.index - 1 : drop.index;
+            pickedEntryId = part.entry.id;
+            if (to !== from) session.moveEntry(part.entry.id, to, 'section-editor');
+            if (part.section.id !== sec().id) pickSection(part.section.id, part.entry.id);
+        }
+        function esc(ev) {
+            if (ev.key !== 'Escape' || !dragging) return;
+            ev.stopPropagation();
+            dragging = false;
+            end();
+        }
+        document.addEventListener('pointermove', move);
+        document.addEventListener('pointerup', up);
+        document.addEventListener('keydown', esc, true);
+    }
+
+    /** Keys on a focused block: Alt+←/→ move it, Delete takes it out. */
+    function onBlockKey(e, part, index, count) {
+        if (e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+            e.preventDefault();
+            e.stopPropagation();
+            const to = index + (e.key === 'ArrowLeft' ? -1 : 1);
+            if (to < 0 || to >= count) return;
+            pickedEntryId = part.entry.id;
+            if (part.section.id !== sec().id) pickSection(part.section.id, part.entry.id);
+            session.moveEntry(part.entry.id, to, 'section-editor');
+            // Each step above may re-render; the last render gives focus back.
+            refocusBlock = true;
+            render();
+            return;
+        }
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+            // Ours, not the grid's: a focused block is not a selected clip.
+            e.preventDefault();
+            e.stopPropagation();
+            unplaceEntry(part.entry.id, { walk: true });
+            refocusBlock = true;
+            render();
+        }
+    }
+
     function renderPiece(project) {
+        if (closeBlockMenu) closeBlockMenu();
         piece.innerHTML = '';
         syncPickedEntry(project);
         piece.classList.toggle('folded', pieceFolded);
@@ -406,10 +619,27 @@ export function createSectionEditor(opts = {}) {
             meta.textContent = String(n);
             b.appendChild(label);
             b.appendChild(meta);
-            b.addEventListener('click', (e) => { e.stopPropagation(); pickSection(part.section.id, part.entry.id); });
+            b.title += '. Drag to move, Alt-drag to place it again; Alt+←/→ moves, Delete takes it out; right-click for more';
+            b.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (suppressBlockClick) return;
+                pickSection(part.section.id, part.entry.id);
+            });
+            b.addEventListener('pointerdown', (e) => startBlockDrag(e, part, b, strip));
+            b.addEventListener('keydown', (e) => onBlockKey(e, part, i, layout.parts.length));
+            b.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                openBlockMenu(part, e.clientX, e.clientY);
+            });
             strip.appendChild(b);
         });
         piece.appendChild(strip);
+        if (refocusBlock) {
+            refocusBlock = false;
+            const again = strip.querySelector('.section-piece-block.picked');
+            if (again && again.focus) again.focus();
+        }
 
         // --- The library row ---
         const row = document.createElement('div');
@@ -442,9 +672,8 @@ export function createSectionEditor(opts = {}) {
         const later = button('▶', 'Move this block later in the piece',
             () => session.moveEntry(pickedEntryId, i + 1, 'section-editor'), 'section-btn section-move-down');
         later.disabled = i < 0 || i >= project.arrangement.length - 1;
-        const unplace = button('− From piece', 'Take this block out of the piece — the section stays in the list', () => {
-            session.removeEntry(pickedEntryId, 'section-editor');
-        }, 'section-btn section-unplace');
+        const unplace = button('− From piece', 'Take this block out of the piece — the section stays in the list (Delete on a block)',
+            () => unplaceEntry(pickedEntryId), 'section-btn section-unplace');
         unplace.disabled = i < 0;
         row.appendChild(earlier);
         row.appendChild(later);
@@ -459,22 +688,9 @@ export function createSectionEditor(opts = {}) {
         }, 'section-btn section-add'));
         tools.appendChild(button('⎘', i >= 0
             ? 'Make a copy: this block plays a copy of the section (clips, tempo, loop), the others keep the original'
-            : 'Make a copy of this section (clips, tempo, loop), placed at the end of the piece', () => {
-            pick(null);
-            if (stamp) cancelStamp();
-            if (i >= 0) session.copyEntry(pickedEntryId, 'section-editor');
-            else session.duplicateSection(sec().id, 'section-editor');
-        }, 'section-btn section-duplicate'));
-        const del = button('✕', 'Remove this section', () => {
-            const n = sec().clips.length;
-            const placed = uses.length;
-            const what = [n ? `its ${n} clip${n > 1 ? 's' : ''}` : '', placed ? `its ${placed} place${placed > 1 ? 's' : ''} in the piece` : '']
-                .filter(Boolean).join(' and ');
-            if (!confirm(`Remove section "${sec().name}"${what ? ' with ' + what : ''}? This cannot be undone.`)) return;
-            pick(null);
-            pickedEntryId = null;
-            session.removeSection(sec().id, 'section-editor');
-        }, 'section-btn section-remove');
+            : 'Make a copy of this section (clips, tempo, loop), placed at the end of the piece',
+            () => copyPlacement(i >= 0 ? pickedEntryId : null), 'section-btn section-duplicate'));
+        const del = button('✕', 'Remove this section', () => confirmRemoveSection(sec()), 'section-btn section-remove');
         del.disabled = project.sections.length <= 1;
         del.title = del.disabled ? 'A project keeps at least one section' : 'Remove this section from the project — asks first';
         tools.appendChild(del);
@@ -1617,6 +1833,7 @@ export function createSectionEditor(opts = {}) {
             placeTrackerViewport();
         },
         destroy() {
+            if (closeBlockMenu) closeBlockMenu();
             document.removeEventListener('keydown', onKey);
             unsubscribeBus();
             if (unsubscribe) unsubscribe();

@@ -2,6 +2,16 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-15: Piece blocks drag, take keys, and have a menu
+
+**Drag a block** to move it in the piece: past 4 px the block dims and a white marker shows where it lands. The drop position is decided by `dropIndex(rects, x, y)`, a pure export, because the strip wraps: it looks in the pointer's row (or the nearest one) and drops before the first block whose middle is right of the pointer, otherwise after the row's last block. **Alt-drag places the section again** at the drop point (reuse), and the marker turns green. Escape cancels. A click after a drag does not also pick a block. **Keys on a focused block:** Alt+←/→ move it. Delete or Backspace take it out of the piece with no confirm, since the section stays; the next block is then picked, so repeated Deletes walk the piece. The block handles these keys itself, so the grid never deletes a selected clip from them, and focus comes back after the re-render. **Right-click a block** for its menu: ⎘ Make a copy, − Remove from piece, ✕ Remove section… (confirms, and is disabled for the last section). Escape or a click outside closes it.
+
+The ◀ ▶ buttons, − From piece, ⎘ and ✕ now share the same functions as the keys and the menu. Taking a block out with the button or the menu keeps its section on screen; only Delete moves on to the next block. **`moveSection` is retired** from the model and the session; `moveEntry` is the only reorder.
+
+Files: `html/components/section-editor.js`, `project-model.js`, `project-session.js`, `html/style.css`.
+
+Tests: section-editor +3 (Alt+arrows, Delete on a block leaves a selected clip alone, `dropIndex` across wrapped rows); e2e `piece` +5 (drag reorders, Alt-drag reuses, Escape cancels, the menu's three items and closing, keyboard with focus kept). The `moveSection` tests are gone with it. 1341 unit, 151 e2e.
+
 ## 2026-11-15: The Piece panel — the piece as blocks, folding from the top of the Section pane
 
 The two crowded toolbar rows become a **Piece panel** above the grid, folding as the pattern library folds below it (remembered, `openpatches_section_piece`). **Its header is always there**: `▾ Piece · 48 bars`, then the edited section's colour, name, length, tempo, and where it is — "2nd of 3" when reused, "not in the piece" when unused. **The strip** is one block per entry, in play order, width by bars with a floor, wrapping so the whole piece is in view; every block of the edited section is lit and the picked one outlined, and a click edits that section at that placement. **The row under it**: the section select, which now lists the whole library with its use (`Chorus · ×3`, `Outro idea · unused`) rather than numbering the piece; `+ Add to piece` (reuse); `◀ ▶` and `− From piece` on the picked block (no confirm — the section stays); `+ Section`; `⎘` *makes a copy* for the picked block only, or copies an unplaced section to the end; `✕` removes the section from the project and always confirms, naming its clips and placements and that it cannot be undone. The toolbar keeps the editing tools only.

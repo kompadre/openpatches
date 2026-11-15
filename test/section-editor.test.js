@@ -11,7 +11,7 @@ import { test, before, beforeEach, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { installBrowserEnv } from './harness.js';
 
-let createSectionEditor, makeProjectSession, M, MEASURE_W, env;
+let createSectionEditor, dropIndex, makeProjectSession, M, MEASURE_W, env;
 
 // The open project the editor under test is bound to. build() sets it, and
 // the pattern assertions read the library through it — patterns belong to
@@ -20,7 +20,7 @@ let session = null;
 
 before(async () => {
     env = installBrowserEnv();
-    ({ createSectionEditor, MEASURE_W } = await import('../html/components/section-editor.js'));
+    ({ createSectionEditor, dropIndex, MEASURE_W } = await import('../html/components/section-editor.js'));
     ({ makeProjectSession } = await import('./project-fixture.js'));
     M = await import('../html/components/project-model.js');
 });
@@ -1415,6 +1415,59 @@ describe('the Piece panel', () => {
         h.btn('section-bpm-start').value = ''; h.btn('section-bpm-start').dispatch('change');
         assert.equal(h.section().bpm, null, 'back to the project\'s');
         assert.equal(h.section().bpmEnd, M.MAX_BPM, 'the other field is untouched');
+    });
+});
+
+describe('Piece blocks: keys and drop position', () => {
+    const blocks = (h) => Array.from(h.root.querySelectorAll('.section-piece-block'));
+    const blockNames = (h) => blocks(h).map(b => b.querySelector('.section-piece-block-name').textContent);
+    const three = () => {
+        const h = build({ patterns: [{ name: 'A' }], tracks: [{ slot: 0 }], clips: [{ track: 0, pattern: 0, at: 0 }] });
+        h.btn('section-add').dispatch('click', ev());
+        h.btn('section-add').dispatch('click', ev());                  // S1 S2 S3, S3 on screen
+        return h;
+    };
+
+    test('Alt+← / Alt+→ move the focused block; plain arrows do nothing', () => {
+        const h = three();
+        blocks(h)[2].dispatch('keydown', ev({ key: 'ArrowLeft' }));
+        assert.deepEqual(blockNames(h), ['Section 1', 'Section 2', 'Section 3']);
+        blocks(h)[2].dispatch('keydown', ev({ key: 'ArrowLeft', altKey: true }));
+        assert.deepEqual(blockNames(h), ['Section 1', 'Section 3', 'Section 2']);
+        assert.ok(blocks(h)[1].classList.contains('picked'), 'the pick travels with it');
+        blocks(h)[0].dispatch('keydown', ev({ key: 'ArrowLeft', altKey: true }));
+        assert.deepEqual(blockNames(h), ['Section 1', 'Section 3', 'Section 2'], 'not past the start');
+        blocks(h)[0].dispatch('keydown', ev({ key: 'ArrowRight', altKey: true }));
+        assert.deepEqual(blockNames(h), ['Section 3', 'Section 1', 'Section 2']);
+        assert.equal(h.section().name, 'Section 1', 'moving a block edits its section');
+    });
+
+    test('Delete on a block takes it out, the pick walks on; a selected clip is untouched', () => {
+        const h = three();
+        h.btn('section-pick').value = h.project().sections[0].id;
+        h.btn('section-pick').dispatch('change');
+        h.root.querySelector('.section-clip').dispatch('click', ev());   // a clip is selected in the grid
+        let stopped = false;
+        blocks(h)[0].dispatch('keydown', ev({ key: 'Delete', stopPropagation() { stopped = true; } }));
+        assert.ok(stopped, 'the grid\'s Delete never sees it');
+        assert.deepEqual(blockNames(h), ['Section 2', 'Section 3']);
+        assert.equal(h.section().name, 'Section 2', 'the next block is picked');
+        assert.equal(h.project().sections[0].clips.length, 1, 'the clip is still there');
+        assert.deepEqual(h.project().sections.map(x => x.name), ['Section 1', 'Section 2', 'Section 3'], 'and so is the section');
+    });
+
+    test('dropIndex: before the block whose middle is right of the pointer, in the pointer\'s row', () => {
+        // Two rows: [0 1 2] at y 0–20, [3 4] at y 25–45.
+        const r = (left, top) => ({ left, right: left + 40, top, bottom: top + 20 });
+        const rows = [r(0, 0), r(45, 0), r(90, 0), r(0, 25), r(45, 25)];
+        assert.deepEqual(dropIndex(rows, 5, 10), { index: 0, anchor: 0, side: 'before' });
+        assert.deepEqual(dropIndex(rows, 30, 10), { index: 1, anchor: 1, side: 'before' });
+        assert.deepEqual(dropIndex(rows, 200, 10), { index: 3, anchor: 2, side: 'after' }, 'end of row one');
+        assert.deepEqual(dropIndex(rows, 5, 30), { index: 3, anchor: 3, side: 'before' }, 'start of row two');
+        assert.deepEqual(dropIndex(rows, 200, 30), { index: 5, anchor: 4, side: 'after' }, 'the very end');
+        assert.deepEqual(dropIndex(rows, 50, 90), { index: 4, anchor: 4, side: 'before' }, 'below: the nearest row');
+        assert.deepEqual(dropIndex(rows, 50, -30), { index: 1, anchor: 1, side: 'before' }, 'above: the nearest row');
+        assert.deepEqual(dropIndex([], 0, 0), { index: 0, anchor: -1, side: 'before' });
     });
 });
 

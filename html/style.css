@@ -6008,3 +6008,30 @@ footer {
 @media (max-width: 600px) {
     .section-piece-strip { display: none; }
 }
+
+/* --- Piece panel: dragging blocks, and the block menu --- */
+.section-piece-strip { position: relative; }
+.section-piece-strip.drag-active .section-piece-block { cursor: grabbing; }
+.section-piece-strip.drag-copy .section-piece-block { cursor: copy; }
+.section-piece-block.dragging { opacity: 0.45; }
+.section-piece-block:focus-visible { outline: 2px solid #8fb3ff; outline-offset: -1px; }
+.section-piece-marker {
+    position: absolute; width: 2px; border-radius: 1px;
+    background: #fff; pointer-events: none; box-shadow: 0 0 4px rgba(255, 255, 255, 0.6);
+}
+/* Alt held: the drop places the section again, it does not move it. */
+.section-piece-strip.drag-copy .section-piece-marker { background: #4fd38a; box-shadow: 0 0 4px rgba(79, 211, 138, 0.7); }
+.section-piece-menu {
+    position: fixed; z-index: 1002;
+    display: flex; flex-direction: column; min-width: 11rem; padding: 3px;
+    background: #16162a; border: 1px solid #3a3a55; border-radius: 4px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+}
+.section-piece-menu-item {
+    background: transparent; border: none; border-radius: 3px; color: #ccc;
+    font-size: 0.75rem; text-align: left; padding: 0.3rem 0.5rem; cursor: pointer;
+}
+.section-piece-menu-item:hover:not(:disabled),
+.section-piece-menu-item:focus-visible { background: #24243e; color: #fff; outline: none; }
+.section-piece-menu-item:disabled { background: transparent; color: #555; cursor: default; }
+.section-piece-menu-remove:not(:disabled) { color: #e9a0a0; }

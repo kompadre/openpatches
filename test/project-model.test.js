@@ -480,7 +480,7 @@ describe('tags', () => {
 
 // Phase 4: more than one section — order, the piece's layout, tempo ramps.
 describe('sections in a piece', () => {
-    const { createProject, createPattern, createTrack, addClip, addSection, moveSection, pieceLayout, bpmAt, effectiveBpm, COLS_PER_MEASURE } = M;
+    const { createProject, createPattern, createTrack, addClip, addSection, pieceLayout, bpmAt, effectiveBpm, COLS_PER_MEASURE } = M;
     function piece() {
         const p = createProject({ name: 'P', bpm: 100 });
         const pat = createPattern({ name: 'A', measures: 2 });
@@ -500,15 +500,6 @@ describe('sections in a piece', () => {
         assert.deepEqual(L.parts.map(x => [x.section.id, x.startCol, x.endCol]),
             [[s1.id, 0, 32], [s2.id, 32, 64], [s3.id, 64, 64]]);
         assert.equal(L.total, 64);
-    });
-
-    test('moveSection reorders and refuses to fall off either end', () => {
-        const { p, s1, s2, s3 } = piece();
-        assert.equal(moveSection(p, s3.id, -1), true);
-        assert.deepEqual(p.sections.map(s => s.id), [s1.id, s3.id, s2.id]);
-        assert.equal(moveSection(p, s1.id, -1), false);
-        assert.equal(moveSection(p, s2.id, +1), false);
-        assert.equal(moveSection(p, 'nope', +1), false);
     });
 
     test('bpmAt ramps from the start tempo to bpmEnd over the section, and holds past it', () => {
