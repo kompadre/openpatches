@@ -130,6 +130,14 @@ relay (first) or WebRTC (later, if latency matters).
   record mode). Following the host's transport was dropped: transport is
   local to each peer. CHANGELOG has the details.
 
+### Piece panel follow-ups (parked 2026-11-15)
+
+The Piece panel shipped 2026-11-15 (CHANGELOG). Not started; nothing is decided beyond the one-liners.
+- [ ] **Repeat count per block** (`Chorus ×2`): one entry stands for n passes. The entry record `{ id, sectionId }` has room for a `repeats` field; `pieceLayout` would multiply the length.
+- [ ] **Loop a run of blocks**: Shift-select consecutive blocks and loop that stretch of the piece. Today a loop only works inside one section.
+- [ ] **Ruler above the strip**: bar numbers or mm:ss, so the piece reads as time.
+- [ ] **Phones**: a layout for the Piece panel. The strip is hidden under 600 px for now; the header and the select row still work.
+
 ### Ideas
 
 - [ ] Import and export **MIDI** (patterns ↔ MIDI files; a section or the piece as a multi-track SMF).
