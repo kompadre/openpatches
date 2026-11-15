@@ -8,7 +8,7 @@
 // --update-snapshots` after an intentional style change, and eyeball the
 // diff image in test-results/ before accepting an unintentional one.
 
-import { test, expect, openApp, openRollTab, openMixerTab } from './fixtures.js';
+import { test, expect, openApp, openRollTab, openMixerTab, openSectionPane } from './fixtures.js';
 
 // Font rasterization wobbles a little across kernels/fontconfig; allow a
 // small per-pixel tolerance rather than chasing antialiasing ghosts.
@@ -59,6 +59,39 @@ test.describe('visual regression', () => {
         // the clipped part — pixels belonging to the neighbouring panes.
         await expect(page.locator('.bpane-content-mixer').locator('xpath=..'))
             .toHaveScreenshot('mixer-tab.png', SHOT);
+    });
+
+    test('piece panel: blocks in every state', async ({ page }) => {
+        // Fixed names and colours; a reused section (edited, one block
+        // picked), a plain one, an empty one, and an unused one in the select.
+        await openSectionPane(page);
+        await page.evaluate(async () => {
+            const M = await import('/html/components/project-model.js');
+            const s = window.__opProject;
+            s.update((p) => {
+                const pat = M.createPattern({ name: 'A', measures: 4 });
+                p.patterns[pat.id] = pat;
+                const t = M.createTrack({ slot: 0 });
+                p.tracks.push(t);
+                const mk = (name, n, color) => {
+                    const sec = M.addSection(p, { name, color }, { place: false });
+                    if (n) M.addClip(p, sec, { trackId: t.id, patternId: pat.id, startCol: 0, repeats: n });
+                    return sec;
+                };
+                p.sections[0].name = 'Intro';
+                p.sections[0].color = '#7a6fb0';
+                M.addClip(p, p.sections[0], { trackId: t.id, patternId: pat.id, startCol: 0 });
+                const v = mk('Verse', 2, '#5f9a6a'), c = mk('Chorus', 2, '#a8904a');
+                const e = mk('Empty', 0, '#a8664f');
+                mk('Outro idea', 1, '#4f8fa8');
+                p.arrangement = [p.arrangement[0]];
+                for (const x of [v, c, v, e, c]) M.placeSection(p, x.id);
+            }, 'e2e');
+            s.setSection(s.get().sections.find(x => x.name === 'Chorus').id, 'e2e');
+        });
+        await page.locator('.section-piece-block').nth(5).click();              // the second Chorus
+        await expect(page.locator('.section-piece-usage')).toHaveText('2nd of 2');
+        await expect(page.locator('.section-piece')).toHaveScreenshot('piece-panel.png', SHOT);
     });
 
     test('MIDI settings modal', async ({ page }) => {

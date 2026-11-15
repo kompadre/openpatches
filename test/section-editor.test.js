@@ -777,6 +777,87 @@ describe('playhead (phase 5)', () => {
     });
 });
 
+describe('the Piece panel during playback', () => {
+    async function withPiece() {
+        const { createTransport } = await import('../html/synth/transport.js');
+        session = makeProjectSession();
+        const a = session.createPattern({ name: 'A', measures: 1, notes: [{ midi: 60, start: 0, dur: 1 }] }, 'test');
+        const b = session.createPattern({ name: 'B', measures: 2, notes: [{ midi: 72, start: 0, dur: 1 }] }, 'test');
+        session.update((project, section) => {
+            const t = M.createTrack({ slot: 0 });
+            project.tracks.push(t);
+            M.addClip(project, section, { trackId: t.id, patternId: a.id, startCol: 0 });       // One: 1 bar
+            const two = M.addSection(project, { name: 'Two' });
+            M.addClip(project, two, { trackId: t.id, patternId: b.id, startCol: 0 });           // Two: 2 bars
+            M.placeSection(project, section.id);                                                 // One Two One
+        }, 'test');
+        const handlers = [];
+        const tickWorker = {
+            started: [], postMessage() {},
+            addEventListener(t, fn) { if (t === 'message') handlers.push(fn); },
+            tick(col) { for (const fn of handlers) fn({ data: { type: 'tick', col } }); },
+        };
+        const transport = createTransport({
+            session, tickWorker, startWorker: (w, bpm, col) => w.started.push(col), stopWorker: () => {},
+            playNote: () => {}, getSlotData: () => null,
+            getPattern: (id) => session.getPattern(id), getEditTarget: () => null,
+        });
+        const editor = createSectionEditor({ session, transport, getSlotData: (s) => BANK[s] || null });
+        return { editor, transport, tickWorker, session, root: editor.element };
+    }
+    const blocks = (h) => Array.from(h.root.querySelectorAll('.section-piece-block'));
+    const playing = (h) => blocks(h).map(b => b.classList.contains('playing'));
+
+    test('the playing block is lit and its line advances; the header counts the blocks', async () => {
+        const h = await withPiece();
+        assert.deepEqual(playing(h), [false, false, false]);
+        h.transport.play({ mode: 'piece' });
+        h.tickWorker.tick(0);
+        assert.deepEqual(playing(h), [true, false, false]);
+        assert.equal(h.root.querySelector('.section-piece-playing').textContent, '▶ 1 of 3');
+        h.tickWorker.tick(24);                                   // bar 2.5: half-way through Two
+        assert.deepEqual(playing(h), [false, true, false]);
+        assert.equal(blocks(h)[1].style.getPropertyValue('--play-frac'), '0.25');
+        assert.equal(h.root.querySelector('.section-piece-playing').textContent, '▶ 2 of 3');
+        h.tickWorker.tick(48);                                   // the second One, not the first
+        assert.deepEqual(playing(h), [false, false, true]);
+        h.transport.stop();
+        assert.deepEqual(playing(h), [false, false, false]);
+        assert.equal(h.root.querySelector('.section-piece-playing').style.display, 'none');
+    });
+
+    test('a tick does not rebuild the blocks; a render keeps the lit one', async () => {
+        const h = await withPiece();
+        h.transport.play({ mode: 'piece' });
+        h.tickWorker.tick(16);
+        const el = blocks(h)[1];
+        h.tickWorker.tick(20);
+        assert.equal(blocks(h)[1], el);
+        h.editor.render();
+        assert.deepEqual(playing(h), [false, true, false]);
+    });
+
+    test('double-click plays the piece from that block', async () => {
+        const h = await withPiece();
+        blocks(h)[2].dispatch('dblclick', ev());
+        assert.equal(h.transport.getMode(), 'piece');
+        assert.equal(h.tickWorker.started.at(-1), 48, 'from the third block\'s first column');
+        assert.ok(blocks(h)[2].classList.contains('picked'));
+    });
+
+    test('someone else editing a section marks every block of it', async () => {
+        const { setPresence } = await import('../html/components/presence.js');
+        const h = await withPiece();
+        const one = h.session.get().sections[0];
+        setPresence([{ peer: 'p1', alias: 'bob', color: '#4fc3f7', scope: { sectionId: one.id } }]);
+        try {
+            const marked = blocks(h).map(b => b.classList.contains('peer-editing'));
+            assert.deepEqual(marked, [true, false, true]);
+            assert.equal(blocks(h)[0].dataset.peers, 'bob');
+        } finally { setPresence([]); }
+    });
+});
+
 // A clip dragged sideways into another lane changes track. Only the notes
 // travel — a clip is a pattern id placed somewhere, and the voice is the
 // track's.

@@ -17,33 +17,6 @@ run `node --check` + `node --test` and tick this file only. (Open: AGENTS.md
 "Keep it current ... in the same commit/change" reads per-change; awaiting
 the user's wording if SESSION.md should be deferred too.)
 
-### The Piece panel — phases 1–3 DONE 2026-11-15; phase 4 next (desktop only, every phase)
-
-The piece as a sequence of sections, with reuse (a chorus placed many times) and reordering, in a panel that folds from the top of the Section pane.
-
-**Phase 1 — The arrangement in the model.** _Done 2026-11-15._ `project.arrangement` (`[{id, sectionId}]`) is the play order; `project.sections` is the library, used or not. Schema 2; schema-1 projects migrate to every section once. `placeSection`, `moveEntry`, `removeEntry`, `copyEntry`, `sectionUsage`; sequencer, transport, export and collab follow. Sections have a `color`. No visible change.
-
-**Phase 2 — The collapsible Piece panel.** _Done 2026-11-15._ ◀ ▶ and − From piece came forward from phase 3; phones hide the strip.
-- [x] Folds from the top of the Section pane, remembered. The header always shows the edited section: colour chip, name, bars, tempo, "2nd of 3" when reused, the piece's length.
-- [x] Body: one block per entry, width by bars, in the section's colour; every block of the edited section lit, the clicked one most.
-- [x] The section select stays, listing every section in the library (used or not), with a control to add the selected one to the piece. Unused ones marked.
-- [x] The toolbar keeps the editing tools only; name and tempo move to the header.
-
-**Phase 3 — Reordering and reuse.** _Done 2026-11-15._
-- [x] Drag blocks to reorder (insertion marker, Escape cancels); Alt-drag places the section again at the drop. Alt+←/→ on a focused block.
-- [x] Delete on a focused block takes it out of the piece, no confirm, and the pick walks on. Removing a section confirms.
-- [x] Block menu (right-click): Make a copy, Remove from piece, Remove section….
-- [x] `moveSection` retired; `moveEntry` is the only reorder.
-
-**Phase 4 — Playback and polish.**
-- [ ] Piece playhead across the strip; the playing block lit, collapsed or not (`localize().entryId`).
-- [ ] Double-click a block: play the piece from there.
-- [ ] Collab presence on blocks. e2e and a visual baseline.
-
-Later: per-entry repeat counts (`Chorus ×2`); loop a run of blocks; bar or time ruler above the strip. Mobile: next session.
-
-Gotchas: `project.sections` is the library, `project.arrangement` the play order — anything that means "the piece" must walk `pieceLayout(project).parts`, not `sections`. The global `button:hover` (0,1,1) outranks a bare class: restate `background` on any new button's hover. Phones hide the strip (`@media (max-width: 600px)`).
-
 ### Collaborative editing — M1–M4 DONE 2026-11-12; only M3-3 (the Go relay) remains, parked
 
 **M4-3 — soft locks and takes** (collab.js, project-session.js; tests

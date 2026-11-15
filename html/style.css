@@ -6035,3 +6035,17 @@ footer {
 .section-piece-menu-item:focus-visible { background: #24243e; color: #fff; outline: none; }
 .section-piece-menu-item:disabled { background: transparent; color: #555; cursor: default; }
 .section-piece-menu-remove:not(:disabled) { color: #e9a0a0; }
+
+/* --- Piece panel: playback --- */
+.section-piece-playing { color: #4fd38a; font-size: 0.68rem; white-space: nowrap; margin-left: auto; }
+.section-piece-block { position: relative; }
+/* The playing block: lit, with a playhead line at --play-frac of its width. */
+.section-piece-block.playing { border-color: #4fd38a; box-shadow: 0 0 6px rgba(79, 211, 138, 0.45); }
+/* ::before, because ::after is the presence alias tag (.peer-editing). */
+.section-piece-block.playing::before {
+    content: ''; position: absolute; top: 0; bottom: 0; width: 2px;
+    left: calc(var(--play-frac, 0) * 100%);
+    background: #4fd38a; box-shadow: 0 0 4px rgba(79, 211, 138, 0.8); pointer-events: none;
+}
+/* Someone else editing this section (presence.js): the alias tag sits inside the block. */
+.section-piece-block.peer-editing::after { top: 1px; right: 1px; }

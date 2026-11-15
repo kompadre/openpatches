@@ -500,6 +500,39 @@ export function createSectionEditor(opts = {}) {
         }
     }
 
+    // Where the piece playhead is, for the strip: `{ entryId, frac, index, count }`
+    // or null at rest / in another mode. Updated in place on every tick
+    // (a full render per sixteenth would be far too much), and re-applied
+    // after a render, since the blocks are rebuilt.
+    let piecePos = null;
+
+    function readPiecePos(pos) {
+        if (!transport || !pos || pos.mode !== 'piece' || !(pos.col >= 0)) return null;
+        const seq = transport.getSequence && transport.getSequence();
+        if (!seq || seq.kind !== 'piece' || !seq.localize) return null;
+        const here = seq.localize(pos.col);
+        const project = session.get();
+        const parts = project ? pieceLayout(project).parts : [];
+        const index = parts.findIndex(p => p.entry.id === here.entryId);
+        const part = parts[index];
+        const len = part ? part.endCol - part.startCol : 0;
+        return { entryId: here.entryId, frac: len > 0 ? Math.min(1, Math.max(0, here.col / len)) : 0, index, count: parts.length };
+    }
+
+    function applyPiecePos() {
+        for (const b of piece.querySelectorAll('.section-piece-block')) {
+            const on = !!piecePos && b.dataset.entryId === piecePos.entryId;
+            b.classList.toggle('playing', on);
+            if (on) b.style.setProperty('--play-frac', String(piecePos.frac));
+            else b.style.removeProperty('--play-frac');
+        }
+        const tag = piece.querySelector('.section-piece-playing');
+        if (tag) {
+            tag.textContent = piecePos && piecePos.index >= 0 ? `▶ ${piecePos.index + 1} of ${piecePos.count}` : '';
+            tag.style.display = piecePos ? '' : 'none';
+        }
+    }
+
     function renderPiece(project) {
         if (closeBlockMenu) closeBlockMenu();
         piece.innerHTML = '';
@@ -584,8 +617,14 @@ export function createSectionEditor(opts = {}) {
             : uses.length === 1 ? '' : `${ordinal(at + 1)} of ${uses.length}`;
         usage.title = uses.length > 1 ? 'Placed ' + uses.length + ' times — an edit here changes every one' : '';
         head.appendChild(usage);
+        // Which block is playing, folded or not — the name beside it is the
+        // playing section's already, since piece playback edits as it goes.
+        const playingTag = document.createElement('span');
+        playingTag.className = 'section-piece-playing';
+        playingTag.title = 'The block the piece is playing';
+        head.appendChild(playingTag);
         piece.appendChild(head);
-        if (pieceFolded) return;
+        if (pieceFolded) { applyPiecePos(); return; }
 
         // --- The strip: one block per entry ---
         const strip = document.createElement('div');
@@ -619,7 +658,16 @@ export function createSectionEditor(opts = {}) {
             meta.textContent = String(n);
             b.appendChild(label);
             b.appendChild(meta);
-            b.title += '. Drag to move, Alt-drag to place it again; Alt+←/→ moves, Delete takes it out; right-click for more';
+            b.title += '. Drag to move, Alt-drag to place it again; Alt+←/→ moves, Delete takes it out; '
+                + 'double-click plays the piece from here; right-click for more';
+            // Someone else editing this section: their colour on every block of it.
+            markPresence(b, presenceOn({ sectionId: part.section.id }));
+            b.addEventListener('dblclick', (e) => {
+                e.stopPropagation();
+                if (!transport || n === 0) return;
+                pickSection(part.section.id, part.entry.id);
+                transport.play({ mode: 'piece', fromCol: part.startCol });
+            });
             b.addEventListener('click', (e) => {
                 e.stopPropagation();
                 if (suppressBlockClick) return;
@@ -640,6 +688,7 @@ export function createSectionEditor(opts = {}) {
             const again = strip.querySelector('.section-piece-block.picked');
             if (again && again.focus) again.focus();
         }
+        applyPiecePos();
 
         // --- The library row ---
         const row = document.createElement('div');
@@ -1816,6 +1865,9 @@ export function createSectionEditor(opts = {}) {
     if (transport) {
         unsubscribeTransport = transport.subscribe((pos) => {
             movePlayhead(pos.sectionCol != null ? pos.sectionCol : pos.col);
+            const next = readPiecePos(pos);
+            // Cheap to compare, and most ticks move the fraction only.
+            if (JSON.stringify(next) !== JSON.stringify(piecePos)) { piecePos = next; applyPiecePos(); }
         });
     }
     render();

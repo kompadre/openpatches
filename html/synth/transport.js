@@ -411,22 +411,30 @@ export function createTransport(opts) {
     /**
      * Start. `mode` names the scope the button means — the Section tab's
      * Play is section, the roll's is pattern — and is switched to (and remembered)
-     * first; without it the current mode plays.
+     * first; without it the current mode plays. `fromCol` starts part-way
+     * through the range (the Piece panel's "play from this block"); it is
+     * clamped into the range, and ignored when following a device clock,
+     * which starts us where it starts.
      */
-    function play({ mode: wanted } = {}) {
+    function play({ mode: wanted, fromCol } = {}) {
         if (recording) return false;      // the take owns the clock
         if (wanted) api.setMode(wanted);
         if (playing || armed) stop();
         refresh();
         if (!hasAnythingToPlay()) return false;
-        lastCol = sequence.range.startCol;
+        const { startCol, endCol } = sequence.range;
+        lastCol = Number.isFinite(fromCol)
+            ? Math.min(Math.max(Math.floor(fromCol), startCol), Math.max(startCol, endCol - 1))
+            : startCol;
         consecutiveErrors = 0;
-        if (slaved()) return arm('play');
+        if (slaved()) { lastCol = startCol; return arm('play'); }
         return deferIfSaving(() => {
             playing = true;
             notify({ col: lastCol });
             midiManager.clockStart(lastCol);
-            startWorkerAt(0);
+            // The worker counts from the offset into the range;
+            // columnForTick() lands it back on lastCol.
+            startWorkerAt(lastCol - startCol);
         });
     }
 

@@ -73,6 +73,22 @@ describe('piece mode', () => {
         assert.deepEqual(h.played, [60, 72, 60]);
     });
 
+    test('play({ fromCol }) starts part-way through the piece: the worker, the playhead and the edited section agree', () => {
+        const h = build();
+        h.transport.play({ mode: 'piece', fromCol: 16 });            // bar 2 = section Two
+        assert.deepEqual(h.tickWorker.started.at(-1).col, 16, 'the worker counts from there');
+        assert.equal(h.positions.at(-1).col, 16);
+        h.tickWorker.tick(16);
+        assert.equal(h.session.getSectionId(), h.s2.id, 'the pane follows at once');
+        assert.deepEqual(h.played, [72], 'Two\'s note, not One\'s');
+        h.transport.stop();
+        h.transport.play({ mode: 'piece', fromCol: 999 });
+        assert.equal(h.positions.at(-1).col, 31, 'clamped to the last column');
+        h.transport.stop();
+        h.transport.play({ mode: 'piece', fromCol: -5 });
+        assert.equal(h.positions.at(-1).col, 0);
+    });
+
     test('Record from piece mode records the section on screen', () => {
         const h = build();
         h.transport.setMode('piece');

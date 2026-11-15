@@ -185,3 +185,32 @@ test('keyboard: Alt+arrows move the focused block, Delete takes it out', async (
     await expect(page.locator('.section-name')).toHaveValue('Section 3');
     await expect(blocks.nth(1)).toBeFocused();
 });
+
+test('playback: the playing block is lit, double-click plays from a block, the folded header counts along', async ({ page }) => {
+    await openApp(page);
+    await openSectionPane(page);
+    await page.locator('.section-add-track').click();
+    await page.locator('.section-pattern-new').click();
+    await page.evaluate(() => window.__opProject.update((p) => {
+        for (const pat of Object.values(p.patterns)) pat.notes = [{ midi: 60, start: 0, dur: 1 }];
+    }, 'e2e'));
+    await page.locator('.section-place').click();                     // S1 S1
+    await page.locator('.section-add').click();                       // S1 S1 S2 (empty: takes no room)
+    await page.locator('.section-pick').selectOption({ label: 'Section 1 · ×2' });
+
+    // Double-click the second block: the piece plays from bar 2, so the
+    // second block lights first, not the first.
+    await page.locator('.section-piece-block').nth(1).dblclick();
+    await expect(page.locator('.transport-play')).toHaveText('▶ Play Piece');
+    await expect(page.locator('.section-piece-block').nth(1)).toHaveClass(/playing/);
+    await expect(page.locator('.section-piece-block').nth(0)).not.toHaveClass(/playing/);
+    await expect(page.locator('.section-piece-playing')).toHaveText('▶ 2 of 3');
+    // It loops round: the first block's turn comes.
+    await expect(page.locator('.section-piece-block').nth(0)).toHaveClass(/playing/, { timeout: 5000 });
+
+    await page.locator('.section-piece-toggle').click();
+    await expect(page.locator('.section-piece-block')).toHaveCount(0);
+    await expect(page.locator('.section-piece-playing')).toHaveText(/▶ [12] of 3/);
+    await page.locator('.transport-stop').click();
+    await expect(page.locator('.section-piece-playing')).toBeHidden();
+});
