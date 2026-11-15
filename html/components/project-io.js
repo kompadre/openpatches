@@ -99,6 +99,7 @@ export function exportProject(project) {
             bpm: body.bpm,
             tracks: body.tracks,
             sections: body.sections,
+            arrangement: body.arrangement,
             patterns: body.patterns,
             patches: body.patches,
             patchNames: body.patchNames,

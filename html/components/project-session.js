@@ -46,6 +46,8 @@ import {
     createProject, createPattern, getSection, effectiveBpm,
     addSection as addSectionTo, removeSection as removeSectionFrom, moveSection as moveSectionIn,
     duplicateSection as duplicateSectionIn,
+    placeSection as placeSectionIn, moveEntry as moveEntryIn, removeEntry as removeEntryIn,
+    copyEntry as copyEntryIn, sectionUsage as sectionUsageIn,
     addPattern, removePattern, patternUsage,
 } from './project-model.js';
 import { profileStore } from './profile-store.js';
@@ -465,6 +467,56 @@ export function createProjectSession(store) {
             if (!project || !moveSectionIn(project, id, delta)) return false;
             changed('section', source, { sectionId });
             return true;
+        },
+
+        // --- The piece (the arrangement) ---
+        //
+        // Every one is a `section` event, so the editors and collab that
+        // already follow section changes follow these too.
+
+        /** Entry ids placing a section, in piece order (empty: unused). */
+        sectionUsage(id) {
+            const project = store.get();
+            return project ? sectionUsageIn(project, id) : [];
+        },
+
+        /** Place a section in the piece at `at` (default the end). Returns the entry. */
+        placeSection(id, at, source) {
+            const project = store.get();
+            if (!project) return null;
+            const entry = placeSectionIn(project, id, at);
+            if (entry) changed('section', source, { sectionId });
+            return entry;
+        },
+
+        /** Move an entry to index `to` in the piece. */
+        moveEntry(entryId, to, source) {
+            const project = store.get();
+            if (!project || !moveEntryIn(project, entryId, to)) return false;
+            changed('section', source, { sectionId });
+            return true;
+        },
+
+        /** Take an entry out of the piece; its section stays in the library. */
+        removeEntry(entryId, source) {
+            const project = store.get();
+            if (!project || !removeEntryIn(project, entryId)) return false;
+            changed('section', source, { sectionId });
+            return true;
+        },
+
+        /**
+         * Put a copy of an entry's section at that place in the piece (the
+         * other places keep the original). The copy becomes the edited one.
+         */
+        copyEntry(entryId, source) {
+            const project = store.get();
+            if (!project) return null;
+            const made = copyEntryIn(project, entryId);
+            if (!made) return null;
+            sectionId = made.id;
+            changed('section', source, { sectionId: made.id });
+            return made;
         },
 
         /**

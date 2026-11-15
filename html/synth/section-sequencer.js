@@ -266,7 +266,8 @@ export function createSectionSequence(project, section, opts = {}) {
 }
 
 /**
- * The whole piece: every section in order, end to end (`pieceLayout`), each
+ * The whole piece: every entry of the arrangement in order, end to end
+ * (`pieceLayout`) — a section placed twice plays twice — each
  * compiled as a section sequence over its full length — a section's own
  * loop is for working on it, not for the piece. A column is handed to the
  * section it falls in, shifted into that section's own columns, so the
@@ -301,12 +302,16 @@ export function createPieceSequence(project) {
         locate(col) {
             const p = partAt(col);
             const here = p.seq.locate(col - p.startCol);
-            return { ...here, sectionId: p.section.id, sectionCol: col - p.startCol };
+            return { ...here, sectionId: p.section.id, entryId: p.entry.id, sectionCol: col - p.startCol };
         },
-        /** Which section a piece column is in, and the column inside it. */
+        /**
+         * Which section a piece column is in, and the column inside it.
+         * `entryId` says *which* placement of it — a chorus placed three
+         * times is the same section at three entries.
+         */
         localize(col) {
             const p = partAt(col);
-            return { section: p.section, sectionId: p.section.id, col: col - p.startCol };
+            return { section: p.section, sectionId: p.section.id, entryId: p.entry.id, col: col - p.startCol };
         },
     };
 }

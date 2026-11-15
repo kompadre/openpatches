@@ -76,7 +76,7 @@ const MAX_CLIP_COL = 4096 * COLS_PER_MEASURE;
  * wrong. Written into every exported file and every stored body; phase 5's
  * import refuses what it does not understand rather than guessing.
  */
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;   // 2: `arrangement`, the piece's play order
 
 // --- Small helpers ---
 
@@ -348,14 +348,44 @@ export function createClip(partial = {}) {
  * orphans are dropped, because that is the first place both are in hand.
  */
 export function createSection(partial = {}) {
+    const id = partial.id || uid('sec');
     return {
-        id: partial.id || uid('sec'),
+        id,
         name: nonEmptyName(partial.name, 'Section'),
+        // What makes the same section recognisable each time it comes round
+        // in the piece. Stable per id until the user picks one.
+        color: HEX_COLOR.test(partial.color || '') ? partial.color : defaultSectionColor(id),
         bpm: partial.bpm == null ? null : clampInt(partial.bpm, MIN_BPM, MAX_BPM, DEFAULT_BPM),
         bpmEnd: partial.bpmEnd == null ? null : clampInt(partial.bpmEnd, MIN_BPM, MAX_BPM, DEFAULT_BPM),
         clips: (Array.isArray(partial.clips) ? partial.clips : []).map(createClip),
         loop: normalizeLoop(partial.loop),
         created: partial.created || Date.now(),
+    };
+}
+
+// Section colours: muted, and a different set from the patterns', since a
+// section block and the clips inside it are on screen together.
+export const SECTION_COLORS = [
+    '#7a6fb0', '#4f8fa8', '#5f9a6a', '#a8904a', '#a8664f', '#9a5f86',
+    '#5a7fc0', '#8a9a4f', '#4fa89a', '#b07a5a',
+];
+
+export function defaultSectionColor(id) {
+    let h = 0;
+    for (const ch of String(id)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    return SECTION_COLORS[h % SECTION_COLORS.length];
+}
+
+/**
+ * One place in the piece: which section plays there. Entries have their own
+ * id because a section can be placed many times (a chorus three times is
+ * three entries), and each of those is moved, removed or copied on its own.
+ */
+export function createEntry(partial = {}) {
+    const p = plainObject(partial);
+    return {
+        id: p.id ? String(p.id) : uid('ent'),
+        sectionId: String(p.sectionId || ''),
     };
 }
 
@@ -389,6 +419,10 @@ export function createProject(partial = {}) {
         fx: createProjectFx(p.fx),
         tracks: (Array.isArray(p.tracks) ? p.tracks : []).map(createTrack),
         sections: (Array.isArray(p.sections) ? p.sections : []).map(createSection),
+        // Absent (a schema-1 project) is not empty: normalizeProject derives
+        // it from the sections' order. An empty list is a piece with nothing
+        // placed yet.
+        arrangement: Array.isArray(p.arrangement) ? p.arrangement.map(createEntry) : undefined,
         patterns: normalizePatterns(p.patterns),
         // Carried verbatim — see above.
         patches: plainObject(p.patches),
@@ -436,6 +470,7 @@ function normalizeTags(raw) {
  *     (the model carries many), and a project with none has nothing to show.
  *   - **No orphan clips.** A clip whose track or pattern is gone cannot
  *     sound and has nowhere to be drawn.
+ *   - **An arrangement**, whose entries all name a section that exists.
  */
 export function normalizeProject(project) {
     const bySlot = new Map();
@@ -466,6 +501,21 @@ export function normalizeProject(project) {
         );
     }
     if (project.sections.length === 0) project.sections = [createSection({ name: 'Section 1' })];
+
+    // The piece. Missing → every section once, in the library's order: how
+    // a schema-1 project played. Otherwise entries must name a section that
+    // exists and carry an id of their own.
+    if (!Array.isArray(project.arrangement)) {
+        project.arrangement = project.sections.map(sec => createEntry({ sectionId: sec.id }));
+    } else {
+        const sectionIds = new Set(project.sections.map(sec => sec.id));
+        const seen = new Set();
+        project.arrangement = project.arrangement.map(createEntry).filter(e => {
+            if (!sectionIds.has(e.sectionId) || seen.has(e.id)) return false;
+            seen.add(e.id);
+            return true;
+        });
+    }
     return project;
 }
 
@@ -748,18 +798,49 @@ export function patternUsage(project, patternId) {
         .map(s => s.id);
 }
 
-export function addSection(project, partial = {}) {
+// --- Sections and the piece ---
+//
+// `project.sections` is the **library**: every section, used in the piece
+// or not, in the order the picker lists them. `project.arrangement` is the
+// **piece**: the order they play in, where a section can come round any
+// number of times (a chorus) or not at all. Editing a section changes it
+// everywhere it is placed.
+
+/** The entry ids that place a section, in piece order. */
+export function sectionUsage(project, sectionId) {
+    return project.arrangement.filter(e => e.sectionId === sectionId).map(e => e.id);
+}
+
+const entryIndex = (project, entryId) => project.arrangement.findIndex(e => e.id === entryId);
+
+/**
+ * A new section in the library. Placed at the end of the piece too unless
+ * `{ place: false }` — new sections are normally meant to be heard.
+ */
+export function addSection(project, partial = {}, { place = true } = {}) {
     const section = createSection({
         name: `Section ${project.sections.length + 1}`,
         ...partial,
     });
     project.sections.push(section);
+    if (place) project.arrangement.push(createEntry({ sectionId: section.id }));
     return section;
 }
 
+/** A section's copy: same tempo, loop and clips (new clip records, same patterns). */
+function copyOf(src) {
+    return createSection({
+        name: `${src.name} copy`,
+        bpm: src.bpm, bpmEnd: src.bpmEnd,
+        loop: src.loop ? { ...src.loop } : null,
+        clips: src.clips.map(c => createClip({ ...c, id: undefined })),
+    });
+}
+
 /**
- * A copy of a section, placed right after it in the piece: the same tempo,
- * loop and clips — each clip a new record pointing at the *same* pattern,
+ * A copy of a section: right after it in the library, and placed in the
+ * piece right after the original's first entry (at the end if the original
+ * is not placed). Each clip is a new record pointing at the *same* pattern,
  * since patterns are the project's library and a section only places them
  * (editing a pattern changes it in both sections, as it does in two clips of
  * one section). Named `<name> copy`. `null` if the section is not here.
@@ -767,50 +848,111 @@ export function addSection(project, partial = {}) {
 export function duplicateSection(project, sectionId) {
     const i = project.sections.findIndex(s => s.id === sectionId);
     if (i < 0) return null;
-    const src = project.sections[i];
-    const copy = createSection({
-        name: `${src.name} copy`,
-        bpm: src.bpm, bpmEnd: src.bpmEnd,
-        loop: src.loop ? { ...src.loop } : null,
-        clips: src.clips.map(c => createClip({ ...c, id: undefined })),
-    });
+    const copy = copyOf(project.sections[i]);
     project.sections.splice(i + 1, 0, copy);
+    const first = project.arrangement.findIndex(e => e.sectionId === sectionId);
+    const entry = createEntry({ sectionId: copy.id });
+    if (first < 0) project.arrangement.push(entry);
+    else project.arrangement.splice(first + 1, 0, entry);
     return copy;
 }
 
-/** Move a section `delta` places along the piece (−1 earlier, +1 later). */
+/**
+ * Make a copy of the section at one place in the piece, and put the copy
+ * there instead: "this chorus is different". The other entries keep the
+ * original. The copy goes right after the original in the library.
+ * Returns the copy, or `null` if the entry is not here.
+ */
+export function copyEntry(project, entryId) {
+    const entry = project.arrangement[entryIndex(project, entryId)];
+    if (!entry) return null;
+    const i = project.sections.findIndex(s => s.id === entry.sectionId);
+    if (i < 0) return null;
+    const copy = copyOf(project.sections[i]);
+    project.sections.splice(i + 1, 0, copy);
+    entry.sectionId = copy.id;
+    return copy;
+}
+
+/**
+ * Place a section in the piece at index `at` (default: the end). The same
+ * section may be placed any number of times. Returns the entry, or `null`
+ * if the section is not here.
+ */
+export function placeSection(project, sectionId, at = project.arrangement.length) {
+    if (!getSection(project, sectionId)) return null;
+    const entry = createEntry({ sectionId });
+    const to = clampInt(at, 0, project.arrangement.length, project.arrangement.length);
+    project.arrangement.splice(to, 0, entry);
+    return entry;
+}
+
+/** Move an entry to index `to` in the piece (clamped). */
+export function moveEntry(project, entryId, to) {
+    const i = entryIndex(project, entryId);
+    if (i < 0) return false;
+    const j = clampInt(to, 0, project.arrangement.length - 1, i);
+    if (i === j) return false;
+    const [e] = project.arrangement.splice(i, 1);
+    project.arrangement.splice(j, 0, e);
+    return true;
+}
+
+/** Take an entry out of the piece. The section stays in the library. */
+export function removeEntry(project, entryId) {
+    const i = entryIndex(project, entryId);
+    if (i < 0) return false;
+    project.arrangement.splice(i, 1);
+    return true;
+}
+
+/**
+ * Move a section `delta` places along the library (−1 earlier, +1 later),
+ * and its first entry the same distance along the piece. Transitional: it
+ * is what the old ▲/▼ mean while library and piece are still one list on
+ * screen — the same thing as before when every section is placed once.
+ */
 export function moveSection(project, sectionId, delta) {
     const i = project.sections.findIndex(s => s.id === sectionId);
     const j = i + delta;
     if (i < 0 || j < 0 || j >= project.sections.length) return false;
     const [s] = project.sections.splice(i, 1);
     project.sections.splice(j, 0, s);
+    const e = project.arrangement.findIndex(x => x.sectionId === sectionId);
+    if (e >= 0) moveEntry(project, project.arrangement[e].id, e + delta);
     return true;
 }
 
 /**
- * The piece: every section end to end, each starting on the bar after the
+ * The piece: every entry end to end, each starting on the bar after the
  * previous one ends (sections are whole bars long when played, as a section
  * alone is). Empty sections take no room. `startCol` is where each begins
- * in the piece; `total` is the piece's length.
+ * in the piece; `total` is the piece's length. A section placed twice is
+ * two parts.
  */
 export function pieceLayout(project) {
     const parts = [];
     let at = 0;
-    for (const section of project.sections) {
+    for (const entry of project.arrangement || []) {
+        const section = getSection(project, entry.sectionId);
+        if (!section) continue;
         const cols = Math.ceil(sectionLengthCols(project, section) / COLS_PER_MEASURE) * COLS_PER_MEASURE;
-        parts.push({ section, startCol: at, endCol: at + cols });
+        parts.push({ entry, section, startCol: at, endCol: at + cols });
         at += cols;
     }
     return { parts, total: at };
 }
 
-/** A project always has a section, so the last one cannot be removed. */
+/**
+ * Remove a section from the library, and every place it has in the piece.
+ * A project always has a section, so the last one cannot be removed.
+ */
 export function removeSection(project, sectionId) {
     if (project.sections.length <= 1) return false;
     const i = project.sections.findIndex(s => s.id === sectionId);
     if (i < 0) return false;
     project.sections.splice(i, 1);
+    project.arrangement = project.arrangement.filter(e => e.sectionId !== sectionId);
     return true;
 }
 

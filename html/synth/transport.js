@@ -45,7 +45,7 @@ import {
     createSectionSequence, createPatternSequence, createPieceSequence, msPerColumn,
     patternPlacements, nearestPlacement,
 } from './section-sequencer.js';
-import { COLS_PER_MEASURE, clipCols, bpmAt } from '../components/project-model.js';
+import { COLS_PER_MEASURE, clipCols, bpmAt, pieceLayout } from '../components/project-model.js';
 import * as midiManager from './midi-manager.js';
 
 const MODE_KEY = 'openpatches_transport_mode';
@@ -396,7 +396,12 @@ export function createTransport(opts) {
                     && span.startCol < endCol && span.endCol > startCol;
             });
         }
-        const sections = mode === 'piece' ? (session.get() || { sections: [] }).sections : [session.getSection()];
+        // The piece is what the arrangement places, not the whole library:
+        // an unplaced section does not play.
+        const project = session.get();
+        const sections = mode === 'piece'
+            ? (project ? pieceLayout(project).parts.map(p => p.section) : [])
+            : [session.getSection()];
         return sections.some(sec => sec && sec.clips.some(c => {
             const p = getPattern(c.patternId);
             return !!p && p.notes.length > 0;

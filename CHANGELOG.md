@@ -2,6 +2,22 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-15: The piece has its own play order — sections can be reused
+
+**`project.arrangement`** is the order the piece plays in, as entries `{ id, sectionId }`; **`project.sections`** becomes the library, where a section may sit unused. A section can be placed any number of times (a chorus three times is three entries, one section; editing it changes all three). Entries have their own ids because each placement is moved, removed or copied on its own, and the piece playhead needs to say *which* chorus is playing.
+
+**Schema 2.** A project without an arrangement — every schema-1 body and file — gets every section once in its current order, so it plays exactly as before. An explicit empty arrangement is kept (nothing placed yet). Entries naming a missing section, or repeating an id, are dropped by `normalizeProject`. A schema-1 reader refuses a schema-2 file instead of silently losing the repeats.
+
+**Model:** `placeSection(id, at)` (reuse), `moveEntry(entryId, to)`, `removeEntry(entryId)` (out of the piece; the section stays), `copyEntry(entryId)` ("this chorus is different": the entry plays a fresh copy, the others keep the original), `sectionUsage(id)`. `addSection` places at the end unless `{ place: false }`; `duplicateSection` places its copy after the original's first entry; `removeSection` takes every entry with it. `moveSection` is transitional: it moves the section in the library and its first entry in the piece, which is exactly the old behaviour while every section is placed once. Sections gain a `color` (stable per id, from a muted `SECTION_COLORS` set apart from the patterns'), for the Piece panel.
+
+**Everything that reads the order follows it:** `pieceLayout` walks the arrangement (a section placed twice is two parts, each carrying its `entry`); the piece sequence's `locate`/`localize` return `entryId`; the transport's "anything to play?" for the piece reads placed sections only; export writes `arrangement`. Collab: part sync carries the new top-level key unchanged. The op layer gets an `arrangement` atom, carried whole with last write wins. A section created or deleted groups with it. A new invariant flags an entry whose section is gone. Session: `placeSection`, `moveEntry`, `removeEntry`, `copyEntry` (the copy becomes the edited section), `sectionUsage`, each a `section` event.
+
+No visible change: the Piece panel is the next phase (TODO, "The Piece panel").
+
+Files: `html/components/project-model.js`, `project-session.js`, `project-io.js`, `collab-ops.js`, `html/synth/section-sequencer.js`, `transport.js`.
+
+Tests: new `piece.test.js` (24: migration, empty and dangling arrangements, reuse plays twice, which placement `localize` names, copyEntry leaving the others alone, export/import both schemas, collab atom, grouping and invariant); `project-session` +1. 1333 unit, 144 e2e.
+
 ## 2026-11-15: Mixer strip — FX joins the action row; remove moves to the corner and asks first
 
 **The strip's action row is now M · S · ▶ · FX**, the four things done to the sound. FX left the volume line (`.voicebank-meta` now holds only the number) and is reshaped to the row's 18 px height (28 px on a phone). **Remove (×) left the row** for the strip's top-right corner. It is structural rather than a mix action, the only strip button that clicking again cannot undo, and it sat 3 px from preview. It stays dim but always visible, since touch has no hover, and is last in the DOM so Tab reaches it after the row. **Remove now asks first** with `confirm()`, naming the slot and track. The collab presence badge (`.peer-editing::after`) moves to the strip's top *left* so the corner stays the ×'s. On the phone rows, the controls leave 32 px on the right for it.

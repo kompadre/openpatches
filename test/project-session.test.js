@@ -110,6 +110,26 @@ describe('the edited section', () => {
         assert.equal(session.duplicateSection('ghost', 'test'), null);
     });
 
+    test('the piece: place, move, remove and copy entries, each a section event', async () => {
+        const project = await session.init();
+        const first = project.sections[0];
+        const kinds = [];
+        session.subscribe((e) => { if (e.kind === 'section') kinds.push(e.sectionId); });
+        const again = session.placeSection(first.id, undefined, 'test');
+        assert.deepEqual(session.sectionUsage(first.id), [project.arrangement[0].id, again.id]);
+        assert.equal(session.moveEntry(again.id, 0, 'test'), true);
+        assert.equal(project.arrangement[0].id, again.id);
+        const copy = session.copyEntry(again.id, 'test');
+        assert.equal(again.sectionId, copy.id);
+        assert.equal(session.getSectionId(), copy.id, 'the copy becomes the edited one');
+        assert.equal(session.removeEntry(again.id, 'test'), true);
+        assert.deepEqual(session.sectionUsage(copy.id), [], 'unplaced, still in the library');
+        assert.ok(project.sections.includes(copy));
+        assert.equal(kinds.length, 4);
+        assert.equal(session.placeSection('ghost', undefined, 'test'), null);
+        assert.equal(session.removeEntry('ghost', 'test'), false);
+    });
+
     test('a section this project does not have is refused', async () => {
         const project = await session.init();
         assert.equal(session.setSection('ghost', 'test'), false);

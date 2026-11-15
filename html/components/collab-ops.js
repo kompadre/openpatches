@@ -14,7 +14,8 @@
 //   section/<id>/{name,bpm,bpmEnd,loop,created}
 //   section/<id>/clip/<clipId>                        exists
 //   section/<id>/clip/<clipId>/{trackId,patternId,startCol,repeats,lengthCols}
-//   sections/order                                    the section ids, in order
+//   sections/order                                    the library's section ids, in order
+//   arrangement                                       the piece: [{id, sectionId}], whole
 //   patch/<id> · patchName/<id> · job/<id>            whole (the bench)
 //   canvas/<patches|containers>/<id>                  exists
 //   canvas/<patches|containers>/<id>/<field>
@@ -33,7 +34,8 @@
 // editor saw. Ops come in **groups**, accepted or rejected whole: an
 // entity created or deleted with everything under it, a note moved (one
 // pitch deleted and inserted in one pattern), a new pattern with the clip
-// that places it, a section created or deleted with the order. Anything
+// that places it, a section created or deleted with the order and the
+// arrangement (a new section is placed; a removed one leaves it). Anything
 // else is a group of one. (The clip rule runs both ways: a deleted
 // pattern takes the clips that played it, as removePattern does.)
 //
@@ -78,6 +80,9 @@ export function readAtoms(body) {
     put('name', body.name);
     put('bpm', body.bpm);
     put('tags', body.tags);
+    // Whole, last write wins: moves are rare and small, and an entry-level
+    // merge of a reordered list is not worth its edge cases yet.
+    put('arrangement', body.arrangement);
     for (const [k, v] of Object.entries(body.fx || {})) put('fx/' + k, v);
 
     for (const [id, p] of Object.entries(body.patterns || {})) {
@@ -138,7 +143,7 @@ export function parseAtom(atom) {
     const p = atom.split('/');
     if (p.some(s => !s)) return null;
     switch (p[0]) {
-    case 'name': case 'bpm': case 'tags':
+    case 'name': case 'bpm': case 'tags': case 'arrangement':
         return p.length === 1 ? { kind: 'top', field: p[0] } : null;
     case 'fx':
         return p.length === 2 ? { kind: 'fx', field: p[1] } : null;
@@ -274,10 +279,11 @@ export function groupOps(ops) {
         }
     });
 
-    // A section created or deleted carries the order with it.
-    const order = at.get('sections/order');
-    if (order != null) {
-        ops.forEach((op, i) => { if (parseAtom(op.atom)?.kind === 'section') union(i, order); });
+    // A section created or deleted carries the order and the piece with it.
+    for (const key of ['sections/order', 'arrangement']) {
+        const k = at.get(key);
+        if (k == null) continue;
+        ops.forEach((op, i) => { if (parseAtom(op.atom)?.kind === 'section') union(i, k); });
     }
 
     // A note moved: one pitch in one pattern both deleted and inserted.
@@ -528,7 +534,7 @@ function setNote(p, start, midi, dur) {
 
 /**
  * What is wrong with `body` that no single op could see: two tracks on a
- * slot, too many tracks, a clip whose track or pattern is gone, two clips
+ * slot, too many tracks, a clip whose track or pattern is gone, a piece entry whose section is gone, two clips
  * on one track overlapping, a note outside its pattern. Each with the
  * atoms it involves — a group is implicated when one of its ops' atoms is
  * one of these or lies under one (see implicates).
@@ -570,6 +576,12 @@ export function checkInvariants(body) {
                     });
                 }
             }
+        }
+    }
+    const sectionIds = new Set((body.sections || []).map(s => s.id));
+    for (const e of Array.isArray(body.arrangement) ? body.arrangement : []) {
+        if (!e || !sectionIds.has(e.sectionId)) {
+            out.push({ reason: 'the piece places a section that is gone', atoms: ['arrangement', 'section/' + (e && e.sectionId)] });
         }
     }
     for (const [id, p] of Object.entries(body.patterns || {})) {
