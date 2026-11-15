@@ -36,7 +36,7 @@
 
 import {
     addClip, updateClip, removeClip, removeTrack, setTrackSlot, createClip, findClipOverlap, defaultPatternName, forkPattern,
-    clipCols, clipRepeats, sectionLength, createTrack,
+    clipCols, clipRepeats, sectionLength, createTrack, pieceLayout, sectionUsage,
     COLS_PER_MEASURE, MAX_SLOTS, MIN_BPM, MAX_BPM,
 } from './project-model.js';
 import { selectionMade, onSelectionElsewhere } from './selection-bus.js';
@@ -56,6 +56,7 @@ const SNAP_KEY = 'openpatches_song_snap';
 const ZOOM_KEY = 'openpatches_song_zoom';
 const LIBRARY_KEY = 'openpatches_section_library';   // '1' while the library is folded
 const LIBRARY_SCOPE_KEY = 'openpatches_section_library_scope';   // 'section' | 'global'
+const PIECE_KEY = 'openpatches_section_piece';       // '1' while the Piece panel is folded
 // Grid resolutions, in columns. Half a bar is the default: one step finer
 // than whole bars, so the faint half-bar lines show that the grid goes
 // below the bar and the Snap selector is worth finding.
@@ -128,6 +129,12 @@ export function createSectionEditor(opts = {}) {
     actions.className = 'section-clip-actions';
     const status = document.createElement('div');
     status.className = 'section-status';
+    // The piece: the sections in play order, folding from the top as the
+    // pattern library folds from the bottom. Its header always says which
+    // section is on screen, folded or not.
+    const piece = document.createElement('div');
+    piece.className = 'section-piece';
+    root.appendChild(piece);
     root.appendChild(toolbar);
     root.appendChild(grid);
     root.appendChild(actions);
@@ -248,64 +255,236 @@ export function createSectionEditor(opts = {}) {
         return b;
     }
 
-    function renderToolbar(project) {
-        toolbar.innerHTML = '';
+    // --- The Piece panel ---
+    //
+    // Header (always): fold toggle with the piece's length; the edited
+    // section's colour, name, tempo and where it is used. Body: one block
+    // per entry of the arrangement, in play order, sized by bars and
+    // painted in the section's colour — every block of the edited section
+    // lit, the picked one most; then the library row: every section (used
+    // or not) in the select, and what to do with it.
 
-        // The piece's sections, in order: pick one to edit, add, remove,
-        // move it earlier or later. The model has carried many sections
-        // since the project arrived; this row is what lets the user have
-        // more than one.
+    let pieceFolded = (() => { try { return localStorage.getItem(PIECE_KEY) === '1'; } catch { return false; } })();
+    // Which placement of the edited section is meant — a chorus placed
+    // three times is one section and three entries. Follows the section:
+    // kept while it is one of the edited section's, else its first.
+    let pickedEntryId = null;
+
+    function syncPickedEntry(project) {
+        const e = project.arrangement.find(x => x.id === pickedEntryId);
+        if (e && e.sectionId === sec().id) return;
+        const first = project.arrangement.find(x => x.sectionId === sec().id);
+        pickedEntryId = first ? first.id : null;
+    }
+
+    const ordinal = (n) => n + ([, 'st', 'nd', 'rd'][n % 100 > 10 && n % 100 < 14 ? 0 : n % 10] || 'th');
+    const bars = (n) => `${n} bar${n === 1 ? '' : 's'}`;
+
+    function pickSection(id, entryId = null) {
+        pick(null);
+        if (stamp) cancelStamp();
+        pickedEntryId = entryId;
+        if (id === sec().id) { render(); return; }
+        session.setSection(id, 'section-editor');
+    }
+
+    function renderPiece(project) {
+        piece.innerHTML = '';
+        syncPickedEntry(project);
+        piece.classList.toggle('folded', pieceFolded);
+        const layout = pieceLayout(project);
+        const uses = sectionUsage(project, sec().id);
+
+        // --- Header ---
+        const head = document.createElement('div');
+        head.className = 'section-piece-head';
+        head.appendChild(button((pieceFolded ? '▸' : '▾') + ' Piece · ' + bars(layout.total / COLS_PER_MEASURE),
+            pieceFolded ? 'Show the piece: every section in the order it plays' : 'Fold the piece away', () => {
+                pieceFolded = !pieceFolded;
+                try { localStorage.setItem(PIECE_KEY, pieceFolded ? '1' : '0'); } catch { /* ignore */ }
+                render();
+            }, 'section-piece-toggle'));
+
+        const swatch = document.createElement('span');
+        swatch.className = 'section-piece-swatch';
+        swatch.style.background = sec().color;
+        head.appendChild(swatch);
+
+        const name = document.createElement('input');
+        name.className = 'section-name';
+        name.type = 'text';
+        name.value = sec().name;
+        name.title = 'The section on screen — its name';
+        name.addEventListener('change', () => {
+            const v = String(name.value).trim();
+            if (!v) { name.value = sec().name; return; }
+            session.renameSection(v, 'section-editor');
+        });
+        head.appendChild(name);
+
+        const len = document.createElement('span');
+        len.className = 'section-piece-len';
+        len.textContent = bars(sectionLength(project, sec()));
+        head.appendChild(len);
+
+        // The section's tempo: its own start tempo (blank — the project's,
+        // shown as the placeholder) and, optionally, the tempo it ramps to
+        // by its end — a rit. or an accel. (blank — holds).
+        const tempoLabel = document.createElement('label');
+        tempoLabel.className = 'section-field section-tempo';
+        tempoLabel.title = 'This section\'s tempo: blank is the project\'s. "→" is the tempo it reaches by its last bar — blank holds the tempo';
+        tempoLabel.appendChild(document.createTextNode('Tempo '));
+        const bpmStart = document.createElement('input');
+        bpmStart.type = 'number';
+        bpmStart.className = 'section-bpm-start';
+        bpmStart.min = String(MIN_BPM);
+        bpmStart.max = String(MAX_BPM);
+        bpmStart.placeholder = String(project.bpm);
+        bpmStart.value = sec().bpm == null ? '' : String(sec().bpm);
+        const bpmEnd = document.createElement('input');
+        bpmEnd.type = 'number';
+        bpmEnd.className = 'section-bpm-end';
+        bpmEnd.min = String(MIN_BPM);
+        bpmEnd.max = String(MAX_BPM);
+        bpmEnd.placeholder = 'holds';
+        bpmEnd.value = sec().bpmEnd == null ? '' : String(sec().bpmEnd);
+        const readTempo = (el) => {
+            if (String(el.value).trim() === '') return null;
+            const v = parseInt(el.value);
+            return Number.isFinite(v) ? Math.max(MIN_BPM, Math.min(MAX_BPM, v)) : null;
+        };
+        const applyTempo = () => {
+            session.setSectionTempo({ bpm: readTempo(bpmStart), bpmEnd: readTempo(bpmEnd) }, 'section-editor');
+            if (transport && transport.refresh) transport.refresh();
+        };
+        bpmStart.addEventListener('change', applyTempo);
+        bpmEnd.addEventListener('change', applyTempo);
+        tempoLabel.appendChild(bpmStart);
+        tempoLabel.appendChild(document.createTextNode(' → '));
+        tempoLabel.appendChild(bpmEnd);
+        head.appendChild(tempoLabel);
+
+        const usage = document.createElement('span');
+        usage.className = 'section-piece-usage' + (uses.length ? '' : ' unused');
+        const at = uses.indexOf(pickedEntryId);
+        usage.textContent = uses.length === 0 ? 'not in the piece'
+            : uses.length === 1 ? '' : `${ordinal(at + 1)} of ${uses.length}`;
+        usage.title = uses.length > 1 ? 'Placed ' + uses.length + ' times — an edit here changes every one' : '';
+        head.appendChild(usage);
+        piece.appendChild(head);
+        if (pieceFolded) return;
+
+        // --- The strip: one block per entry ---
+        const strip = document.createElement('div');
+        strip.className = 'section-piece-strip';
+        if (layout.parts.length === 0) {
+            const empty = document.createElement('div');
+            empty.className = 'section-piece-empty';
+            empty.textContent = 'Nothing in the piece yet — pick a section below and + Add to piece.';
+            strip.appendChild(empty);
+        }
+        layout.parts.forEach((part, i) => {
+            const n = (part.endCol - part.startCol) / COLS_PER_MEASURE;
+            const mine = part.section.id === sec().id;
+            const b = document.createElement('button');
+            b.className = 'section-piece-block'
+                + (mine ? ' edited' : '')
+                + (part.entry.id === pickedEntryId ? ' picked' : '')
+                + (n === 0 ? ' empty' : '');
+            b.dataset.entryId = part.entry.id;
+            b.dataset.sectionId = part.section.id;
+            b.style.setProperty('--block-color', part.section.color);
+            // Width by bars, so the piece reads as time; a floor keeps a
+            // one-bar block clickable and labelled.
+            b.style.setProperty('--block-bars', String(Math.max(n, 0)));
+            b.title = `${i + 1}. ${part.section.name} — ${bars(n)}, from bar ${part.startCol / COLS_PER_MEASURE + 1}`;
+            const label = document.createElement('span');
+            label.className = 'section-piece-block-name';
+            label.textContent = part.section.name;
+            const meta = document.createElement('span');
+            meta.className = 'section-piece-block-bars';
+            meta.textContent = String(n);
+            b.appendChild(label);
+            b.appendChild(meta);
+            b.addEventListener('click', (e) => { e.stopPropagation(); pickSection(part.section.id, part.entry.id); });
+            strip.appendChild(b);
+        });
+        piece.appendChild(strip);
+
+        // --- The library row ---
         const row = document.createElement('div');
         row.className = 'section-pick-row';
-        const pickLabel = document.createElement('label');
-        pickLabel.className = 'section-pick-label';
-        pickLabel.textContent = 'Section';
         const pickSel = document.createElement('select');
         pickSel.className = 'section-pick';
-        pickSel.title = 'The section on screen — pick another to edit it';
-        project.sections.forEach((s, i) => {
+        pickSel.title = 'Every section, in the piece or not — pick one to edit it';
+        for (const s of project.sections) {
+            const n = sectionUsage(project, s.id).length;
             const opt = document.createElement('option');
             opt.value = s.id;
-            opt.textContent = `${i + 1}. ${s.name}`;
+            opt.textContent = s.name + (n === 0 ? ' · unused' : n > 1 ? ` · ×${n}` : '');
             if (s.id === sec().id) opt.selected = true;
             pickSel.appendChild(opt);
-        });
+        }
         pickSel.value = sec().id;
-        pickSel.addEventListener('change', () => {
+        pickSel.addEventListener('change', () => pickSection(pickSel.value));
+        row.appendChild(pickSel);
+
+        row.appendChild(button('+ Add to piece', 'Place this section at the end of the piece — again, if it is there already', () => {
+            const entry = session.placeSection(sec().id, undefined, 'section-editor');
+            if (entry) { pickedEntryId = entry.id; render(); }
+        }, 'section-btn section-place'));
+
+        // ◀ ▶ and Remove act on the picked block: one placement, not the section.
+        const i = project.arrangement.findIndex(e => e.id === pickedEntryId);
+        const earlier = button('◀', 'Move this block earlier in the piece',
+            () => session.moveEntry(pickedEntryId, i - 1, 'section-editor'), 'section-btn section-move-up');
+        earlier.disabled = i <= 0;
+        const later = button('▶', 'Move this block later in the piece',
+            () => session.moveEntry(pickedEntryId, i + 1, 'section-editor'), 'section-btn section-move-down');
+        later.disabled = i < 0 || i >= project.arrangement.length - 1;
+        const unplace = button('− From piece', 'Take this block out of the piece — the section stays in the list', () => {
+            session.removeEntry(pickedEntryId, 'section-editor');
+        }, 'section-btn section-unplace');
+        unplace.disabled = i < 0;
+        row.appendChild(earlier);
+        row.appendChild(later);
+        row.appendChild(unplace);
+
+        const tools = document.createElement('span');
+        tools.className = 'section-pick-tools';
+        tools.appendChild(button('+ Section', 'A new, empty section at the end of the piece', () => {
             pick(null);
-            if (stamp) cancelStamp();
-            session.setSection(pickSel.value, 'section-editor');
-        });
-        pickLabel.appendChild(pickSel);
-        row.appendChild(pickLabel);
-        const idx = project.sections.findIndex(s => s.id === sec().id);
-        const up = button('▲', 'Move this section earlier in the piece',
-            () => session.moveSection(sec().id, -1, 'section-editor'), 'section-btn section-move-up');
-        up.disabled = idx <= 0;
-        const down = button('▼', 'Move this section later in the piece',
-            () => session.moveSection(sec().id, +1, 'section-editor'), 'section-btn section-move-down');
-        down.disabled = idx >= project.sections.length - 1;
-        row.appendChild(up);
-        row.appendChild(down);
-        row.appendChild(button('+ Section', 'A new, empty section at the end of the piece', () => {
-            pick(null);
+            pickedEntryId = null;
             session.addSection({}, 'section-editor');
         }, 'section-btn section-add'));
-        row.appendChild(button('⎘', 'Duplicate this section: a copy of its clips, tempo and loop, right after it', () => {
+        tools.appendChild(button('⎘', i >= 0
+            ? 'Make a copy: this block plays a copy of the section (clips, tempo, loop), the others keep the original'
+            : 'Make a copy of this section (clips, tempo, loop), placed at the end of the piece', () => {
             pick(null);
             if (stamp) cancelStamp();
-            session.duplicateSection(sec().id, 'section-editor');
+            if (i >= 0) session.copyEntry(pickedEntryId, 'section-editor');
+            else session.duplicateSection(sec().id, 'section-editor');
         }, 'section-btn section-duplicate'));
         const del = button('✕', 'Remove this section', () => {
             const n = sec().clips.length;
-            if (n > 0 && !confirm(`Remove "${sec().name}" and its ${n} clip${n > 1 ? 's' : ''}?`)) return;
+            const placed = uses.length;
+            const what = [n ? `its ${n} clip${n > 1 ? 's' : ''}` : '', placed ? `its ${placed} place${placed > 1 ? 's' : ''} in the piece` : '']
+                .filter(Boolean).join(' and ');
+            if (!confirm(`Remove section "${sec().name}"${what ? ' with ' + what : ''}? This cannot be undone.`)) return;
             pick(null);
+            pickedEntryId = null;
             session.removeSection(sec().id, 'section-editor');
         }, 'section-btn section-remove');
         del.disabled = project.sections.length <= 1;
-        del.title = del.disabled ? 'A project keeps at least one section' : 'Remove this section';
-        row.appendChild(del);
-        toolbar.appendChild(row);
+        del.title = del.disabled ? 'A project keeps at least one section' : 'Remove this section from the project — asks first';
+        tools.appendChild(del);
+        row.appendChild(tools);
+        piece.appendChild(row);
+    }
+
+    function renderToolbar(project) {
+        toolbar.innerHTML = '';
+
 
         // Play, Stop and BPM used to be here too; they are the transport
         // bar's now, above every panel, with a Section/Pattern switch.
@@ -328,21 +507,6 @@ export function createSectionEditor(opts = {}) {
         copy.disabled = !stamp && picked.size === 0;
         toolbar.appendChild(copy);
 
-        // This toolbar edits the **section** on screen. Choosing, creating
-        // and deleting *projects* used to live here too — a project is the
-        // whole piece now, far bigger than this panel, so it moved to the
-        // File menu.
-        const name = document.createElement('input');
-        name.className = 'section-name';
-        name.type = 'text';
-        name.value = sec().name;
-        name.title = 'Section name';
-        name.addEventListener('change', () => {
-            const v = String(name.value).trim();
-            if (!v) { name.value = sec().name; return; }
-            session.renameSection(v, 'section-editor');
-        });
-        toolbar.appendChild(name);
 
         // Loop range, shown as inclusive 1-based bars ("bars 1 to 4"),
         // stored as a 0-based half-open range ({start: 0, end: 4}).
@@ -381,42 +545,6 @@ export function createSectionEditor(opts = {}) {
         loopEnd.addEventListener('change', applyLoop);
         toolbar.appendChild(loopLabel);
 
-        // The section's tempo: its own start tempo (blank — the project's,
-        // shown as the placeholder) and, optionally, the tempo it ramps to
-        // by its end — a rit. or an accel. (blank — holds).
-        const tempoLabel = document.createElement('label');
-        tempoLabel.className = 'section-field section-tempo';
-        tempoLabel.title = 'This section\'s tempo: blank is the project\'s. "→" is the tempo it reaches by its last bar — blank holds the tempo';
-        tempoLabel.appendChild(document.createTextNode('Tempo '));
-        const bpmStart = document.createElement('input');
-        bpmStart.type = 'number';
-        bpmStart.className = 'section-bpm-start';
-        bpmStart.min = String(MIN_BPM);
-        bpmStart.max = String(MAX_BPM);
-        bpmStart.placeholder = String(project.bpm);
-        bpmStart.value = sec().bpm == null ? '' : String(sec().bpm);
-        const bpmEnd = document.createElement('input');
-        bpmEnd.type = 'number';
-        bpmEnd.className = 'section-bpm-end';
-        bpmEnd.min = String(MIN_BPM);
-        bpmEnd.max = String(MAX_BPM);
-        bpmEnd.placeholder = 'holds';
-        bpmEnd.value = sec().bpmEnd == null ? '' : String(sec().bpmEnd);
-        const readTempo = (el) => {
-            if (String(el.value).trim() === '') return null;
-            const v = parseInt(el.value);
-            return Number.isFinite(v) ? Math.max(MIN_BPM, Math.min(MAX_BPM, v)) : null;
-        };
-        const applyTempo = () => {
-            session.setSectionTempo({ bpm: readTempo(bpmStart), bpmEnd: readTempo(bpmEnd) }, 'section-editor');
-            if (transport && transport.refresh) transport.refresh();
-        };
-        bpmStart.addEventListener('change', applyTempo);
-        bpmEnd.addEventListener('change', applyTempo);
-        tempoLabel.appendChild(bpmStart);
-        tempoLabel.appendChild(document.createTextNode(' → '));
-        tempoLabel.appendChild(bpmEnd);
-        toolbar.appendChild(tempoLabel);
 
         // Snap and zoom are view settings, not part of the project: they are
         // persisted on their own and a re-render reads them back.
@@ -1262,6 +1390,7 @@ export function createSectionEditor(opts = {}) {
         // Notes selected in the roll go when clips are selected here (see
         // selection-bus.js) — and ours go when the roll selects.
         if (picked.size || stamp) selectionMade('section');
+        renderPiece(project);
         renderToolbar(project);
         renderGrid(project);
         drawStamp();

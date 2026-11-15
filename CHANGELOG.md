@@ -2,6 +2,16 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-15: The Piece panel — the piece as blocks, folding from the top of the Section pane
+
+The two crowded toolbar rows become a **Piece panel** above the grid, folding as the pattern library folds below it (remembered, `openpatches_section_piece`). **Its header is always there**: `▾ Piece · 48 bars`, then the edited section's colour, name, length, tempo, and where it is — "2nd of 3" when reused, "not in the piece" when unused. **The strip** is one block per entry, in play order, width by bars with a floor, wrapping so the whole piece is in view; every block of the edited section is lit and the picked one outlined, and a click edits that section at that placement. **The row under it**: the section select, which now lists the whole library with its use (`Chorus · ×3`, `Outro idea · unused`) rather than numbering the piece; `+ Add to piece` (reuse); `◀ ▶` and `− From piece` on the picked block (no confirm — the section stays); `+ Section`; `⎘` *makes a copy* for the picked block only, or copies an unplaced section to the end; `✕` removes the section from the project and always confirms, naming its clips and placements and that it cannot be undone. The toolbar keeps the editing tools only.
+
+◀ ▶ and − From piece were planned for phase 3 and came forward so the panel is usable before drag. `moveSection` is no longer called by the UI. Hover backgrounds on the toggle and blocks are restated: the global `button:hover` (0,1,1) outranks a bare class and painted them the app's red. Phones hide the strip for now so the grid keeps its height; their layout is a later session's.
+
+Files: `html/components/section-editor.js`, `html/style.css`.
+
+Tests: section-editor's section list rewritten as "the Piece panel" (10: the select's labels, removal always asking, reuse lighting every block, picking a placement, ◀ ▶ and − From piece, both ⎘ cases, the empty piece, the fold remembered); e2e `piece` updated and +2 (a section placed twice plays twice; folded survives a reload). 1340 unit, 146 e2e.
+
 ## 2026-11-15: The piece has its own play order — sections can be reused
 
 **`project.arrangement`** is the order the piece plays in, as entries `{ id, sectionId }`; **`project.sections`** becomes the library, where a section may sit unused. A section can be placed any number of times (a chorus three times is three entries, one section; editing it changes all three). Entries have their own ids because each placement is moved, removed or copied on its own, and the piece playhead needs to say *which* chorus is playing.

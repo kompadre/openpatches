@@ -5861,8 +5861,83 @@ footer {
 .section-library-scope:last-child { border-radius: 0 4px 4px 0; }
 .section-library-scope.active { background: #e94560; border-color: #e94560; color: #fff; position: relative; }
 
-/* --- Section: the piece's sections, and the section tempo --- */
-.section-pick-row { display: flex; align-items: center; gap: 0.25rem; width: 100%; }
+/* --- Section: the Piece panel, folding from the top --- */
+.section-piece {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    padding: 0.25rem 0.3rem 0.35rem;
+    border-bottom: 1px solid #2a2a3e;
+    margin-bottom: 0.2rem;
+    font-size: 0.75rem;
+    color: #ccc;
+}
+.section-piece.folded { padding-bottom: 0.25rem; }
+.section-piece-head { display: flex; align-items: center; flex-wrap: wrap; gap: 0.35rem; }
+.section-piece-toggle {
+    background: transparent; border: none; color: #999; cursor: pointer;
+    font-size: 0.7rem; padding: 0.1rem 0.1rem; white-space: nowrap;
+}
+.section-piece-toggle:hover { color: #fff; background: transparent; }
+.section-piece-swatch { width: 10px; height: 10px; border-radius: 2px; flex: 0 0 auto; }
+.section-piece-len, .section-piece-usage { color: #888; font-size: 0.68rem; white-space: nowrap; }
+.section-piece-usage.unused { color: #c9a227; }
+.section-piece-head input[type="text"],
+.section-piece-head input[type="number"],
+.section-pick-row select {
+    background: #0f0f23; color: #ddd; border: 1px solid #333; border-radius: 4px;
+    padding: 0.15rem 0.3rem; font-size: 0.75rem;
+}
+.section-piece-head .section-tempo { display: inline-flex; align-items: center; gap: 0.2rem; color: #999; font-size: 0.7rem; }
+
+/* The strip: the piece in play order, wrapping rather than scrolling so
+   the whole of it is in view. A block's width is its length in bars,
+   with a floor that keeps a one-bar block clickable and labelled. */
+.section-piece-strip { display: flex; flex-wrap: wrap; gap: 3px; }
+.section-piece-block {
+    --block-color: #7a6fb0;
+    flex: 0 0 auto;
+    width: max(2.8rem, calc(var(--block-bars, 1) * 0.9rem));
+    max-width: 100%;
+    height: 1.9rem;
+    display: flex; flex-direction: column; justify-content: center; align-items: flex-start;
+    padding: 0 0.3rem;
+    box-sizing: border-box;
+    background: color-mix(in srgb, var(--block-color) 28%, #12121f);
+    border: 1px solid color-mix(in srgb, var(--block-color) 45%, #12121f);
+    border-left: 3px solid var(--block-color);
+    border-radius: 3px;
+    color: #bbb;
+    font: inherit; text-align: left;
+    cursor: pointer;
+    overflow: hidden;
+}
+/* Background restated: the global `button:hover` outranks a bare class. */
+.section-piece-block:hover {
+    color: #fff; border-color: var(--block-color);
+    background: color-mix(in srgb, var(--block-color) 40%, #12121f);
+}
+.section-piece-block.edited:hover { background: color-mix(in srgb, var(--block-color) 62%, #12121f); }
+/* Every block of the section on screen is lit; the picked one most. */
+.section-piece-block.edited {
+    background: color-mix(in srgb, var(--block-color) 55%, #12121f);
+    color: #fff;
+}
+.section-piece-block.picked { outline: 2px solid #fff; outline-offset: -1px; }
+.section-piece-block.empty { border-style: dashed; border-left-style: solid; opacity: 0.7; }
+.section-piece-block-name {
+    max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: 0.68rem; font-weight: 600; line-height: 1.1;
+}
+.section-piece-block-bars { font-size: 0.58rem; opacity: 0.7; line-height: 1.1; }
+.section-piece-empty { color: #777; font-size: 0.7rem; padding: 0.3rem 0; }
+
+/* The library row: every section in the select, and what to do with it. */
+.section-pick-row { display: flex; align-items: center; flex-wrap: wrap; gap: 0.25rem; width: 100%; }
+.section-pick-tools { display: inline-flex; gap: 0.25rem; margin-left: auto; }
+.section-place { white-space: nowrap; }
+.section-unplace { white-space: nowrap; }
 .section-pick-label {
     flex: 1 1 auto;
     min-width: 0;
@@ -5925,4 +6000,11 @@ footer {
     content: attr(data-pickers); position: absolute; bottom: 0.1rem; right: 0.15rem; z-index: 2;
     font-size: 0.6rem; line-height: 1; padding: 0.1rem 0.25rem; border-radius: 2px;
     background: var(--peer-color, #f0a030); color: #111; pointer-events: none; white-space: nowrap;
+}
+
+/* Phones: the Piece panel is desktop-first for now (2026-11-15). The strip
+   is hidden so the grid keeps its height; the header and the library row
+   still switch, add and place sections. A phone layout is next session's. */
+@media (max-width: 600px) {
+    .section-piece-strip { display: none; }
 }

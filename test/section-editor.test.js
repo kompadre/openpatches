@@ -1277,42 +1277,130 @@ describe('the library filter', () => {
     });
 });
 
-describe('the piece\'s sections', () => {
+describe('the Piece panel', () => {
     const opts = (h) => Array.from(h.btn('section-pick').querySelectorAll('option')).map(o => o.textContent);
-    test('the row lists them in order; pick, add, remove and move write through', () => {
-        const h = build({ patterns: [{ name: 'A' }], tracks: [{ slot: 0 }], clips: [{ track: 0, pattern: 0, at: 0 }] });
-        assert.deepEqual(opts(h), ['1. Section 1']);
+    const blocks = (h) => Array.from(h.root.querySelectorAll('.section-piece-block'));
+    const blockNames = (h) => blocks(h).map(b => b.querySelector('.section-piece-block-name').textContent);
+    const one = () => build({ patterns: [{ name: 'A' }], tracks: [{ slot: 0 }], clips: [{ track: 0, pattern: 0, at: 0 }] });
+
+    test('the select lists every section with its use; pick, add and remove write through', () => {
+        const h = one();
+        assert.deepEqual(opts(h), ['Section 1']);
         assert.equal(h.btn('section-remove').disabled, true, 'the last section stays');
         assert.equal(h.btn('section-move-up').disabled, true);
 
         h.btn('section-add').dispatch('click', ev());
-        assert.deepEqual(opts(h), ['1. Section 1', '2. Section 2']);
+        assert.deepEqual(opts(h), ['Section 1', 'Section 2']);
         assert.equal(h.section().name, 'Section 2', 'the new one is on screen');
         assert.equal(h.clips().length, 0, 'and empty');
-        assert.equal(h.btn('section-move-down').disabled, true);
-
-        h.btn('section-move-up').dispatch('click', ev());
-        assert.deepEqual(h.project().sections.map(s => s.name), ['Section 2', 'Section 1']);
-        assert.deepEqual(opts(h), ['1. Section 2', '2. Section 1']);
+        assert.deepEqual(blockNames(h), ['Section 1', 'Section 2'], 'and placed at the end');
 
         const pick = h.btn('section-pick');
-        pick.value = h.project().sections[1].id;
+        pick.value = h.project().sections[0].id;
         pick.dispatch('change');
         assert.equal(h.section().name, 'Section 1');
         assert.equal(h.clips().length, 1);
 
         h.btn('section-remove').dispatch('click', ev());             // confirm() is stubbed true
         assert.deepEqual(h.project().sections.map(s => s.name), ['Section 2']);
+        assert.deepEqual(blockNames(h), ['Section 2'], 'its block went with it');
         assert.equal(h.section().name, 'Section 2');
     });
 
-    test('⎘ duplicates the section on screen and shows the copy', () => {
+    test('removing a section always asks, and says what goes with it', () => {
+        const h = one();
+        h.btn('section-add').dispatch('click', ev());
+        const asked = [];
+        const was = globalThis.confirm;
+        globalThis.confirm = (m) => { asked.push(m); return false; };
+        try {
+            h.btn('section-remove').dispatch('click', ev());           // Section 2: no clips, placed once
+            assert.equal(h.project().sections.length, 2, 'cancel keeps it');
+            assert.match(asked[0], /Remove section "Section 2" with its 1 place in the piece\? This cannot be undone/);
+        } finally { globalThis.confirm = was; }
+    });
+
+    test('a block per entry, in play order; + Add to piece reuses the section', () => {
+        const h = one();
+        h.btn('section-add').dispatch('click', ev());                  // S1 S2, S2 on screen
+        h.btn('section-pick').value = h.project().sections[0].id;
+        h.btn('section-pick').dispatch('change');
+        h.btn('section-place').dispatch('click', ev());                // S1 S2 S1
+        assert.deepEqual(blockNames(h), ['Section 1', 'Section 2', 'Section 1']);
+        assert.deepEqual(opts(h), ['Section 1 · ×2', 'Section 2']);
+        const [b0, b1, b2] = blocks(h);
+        assert.ok(b0.classList.contains('edited') && b2.classList.contains('edited'), 'every block of the edited section is lit');
+        assert.ok(!b1.classList.contains('edited'));
+        assert.ok(b2.classList.contains('picked') && !b0.classList.contains('picked'), 'the new block is the picked one');
+        assert.equal(h.root.querySelector('.section-piece-usage').textContent, '2nd of 2');
+    });
+
+    test('clicking a block edits its section and picks that placement', () => {
+        const h = one();
+        h.btn('section-place').dispatch('click', ev());                // S1 S1
+        h.btn('section-add').dispatch('click', ev());                  // S1 S1 S2
+        blocks(h)[1].dispatch('click', ev());
+        assert.equal(h.section().name, 'Section 1');
+        assert.ok(blocks(h)[1].classList.contains('picked'));
+        assert.equal(h.root.querySelector('.section-piece-usage').textContent, '2nd of 2');
+        blocks(h)[0].dispatch('click', ev());
+        assert.equal(h.root.querySelector('.section-piece-usage').textContent, '1st of 2');
+    });
+
+    test('◀ ▶ move the picked block, − From piece takes it out and the section stays', () => {
+        const h = one();
+        h.btn('section-add').dispatch('click', ev());                  // S1 S2, S2 picked
+        h.btn('section-move-up').dispatch('click', ev());
+        assert.deepEqual(blockNames(h), ['Section 2', 'Section 1']);
+        assert.equal(h.btn('section-move-up').disabled, true);
+        h.btn('section-move-down').dispatch('click', ev());
+        assert.deepEqual(blockNames(h), ['Section 1', 'Section 2']);
+
+        h.btn('section-unplace').dispatch('click', ev());
+        assert.deepEqual(blockNames(h), ['Section 1']);
+        assert.equal(h.section().name, 'Section 2', 'still on screen');
+        assert.deepEqual(opts(h), ['Section 1', 'Section 2 · unused']);
+        assert.equal(h.root.querySelector('.section-piece-usage').textContent, 'not in the piece');
+        assert.equal(h.btn('section-unplace').disabled, true, 'nothing placed to take out');
+    });
+
+    test('⎘ on a block: that block plays a copy, the others keep the original', () => {
         const h = build({ patterns: [{ name: 'A' }], tracks: [{ slot: 0 }], clips: [{ track: 0, pattern: 0, at: 0 }, { track: 0, pattern: 0, at: 2 }] });
+        h.btn('section-place').dispatch('click', ev());                // S1 S1, the second picked
         h.btn('section-duplicate').dispatch('click', ev());
-        assert.deepEqual(opts(h), ['1. Section 1', '2. Section 1 copy']);
+        assert.deepEqual(blockNames(h), ['Section 1', 'Section 1 copy']);
         assert.equal(h.section().name, 'Section 1 copy', 'the copy is on screen');
         assert.equal(h.clips().length, 2, 'with its clips');
-        assert.equal(h.btn('section-remove').disabled, false);
+        assert.deepEqual(opts(h), ['Section 1', 'Section 1 copy']);
+    });
+
+    test('⎘ on an unplaced section copies it to the end of the piece', () => {
+        const h = one();
+        h.btn('section-unplace').dispatch('click', ev());
+        h.btn('section-duplicate').dispatch('click', ev());
+        assert.deepEqual(blockNames(h), ['Section 1 copy']);
+    });
+
+    test('an empty piece says how to fill it', () => {
+        const h = one();
+        h.btn('section-unplace').dispatch('click', ev());
+        assert.match(h.root.querySelector('.section-piece-empty').textContent, /Add to piece/);
+        assert.match(h.btn('section-piece-toggle').textContent, /Piece · 0 bars/);
+    });
+
+    test('folded, the header still names the section on screen; the fold is remembered', () => {
+        const h = one();
+        h.btn('section-piece-toggle').dispatch('click', ev());
+        assert.equal(blocks(h).length, 0, 'no strip');
+        assert.equal(h.btn('section-pick'), null, 'no library row');
+        assert.equal(h.btn('section-name').value, 'Section 1', 'the name is in the header');
+        assert.ok(h.btn('section-bpm-start'), 'and the tempo');
+        assert.equal(localStorage.getItem('openpatches_section_piece'), '1');
+        h.editor.destroy();
+        const again = one();
+        assert.equal(again.root.querySelectorAll('.section-piece-block').length, 0, 'still folded after a rebuild');
+        again.btn('section-piece-toggle').dispatch('click', ev());
+        assert.equal(again.root.querySelectorAll('.section-piece-block').length, 1);
     });
 
     test('the tempo fields: blank is the project\'s, the arrow is the end tempo', () => {
