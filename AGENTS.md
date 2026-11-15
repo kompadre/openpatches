@@ -43,6 +43,8 @@
 - VoiceBank channel = array index. Entries have no `channel` property. Slot IS the channel.
 - Keep `HEARME.tts` up to date when making significant architectural changes. It's a spoken-word audio tour of the codebase optimized for TTS. Update the commit hash and date in the preamble.
 - Use npx playwright to render Web UI or hunting for an illusive JavaScript behavioral bug. 
+- Do not use screenshots to report work to the user — they will reload the page and look for themselves. Describe what changed in words instead.
+- Do use Playwright to check your own UI changes visually while working (screenshots for your own inspection, not for the user): layout, overlap, hover and focus states, wrapping at realistic pane widths. Remove any throwaway spec files afterwards.
 
 ## Git & Version Control Rules
 
