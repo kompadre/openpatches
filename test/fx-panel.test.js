@@ -157,7 +157,7 @@ describe('the strip', () => {
         assert.equal(count(3), '0');
     });
 
-    test('FX joins M / S / preview in the action row; remove sits apart', () => {
+    test('FX leads M / S / preview in the action row; remove sits apart', () => {
         const session = seed([{ id: 'a', slot: 0 }]);
         const bank = createVoiceBank({ session });
         const item = bank.querySelectorAll('.voicebank-item')[0];
@@ -166,6 +166,9 @@ describe('the strip', () => {
         assert.equal(meta.querySelector('.voicebank-fx'), null, 'FX no longer does');
         const controls = item.querySelector('.voicebank-strip-controls');
         assert.ok(controls.querySelector('.voicebank-fx'), 'FX is in the action row');
+        assert.deepEqual([...controls.children].map(b => b.className.split(' ')[0]),
+            ['voicebank-fx', 'voicebank-mute', 'voicebank-solo', 'voicebank-play'],
+            'FX leads the row: FX M S >');
         assert.equal(controls.querySelector('.voicebank-remove'), null, 'remove is not');
         assert.ok(item.querySelector('.voicebank-remove'), 'remove is still on the strip');
     });

@@ -2,6 +2,14 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-16: Mixer strip — FX leads the action row
+
+The strip's action row reads **FX M S ▶**: FX moves from last to first. The `mixer-tab` visual baseline is regenerated; it had been stale since FX joined the row (73d8697) and still showed FX on the readout line.
+
+Files: `html/components/voicebank.js`, `html/style.css` (comment), `e2e/visual.spec.js-snapshots/mixer-tab-chromium-linux.png`.
+
+Tests: `fx-panel` row test now pins the button order. 1346 unit; e2e `fx`, `visual`, `voicebank`, `layout`, `mobile` pass.
+
 ## 2026-11-15: The Piece panel is complete — playback on the blocks, play from a block, presence
 
 Phase 4 of the Piece panel (phases 1–3 below), closing the feature. **The playing block is lit** — green edge and a line crossing it at the playhead's fraction of its length — and the header gains `▶ 4 of 7`, which counts the blocks along folded or not; the name beside it is the playing section's already, since piece playback edits as it goes. The position comes off the transport's broadcast every tick and is applied to the existing blocks in place (a render per sixteenth would be far too much); a render re-applies it. It uses `localize().entryId`, so of three choruses the right one lights. **Double-click a block** plays the piece from its first bar: `transport.play()` gains `fromCol`, clamped into the range, the worker started at the offset into it (ignored when following a device clock, which starts where it starts). **Presence:** every block of a section someone else is editing takes their colour and alias (`presenceOn({ sectionId })`); the playhead line is `::before` because `::after` is the alias tag.

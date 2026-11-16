@@ -247,10 +247,11 @@ export function createVoiceBank(opts) {
                 });
                 item.appendChild(meta);
 
-                // M / S / preview / FX: the four things done to the sound.
+                // FX / M / S / preview: the four things done to the sound.
                 // Remove is not one of them and lives in the corner.
                 const controls = document.createElement('div');
                 controls.className = 'voicebank-strip-controls';
+                controls.appendChild(fxBtn);
 
                 const muteBtn = document.createElement('button');
                 muteBtn.className = 'voicebank-mute' + (entry.muted ? ' on' : '');
@@ -281,7 +282,6 @@ export function createVoiceBank(opts) {
                     if (onPreview) onPreview(entry, i);
                 });
                 controls.appendChild(playBtn);
-                controls.appendChild(fxBtn);
                 item.appendChild(controls);
 
                 // Remove: structural, not a mix action, and the only strip

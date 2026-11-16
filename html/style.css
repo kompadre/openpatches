@@ -2149,7 +2149,7 @@ h1 {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    /* In the M / S / preview row: same height, a little wider for two letters. */
+    /* In the FX / M / S / preview row: same height, a little wider for two letters. */
     box-sizing: border-box;
     height: 18px;
     min-width: 18px;
