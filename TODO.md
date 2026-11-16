@@ -31,6 +31,16 @@ The Piece panel shipped 2026-11-15 (CHANGELOG). Not started; nothing is decided 
 - [ ] **Ruler above the strip**: bar numbers or mm:ss, so the piece reads as time.
 - [ ] **Phones**: a layout for the Piece panel. The strip is hidden under 600 px for now; the header and the select row still work.
 
+### Player and per-track Playheads (user, 2026-11-16) — plan under discussion
+
+Rethink the transport: a **Player** with one **Playhead per track**. A
+playhead keeps its track's position across tracks and patterns, so a
+tracker instruction can move one track (e.g. back 10 beats) without
+affecting the others. The position state lives in the Playhead itself, not
+in the patterns. The Playhead triggers note-on / note-off, and possibly
+humanization. Supersedes the open live-take wrong-track bug (SESSION.md),
+left unfixed on purpose until this is designed.
+
 ### Ideas
 
 - [ ] Import and export **MIDI** (patterns ↔ MIDI files; a section or the piece as a multi-track SMF).
