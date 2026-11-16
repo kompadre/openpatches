@@ -271,7 +271,10 @@ export function createSectionSequence(project, section, opts = {}) {
  * compiled as a section sequence over its full length — a section's own
  * loop is for working on it, not for the piece. A column is handed to the
  * section it falls in, shifted into that section's own columns, so the
- * events, the playhead and the tempo are each section's own.
+ * events, the playhead and the tempo are each section's own. An entry with
+ * `repeats` plays its section that many times in a row: the column is
+ * folded into one pass (`pass` says which), so every pass starts its
+ * section — and its tempo ramp — from the top.
  */
 export function createPieceSequence(project) {
     const layout = pieceLayout(project);
@@ -279,7 +282,7 @@ export function createPieceSequence(project) {
         .filter(p => p.endCol > p.startCol)
         .map(p => ({
             ...p,
-            seq: createSectionSequence(project, p.section, { range: { startCol: 0, endCol: p.endCol - p.startCol } }),
+            seq: createSectionSequence(project, p.section, { range: { startCol: 0, endCol: p.passCols } }),
         }));
     if (parts.length === 0 || layout.total <= 0) return emptySequence('piece');
     const range = { startCol: 0, endCol: layout.total };
@@ -290,6 +293,13 @@ export function createPieceSequence(project) {
         return parts[parts.length - 1];
     }
 
+    /** A piece column inside its part: the pass, and the column in that pass. */
+    function inPart(p, col) {
+        const partCol = col - p.startCol;
+        const pass = Math.min(p.repeats - 1, Math.max(0, Math.floor(partCol / p.passCols)));
+        return { partCol, pass, col: partCol - pass * p.passCols };
+    }
+
     return {
         kind: 'piece',
         length: layout.total,
@@ -297,21 +307,28 @@ export function createPieceSequence(project) {
         columnForTick(rawCol) { return wrapToRange(rawCol, range); },
         eventsAt(col) {
             const p = partAt(col);
-            return p.seq.eventsAt(col - p.startCol);
+            return p.seq.eventsAt(inPart(p, col).col);
         },
         locate(col) {
             const p = partAt(col);
-            const here = p.seq.locate(col - p.startCol);
-            return { ...here, sectionId: p.section.id, entryId: p.entry.id, sectionCol: col - p.startCol };
+            const at = inPart(p, col);
+            const here = p.seq.locate(at.col);
+            return { ...here, sectionId: p.section.id, entryId: p.entry.id, sectionCol: at.col, pass: at.pass };
         },
         /**
          * Which section a piece column is in, and the column inside it.
          * `entryId` says *which* placement of it — a chorus placed three
-         * times is the same section at three entries.
+         * times is the same section at three entries. `col` is inside the
+         * section (one pass); `partCol` counts from the entry's start, over
+         * all its passes; `pass` is which one, from 0.
          */
         localize(col) {
             const p = partAt(col);
-            return { section: p.section, sectionId: p.section.id, entryId: p.entry.id, col: col - p.startCol };
+            const at = inPart(p, col);
+            return {
+                section: p.section, sectionId: p.section.id, entryId: p.entry.id,
+                col: at.col, partCol: at.partCol, pass: at.pass, repeats: p.repeats,
+            };
         },
     };
 }

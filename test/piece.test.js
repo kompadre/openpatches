@@ -258,3 +258,68 @@ describe('collab ops', () => {
         assert.deepEqual(checkInvariants(p), [], 'normalising drops it');
     });
 });
+
+describe('repeats: one block, several passes', () => {
+    const { setEntryRepeats, entryRepeats, createEntry, MAX_ENTRY_REPEATS } = M;
+
+    test('stored only above one, clamped, and read back as 1 when absent', () => {
+        assert.equal('repeats' in createEntry({ sectionId: 's' }), false);
+        assert.equal('repeats' in createEntry({ sectionId: 's', repeats: 1 }), false);
+        assert.equal(createEntry({ sectionId: 's', repeats: 3 }).repeats, 3);
+        assert.equal(createEntry({ sectionId: 's', repeats: 999 }).repeats, MAX_ENTRY_REPEATS);
+        assert.equal('repeats' in createEntry({ sectionId: 's', repeats: 'x' }), false);
+        assert.equal(entryRepeats({}), 1);
+    });
+
+    test('setEntryRepeats sets, clamps, says when nothing changed, and drops the field at one', () => {
+        const { p, chorus } = song();
+        const e = sectionUsage(p, chorus.id)[0];
+        assert.equal(setEntryRepeats(p, e, 3), true);
+        assert.equal(p.arrangement[1].repeats, 3);
+        assert.equal(setEntryRepeats(p, e, 3), false, 'no change');
+        assert.equal(setEntryRepeats(p, e, 0), true, 'clamped to one');
+        assert.equal('repeats' in p.arrangement[1], false);
+        assert.equal(setEntryRepeats(p, 'ghost', 2), false);
+    });
+
+    test('the layout gives the part every pass, and what follows moves along', () => {
+        const { p, chorus, verse } = song();                           // V(16) C(32)
+        placeSection(p, verse.id);                                     // V C V
+        setEntryRepeats(p, sectionUsage(p, chorus.id)[0], 3);
+        const L = pieceLayout(p);
+        assert.deepEqual(L.parts.map(x => [x.startCol, x.endCol, x.passCols, x.repeats]),
+            [[0, 16, 16, 1], [16, 112, 32, 3], [112, 128, 16, 1]]);
+        assert.equal(L.total, 128);
+    });
+
+    test('every pass plays the section from its top; localize names the pass', () => {
+        const { p, chorus } = song();
+        const e = sectionUsage(p, chorus.id)[0];
+        setEntryRepeats(p, e, 2);                                      // V(16) C×2(64)
+        const seq = createPieceSequence(p);
+        assert.deepEqual(seq.range, { startCol: 0, endCol: 80 });
+        assert.equal(seq.eventsAt(16)[0].midi, 72, 'first pass');
+        assert.equal(seq.eventsAt(48)[0].midi, 72, 'second pass');
+        assert.equal(seq.eventsAt(47).length, 0);
+        const here = seq.localize(50);
+        assert.deepEqual([here.entryId, here.col, here.partCol, here.pass, here.repeats], [e, 2, 34, 1, 2]);
+        assert.equal(seq.locate(50).sectionCol, 2);
+        assert.equal(seq.localize(79).pass, 1, 'the last column is still the last pass');
+    });
+
+    test('travels through export and collab, as part of the arrangement', () => {
+        const { p, chorus } = song();
+        const back = importProject(JSON.parse(JSON.stringify((() => {
+            setEntryRepeats(p, sectionUsage(p, chorus.id)[0], 4);
+            return exportProject(p);
+        })())));
+        assert.equal((back.project || back).arrangement[1].repeats, 4);
+
+        const before = JSON.parse(JSON.stringify(p));
+        setEntryRepeats(p, sectionUsage(p, chorus.id)[0], 2);
+        const groups = diffGroups(before, p);
+        assert.deepEqual(groups.map(g => g.map(o => o.atom)), [['arrangement']]);
+        applyOps(before, groups[0]);
+        assert.equal(before.arrangement[1].repeats, 2);
+    });
+});

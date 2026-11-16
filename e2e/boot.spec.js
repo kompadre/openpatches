@@ -28,6 +28,17 @@ test.describe('boot', () => {
 
         // Status indicators exist before audio/MIDI are touched.
         await expect(page.locator('#audio-status')).toBeAttached();
+
+        // Desktop opens on the Tracker, drawn without a tab click.
+        await expect(page.locator('.dock-tab-tracker')).toHaveClass(/active/);
+        await expect(page.locator('.dock-panel-tracker')).toBeVisible();
+        await expect(page.locator('.dock-tab-pianoroll')).not.toHaveClass(/active/);
+        const drawn = await page.locator('.dock-panel-tracker canvas').first().evaluate((c) => {
+            const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+            for (let i = 3; i < d.length; i += 4) if (d[i]) return true;
+            return false;
+        });
+        expect(drawn).toBe(true);
     });
 
     test('cross-origin isolation is in force', async ({ page }) => {

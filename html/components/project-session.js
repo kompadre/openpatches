@@ -46,7 +46,7 @@ import {
     createProject, createPattern, getSection, effectiveBpm,
     addSection as addSectionTo, removeSection as removeSectionFrom,
     duplicateSection as duplicateSectionIn,
-    placeSection as placeSectionIn, moveEntry as moveEntryIn, removeEntry as removeEntryIn,
+    placeSection as placeSectionIn, moveEntry as moveEntryIn, removeEntry as removeEntryIn, setEntryRepeats as setEntryRepeatsIn,
     copyEntry as copyEntryIn, sectionUsage as sectionUsageIn,
     addPattern, removePattern, patternUsage,
 } from './project-model.js';
@@ -480,6 +480,14 @@ export function createProjectSession(store) {
         moveEntry(entryId, to, source) {
             const project = store.get();
             if (!project || !moveEntryIn(project, entryId, to)) return false;
+            changed('section', source, { sectionId });
+            return true;
+        },
+
+        /** How many times an entry plays its section in a row. */
+        setEntryRepeats(entryId, n, source) {
+            const project = store.get();
+            if (!project || !setEntryRepeatsIn(project, entryId, n)) return false;
             changed('section', source, { sectionId });
             return true;
         },

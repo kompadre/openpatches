@@ -132,6 +132,26 @@ export function defaultPatternColor(id) {
     return PATTERN_COLORS[h % PATTERN_COLORS.length];
 }
 
+/**
+ * The colour for a pattern joining `project`: the one fewest of its
+ * patterns wear, the search starting at `id`'s own default so ties still
+ * spread by hash.
+ */
+export function leastUsedPatternColor(project, id) {
+    const uses = new Map(PATTERN_COLORS.map(c => [c, 0]));
+    for (const p of Object.values((project && project.patterns) || {})) {
+        const c = p && typeof p.color === 'string' ? p.color.toLowerCase() : null;
+        if (uses.has(c)) uses.set(c, uses.get(c) + 1);
+    }
+    const start = PATTERN_COLORS.indexOf(defaultPatternColor(id));
+    let best = PATTERN_COLORS[start];
+    for (let k = 1; k < PATTERN_COLORS.length; k++) {
+        const c = PATTERN_COLORS[(start + k) % PATTERN_COLORS.length];
+        if (uses.get(c) < uses.get(best)) best = c;
+    }
+    return best;
+}
+
 // --- Factories ---
 //
 // Every factory is total: it takes anything (storage, an imported file, a
@@ -381,12 +401,25 @@ export function defaultSectionColor(id) {
  * id because a section can be placed many times (a chorus three times is
  * three entries), and each of those is moved, removed or copied on its own.
  */
+/** The most passes one block of the piece can stand for. */
+export const MAX_ENTRY_REPEATS = 64;
+
 export function createEntry(partial = {}) {
     const p = plainObject(partial);
-    return {
+    const entry = {
         id: p.id ? String(p.id) : uid('ent'),
         sectionId: String(p.sectionId || ''),
     };
+    // How many times the section plays in a row at this place: omitted
+    // when once, to keep files small.
+    const repeats = clampInt(p.repeats, 1, MAX_ENTRY_REPEATS, 1);
+    if (repeats > 1) entry.repeats = repeats;
+    return entry;
+}
+
+/** The passes an entry stands for (1 when it has no `repeats`). */
+export function entryRepeats(entry) {
+    return clampInt(entry && entry.repeats, 1, MAX_ENTRY_REPEATS, 1);
 }
 
 function normalizeLoop(loop) {
@@ -749,7 +782,14 @@ export function defaultPatternName(project, section, slot) {
 }
 
 export function addPattern(project, partial = {}) {
-    const pattern = createPattern(partial);
+    // A new pattern without a colour of its own takes the least-used one in
+    // the project, searching from its id's hash: with twelve colours two
+    // hashed ids clash one time in twelve, and two fresh patterns painted
+    // alike read as one. A colour that was passed (a copy) is kept.
+    const id = partial.id || uid('pat');
+    const color = HEX_COLOR.test(partial.color) ? partial.color
+        : leastUsedPatternColor(project, id);
+    const pattern = createPattern({ ...partial, id, color });
     project.patterns[pattern.id] = pattern;
     return pattern;
 }
@@ -898,6 +938,20 @@ export function moveEntry(project, entryId, to) {
     return true;
 }
 
+/**
+ * How many times an entry plays its section in a row (clamped to
+ * 1..MAX_ENTRY_REPEATS). False if the entry is not here or nothing changed.
+ */
+export function setEntryRepeats(project, entryId, n) {
+    const entry = project.arrangement[entryIndex(project, entryId)];
+    if (!entry) return false;
+    const next = clampInt(n, 1, MAX_ENTRY_REPEATS, entryRepeats(entry));
+    if (next === entryRepeats(entry)) return false;
+    if (next > 1) entry.repeats = next;
+    else delete entry.repeats;
+    return true;
+}
+
 /** Take an entry out of the piece. The section stays in the library. */
 export function removeEntry(project, entryId) {
     const i = entryIndex(project, entryId);
@@ -911,7 +965,8 @@ export function removeEntry(project, entryId) {
  * previous one ends (sections are whole bars long when played, as a section
  * alone is). Empty sections take no room. `startCol` is where each begins
  * in the piece; `total` is the piece's length. A section placed twice is
- * two parts.
+ * two parts. An entry with `repeats` is one part `repeats` passes long:
+ * `passCols` is one pass, `endCol - startCol` all of them.
  */
 export function pieceLayout(project) {
     const parts = [];
@@ -919,8 +974,10 @@ export function pieceLayout(project) {
     for (const entry of project.arrangement || []) {
         const section = getSection(project, entry.sectionId);
         if (!section) continue;
-        const cols = Math.ceil(sectionLengthCols(project, section) / COLS_PER_MEASURE) * COLS_PER_MEASURE;
-        parts.push({ entry, section, startCol: at, endCol: at + cols });
+        const passCols = Math.ceil(sectionLengthCols(project, section) / COLS_PER_MEASURE) * COLS_PER_MEASURE;
+        const repeats = entryRepeats(entry);
+        const cols = passCols * repeats;
+        parts.push({ entry, section, startCol: at, endCol: at + cols, passCols, repeats });
         at += cols;
     }
     return { parts, total: at };

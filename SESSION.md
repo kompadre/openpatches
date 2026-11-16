@@ -192,6 +192,19 @@ built. What the next agent must not break (the standing shape):
 - PROTOCOL = 2. Messages: join/resync/leave/snapshot/parts/bye +
   begin/edit/ack/overridden/presence (`readMessage` validates all).
 
+### Piece: repeats per block — DONE 2026-11-16
+
+- An entry may carry `repeats` (2..`MAX_ENTRY_REPEATS` = 64; **absent
+  means once** — `createEntry` drops 1, read it through `entryRepeats()`).
+  `pieceLayout` parts carry `passCols` and `repeats`; `endCol - startCol`
+  is every pass. The piece sequence folds a column into one pass, so the
+  section, its playhead and its tempo ramp restart each pass;
+  `localize()` adds `partCol` (from the entry's start), `pass`, `repeats`.
+- Anything that measures a block must use `partCol` over the part's
+  length, not `col` (that is inside one pass).
+- Travels inside the `arrangement` atom (whole), so collab and export
+  needed nothing.
+
 ### Tracker — phases 1–3 DONE 2026-11-07; phase 4 (mobile) pending
 
 The Section as rows (TODO.md › Tracker has the plan and the decisions).
@@ -284,8 +297,8 @@ Live state only — what a future change could trip over:
   The popover is for the *slot* and re-reads the track on every write.
 - **The strip's FX button encodes its state as colour**, off `data-fx-count`
   (0..4): neutral `#9aa0b8`, then green warming to orange, with a glow from
-  1 up. The ramp lives in `style.css`, not JS. It shares the volume line
-  (`.voicebank-meta`), so the strip is one row shorter than it was.
+  1 up. The ramp lives in `style.css`, not JS. It leads the strip's action
+  row (`FX M S ▶`); remove (×) sits apart in the strip's corner and confirms.
 - **`fxSummary` skips `disabled` sections.** The Bit crusher is a
   placeholder: no params, no persisted flag, no change listener, nothing in
   `fx_params.h` — so there is no field for a saved project to carry and
@@ -297,35 +310,19 @@ Live state only — what a future change could trip over:
   dial cannot mean anything below that — it is glue, not a limiter.
 - **The generic `button {}` rule is a large pink pill**; every small Mixer
   control overrides it.
-- **Pre-existing, untouched:** 390 px phone, the M/S/▶/× row overflows an
-  86 px strip and overlaps the neighbour. Same at the previous commit.
 - **Measured** (Node/V8): 3 tracks, everything on, 0.83 % realtime.
-
-### Plan of 2026-11-06 — all five phases DONE
-
-The five-phase plan is in TODO.md. Phase 1 (one transport bar left of
-the tabs, `components/transport-bar.js`) and Phase 2 (thin Section lanes,
-clip marquee/Shift-click/Delete/Copy-stamp) and Phase 3 (beat × octave
-dot thumbnails, the pattern library, the roll's Pattern select, tab
-renamed Pattern; `selection-bus.js` makes the two selections mutually
-exclusive) and Phase 4 (sections row, `piece` transport mode with the
-pane following, `bpmEnd` ramps via `bpmAt`) are done and recorded in
-CHANGELOG.md. Phase 5 (revised with the user: no cross-project dedup,
-only an on-demand WAV sweep) is done too: drag onto Mixer slots, WAV
-re-upload, File → Storage…, File → Import into This Project…. Open:
-the Ideas in TODO.md (MIDI, Reaper export). Not done in phase 2, deliberately: dragging
-a multi-selection moves only the clip grabbed (group move left out). Decided with the user: "Patches library" in the
-old TODO meant the **pattern** library (phase 3).
 
 ### Desktop full-page tabs — DONE 2026-11-04
 
 Tabs at the top centred, canvas is the Patches tab. See CHANGELOG.md. Live
 state:
 
-- **Open question for the user:** desktop still opens on Piano Roll. The
-  canvas used to be permanently visible there and now is not, so Patches
-  may be the better default. Changing it means `openApp()` in
-  `e2e/fixtures.js` can no longer wait on a visible keyboard.
+- **Desktop opens on the Tracker** (user, 2026-11-16; `initialTab` in
+  app.js — phones keep Patches until the Tracker's mobile phase). The
+  tracker draws only once told it is on screen: toolbar.js calls
+  `trackerRef.setShown(true)` for an initial Tracker tab, since otherwise
+  only a tab click does. The keyboard strip shows under it, so `openApp()`
+  still waits on the keyboard.
 - **A hidden panel measures 0x0.** `addContainer` centred on `#night-sky`
   and silently piled every container at (10, 10) once the canvas became a
   tab. Anything else that measures a panel needs the same fallback.
@@ -380,98 +377,6 @@ change could trip over, which does not belong in a changelog.
 _(The MIDI clock entry that sat here is finished and recorded in
 CHANGELOG.md 2026-11-01; its standing limits are in the midi-manager
 architecture entry below.)_
-
-### Sub-measure clips (2026-10-30) — code complete, awaiting browser check
-
-From TODO.md: sub-measure placement and extension of patterns in the Song
-editor. Clip geometry moved from measures to **columns** (sixteenths).
-
-- [x] Model: `clip.startCol` replaces `startMeasure`; a clip's length is
-  either its own (`lengthCols`, set by dragging its edge) or its pattern's
-  (`repeats` whole pattern lengths, so it follows the pattern as the
-  pattern grows). Exactly one of the two is stored; `clipCols()` resolves
-  them and replaces `clipSpan()`. No migration: `createClip` reads the old
-  spelling, and a clip converts the first time it is moved or resized.
-  `updateClip` canonicalises its `changes` first — spreading `{startMeasure}`
-  over a record that already had `startCol` was a silent no-op.
-- [x] Sequencer: partial repeats (a clip may end part-way through one),
-  note durations cut at the clip end, `playbackRange` takes columns. A song
-  still **plays to the end of the bar** its last clip ends in, so a clip cut
-  to one beat does not loop the song every beat.
-- [x] Editor: Snap (Bar … 1/16) and Zoom (×1 … ×8) selects, both persisted
-  (`openpatches_song_snap` / `_zoom`); place floors to the snap cell, move
-  and resize snap the *delta* so a deliberately off-grid clip stays off it;
-  sub-bar grid lines are a second gradient under the bar lines, driven by
-  `--song-snap-w` / `--song-measure-w` on `.song-grid`.
-- [x] Tests: `sub-bar placement and length` in `section-editor.test.js`,
-  `clips off the bar line, and cut short` in `sequencer.test.js`, new cases
-  in what is now `project-model.test.js`; the harness's `style` has `setProperty`.
-
-Verified in headless Chrome: the controls, a 1/4-snap placement at bar 2
-beat 2 (zoom ×4), an edge drag to ×1.25, persistence, and a legacy
-`startMeasure`/`repeats` song reading back in the right place, still
-following its pattern until its edge is dragged.
-
-Browser check to do: Song tab → Snap 1/4, Zoom ×4, place a clip part-way
-through a bar, drag its edge to a fraction of a repeat, play it. Then
-commit; CHANGELOG.md entry is in. **Zoom was not in the task** — a column
-is 3px at ×1, below the 4px drag threshold, so the fine snaps need it; say
-if you would rather it went.
-Open: the loop range is still whole bars only.
-
-### Step record (2026-10-30) — code complete, awaiting browser check
-
-From TODO.md: "Rec" without Play starts a step-driven record.
-
-- [x] Rec with the clock stopped arms a **step record** (`stepping` in
-  toolbar.js; Rec while playing is still a live take, and Play while
-  stepping — the roll's or the mobile one, via the roll's `onBeforePlay`
-  hook — converts it into one, which is also how a take on an empty song
-  starts now).
-- [x] A key (or MIDI note) held a full second puts **one step length** at
-  the step cursor, **in the pattern on screen** (`addStepNote` →
-  `pianoroll.addNote` with the roll's `getEditTarget()` clip; with nothing
-  on screen it starts a track on the record slot). Every further second
-  grows it by one more step length (`syncStepNote`, 100 ms timer,
-  `pianoroll.setNoteDur`), clamped at the pattern's end; the length on the
-  grid at key-up is what is kept. *(Reworked 2026-10-31: the step length is
-  the `.pianoroll-step-len` select — 1/16…1/1, persisted in
-  `openpatches_step_len`, in the transport row after Rec and only visible
-  while stepping.)*
-- [x] **Rests:** a tap shorter than a second jumps the cursor to the next
-  beat (the next quarter boundary; a full beat when already on one).
-  *(Reworked 2026-10-31 — replaced the old one-sixteenth rest and its
-  500 ms double-tap quarter.)*
-- [x] Last key up ends the step: cursor += longest note (or the rest
-  jump), wrapping at the pattern's end; `pianoroll.setStepCursor` draws it
-  as the playhead and scrolls sideways if it left the view.
-- [x] **The playhead is draggable while stepping (2026-10-31):** the
-  header strip is the cursor's handle — `seekStep(col)` in pianoroll.js
-  (drag or API) reports through `opts.onStepSeek`, and the toolbar's
-  cursor follows. The header is now a dead zone for note drawing: a click
-  there used to land a note on the top row (`pixelToRow` clamps).
-- [x] The roll **centres vertically on each step note** (`addNote({reveal:
-  'row'})` → `centerRow` + `revealCol`).
-- [x] Tests: `test/toolbar-step-record.test.js`; Rec-from-stopped
-  expectations in `toolbar-record-keyboard.test.js` now start playback
-  first (a quick tap into a step record is a rest).
-
-First browser check (2026-10-30) failed: keys produced nothing. Diagnosed in
-headless Chrome: the step note went through the take's `mapRecordColumn`,
-keyed on the **record slot** (`activeRecordSlot`), which can disagree with
-the pattern on screen — `voiceBank._setActiveSlot()` is a no-op for an
-empty slot, so opening a clip from the Song tab on such a track (or picking
-one in the voice select) moves the roll but not the recorder. The note then
-landed in another track's pattern, or nowhere ("nothing placed on voice N
-here" in the Log tab, no JS error). Steps now bypass that mapping. **The same
-desync still affects live takes** — not fixed here, worth a follow-up
-(sync the record slot to the roll's edit target, or record on it directly).
-
-Second browser check to do: Rec (stopped) → hold a key ~2.5 s (note appears
-at 1 s, two sixteenths at release); a short tap (cursor +1, no note); two
-quick taps (+4); a chord with staggered releases; Play while armed starts a
-take; Stop Rec clears the cursor. Then commit (CHANGELOG.md entry is in).
-Open: moving the cursor by clicking the ruler.
 
 ### Feature: Web MIDI (4 phases)
 
@@ -623,17 +528,16 @@ only when a feature needs it, and SysEx is a separate upgrade on top.
 
 Bug survey 2026-10-23 — swept 2026-10-29; everything fixed is in CHANGELOG.md. Still open:
 
-- [x] Voice bank: removing a slot shifted the channels of the slots after it. **Fixed 2026-10-31** (VoiceBank de-flaking, CHANGELOG.md): the bank is a fixed `Array(8)` and removal leaves a hole, so no entry ever changes channel.
 - [ ] `audio-manager` ready-handshake resolves unconditionally after 2 s (deliberate fallback, left alone).
 - [ ] Recorded notes are not clamped to the loop end on insert (the recorder seam-splits held notes, so this does not occur in practice); only interactive resize is clamped.
 
 ### e2e suite (Playwright) — complete, now a standing layer
 
-All three phases done 2026-10-30 (see CHANGELOG.md). 31 tests, ~35 s. What a
+All three phases done 2026-10-30 (see CHANGELOG.md). 154 tests, ~3.5 min. What a
 future agent needs:
 
 ```bash
-npx playwright test                  # whole suite; starts server.py 8111 itself
+npx playwright test                  # whole suite; starts server.py on `npm run -s e2e:port`
 npx playwright test e2e/midi.spec.js
 npx playwright test e2e/visual.spec.js --update-snapshots   # after an intentional style change
 npx playwright show-trace test-results/<dir>/trace.zip
@@ -671,6 +575,20 @@ npx playwright show-trace test-results/<dir>/trace.zip
 _(Things discovered mid-task that the next agent needs to know, but that aren't
 yet stable enough to be an AGENTS.md rule.)_
 
+- **Open bug — a live take can land on the wrong track.** The take maps
+  through the **record slot** (`activeRecordSlot` in toolbar.js), which can
+  disagree with the pattern on screen: `voiceBank._setActiveSlot()` is a
+  no-op for a slot with no voice, so opening a clip on such a track (from
+  Section, or the roll's Pattern select) moves the roll but not the
+  recorder. Step records already bypass it (`getEditTarget()`); live takes
+  do not. Fix: sync the record slot to the roll's edit target, or record
+  onto it directly.
+- **Limits kept on purpose:** a Section loop is whole bars only; dragging
+  a multi-selection of clips moves only the clip grabbed.
+- **The e2e counts in CHANGELOG were not always a full green run:** the
+  `mixer-tab` baseline was stale from 73d8697 to 7ab9e7d while entries
+  reported every e2e test passing. Run the whole suite before claiming it.
+
 - 2026-10-30: **the dock centres its panels, which is a stranding trap.**
   `.dock-panel { align-items: center }`: a panel wider than the dock overflows
   on *both* sides, and the start side of a centred overflow cannot be scrolled
@@ -697,8 +615,8 @@ yet stable enough to be an AGENTS.md rule.)_
   the same `server.py`, so whoever binds the port first wins and the loser's
   `python3 server.py <port>` dies quietly. This cost real debugging time: the
   Section-editor bug looked unreproducible for several runs because the port was
-  held by the `elm` worktree. `playwright.config.js` now uses port 8123 with
-  `reuseExistingServer: false` so a clash fails loudly. When probing by hand,
+  held by the `elm` worktree. `playwright.config.js` now derives the port from
+  the worktree and tmux pane (`npm run -s e2e:port`; AGENTS.md has the rules). When probing by hand,
   check `pwdx $(pgrep -f 'server.py <port>')` before trusting a result.
 
 - 2026-10-24: single-engine refactor (committed in c55711b). One long-lived worklet engine for all audible output; previews (canvas playPatch, edit panel) now play realtime on channel 15 instead of offline-render → decode → inject. `playNoteRealtime` releases the previous preview note before starting a new one (note-off matches all notes with same channel+midi). One shared main-thread offline instance (`dx7-synth.js` `renderOffline` + `batchRenderWaveforms`, re-exported by audio-manager) — was two. New WASM exports: `all_notes_off()` (keyup+fade, state survives; also CC 120/123) and `get_channel_samples(ch, n)` (pre-filter int32 capture of last render; single static buffer — read before the next call). `send_midi` drops messages instead of nanosleep-spinning when the ring is full. Deliberately ONE wasm build: compile-flagging `channel_outputs_` out would have meant either losing per-channel capture everywhere or shipping two binaries. `playSamplesInWorklet`/`play-samples` kept but currently unused.
@@ -726,7 +644,7 @@ OpenPatches is a browser-based DX7 patch editor and sequencer. It communicates w
 - `html/components/patch-model.js`: patches, canvas layout and jobs — all **owned by the open project** and written with its body. The store APIs are unchanged; underneath, six `loadX`/`saveX` pairs read and write `project.patches` / `.patchNames` / `.canvas` / `.jobs`. The session is **injected** (`bindProjectSession`, called once by app.js) rather than imported, so this file stays clear of the project machinery and tests can bind their own; unbound, reads give nothing and writes are dropped. Writes announce `kind:'patches'`, which the sequencer-side editors ignore. The **tag vocabulary is the exception** and lives on the profile — the user's taxonomy, reused across projects. `createPatch()` ids hash `voice_data|name`, so one voice under two names is two records; **`voiceKey(voiceData)`** is the opposite by design — a *name-independent* hash normalised across base64 / `Uint8Array` / `Array`, so a renamed copy is the **same voice**. Patch id answers “which record”, voiceKey “which sound”. Carries its own base64 decoder (node:test has no `atob`).
 - `html/components/patch-row.js`: Unified patch row rendering with star drag handle, mini spectrogram, slot badge, assign/edit/remove buttons. **`attachAssignPopover(btn, anchor, patch, opts)`** is the one way into the voice bank (also used by canvas container headers): ♫ opens `.patch-assign-pop`, eight buttons showing each slot's occupant, `.current` on the patch's own slot, first empty pre-focused, click commits via `opts.onAssignSlot(patch, idx)` and closes. **`updateBankSlots(entries)`** (driven by app.js's `onSnapshot`) rebuilds a module-level `voiceKey → {slot,color}` registry and refreshes every `.patch-slot-badge` **by document query, not subscription** — rows are rebuilt on every canvas render, so a subscriber list would accumulate dead elements. `createSlotBadge(patch)` renders the pill, hidden when the voice is not banked. A click on the row body no longer assigns. Touch drag between containers with floating clone; crossing back into the body cancels the drag-out (clone removed, no clone on drop), `touchcancel` aborts cleanly. `reorderContainerPatch()` applies a touch reorder to the group that holds both rows **and** the flat list (a grouped container renders only its groups; a move across groups is refused). One document `mouseup` disarms the star-armed row instead of one listener per row.
 - `html/components/patch.js`: Waveform helpers only — `decodeWavSamples` (general RIFF chunk walk: `fmt ` and `data` in any order with LIST/fact between, 16-bit PCM or 32-bit float, N channels mixed to mono), `drawMiniWaveform`, `wavSampleCache`, `releaseWavUrl` (revokes the `blob:` URL `playPatch` returns, once the waveform is drawn — the consumer owns it).
-- `html/components/voicebank.js`: the **Mixer** (8 strips) — and the strips **are** `project.tracks`. `saveState()`/`loadState()` write and read them; a strip's id *is* its track's id, on creation too. A track with no `voiceData` is not a strip (the roll makes bare tracks the moment a note is drawn), and assigning a voice **fills that track in** rather than replacing it, so its clips survive; emptying a strip clears the patch and keeps the track. The index IS the channel — removal leaves a `null` hole, colours are `PATCH_COLORS[i]`. The fader's fill is the `--vol` custom property (0–1) and the drag reads its axis off the fader's shape: on mobile (`.dock-panel-mixer`, CSS only) strips are rows sharing the panel's height and the fader lies down. **One write path:** `_assignToSlot(idx, {name, voiceData, patchId})` — occupied target + unbanked voice = silent overwrite; voice already elsewhere = **swap**. Identity is `voiceKey()`, so one voice occupies at most one slot, enforced on load too. **Mute/Solo** are volume overrides: `entry.volume` is the fader, `entry.effectiveVolume` what the engine hears; `applyMix()` recomputes and pushes only moved channels. There is **one** mute per strip now, on the track, which is the one the sequencer reads.
+- `html/components/voicebank.js`: the **Mixer** (8 strips) — and the strips **are** `project.tracks`. `saveState()`/`loadState()` write and read them; a strip's id *is* its track's id, on creation too. A track with no `voiceData` is not a strip (the roll makes bare tracks the moment a note is drawn), and assigning a voice **fills that track in** rather than replacing it, so its clips survive; emptying a strip clears the patch and keeps the track. The index IS the channel — removal leaves a `null` hole, colours are `PATCH_COLORS[i]`. The fader's fill is the `--vol` custom property (0–1) and the drag reads its axis off the fader's shape: on mobile (`.dock-panel-mixer`, CSS only) strips are rows sharing the panel's height and the fader lies down. **One write path:** `_assignToSlot(idx, {name, voiceData, patchId})` — it touches only its slot (an occupied one is overwritten). A voice may sit in several slots (2026-11-07): `voiceKey()` is for the badge and the picker's `.current`, never to refuse, move or merge. **Mute/Solo** are volume overrides: `entry.volume` is the fader, `entry.effectiveVolume` what the engine hears; `applyMix()` recomputes and pushes only moved channels. There is **one** mute per strip now, on the track, which is the one the sequencer reads.
 - `html/components/tracker-model.js`: the Tracker's pure half. `deriveLanes` (stable, stored-lane-honouring, unbounded — no stealing), `applyLanes`/`relane({fresh})`, `expandTrack` (clip blocks + every note of every repeat at absolute columns, OFF rules), `compactCells`, `locate`, the edits (`putNote`/`putOff`/`clearCell` — exact both ways against `{midi,start,dur}`), `growBlocker`/`measuresFor`/`moveNote` for pattern growth. No DOM/session/storage.
 - `html/components/tracker.js`: the **Tracker** tab (`createTracker`). One canvas grid (rows = section sixteenths, columns = tracks × sub-lanes), sticky DOM heads with the ▥/▣ compact toggle (writes `track.compact`), clip-margin ✎ popover (Edit → Pattern editor via `onOpenPattern`, repeats, + Bar), FT2 key entry with octave/step and audition, 3 s debounced commit (`dirty` → `relane fresh` + `touchPattern`), DOM playhead + follow, viewport reported to the Section pane. `width:100%` — the dock-centring trap.
 - `html/components/device-panel.js`: the **Device** bottom-pane item — the external MIDI-out synth: profile/port/channel/current patch/output mode, Stop/Resume (midi-manager's session-only `setOutputPaused`), redrawn via `subscribeOutChange`.
@@ -750,7 +668,7 @@ OpenPatches is a browser-based DX7 patch editor and sequencer. It communicates w
 - `#page-content`: CSS grid, `grid-template-rows: 1fr 1fr`, `height: calc(100vh - header - footer)`. Top half: night-sky, bottom half: piano dock.
 - `#night-sky`: CSS grid (`grid-template: 1fr / 1fr`), `overflow: auto`. Background, border, and border-radius applied directly. `pointer-events` managed on children.
 - `#piano-dock`: `overflow: auto`. Tab bar + active panel.
-- Mobile (≤600px): `#page-content` is `display: block`. `#piano-dock` is `position: fixed`, full-screen below header. 7 tabs, icon-only (labels in `title`): Canvas | Piano Roll | Song | Mixer | Edit | Log | Mute. Hamburger menu. The song editor stacks palette over grid.
+- Mobile (≤600px): `#page-content` is `display: block`. `#piano-dock` is `position: fixed`, full-screen below header. Icon-only tabs (labels in `title`), opening on Patches. Hamburger menu. The song editor stacks palette over grid.
 
 **MSFA DX7 synth architecture (multitimbral):**
 - 16 MIDI channels, 32 patch slots, 16 polyphonic voices, 16 LFOs.

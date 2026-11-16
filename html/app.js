@@ -888,7 +888,9 @@ function initToolbar() {
         appendLog,
         playNoteFn: playFn,
         stopNoteFn: stopNoteFn,
-        initialTab: isMobile ? 'canvas' : 'pianoroll',
+        // Desktop opens on the Tracker; phones keep Patches until the
+        // Tracker has its mobile phase (TODO.md › Tracker, phase 4).
+        initialTab: isMobile ? 'canvas' : 'tracker',
         tickWorker: tickWorker,
         startWorker: startTickWorker,
         stopWorker: stopTickWorker,

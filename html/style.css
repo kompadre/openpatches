@@ -5885,6 +5885,7 @@ footer {
 .section-piece-usage.unused { color: #c9a227; }
 .section-piece-head input[type="text"],
 .section-piece-head input[type="number"],
+.section-pick-row input[type="number"],
 .section-pick-row select {
     background: #0f0f23; color: #ddd; border: 1px solid #333; border-radius: 4px;
     padding: 0.15rem 0.3rem; font-size: 0.75rem;
@@ -5931,6 +5932,10 @@ footer {
     font-size: 0.68rem; font-weight: 600; line-height: 1.1;
 }
 .section-piece-block-bars { font-size: 0.58rem; opacity: 0.7; line-height: 1.1; }
+/* A block that plays its section more than once: ×n after its bars. */
+.section-piece-block-repeats { font-weight: 700; color: #fff; opacity: 1; }
+.section-repeats-field { white-space: nowrap; color: #999; font-size: 0.75rem; display: inline-flex; align-items: center; gap: 0.15rem; }
+.section-repeats { width: 3.2em; }
 .section-piece-empty { color: #777; font-size: 0.7rem; padding: 0.3rem 0; }
 
 /* The library row: every section in the select, and what to do with it. */

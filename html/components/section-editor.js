@@ -36,7 +36,7 @@
 
 import {
     addClip, updateClip, removeClip, removeTrack, setTrackSlot, createClip, findClipOverlap, defaultPatternName, forkPattern,
-    clipCols, clipRepeats, sectionLength, createTrack, pieceLayout, sectionUsage,
+    clipCols, clipRepeats, sectionLength, createTrack, pieceLayout, sectionUsage, entryRepeats, MAX_ENTRY_REPEATS,
     COLS_PER_MEASURE, MAX_SLOTS, MIN_BPM, MAX_BPM,
 } from './project-model.js';
 import { selectionMade, onSelectionElsewhere } from './selection-bus.js';
@@ -332,6 +332,13 @@ export function createSectionEditor(opts = {}) {
         if (walk && next) pickSection(next.sectionId, next.id);
     }
 
+    /** Play a block's section `delta` more (or fewer) times in a row. */
+    function bumpRepeats(entryId, delta) {
+        const entry = session.get().arrangement.find(e => e.id === entryId);
+        if (!entry) return;
+        session.setEntryRepeats(entryId, entryRepeats(entry) + delta, 'section-editor');
+    }
+
     function copyPlacement(entryId) {
         pick(null);
         if (stamp) cancelStamp();
@@ -373,6 +380,11 @@ export function createSectionEditor(opts = {}) {
         };
         item('⎘ Make a copy', 'This block plays a copy of the section; the others keep the original',
             'section-piece-menu-copy', () => copyPlacement(part.entry.id));
+        const reps = entryRepeats(part.entry);
+        item('+ Play once more', `Play it ${reps + 1} times in a row here (+)`,
+            'section-piece-menu-more', () => bumpRepeats(part.entry.id, 1), reps >= MAX_ENTRY_REPEATS);
+        item('− Play once less', reps > 1 ? `Play it ${reps - 1 === 1 ? 'once' : (reps - 1) + ' times'} here (−)` : 'It plays once here',
+            'section-piece-menu-less', () => bumpRepeats(part.entry.id, -1), reps <= 1);
         item('− Remove from piece', 'The section stays in the list (Delete)',
             'section-piece-menu-unplace', () => unplaceEntry(part.entry.id));
         item('✕ Remove section…', 'From the project, with every place it has in the piece — asks first',
@@ -475,8 +487,18 @@ export function createSectionEditor(opts = {}) {
         document.addEventListener('keydown', esc, true);
     }
 
-    /** Keys on a focused block: Alt+←/→ move it, Delete takes it out. */
+    /** Keys on a focused block: Alt+←/→ move it, +/− repeat it, Delete takes it out. */
     function onBlockKey(e, part, index, count) {
+        if (!e.altKey && !e.ctrlKey && !e.metaKey && (e.key === '+' || e.key === '=' || e.key === '-')) {
+            e.preventDefault();
+            e.stopPropagation();
+            pickedEntryId = part.entry.id;
+            if (part.section.id !== sec().id) pickSection(part.section.id, part.entry.id);
+            bumpRepeats(part.entry.id, e.key === '-' ? -1 : 1);
+            refocusBlock = true;
+            render();
+            return;
+        }
         if (e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
             e.preventDefault();
             e.stopPropagation();
@@ -516,7 +538,11 @@ export function createSectionEditor(opts = {}) {
         const index = parts.findIndex(p => p.entry.id === here.entryId);
         const part = parts[index];
         const len = part ? part.endCol - part.startCol : 0;
-        return { entryId: here.entryId, frac: len > 0 ? Math.min(1, Math.max(0, here.col / len)) : 0, index, count: parts.length };
+        const partCol = here.partCol != null ? here.partCol : here.col;
+        return {
+            entryId: here.entryId, frac: len > 0 ? Math.min(1, Math.max(0, partCol / len)) : 0, index, count: parts.length,
+            pass: here.pass || 0, repeats: part ? part.repeats : 1,
+        };
     }
 
     function applyPiecePos() {
@@ -528,7 +554,9 @@ export function createSectionEditor(opts = {}) {
         }
         const tag = piece.querySelector('.section-piece-playing');
         if (tag) {
-            tag.textContent = piecePos && piecePos.index >= 0 ? `▶ ${piecePos.index + 1} of ${piecePos.count}` : '';
+            tag.textContent = piecePos && piecePos.index >= 0
+                ? `▶ ${piecePos.index + 1} of ${piecePos.count}` + (piecePos.repeats > 1 ? ` · pass ${piecePos.pass + 1} of ${piecePos.repeats}` : '')
+                : '';
             tag.style.display = piecePos ? '' : 'none';
         }
     }
@@ -649,16 +677,28 @@ export function createSectionEditor(opts = {}) {
             // Width by bars, so the piece reads as time; a floor keeps a
             // one-bar block clickable and labelled.
             b.style.setProperty('--block-bars', String(Math.max(n, 0)));
-            b.title = `${i + 1}. ${part.section.name} — ${bars(n)}, from bar ${part.startCol / COLS_PER_MEASURE + 1}`;
+            const passBars = part.passCols / COLS_PER_MEASURE;
+            b.title = `${i + 1}. ${part.section.name} — `
+                + (part.repeats > 1 ? `${bars(passBars)} ×${part.repeats} (${bars(n)})` : bars(n))
+                + `, from bar ${part.startCol / COLS_PER_MEASURE + 1}`;
             const label = document.createElement('span');
             label.className = 'section-piece-block-name';
             label.textContent = part.section.name;
             const meta = document.createElement('span');
             meta.className = 'section-piece-block-bars';
-            meta.textContent = String(n);
+            meta.textContent = String(passBars);
             b.appendChild(label);
             b.appendChild(meta);
-            b.title += '. Drag to move, Alt-drag to place it again; Alt+←/→ moves, Delete takes it out; '
+            if (part.repeats > 1) {
+                // On the bars line ("2 ×3"), not over the name: a one-bar
+                // block has no room beside it.
+                meta.appendChild(document.createTextNode(' '));
+                const reps = document.createElement('span');
+                reps.className = 'section-piece-block-repeats';
+                reps.textContent = '×' + part.repeats;
+                meta.appendChild(reps);
+            }
+            b.title += '. Drag to move, Alt-drag to place it again; Alt+←/→ moves, +/− plays it more or fewer times, Delete takes it out; '
                 + 'double-click plays the piece from here; right-click for more';
             // Someone else editing this section: their colour on every block of it.
             markPresence(b, presenceOn({ sectionId: part.section.id }));
@@ -726,6 +766,26 @@ export function createSectionEditor(opts = {}) {
         unplace.disabled = i < 0;
         row.appendChild(earlier);
         row.appendChild(later);
+        // How many times the picked block plays in a row (+/− on the block).
+        const repsLabel = document.createElement('label');
+        repsLabel.className = 'section-field section-repeats-field';
+        repsLabel.title = i >= 0 ? 'How many times this block plays its section in a row (+/− on the block)'
+            : 'Pick a block to set how many times it plays';
+        repsLabel.appendChild(document.createTextNode('×'));
+        const reps = document.createElement('input');
+        reps.type = 'number';
+        reps.className = 'section-repeats';
+        reps.min = '1';
+        reps.max = String(MAX_ENTRY_REPEATS);
+        reps.value = String(i >= 0 ? entryRepeats(project.arrangement[i]) : 1);
+        reps.disabled = i < 0;
+        reps.addEventListener('change', () => {
+            const v = parseInt(reps.value, 10);
+            if (Number.isFinite(v) && pickedEntryId) session.setEntryRepeats(pickedEntryId, v, 'section-editor');
+            render();
+        });
+        repsLabel.appendChild(reps);
+        row.appendChild(repsLabel);
         row.appendChild(unplace);
 
         const tools = document.createElement('span');

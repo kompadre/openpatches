@@ -749,6 +749,9 @@ export function createToolbar(opts) {
     });
     trackerPanel.appendChild(trackerRef.element);
     wrapper._tracker = trackerRef;
+    // The default desktop tab: told it is on screen here, as a tab click
+    // would, or it waits for one before drawing.
+    if (effectiveInitialTab === 'tracker') trackerRef.setShown(true);
 
     pianorollPanel.appendChild(pianorollRow);
 

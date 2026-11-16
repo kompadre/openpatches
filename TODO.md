@@ -5,135 +5,28 @@ Project backlog. Parent tasks with nested subtasks; `[ ]` pending, `[x]` done,
 
 ## Project
 
-### Bugs
-- [ ] Flaky unit test `pattern colours` (section-editor.test.js): two random pattern ids can hash to the same hue, failing "two patterns, two hues".
-- [x] Containers do not always come from inferring a WAV — loading a multitimbral `.syx` makes one too — yet the `⤒ WAV` re-upload offer appears on containers that never had a source WAV. Only containers that came from an inference job should ask for the original WAV. The offer is built in `canvas.js` where `ctr.jobId && onLoadJobWav` and the blob is absent; check what gives a `.syx` container a job id (import path in `project-io.js`, `sourceMissing`).
+### Tracker (agreed 2026-11-07)
 
-- [x] Pattern sub-measure placement in Section has been lost to recent changes. _(Not lost: Snap defaulted to Bar and was easy to miss. Default is now 1/2.)_
-- [x] div.bpane-content.bpane-content-mixer is limited to .bpane-body viewport width. If .bpane-body scrolls to the right .bpane-content ends abruptly and doesn't cover the rest of Tracks.
-- [x] In Chrome, when exporting a project while playing, the page's window looses its focus (the downloaded file list shows in the upper right corner). While the window is inactive the internal clock is still ticking. All the notes that should have played while the window was inactive play the instance it regains focus resulting in cocophonous cluster.
+Phases 1–3 (model, view, editing) are done (CHANGELOG 2026-11-07; SESSION.md
+has what must not break).
+- [ ] **Phase 4 — Mobile** (later): tap-to-cursor and an entry pad. Phones
+  open on Patches until then; desktop opens on the Tracker.
 
-### Plan (agreed 2026-11-06) — phases in order; each phase moves to SESSION.md when started
+### Collaborative editing (agreed 2026-11-10)
 
-**Phase 1 — Unified transport.** _Done 2026-11-06._ Play, Stop, Record and BPM once, to the left of the global tabs, with a Section/Pattern switch; the Section and Piano Roll toolbars and the mobile keyboard row lost their copies.
-
-**Phase 2 — Thinner Section lanes, selection and stamp paste.** _Done 2026-11-06._
-- [x] Head of two rows with two squares each: track number ([1]) and delete [x]; then Mute and Solo.
-- [x] Selection mode and stamp paste for clips, reusing the roll's marquee and stamp.
-
-**Phase 3 — Working with patterns.** _Done 2026-11-06._
-- [x] Pattern thumbnails: small dots inside each clip where the pattern's notes are. One cached image blob per pattern, invalidated when the pattern changes. Thin lanes cramp the clip name; the dots are how a clip is recognised.
-- [x] Pattern library: a collapsible sub-pane at the bottom of the Section pane with every pattern so far (thumbnails), draggable onto tracks. The list `+ Pattern` replaced, in a smaller form.
-- [x] Piano Roll: switch patterns directly from the roll (the library's list again); rename the tab to Pattern.
-
-**Phase 4 — More than one section.** _Done 2026-11-06._
-- [x] A **section list** in the left pane, sibling of the library: the model carries an ordered sequence of sections and `addSection`/`removeSection` exist, but the UI edits exactly one and offers no way to add, reorder or switch. Deferred with the user on 2026-11-02.
-- [x] **Whole-piece playback** — section by section. The transport's modes are `section` and `pattern`; a third scope, chosen from the unified transport.
-- [x] **Tempo automation** (gradual rit./accel.). `effectiveBpm(project, section)` is the seam it grows from; the per-section override is the step-change case already working.
-
-**Phase 5 — Standalone, any time** (revised 2026-11-06). _Done 2026-11-06._
-- [x] Drag patches from the canvas onto Mixer slots to assign them.
-- [x] **Re-upload a missing WAV.** An imported project carries its jobs with `sourceMissing: true` and the original `fileName`, but there is no way to supply the file afterwards.
-- [x] **Storage garbage collection, on demand only** (File → Storage…): report usage per project and for WAVs, delete WAV blobs no job references. No compaction or sharing at project level, and nothing on save.
-- [x] **Import from another project into the current one**: like Import Project, with a step to opt in/out of what comes in (patches, patterns).
-
-### Tracker (agreed 2026-11-07) — phases in order
-
-A **Tracker** tab after Pattern: the Section editor on steroids. Rows are the
-edited section's sixteenths (time runs down, as in the Section pane), the
-columns are the 8 tracks, and each track splits into 1–4 monophonic
-**sub-lanes**. Clips show as their pattern's colour, subdued, with a small
-header (the pattern's name) on the row the clip starts. Note-ons and
-note-offs only — no velocity, no effect column. Entering a note inside a
-clip edits its *pattern* (every placement and repeat follows). Keys are
-FT2-style (Z-row / Q-row piano, `1` = OFF). Mobile later.
-
-Decisions (with the user; stealing dropped 2026-11-07 — marking a stolen
-note would be a lie about what plays):
-- **Lanes are derived and stored on the notes** (`note.lane`, omitted when
-  0 to keep files small; lanes past 3 derive on the fly and are not
-  stored). Derivation honours a stored lane while it is free, so notes do
-  not hop. While a track is being edited, re-derivation of its patterns
-  waits for **3 s of inactivity** (edits mark the pattern dirty; the
-  debounce applies).
-- **Per-track view mode, stored packed** (`track.compact`, omitted unless
-  true): *expanded* shows a sub-lane per concurrent note (as many as the
-  busiest moment needs), *compact* folds the track to one column — a cell
-  with several events shows the first plus `+n`, the rest in a tooltip.
-- **Typing outside a pattern bails with a message.** Growing room is
-  explicit: a ✎ in the gap between tracks at a clip's start offers the
-  clip's repeats (×2 → ×3) and `+ Bar to pattern`; dragging a note past
-  its pattern's end (phase 3) adds the bar itself.
-- **Viewport rectangle**: the Section pane outlines the rows the tracker
-  shows.
-
-- [x] **Phase 1 — Pure model.** `tracker-model.js`: stable lane
-  derivation, expansion of a track's clips into rows (notes, OFFs, clip
-  blocks), and the tracker edit operations (note, OFF, clear) on a
-  pattern. `note.lane` in the project model.
-- [x] **Phase 2 — Read-only view.** The Tracker tab after Pattern (every
-  viewport), the canvas grid (ruler, bar/beat shading, clip blocks in the
-  pattern's colour with name headers and repeat seams), compact/expanded
-  per track with the `+n` cells and tooltip, the ✎ popover (repeats,
-  + Bar), active-track sync with the Mixer/roll, playhead + follow-scroll,
-  the viewport rectangle in Section.
-- [x] **Phase 3 — Editing.** Cursor, FT2 key entry (Z/Q rows, `1` = OFF),
-  octave and edit step, delete, audition on entry, refusal outside a clip,
-  note-drag past the pattern end adds a bar, the 3 s re-derivation
-  debounce (dirty patterns). The pattern name moved to the gap under the ✎,
-  reading downward.
-- [ ] **Phase 4 — Mobile** (later): tap-to-cursor and an entry pad.
-
-### Collaborative editing (agreed 2026-11-10) — milestones in order
-
-Host-authoritative: one person's session is the controller; others join it,
-see the project, play it, and edit it. Host → guests: **parts**
-(a pattern, a patch, the track list…) resent whole when they change, cut
-from the session's existing `source`-tagged events and debounced commits.
-Guest → host: **edits made of atomic ops**, refereed per atom —
-earliest start wins, in host-stamped time (no clock sync; transport and
-playback are local to each peer). No CRDT.
-Transport-agnostic protocol; browsers cannot accept sockets, so "p2p" is a
-relay (first) or WebRTC (later, if latency matters).
-
-- [x] **M1 — Protocol + mirror, one browser.** `collab-model.js` (parts,
-  diff, in-place apply, messages), `collab.js` (host/guest over a
-  pluggable channel; BroadcastChannel first), store/session guest mode
-  (ephemeral body), File › Collaborate…, menu-bar chip, `?join=CODE`.
-  Guests watch and play; their edits are reverted with a notice.
-- [x] **M2 — Guest edits, with conflicts refereed per atom.** Done
-  2026-11-12 (CHANGELOG has the design as built: `collab-ops.js` atoms and
-  grouped CAS ops, `collab-referee.js` earliest-start referee with
-  edit-beats-delete and tombs, host-stamped times instead of clock sync,
-  `session.beginEdit` open scopes, per-atom merge on guests, conflicts
-  table with Reapply mine, presence, identity in the profile).
-- [ ] **M3 — Real network.** A room relay (`/api/room/{code}` WebSocket in
-  the Go service; a dev relay for `server.py`), join by code from another
-  machine, heartbeats, reconnect + resync, host-gone handling.
-  - [x] **M3-1 Relay + join from another machine** (2026-11-12): stdlib
-    WebSocket relay in `server.py`; `relayChannel` in collab.js (falls
-    back to BroadcastChannel with no relay); e2e with two browser contexts.
-  - [x] **M3-2 Heartbeats, reconnect + resync, host-gone** (2026-11-12):
-    beats every 5 s; the relay's `left` notice or 20 s of silence → a 15 s
-    grace, then "The host has gone"; dropped sockets reconnect with backoff;
-    a guest back resyncs (pending rebased), a host back re-snapshots all.
-  - [ ] **M3-3 The Go service's relay** (parked by the user 2026-11-12): same protocol as
-    the stub — `/api/room/<CODE>?peer=<id>`, forward text frames to the
-    room's others, `left` notice on drop; Caddy must proxy the upgrade.
+M1–M4 and M3-1/M3-2 are done (CHANGELOG 2026-11-12; SESSION.md has the
+standing shape). Host-authoritative; transport and playback stay local to
+each peer.
+- [ ] **M3-3 The Go service's relay** (parked by the user 2026-11-12): same protocol as
+  the stub — `/api/room/<CODE>?peer=<id>`, forward text frames to the
+  room's others, `left` notice on drop; Caddy must proxy the upgrade.
 - [ ] **Listen in** — hear what a collaborator hears, as streamed audio.
   Transport stays local to each peer; nothing plays in sync.
-- [x] **M4 — Comforts.** Done 2026-11-12: peer colours and presence in
-  the editors (M4-1), remote cursors and selections drawn only inside
-  what is on screen — the view never follows (M4-2), advisory soft locks
-  that warn on every write while someone else is recording or has the
-  same thing open, and a **take** held as one edit until it ends (M4-3 +
-  record mode). Following the host's transport was dropped: transport is
-  local to each peer. CHANGELOG has the details.
 
 ### Piece panel follow-ups (parked 2026-11-15)
 
 The Piece panel shipped 2026-11-15 (CHANGELOG). Not started; nothing is decided beyond the one-liners.
-- [ ] **Repeat count per block** (`Chorus ×2`): one entry stands for n passes. The entry record `{ id, sectionId }` has room for a `repeats` field; `pieceLayout` would multiply the length.
+- [x] **Repeat count per block** (`Chorus ×2`): done 2026-11-16 (CHANGELOG).
 - [ ] **Loop a run of blocks**: Shift-select consecutive blocks and loop that stretch of the piece. Today a loop only works inside one section.
 - [ ] **Ruler above the strip**: bar numbers or mm:ss, so the piece reads as time.
 - [ ] **Phones**: a layout for the Piece panel. The strip is hidden under 600 px for now; the header and the select row still work.
@@ -142,5 +35,4 @@ The Piece panel shipped 2026-11-15 (CHANGELOG). Not started; nothing is decided 
 
 - [ ] Import and export **MIDI** (patterns ↔ MIDI files; a section or the piece as a multi-track SMF).
 - [ ] Export (and maybe import) the project as a **Reaper project** (.rpp): tracks, clips as MIDI items, tempo.
-- [ ] Per section track configuration. 
-- [ ] 
+- [ ] Per section track configuration.

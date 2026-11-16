@@ -2,6 +2,20 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-16: A block plays its section n times; desktop opens on the Tracker; new patterns take the least-used colour
+
+**Repeats per block** (Piece panel follow-up). A piece entry may carry `repeats` (1–64, stored only above 1), so one block stands for a chorus played twice in a row. `pieceLayout` gives the part every pass (`passCols`, `repeats`) and what follows moves along; the piece sequence folds each column into one pass, so the section and its tempo ramp start again from the top each time. On a block: **+ / −** (and `=`), with no modifier, play it more or fewer times. The block menu has *+ Play once more* and *− Play once less*, and the row under the strip has a **×** field for the picked block. The block reads `2 ×3` (bars of one pass, then the count) and is as wide as every pass; while playing, its line crosses all the passes and the header says `▶ 2 of 3 · pass 2 of 2`. It travels in the `arrangement` atom and the export as it is.
+
+**Desktop opens on the Tracker** (was Pattern). Phones keep Patches until the Tracker's mobile phase. The toolbar tells the tracker it is shown, which before only a tab click did.
+
+**Flaky `pattern colours` test fixed at the source.** Twelve colours hashed from random ids gave two new patterns the same colour one time in twelve, failing "two patterns, two hues" and painting two fresh patterns alike. `addPattern` now gives a pattern without a colour the least-used one in the project (`leastUsedPatternColor`, searching from the id's hash); a passed colour (a copy) is kept, and a stored pattern without one still derives it from its id.
+
+Housekeeping: TODO.md keeps only open work (the finished Bugs list, the 2026-11-06 plan and the done Tracker/collab milestones are gone; each is in this log). SESSION.md loses the long-shipped sub-measure and step-record entries and the resolved default-tab question; the stale Mixer notes (FX on the volume line, one slot per voice) are corrected, and the open live-take/record-slot bug is kept as an open item. A debug screenshot to `/tmp/probe-oak` is gone from `e2e/piece.spec.js`.
+
+Files: `html/components/project-model.js`, `project-session.js`, `section-editor.js`, `toolbar.js`, `html/synth/section-sequencer.js`, `html/app.js`, `html/style.css`, `HEARME.tts`.
+
+Tests: `piece` +5 (stored/clamped, set, layout, every pass from the top with `localize`, export and collab); `section-editor` +4 (+/− keys and the badge, the field and the menu, the playhead across passes, twelve patterns twelve colours); e2e `piece` +1 (+ on a block, both passes heard in the header, the field, a reload), `boot` (opens on the Tracker, drawn), `layout` (the folded left pane's room goes to the Tracker). 1355 unit, 154 e2e — the whole suite, green.
+
 ## 2026-11-16: Mixer strip — FX leads the action row
 
 The strip's action row reads **FX M S ▶**: FX moves from last to first. The `mixer-tab` visual baseline is regenerated; it had been stale since FX joined the row (73d8697) and still showed FX on the readout line.

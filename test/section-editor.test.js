@@ -826,6 +826,20 @@ describe('the Piece panel during playback', () => {
         assert.equal(h.root.querySelector('.section-piece-playing').style.display, 'none');
     });
 
+    test('a block played twice: its line crosses both passes, and the header says which', async () => {
+        const h = await withPiece();
+        const two = h.session.get().arrangement[1];
+        h.session.setEntryRepeats(two.id, 2, 'test');                 // One(16) Two×2(64) One(16)
+        h.transport.play({ mode: 'piece' });
+        h.tickWorker.tick(56);                                   // 40 columns into Two: the second pass
+        assert.deepEqual(playing(h), [false, true, false]);
+        assert.equal(blocks(h)[1].style.getPropertyValue('--play-frac'), '0.625');
+        assert.equal(h.root.querySelector('.section-piece-playing').textContent, '▶ 2 of 3 · pass 2 of 2');
+        h.tickWorker.tick(80);
+        assert.deepEqual(playing(h), [false, false, true], 'the next block after both passes');
+        h.transport.stop();
+    });
+
     test('a tick does not rebuild the blocks; a render keeps the lit one', async () => {
         const h = await withPiece();
         h.transport.play({ mode: 'piece' });
@@ -953,9 +967,19 @@ describe('pattern colours', () => {
         const [a, b] = h.patterns;
         assert.match(a.color, /^#[0-9a-f]{6}$/);
         assert.notEqual(a.color, b.color, 'two patterns, two hues');
-        const again = M.createPattern({ ...a, color: undefined });
-        assert.equal(again.color, a.color, 'derived from the id, so a stored pattern without one keeps its colour');
+        const legacy = M.createPattern({ ...a, color: undefined });
+        assert.equal(M.createPattern({ ...a, color: undefined }).color, legacy.color,
+            'a stored pattern without one derives it from its id, so it is the same on every load');
+        assert.equal(M.createPattern(a).color, a.color, 'a stored colour is kept');
         assert.equal(session.getPattern(a.id).color, a.color);
+    });
+
+    test('new patterns take the least-used colour: twelve patterns, twelve colours', () => {
+        const h = build({ patterns: Array.from({ length: 12 }, (_, i) => ({ name: 'P' + i })) });
+        assert.equal(new Set(h.patterns.map(p => p.color)).size, M.PATTERN_COLORS.length);
+        const p = M.createProject();
+        const copy = M.addPattern(p, { name: 'X', color: '#123456' });
+        assert.equal(copy.color, '#123456', 'a colour that was passed is kept');
     });
 
     test('the swatch in the action bar recolours the pattern and its clips', () => {
@@ -1535,6 +1559,42 @@ describe('Piece blocks: keys and drop position', () => {
         assert.equal(h.section().name, 'Section 2', 'the next block is picked');
         assert.equal(h.project().sections[0].clips.length, 1, 'the clip is still there');
         assert.deepEqual(h.project().sections.map(x => x.name), ['Section 1', 'Section 2', 'Section 3'], 'and so is the section');
+    });
+
+    test('+ / − on a block play it more or fewer times; the block shows ×n and grows', () => {
+        const h = build({ patterns: [{ name: 'A', measures: 2 }], tracks: [{ slot: 0 }], clips: [{ track: 0, pattern: 0, at: 0 }] });
+        const entry = () => h.project().arrangement[0];
+        const badge = () => blocks(h)[0].querySelector('.section-piece-block-repeats');
+        assert.equal(badge(), null, 'once: no badge');
+        blocks(h)[0].dispatch('keydown', ev({ key: '+' }));
+        blocks(h)[0].dispatch('keydown', ev({ key: '=' }));
+        assert.equal(entry().repeats, 3);
+        assert.equal(badge().textContent, '×3');
+        assert.match(blocks(h)[0].querySelector('.section-piece-block-bars').textContent, /^2\b/, 'bars of one pass');
+        assert.equal(blocks(h)[0].style.getPropertyValue('--block-bars'), '6', 'width: every pass');
+        assert.ok(blocks(h)[0].classList.contains('picked'));
+        assert.equal(h.btn('section-repeats').value, '3', 'the row field follows');
+        blocks(h)[0].dispatch('keydown', ev({ key: '-' }));
+        blocks(h)[0].dispatch('keydown', ev({ key: '-' }));
+        blocks(h)[0].dispatch('keydown', ev({ key: '-' }));
+        assert.equal('repeats' in entry(), false, 'not below once');
+        blocks(h)[0].dispatch('keydown', ev({ key: '+', ctrlKey: true }));
+        assert.equal('repeats' in entry(), false, 'Ctrl/Alt/Meta + is the browser\'s');
+    });
+
+    test('the row field and the menu set the picked block\'s passes', () => {
+        const h = build({ patterns: [{ name: 'A' }], tracks: [{ slot: 0 }], clips: [{ track: 0, pattern: 0, at: 0 }] });
+        blocks(h)[0].dispatch('click', ev());
+        const field = h.btn('section-repeats');
+        assert.equal(field.disabled, false);
+        field.value = '4'; field.dispatch('change');
+        assert.equal(h.project().arrangement[0].repeats, 4);
+        blocks(h)[0].dispatch('contextmenu', ev({ clientX: 5, clientY: 5 }));
+        env.document.body.querySelector('.section-piece-menu-less').dispatch('click', ev());
+        assert.equal(h.project().arrangement[0].repeats, 3);
+        blocks(h)[0].dispatch('contextmenu', ev({ clientX: 5, clientY: 5 }));
+        env.document.body.querySelector('.section-piece-menu-more').dispatch('click', ev());
+        assert.equal(h.project().arrangement[0].repeats, 4);
     });
 
     test('dropIndex: before the block whose middle is right of the pointer, in the pointer\'s row', () => {

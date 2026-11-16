@@ -328,17 +328,18 @@ test.describe('layout invariants', () => {
         await expect(page.locator('.dock-tab-section')).toHaveClass(/active/);
 
         const paneW = await pane.evaluate((el) => el.getBoundingClientRect().width);
-        const rollW = await page.locator('.dock-panel-pianoroll').evaluate((el) => el.getBoundingClientRect().width);
+        // The main panel beside it is the Tracker, the desktop's first tab.
+        const mainW = await page.locator('.dock-panel-tracker').evaluate((el) => el.getBoundingClientRect().width);
 
         // Fold by the bookmark: the editor hides, the bookmark stays, the
-        // piano roll takes the room.
+        // Tracker takes the room.
         await page.locator('.lpane-bookmark').click();
         await expect(editor).toBeHidden();
         await expect(page.locator('.lpane-bookmark')).toBeVisible();
         await expect(page.locator('.lpane-handle')).toBeHidden();
         await expect(page.locator('.dock-tab-section')).not.toHaveClass(/active/);
-        expect(await page.locator('.dock-panel-pianoroll').evaluate((el) => el.getBoundingClientRect().width))
-            .toBeGreaterThan(rollW + paneW / 2);
+        expect(await page.locator('.dock-panel-tracker').evaluate((el) => el.getBoundingClientRect().width))
+            .toBeGreaterThan(mainW + paneW / 2);
 
         // The tab reopens it at the width it had.
         await page.locator('.dock-tab-section').click();

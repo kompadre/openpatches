@@ -23,7 +23,6 @@ test('sections: add, pick, reorder; piece playback follows the playhead', async 
     await expect(page.locator('.section-bpm-end')).toHaveValue('');       // Section 2's: none
     await page.locator('.section-pick').selectOption({ label: 'Section 1' });
     await expect(page.locator('.section-bpm-end')).toHaveValue('200');
-    await page.screenshot({ path: '/tmp/probe-oak/p4.png', clip: { x: 30, y: 30, width: 390, height: 200 } });
 
     // Piece: 2 one-bar sections at 120 → ~1 s each. The pane follows.
     await chooseScope(page, 'piece');
@@ -213,4 +212,36 @@ test('playback: the playing block is lit, double-click plays from a block, the f
     await expect(page.locator('.section-piece-playing')).toHaveText(/▶ [12] of 3/);
     await page.locator('.transport-stop').click();
     await expect(page.locator('.section-piece-playing')).toBeHidden();
+});
+
+test('repeats: + on a block plays it twice in a row; the header counts the passes', async ({ page }) => {
+    await openApp(page);
+    await openSectionPane(page);
+    await page.locator('.section-add-track').click();
+    await page.locator('.section-pattern-new').click();
+    await page.evaluate(() => window.__opProject.update((p) => {
+        for (const pat of Object.values(p.patterns)) pat.notes = [{ midi: 60, start: 0, dur: 1 }];
+    }, 'e2e'));
+    const block = page.locator('.section-piece-block').first();
+    await block.focus();
+    await page.keyboard.press('+');
+    await expect(block.locator('.section-piece-block-repeats')).toHaveText('×2');
+    await expect(page.locator('.section-repeats')).toHaveValue('2');
+    await expect(page.locator('.section-piece-toggle')).toHaveText('▾ Piece · 2 bars');
+    await expect(block).toBeFocused();
+
+    // One bar at 120, twice: the second pass comes about 2 s in.
+    await block.dblclick();
+    await expect(page.locator('.section-piece-playing')).toHaveText('▶ 1 of 1 · pass 1 of 2');
+    await expect(page.locator('.section-piece-playing')).toHaveText('▶ 1 of 1 · pass 2 of 2', { timeout: 5000 });
+    await page.locator('.transport-stop').click();
+
+    // The field sets it too, and the count survives a reload.
+    await page.locator('.section-repeats').fill('3');
+    await page.locator('.section-repeats').press('Enter');
+    await expect(block.locator('.section-piece-block-repeats')).toHaveText('×3');
+    await page.evaluate(() => window.__opProject.flush());
+    await page.reload();
+    await openSectionPane(page);
+    await expect(page.locator('.section-piece-block-repeats')).toHaveText('×3');
 });
