@@ -581,8 +581,8 @@ yet stable enough to be an AGENTS.md rule.)_
   no-op for a slot with no voice, so opening a clip on such a track (from
   Section, or the roll's Pattern select) moves the roll but not the
   recorder. Step records already bypass it (`getEditTarget()`); live takes
-  do not. Fix: sync the record slot to the roll's edit target, or record
-  onto it directly.
+  do not. **Not to be patched on its own** (user, 2026-11-16): it goes
+  away with the Player, phase 3 (TODO.md › Player and per-track Playheads).
 - **Limits kept on purpose:** a Section loop is whole bars only; dragging
   a multi-selection of clips moves only the clip grabbed.
 - **The e2e counts in CHANGELOG were not always a full green run:** the
