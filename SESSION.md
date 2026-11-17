@@ -209,7 +209,7 @@ Phases (proposed 2026-11-16, agreed):
   `tracker-view` › ≈ 1, `velocity-and-fx` › humanize 1 (1452 unit);
   visual probe of the ≈ button done (screenshot inspected, probe removed).
 
-Open, to settle when the phases start:
+Every open question of the plan is settled (see the phases above).
 
 ### Tracker velocity + effects columns — DONE 2026-11-17 (CHANGELOG)
 
