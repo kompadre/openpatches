@@ -96,6 +96,10 @@ export function createTransport(opts) {
     // (the first tick, an external `continue`, a skipped tick) seeks first.
     let player = null;
     let nextRaw = null;
+    // While a take runs: the heads' rows per worker tick, so a note played
+    // at tick k is written where its track's head *was* — a looped short
+    // track records into its own bar, not at the nominal column.
+    let takeLog = null;
     let sectionPos = 0;       // section column the pattern loop anchors to (see header)
     let placement = null;     // the placement pattern mode is looping, null when alone
     let consecutiveErrors = 0;
@@ -344,6 +348,7 @@ export function createTransport(opts) {
         const seeked = rawCol !== nextRaw;
         if (seeked) player.start(sequence.columnForTick(rawCol));
         nextRaw = rawCol + 1;
+        if (recording && takeLog) takeLog.set(rawCol, player.positions());
         // The seam is the first row of a new pass — the heads realigned; the
         // recorder finalises notes held across it. A seek that lands on the
         // range's first column counts too (the worker wrapped us there).
@@ -539,6 +544,7 @@ export function createTransport(opts) {
         armed = null;
         lastCol = -1;
         nextRaw = null;
+        takeLog = null;
         warnedOutsideClip = false;
         midiManager.clockStop();
         stopTheWorker();
@@ -566,6 +572,7 @@ export function createTransport(opts) {
         }
         lastCol = sequence.range ? sequence.range.startCol : 0;
         placePlayer(lastCol);
+        takeLog = new Map();
         consecutiveErrors = 0;
         warnedOutsideClip = false;
         if (slaved()) return arm('record');
@@ -645,8 +652,13 @@ export function createTransport(opts) {
 
         /**
          * Where a recorded column lands in the pattern being written to.
-         * `absCol` counts sixteenths since the take began, which is also the
-         * section column (both start at the range's first column).
+         * `absCol` counts sixteenths since the take began — the worker's
+         * tick count. The take writes into **the track on screen** (the edit
+         * target); `slot` names another track instead (tests, legacy). The
+         * column is where that track's head was at that tick (the take
+         * log) — so a looped short track records into its own bar; without
+         * a log entry (no take running, a tick not yet reached) the
+         * nominal column stands in.
          *
          * Three answers:
          *   { patternCol, clipId }  — a clip is under the playhead here
@@ -670,11 +682,16 @@ export function createTransport(opts) {
             }
             // Tracks are the project's band; clips belong to the section.
             const project = session.get();
-            const track = project && project.tracks.find(t => t.slot === slot);
+            const t = slot == null ? editTarget() : null;
+            const track = project && (slot != null
+                ? project.tracks.find(x => x.slot === slot)
+                : t && project.tracks.find(x => x.id === t.trackId));
             const placed = track && clipsHere().some(c => c.trackId === track.id);
             if (!placed) return { fresh: true };
             if (!sequence || !sequence.range) return { fresh: true };
-            const col = sequence.columnForTick(absCol);
+            const logged = takeLog && takeLog.get(absCol);
+            const head = logged && logged.find(h => h.trackId === track.id);
+            const col = head ? head.row : sequence.columnForTick(absCol);
             const here = sequence.locate(col).tracks[track.id];
             if (!here) {
                 if (!warnedOutsideClip) {

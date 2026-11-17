@@ -509,7 +509,16 @@ export function createToolbar(opts) {
 
     let stepTimer = null;
     let takeRunning = false;      // the transport's view, for re-basing recordStartTime
-    let activeRecordSlot = 0;
+
+    /**
+     * The voice a key sounds on and a take records into: the roll's active
+     * slot — the track on screen. One source, so the recorder can no longer
+     * disagree with the pattern being edited (the old `activeRecordSlot`
+     * followed the voice bank, whose active slot skips empty slots).
+     */
+    function recordSlot() {
+        return pianorollRef && pianorollRef.getActiveSlot ? pianorollRef.getActiveSlot() : 0;
+    }
 
     // The open project, shared by the piano roll (which edits a pattern in
     // it), the Section editor (which arranges one of its sections) and the
@@ -531,11 +540,10 @@ export function createToolbar(opts) {
             opt.textContent = entries[i] ? (i + 1) + '. ' + entries[i].name : (i + 1) + '. —';
             voiceSelect.appendChild(opt);
         }
-        voiceSelect.value = activeRecordSlot;
+        voiceSelect.value = recordSlot();
     }
 
     function updateKeyboardVoice(slot) {
-        activeRecordSlot = slot;
         voiceSelect.value = slot;
     }
 
@@ -659,12 +667,12 @@ export function createToolbar(opts) {
         if (!pos.recording || !pos.seam) return;
         logRecord(`[record] seam at rawCol=${pos.rawCol}, finalizing ${activePresses.size} held note(s)`);
         for (const [midi, press] of [...activePresses]) {
-            const mapped = transport.mapRecordColumn(press.startCol, activeRecordSlot);
+            const mapped = transport.mapRecordColumn(press.startCol);
             const tc = pianorollRef.totalCols ? pianorollRef.totalCols() : 16;
             const col = mapped && (mapped.fresh ? ((press.startCol % tc) + tc) % tc : mapped.patternCol);
             if (mapped && col > 0) {
                 logRecord(`[record] seam-split midi=${midi} startCol=${press.startCol} endCol=${pos.rawCol}`);
-                addRecordedNote(midi, press.startCol, pos.rawCol, activeRecordSlot, press.velocity);
+                addRecordedNote(midi, press.startCol, pos.rawCol, press.velocity);
                 activePresses.delete(midi);
             }
         }
@@ -828,8 +836,11 @@ export function createToolbar(opts) {
     kbVoices.appendChild(voiceSelect);
 
     voiceSelect.addEventListener('change', () => {
-        activeRecordSlot = parseInt(voiceSelect.value);
-        if (voiceBank && voiceBank._setActiveSlot) voiceBank._setActiveSlot(activeRecordSlot);
+        const slot = parseInt(voiceSelect.value);
+        // The bank skips a slot with no voice; the screen must follow anyway.
+        if (voiceBank && voiceBank._setActiveSlot) voiceBank._setActiveSlot(slot);
+        if (pianorollRef && pianorollRef.setActiveSlot) pianorollRef.setActiveSlot(slot);
+        if (trackerRef && trackerRef.setActiveSlot) trackerRef.setActiveSlot(slot);
     });
 
     const btnUndo = document.createElement('button');
@@ -921,12 +932,13 @@ export function createToolbar(opts) {
         const key = keyElements[midi];
         if (key) key.classList.add('pressed');
 
+        const slot = recordSlot();
         const entries = voiceBank ? voiceBank._getEntries() : [];
-        const activeEntry = entries[activeRecordSlot];
+        const activeEntry = entries[slot];
         // sustained: the 30 s here is a safety net, not a real duration, so
         // the MIDI path must not schedule a note-off that far ahead.
         const result = (playNoteFn || (() => {}))(
-            midi, 30000, activeEntry ? activeEntry.voiceData : null, activeRecordSlot,
+            midi, 30000, activeEntry ? activeEntry.voiceData : null, slot,
             { sustained: true, velocity });
 
         if (result && typeof result.then === 'function') {
@@ -946,7 +958,7 @@ export function createToolbar(opts) {
             stepNoteOn(midi, when);
         } else if (recording) {
             activePresses.set(midi, { startCol: colAt(when), velocity });
-            logRecord(`[record] note-on midi=${midi} vel=${velocity} slot=${activeRecordSlot}`);
+            logRecord(`[record] note-on midi=${midi} vel=${velocity} slot=${slot}`);
         }
 
         if (onNoteClick) onNoteClick(midi);
@@ -970,7 +982,7 @@ export function createToolbar(opts) {
         } else if (opts.stopNoteFn) {
             // The synth never handed us a stop function; fall back to a direct
             // note-off. Only reachable for a genuinely held note now.
-            opts.stopNoteFn(midi, activeRecordSlot);
+            opts.stopNoteFn(midi, recordSlot());
         }
 
         if (stepping && stepPresses.has(midi)) {
@@ -980,7 +992,7 @@ export function createToolbar(opts) {
             activePresses.delete(midi);
             const endCol = colAt(when);
             logRecord(`[record] note-off midi=${midi} startCol=${press.startCol} endCol=${endCol}`);
-            addRecordedNote(midi, press.startCol, endCol, activeRecordSlot, press.velocity);
+            addRecordedNote(midi, press.startCol, endCol, press.velocity);
         }
     }
 
@@ -1116,7 +1128,7 @@ export function createToolbar(opts) {
         const t = pianorollRef.getEditTarget ? pianorollRef.getEditTarget() : null;
         const note = pianorollRef.addNote({
             midi, start: stepCol, dur: Math.min(stepLen(), stepTotalCols() - stepCol),
-            slot: t ? t.slot : activeRecordSlot,
+            slot: t ? t.slot : recordSlot(),
             clipId: t ? t.clipId : null,
             reveal: 'row',
         });
@@ -1184,12 +1196,13 @@ export function createToolbar(opts) {
     const kb = document.createElement('div');
     kb.className = 'keyboard';
 
-    function addRecordedNote(midi, startCol, endCol, slot, vel) {
+    function addRecordedNote(midi, startCol, endCol, vel) {
         if (!pianorollRef || !pianorollRef.addNote) return;
-        // Where does this column land? In section mode that depends on which
-        // clip is under the playhead on this voice; with none, the note was
-        // heard but there is nothing to write it into.
-        const mapped = transport.mapRecordColumn(startCol, slot);
+        // The take writes into the track on screen, where *its* head was at
+        // that tick (the transport's take log); with no clip there the note
+        // was heard but there is nothing to write it into.
+        const slot = recordSlot();
+        const mapped = transport.mapRecordColumn(startCol);
         if (!mapped) return;              // placed elsewhere: heard, not recorded
         const tc = pianorollRef.totalCols ? pianorollRef.totalCols() : 16;
         // Calculate duration from raw columns (before wrapping)

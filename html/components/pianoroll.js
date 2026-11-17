@@ -2159,6 +2159,8 @@ export function createPianoroll(opts) {
             draw();
             renderLegend();
         },
+        /** The voice on screen — the one a take records into (the recorder's single source). */
+        getActiveSlot() { return currentSlot(); },
         /**
          * Insert a note on `slot`'s track (the recorder names the slot it
          * recorded on, which need not be the one being edited).

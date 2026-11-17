@@ -169,6 +169,34 @@ describe('collapsible keyboard', () => {
     });
 });
 
+describe('a take writes into the track on screen (Player phase 3)', () => {
+    test('the roll on a voiceless slot: the take lands there, not on the bank\'s active slot', async () => {
+        const { dock, recDesktop, roll } = build();
+        // Two tracks; the bank has no voices at all, so its active slot never
+        // moves — exactly the state that used to strand the recorder on slot 0.
+        roll.addNote({ midi: 60, start: 0, dur: 1, slot: 0 });
+        roll.addNote({ midi: 62, start: 0, dur: 1, slot: 1 });
+        roll.setActiveSlot(1);
+        roll.startPlayback();
+        recDesktop.dispatch('click');
+        const key = dock.querySelectorAll('.key')[0];   // C2
+        const ev = { button: 0, preventDefault() {} };
+        key.dispatch('mousedown', ev);
+        await flush();
+        key.dispatch('mouseup', ev);
+        await flush();
+        recDesktop.dispatch('click');
+        const project = dock._session.get();
+        const bySlot = (slot) => {
+            const track = project.tracks.find(t => t.slot === slot);
+            const clip = project.sections[0].clips.find(c => c.trackId === track.id);
+            return project.patterns[clip.patternId].notes.map(n => n.midi);
+        };
+        assert.deepEqual(bySlot(1), [62, 36], 'recorded into the pattern on screen');
+        assert.deepEqual(bySlot(0), [60], 'the other track untouched');
+    });
+});
+
 describe('a take carries MIDI velocity', () => {
     test('a MIDI note-on during the session records its velocity on the note; 100 is not stored', async () => {
         const stub = installMidiStub();

@@ -613,6 +613,33 @@ describe('mapRecordColumn', () => {
         assert.equal(m.clipId, h.made[0].clip.id);
     });
 
+    test('without a slot the take writes into the track on screen — the edit target, whatever the bank thinks', () => {
+        const h = build({ tracks: [{ slot: 0, measures: 1, notes: [note(60, 0)] },
+                                   { slot: 1, measures: 1, notes: [note(48, 0)] }], edit: 1 });
+        h.transport.startRecording();
+        const m = h.transport.mapRecordColumn(3);
+        assert.equal(m.clipId, h.made[1].clip.id, 'slot 1: the pattern on screen');
+        assert.equal(m.patternCol, 3);
+    });
+
+    test('during a take the column is where the track\'s head was — a looped short track records into its own bar', () => {
+        // Slot 0 (on screen): one bar. Slot 1: two bars. The take runs 32
+        // ticks; slot 0's head has wrapped at 16, so a key at tick 20 lands
+        // at pattern column 4 — where today's nominal column (20) would have
+        // found no clip and dropped the note.
+        const h = build({ tracks: [{ slot: 0, measures: 1, notes: [note(60, 0)] },
+                                   { slot: 1, measures: 2, notes: [note(48, 0)] }], edit: 0 });
+        h.transport.startRecording();
+        for (let raw = 0; raw <= 20; raw++) h.tickWorker.tick(raw);
+        const m = h.transport.mapRecordColumn(20);
+        assert.equal(m.patternCol, 4);
+        assert.equal(m.clipId, h.made[0].clip.id);
+        // A tick the take has not reached yet falls back to the nominal column.
+        assert.equal(h.transport.mapRecordColumn(21, 1).patternCol, 21, 'slot 1 at the nominal column');
+        h.transport.stop();
+        assert.equal(h.transport.mapRecordColumn(20, 0), null, 'the log is gone with the take; nominal 20 is past the one-bar clip');
+    });
+
     test('a voice with clips but none under the playhead records nothing, and says so once', () => {
         const h = build({ tracks: [{ slot: 0, measures: 1, notes: [note(60, 0)], at: 2, repeats: 1 },
                                    { slot: 1, measures: 1, notes: [note(48, 0)], at: 0, repeats: 4 }] });
