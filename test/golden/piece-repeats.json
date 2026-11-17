@@ -1,0 +1,1256 @@
+{
+ "today": {
+  "kind": "piece",
+  "length": 48,
+  "range": {
+   "startCol": 0,
+   "endCol": 48
+  },
+  "events": {
+   "0": [
+    [
+     60,
+     0,
+     4,
+     0
+    ]
+   ],
+   "8": [
+    [
+     62,
+     0,
+     4,
+     0
+    ]
+   ],
+   "16": [
+    [
+     60,
+     0,
+     4,
+     0
+    ]
+   ],
+   "24": [
+    [
+     62,
+     0,
+     4,
+     0
+    ]
+   ],
+   "32": [
+    [
+     72,
+     0,
+     8,
+     110
+    ]
+   ],
+   "48": [
+    [
+     60,
+     0,
+     4,
+     0
+    ]
+   ],
+   "56": [
+    [
+     62,
+     0,
+     4,
+     0
+    ]
+   ],
+   "64": [
+    [
+     60,
+     0,
+     4,
+     0
+    ]
+   ]
+  },
+  "cols": {
+   "48": 0,
+   "49": 1,
+   "50": 2,
+   "51": 3,
+   "52": 4,
+   "53": 5,
+   "54": 6,
+   "55": 7,
+   "56": 8,
+   "57": 9,
+   "58": 10,
+   "59": 11,
+   "60": 12,
+   "61": 13,
+   "62": 14,
+   "63": 15,
+   "64": 16,
+   "65": 17,
+   "66": 18,
+   "67": 19,
+   "68": 20,
+   "69": 21,
+   "70": 22,
+   "71": 23
+  },
+  "locate": {
+   "0": {
+    "col": 0,
+    "measure": 0,
+    "colInMeasure": 0,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 0
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 0,
+    "pass": 0
+   },
+   "1": {
+    "col": 1,
+    "measure": 0,
+    "colInMeasure": 1,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 1
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 1,
+    "pass": 0
+   },
+   "2": {
+    "col": 2,
+    "measure": 0,
+    "colInMeasure": 2,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 2
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 2,
+    "pass": 0
+   },
+   "3": {
+    "col": 3,
+    "measure": 0,
+    "colInMeasure": 3,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 3
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 3,
+    "pass": 0
+   },
+   "4": {
+    "col": 4,
+    "measure": 0,
+    "colInMeasure": 4,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 4
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 4,
+    "pass": 0
+   },
+   "5": {
+    "col": 5,
+    "measure": 0,
+    "colInMeasure": 5,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 5
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 5,
+    "pass": 0
+   },
+   "6": {
+    "col": 6,
+    "measure": 0,
+    "colInMeasure": 6,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 6
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 6,
+    "pass": 0
+   },
+   "7": {
+    "col": 7,
+    "measure": 0,
+    "colInMeasure": 7,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 7
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 7,
+    "pass": 0
+   },
+   "8": {
+    "col": 8,
+    "measure": 0,
+    "colInMeasure": 8,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 8
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 8,
+    "pass": 0
+   },
+   "9": {
+    "col": 9,
+    "measure": 0,
+    "colInMeasure": 9,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 9
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 9,
+    "pass": 0
+   },
+   "10": {
+    "col": 10,
+    "measure": 0,
+    "colInMeasure": 10,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 10
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 10,
+    "pass": 0
+   },
+   "11": {
+    "col": 11,
+    "measure": 0,
+    "colInMeasure": 11,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 11
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 11,
+    "pass": 0
+   },
+   "12": {
+    "col": 12,
+    "measure": 0,
+    "colInMeasure": 12,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 12
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 12,
+    "pass": 0
+   },
+   "13": {
+    "col": 13,
+    "measure": 0,
+    "colInMeasure": 13,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 13
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 13,
+    "pass": 0
+   },
+   "14": {
+    "col": 14,
+    "measure": 0,
+    "colInMeasure": 14,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 14
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 14,
+    "pass": 0
+   },
+   "15": {
+    "col": 15,
+    "measure": 0,
+    "colInMeasure": 15,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 15
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 15,
+    "pass": 0
+   },
+   "16": {
+    "col": 0,
+    "measure": 0,
+    "colInMeasure": 0,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 0
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 0,
+    "pass": 1
+   },
+   "17": {
+    "col": 1,
+    "measure": 0,
+    "colInMeasure": 1,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 1
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 1,
+    "pass": 1
+   },
+   "18": {
+    "col": 2,
+    "measure": 0,
+    "colInMeasure": 2,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 2
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 2,
+    "pass": 1
+   },
+   "19": {
+    "col": 3,
+    "measure": 0,
+    "colInMeasure": 3,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 3
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 3,
+    "pass": 1
+   },
+   "20": {
+    "col": 4,
+    "measure": 0,
+    "colInMeasure": 4,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 4
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 4,
+    "pass": 1
+   },
+   "21": {
+    "col": 5,
+    "measure": 0,
+    "colInMeasure": 5,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 5
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 5,
+    "pass": 1
+   },
+   "22": {
+    "col": 6,
+    "measure": 0,
+    "colInMeasure": 6,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 6
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 6,
+    "pass": 1
+   },
+   "23": {
+    "col": 7,
+    "measure": 0,
+    "colInMeasure": 7,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 7
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 7,
+    "pass": 1
+   },
+   "24": {
+    "col": 8,
+    "measure": 0,
+    "colInMeasure": 8,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 8
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 8,
+    "pass": 1
+   },
+   "25": {
+    "col": 9,
+    "measure": 0,
+    "colInMeasure": 9,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 9
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 9,
+    "pass": 1
+   },
+   "26": {
+    "col": 10,
+    "measure": 0,
+    "colInMeasure": 10,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 10
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 10,
+    "pass": 1
+   },
+   "27": {
+    "col": 11,
+    "measure": 0,
+    "colInMeasure": 11,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 11
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 11,
+    "pass": 1
+   },
+   "28": {
+    "col": 12,
+    "measure": 0,
+    "colInMeasure": 12,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 12
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 12,
+    "pass": 1
+   },
+   "29": {
+    "col": 13,
+    "measure": 0,
+    "colInMeasure": 13,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 13
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 13,
+    "pass": 1
+   },
+   "30": {
+    "col": 14,
+    "measure": 0,
+    "colInMeasure": 14,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 14
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 14,
+    "pass": 1
+   },
+   "31": {
+    "col": 15,
+    "measure": 0,
+    "colInMeasure": 15,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 15
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 15,
+    "pass": 1
+   },
+   "32": {
+    "col": 0,
+    "measure": 0,
+    "colInMeasure": 0,
+    "tracks": {
+     "tA": {
+      "clipId": "cC",
+      "patternId": "pC",
+      "patternCol": 0
+     }
+    },
+    "sectionId": "secC",
+    "entryId": "e2",
+    "sectionCol": 0,
+    "pass": 0
+   },
+   "33": {
+    "col": 1,
+    "measure": 0,
+    "colInMeasure": 1,
+    "tracks": {
+     "tA": {
+      "clipId": "cC",
+      "patternId": "pC",
+      "patternCol": 1
+     }
+    },
+    "sectionId": "secC",
+    "entryId": "e2",
+    "sectionCol": 1,
+    "pass": 0
+   },
+   "34": {
+    "col": 2,
+    "measure": 0,
+    "colInMeasure": 2,
+    "tracks": {
+     "tA": {
+      "clipId": "cC",
+      "patternId": "pC",
+      "patternCol": 2
+     }
+    },
+    "sectionId": "secC",
+    "entryId": "e2",
+    "sectionCol": 2,
+    "pass": 0
+   },
+   "35": {
+    "col": 3,
+    "measure": 0,
+    "colInMeasure": 3,
+    "tracks": {
+     "tA": {
+      "clipId": "cC",
+      "patternId": "pC",
+      "patternCol": 3
+     }
+    },
+    "sectionId": "secC",
+    "entryId": "e2",
+    "sectionCol": 3,
+    "pass": 0
+   },
+   "36": {
+    "col": 4,
+    "measure": 0,
+    "colInMeasure": 4,
+    "tracks": {
+     "tA": {
+      "clipId": "cC",
+      "patternId": "pC",
+      "patternCol": 4
+     }
+    },
+    "sectionId": "secC",
+    "entryId": "e2",
+    "sectionCol": 4,
+    "pass": 0
+   },
+   "37": {
+    "col": 5,
+    "measure": 0,
+    "colInMeasure": 5,
+    "tracks": {
+     "tA": {
+      "clipId": "cC",
+      "patternId": "pC",
+      "patternCol": 5
+     }
+    },
+    "sectionId": "secC",
+    "entryId": "e2",
+    "sectionCol": 5,
+    "pass": 0
+   },
+   "38": {
+    "col": 6,
+    "measure": 0,
+    "colInMeasure": 6,
+    "tracks": {
+     "tA": {
+      "clipId": "cC",
+      "patternId": "pC",
+      "patternCol": 6
+     }
+    },
+    "sectionId": "secC",
+    "entryId": "e2",
+    "sectionCol": 6,
+    "pass": 0
+   },
+   "39": {
+    "col": 7,
+    "measure": 0,
+    "colInMeasure": 7,
+    "tracks": {
+     "tA": {
+      "clipId": "cC",
+      "patternId": "pC",
+      "patternCol": 7
+     }
+    },
+    "sectionId": "secC",
+    "entryId": "e2",
+    "sectionCol": 7,
+    "pass": 0
+   },
+   "40": {
+    "col": 8,
+    "measure": 0,
+    "colInMeasure": 8,
+    "tracks": {
+     "tA": {
+      "clipId": "cC",
+      "patternId": "pC",
+      "patternCol": 8
+     }
+    },
+    "sectionId": "secC",
+    "entryId": "e2",
+    "sectionCol": 8,
+    "pass": 0
+   },
+   "41": {
+    "col": 9,
+    "measure": 0,
+    "colInMeasure": 9,
+    "tracks": {
+     "tA": {
+      "clipId": "cC",
+      "patternId": "pC",
+      "patternCol": 9
+     }
+    },
+    "sectionId": "secC",
+    "entryId": "e2",
+    "sectionCol": 9,
+    "pass": 0
+   },
+   "42": {
+    "col": 10,
+    "measure": 0,
+    "colInMeasure": 10,
+    "tracks": {
+     "tA": {
+      "clipId": "cC",
+      "patternId": "pC",
+      "patternCol": 10
+     }
+    },
+    "sectionId": "secC",
+    "entryId": "e2",
+    "sectionCol": 10,
+    "pass": 0
+   },
+   "43": {
+    "col": 11,
+    "measure": 0,
+    "colInMeasure": 11,
+    "tracks": {
+     "tA": {
+      "clipId": "cC",
+      "patternId": "pC",
+      "patternCol": 11
+     }
+    },
+    "sectionId": "secC",
+    "entryId": "e2",
+    "sectionCol": 11,
+    "pass": 0
+   },
+   "44": {
+    "col": 12,
+    "measure": 0,
+    "colInMeasure": 12,
+    "tracks": {
+     "tA": {
+      "clipId": "cC",
+      "patternId": "pC",
+      "patternCol": 12
+     }
+    },
+    "sectionId": "secC",
+    "entryId": "e2",
+    "sectionCol": 12,
+    "pass": 0
+   },
+   "45": {
+    "col": 13,
+    "measure": 0,
+    "colInMeasure": 13,
+    "tracks": {
+     "tA": {
+      "clipId": "cC",
+      "patternId": "pC",
+      "patternCol": 13
+     }
+    },
+    "sectionId": "secC",
+    "entryId": "e2",
+    "sectionCol": 13,
+    "pass": 0
+   },
+   "46": {
+    "col": 14,
+    "measure": 0,
+    "colInMeasure": 14,
+    "tracks": {
+     "tA": {
+      "clipId": "cC",
+      "patternId": "pC",
+      "patternCol": 14
+     }
+    },
+    "sectionId": "secC",
+    "entryId": "e2",
+    "sectionCol": 14,
+    "pass": 0
+   },
+   "47": {
+    "col": 15,
+    "measure": 0,
+    "colInMeasure": 15,
+    "tracks": {
+     "tA": {
+      "clipId": "cC",
+      "patternId": "pC",
+      "patternCol": 15
+     }
+    },
+    "sectionId": "secC",
+    "entryId": "e2",
+    "sectionCol": 15,
+    "pass": 0
+   },
+   "48": {
+    "col": 0,
+    "measure": 0,
+    "colInMeasure": 0,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 0
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 0,
+    "pass": 0
+   },
+   "49": {
+    "col": 1,
+    "measure": 0,
+    "colInMeasure": 1,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 1
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 1,
+    "pass": 0
+   },
+   "50": {
+    "col": 2,
+    "measure": 0,
+    "colInMeasure": 2,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 2
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 2,
+    "pass": 0
+   },
+   "51": {
+    "col": 3,
+    "measure": 0,
+    "colInMeasure": 3,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 3
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 3,
+    "pass": 0
+   },
+   "52": {
+    "col": 4,
+    "measure": 0,
+    "colInMeasure": 4,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 4
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 4,
+    "pass": 0
+   },
+   "53": {
+    "col": 5,
+    "measure": 0,
+    "colInMeasure": 5,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 5
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 5,
+    "pass": 0
+   },
+   "54": {
+    "col": 6,
+    "measure": 0,
+    "colInMeasure": 6,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 6
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 6,
+    "pass": 0
+   },
+   "55": {
+    "col": 7,
+    "measure": 0,
+    "colInMeasure": 7,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 7
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 7,
+    "pass": 0
+   },
+   "56": {
+    "col": 8,
+    "measure": 0,
+    "colInMeasure": 8,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 8
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 8,
+    "pass": 0
+   },
+   "57": {
+    "col": 9,
+    "measure": 0,
+    "colInMeasure": 9,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 9
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 9,
+    "pass": 0
+   },
+   "58": {
+    "col": 10,
+    "measure": 0,
+    "colInMeasure": 10,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 10
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 10,
+    "pass": 0
+   },
+   "59": {
+    "col": 11,
+    "measure": 0,
+    "colInMeasure": 11,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 11
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 11,
+    "pass": 0
+   },
+   "60": {
+    "col": 12,
+    "measure": 0,
+    "colInMeasure": 12,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 12
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 12,
+    "pass": 0
+   },
+   "61": {
+    "col": 13,
+    "measure": 0,
+    "colInMeasure": 13,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 13
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 13,
+    "pass": 0
+   },
+   "62": {
+    "col": 14,
+    "measure": 0,
+    "colInMeasure": 14,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 14
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 14,
+    "pass": 0
+   },
+   "63": {
+    "col": 15,
+    "measure": 0,
+    "colInMeasure": 15,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 15
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 15,
+    "pass": 0
+   },
+   "64": {
+    "col": 0,
+    "measure": 0,
+    "colInMeasure": 0,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 0
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 0,
+    "pass": 1
+   },
+   "65": {
+    "col": 1,
+    "measure": 0,
+    "colInMeasure": 1,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 1
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 1,
+    "pass": 1
+   },
+   "66": {
+    "col": 2,
+    "measure": 0,
+    "colInMeasure": 2,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 2
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 2,
+    "pass": 1
+   },
+   "67": {
+    "col": 3,
+    "measure": 0,
+    "colInMeasure": 3,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 3
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 3,
+    "pass": 1
+   },
+   "68": {
+    "col": 4,
+    "measure": 0,
+    "colInMeasure": 4,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 4
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 4,
+    "pass": 1
+   },
+   "69": {
+    "col": 5,
+    "measure": 0,
+    "colInMeasure": 5,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 5
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 5,
+    "pass": 1
+   },
+   "70": {
+    "col": 6,
+    "measure": 0,
+    "colInMeasure": 6,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 6
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 6,
+    "pass": 1
+   },
+   "71": {
+    "col": 7,
+    "measure": 0,
+    "colInMeasure": 7,
+    "tracks": {
+     "tA": {
+      "clipId": "cA",
+      "patternId": "pA",
+      "patternCol": 7
+     }
+    },
+    "sectionId": "secV",
+    "entryId": "e1",
+    "sectionCol": 7,
+    "pass": 1
+   }
+  }
+ }
+}

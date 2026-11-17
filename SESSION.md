@@ -6,6 +6,118 @@ drifts belongs here.
 
 ## Current Tasks & Goals
 
+### Player and per-track Playheads — ACTIVE (agreed 2026-11-17; phase 0 started 2026-11-17)
+
+A **Player** with one **Playhead per track**. Decisions (user):
+- **Position state lives in the Playhead**, in memory only — never in
+  patterns (they are shared: one pattern can play in several places at
+  once), clips, or the project body; never synced to collaborators.
+  Per-track *settings* (divider, humanize) are stored on the track.
+- **A jump moves along the track's timeline, scoped to the Section** — it
+  can cross clips but not leave the Section.
+- **Playheads line up again when a new Section starts.**
+- **No synthetic note-offs on a jump**: what sounds keeps sounding. The one
+  exception: **all notes off at the transition between Sections**.
+- **Jumps come from the Tracker's effects column** (shipped 2026-11-17, CHANGELOG — `section.fx`, open command set).
+- **Humanize is per track.** Rather than scheduling notes ahead, the clock
+  can skip some of its precision spinning while micro-adjusting the pause
+  between ticks; since the offsets are per track, that micro-adjustment
+  must be passed on to the playheads.
+
+**Playhead behaviour** (user, 2026-11-17). The head runs **one row ahead
+of the clock**: a head *at row N* has gathered row N's events and **armed
+them for the next tick**. That one-row window is what lets an event be
+moved in time both ways — fired before its tick (humanize early) or after.
+- **Start**: every head of a Section rests at **row −1**. The Player's
+  *advance* step (move to the next row, arm its events) runs once on Play,
+  before the clock's first tick — that is who arms row 0 for the first
+  pass. Each tick then does: fire what is armed for this tick, advance every
+  head, arm the next row.
+- **Walk**: a pattern under the head → gather its events; a gap between
+  patterns → arm nothing, keep stepping; the end of the track's last
+  pattern → **by default wrap to the track's first row** (an effects
+  command may say otherwise). Everything a head does is scoped to the
+  Section.
+- **Loop status**: a head that wraps — by reaching the end of its track's
+  last clip (default) or by a command jumping past it — goes to the
+  track's row 0 and gains the status **looped** (once; never cleared
+  inside the Section). A track with no clip in the Section is **inactive**
+  and takes no part in what follows; a head a command has **stopped** is
+  satisfied too.
+- **Section transition** (user, 2026-11-17, replaces "the longest track"):
+  a head arriving at its **last row** that is **not yet looped**, while
+  **every other active head has looped at least once or is stopped**,
+  ends the Section. Refinement (agent, to confirm): a colleague that is
+  itself at its last row on the same tick counts as satisfied — otherwise
+  tracks of equal length (the common case) all arrive unlooped together and
+  no one may go. **Confirmed by the user 2026-11-17**, with: the cut is
+  **exact, never bar-rounded** — the polyrhythms of a short track looping
+  against a longer one are the point. Inactive-track rule and the *stop*
+  command confirmed too. The Player then overrides **every** head's next step to
+  **row −1 of the next Section**; the events already armed still fire on
+  their tick, the following advance lands all heads on row 0 of the new
+  Section — the realignment — and clears every looped status. The
+  all-notes-off at the transition is armed as an ordinary command on that
+  crossing, due just before any (possibly early) row-0 note.
+- **A track's last row is the end of its last clip, exactly** — no bar
+  rounding. Today's rounding (`playCols`) stopped a one-beat clip from
+  looping the whole section every beat; under this rule such a clip loops
+  only its own track while the others carry on, which is the intent.
+- Consequences: the transition is driven by heads, not by the tick count —
+  a jump-back on the last unlooped track lengthens the Section in time, so
+  the piece's total length and `pieceLayout`/`columnForTick` become nominal
+  and the Player must be stateful (heads consume ticks in order; a stale
+  tick advances the heads and fires nothing; `seek` of all heads is needed
+  from phase 1 for play-from-a-block, external clock `continue` and stale
+  ticks). **The per-track loop is the default and a behaviour change**
+  (user, accepted: today a short track falls silent after its last clip;
+  some songs will change). The way back for an author is a **stop**
+  command at the end of the short track — so the Player's first two
+  commands are *move this track's position* and *stop here* (agent, to
+  confirm). A section loop restart is a transition like any other (every
+  head's last row is the loop end): realign and all notes off.
+
+Phases (proposed 2026-11-16, agreed):
+- [x] **0 — Golden capture** — DONE 2026-11-17 (test/golden-capture.js,
+  test/golden/*.json, golden-playback.test.js; regenerate with
+  `node test/golden/update.js` only when a playback change is intended).
+  Captured at the sequence level (events, tick→column map, locate) — the
+  transport's fire() only forwards, and its tick handling is pinned by
+  transport.test.js. Original wording: today's
+  events and playhead positions per column over fixture projects (loops,
+  dividers, piece with repeats, pattern mode ± accompaniment), checked in
+  as goldens later phases must match — plus, for the mixed-length
+  fixtures, the **expected delta** under the per-track loop rule, so phase
+  1 has a target, not just a diff.
+- [ ] **1 — Player + Playhead** (amended 2026-11-17, user agreed): the
+  per-track loop and the looped-status transition rule are implemented
+  here directly — no compatibility path; behaviour changes for
+  mixed-length sections as accepted. A playhead per track, the divider as
+  a counter, `seek` of all heads from day one (play-from-a-block, external
+  clock continue, stale ticks); the transport keeps the clock, modes,
+  external sync and MIDI clock out, and hands firing and locating to the
+  Player.
+- [ ] **2 — The Playhead fires notes**: explicit note-on/off, the notes it
+  has sounding, velocity carried, one output interface instead of the
+  bare `playNote`; all notes off at a Section transition.
+- [ ] **3 — Recording through the Playhead**: a take writes into the
+  playhead of the track on screen. Removes `activeRecordSlot` and with it
+  the live-take wrong-track bug (SESSION.md).
+- [ ] **4 — Per-track moves**: `seek`/`jump` on a playhead, driven by the
+  effects column; realigned at a new Section; the Tracker, Section and
+  Pattern views draw one playhead per track where they differ.
+- [ ] **5 — Humanize**: per-track timing and velocity; the clock's
+  micro-adjustment between ticks reported to the playheads (see above).
+
+Open, to settle when the phases start:
+- A short track's wrap target: the Section's row 0, or the start of the
+  track's first clip when the track begins with a gap? Agent recommends
+  row 0 (the head walks the Section's timeline; only the wrap point is
+  per track).
+- Humanize **early** notes: answered by the one-row window above — a note
+  can move earlier by up to one row. Still open: should a pass sound the
+  same every time (seeded) or differ?
+
 ### Tracker velocity + effects columns — DONE 2026-11-17 (CHANGELOG)
 
 Standing shape, for the Player phases:
@@ -587,7 +699,7 @@ yet stable enough to be an AGENTS.md rule.)_
   Section, or the roll's Pattern select) moves the roll but not the
   recorder. Step records already bypass it (`getEditTarget()`); live takes
   do not. **Not to be patched on its own** (user, 2026-11-16): it goes
-  away with the Player, phase 3 (TODO.md › Player and per-track Playheads).
+  away with the Player, phase 3 (SESSION.md › Player and per-track Playheads).
 - **Limits kept on purpose:** a Section loop is whole bars only; dragging
   a multi-selection of clips moves only the clip grabbed.
 - **The e2e counts in CHANGELOG were not always a full green run:** the
