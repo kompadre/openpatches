@@ -6,16 +6,21 @@ drifts belongs here.
 
 ## Current Tasks & Goals
 
-_(Keep a short list of what is in flight, what is done, and what is blocked.
-Replace entries as work completes — this is a working set, not a changelog.)_
+### Tracker velocity + effects columns — DONE 2026-11-17 (CHANGELOG)
 
-### Working convention (user, 2026-10-31)
-
-The full Playwright run, `HEARME.tts`, `CHANGELOG.md` and the `TODO.md`
-reconciliation happen only on a task's **last** phase. Intermediate phases
-run `node --check` + `node --test` and tick this file only. (Open: AGENTS.md
-"Keep it current ... in the same commit/change" reads per-change; awaiting
-the user's wording if SESSION.md should be deferred too.)
+Standing shape, for the Player phases:
+- `note.vel` (1–127, omitted = 100 = `DEFAULT_VELOCITY`); collab note atom
+  value is bare `dur` or `{dur, vel}`.
+- `section.fx[trackId] = [{row, cmd, arg}]` — section-scoped per track,
+  open command set (any A–Z, arg 0–999); travels whole as the section's
+  `fx` field atom; `createSection` always carries `fx` (refill rule).
+- Tracker lane = note cell (46) + velocity cell (26); one 34px FX column
+  per track; `cursor.sub`, FX = `lane === viewLanes`.
+- Velocity flows eventsAt → fire → playNote `noteOpts.velocity` → both
+  outputs; MIDI-in takes record it. **The Player does not read `fx` yet** —
+  that is Player phase 4 (TODO.md).
+- Longer-term direction (user, parked in TODO Ideas): the Tracker as the
+  single source of truth for timeline events — no sudden pivot.
 
 ### Collaborative editing — M1–M4 DONE 2026-11-12; only M3-3 (the Go relay) remains, parked
 

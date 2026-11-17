@@ -6,12 +6,12 @@
 //   name · bpm · tags · fx/<field>                    the project
 //   pattern/<id>                                      exists
 //   pattern/<id>/{name,kind,color,measures,created}
-//   pattern/<id>/note/<start>:<midi>                  value: dur
+//   pattern/<id>/note/<start>:<midi>                  value: dur, or {dur, vel}
 //   track/<id>                                        exists
 //   track/<id>/{name,slot,patchId,voiceData,volume,mute,solo,compact,divider}
 //   track/<id>/fx/<field>
 //   section/<id>                                      exists
-//   section/<id>/{name,bpm,bpmEnd,loop,created}
+//   section/<id>/{name,bpm,bpmEnd,loop,fx,created}    fx: whole, last write wins
 //   section/<id>/clip/<clipId>                        exists
 //   section/<id>/clip/<clipId>/{trackId,patternId,startCol,repeats,lengthCols}
 //   sections/order                                    the library's section ids, in order
@@ -89,7 +89,7 @@ export function readAtoms(body) {
         const at = 'pattern/' + id;
         atoms.set(at, EXISTS);
         for (const f of PATTERN_FIELDS) put(at + '/' + f, p[f]);
-        for (const n of p.notes || []) put(at + '/note/' + noteKey(n), n.dur);
+        for (const n of p.notes || []) put(at + '/note/' + noteKey(n), noteValue(n));
     }
     for (const t of body.tracks || []) {
         const at = 'track/' + t.id;
@@ -133,6 +133,9 @@ export function readAtoms(body) {
 }
 
 export const noteKey = (n) => n.start + ':' + n.midi;
+
+/** A note atom's value: bare `dur`, or `{dur, vel}` once a velocity is set. */
+const noteValue = (n) => (n.vel != null ? { dur: n.dur, vel: n.vel } : n.dur);
 
 /**
  * What an atom names, or null when it names nothing: the kind and the
@@ -216,7 +219,7 @@ export function readAtom(body, atom) {
         const p = pattern();
         if (!p) return null;
         const n = (p.notes || []).find(n => n.start === a.start && n.midi === a.midi);
-        return n ? stable(n.dur) : null;
+        return n ? stable(noteValue(n)) : null;
     }
     case 'track': return findTrack(body, a.id) ? EXISTS : null;
     case 'trackField': { const t = findTrack(body, a.id); return t ? stable(t[a.field]) : null; }
@@ -518,16 +521,20 @@ function freeSlot(body) {
     return 0;
 }
 
-function setNote(p, start, midi, dur) {
+function setNote(p, start, midi, value) {
     if (!Array.isArray(p.notes)) p.notes = [];
     const same = (n) => n.start === start && n.midi === midi;
-    if (dur === undefined) {
+    if (value === undefined) {
         for (let i = p.notes.length - 1; i >= 0; i--) if (same(p.notes[i])) p.notes.splice(i, 1);
         return;
     }
+    // Bare `dur`, or `{dur, vel}` (see noteValue).
+    const dur = value && typeof value === 'object' ? value.dur : value;
+    const vel = value && typeof value === 'object' ? Math.round(Number(value.vel)) : NaN;
     const d = Math.max(1, Math.round(Number(dur)) || 1);
-    const n = p.notes.find(same);
-    if (n) n.dur = d; else p.notes.push({ midi, start, dur: d });
+    let n = p.notes.find(same);
+    if (n) n.dur = d; else p.notes.push(n = { midi, start, dur: d });
+    if (vel >= 1 && vel <= 127) n.vel = vel; else delete n.vel;
 }
 
 // --- Invariants ---

@@ -19,6 +19,18 @@
 // its track's voice as it goes in. The on-screen keyboard enters too
 // (`enterKey`, called by the toolbar while this tab is on screen).
 //
+// **Velocity column, per lane** (expanded tracks): each sub-lane is a note
+// cell plus a velocity cell. On the velocity cell, digits roll the note's
+// velocity (1–127; Delete returns it to the default, shown dim). Velocity
+// lives on the note, so every placement of the pattern shares it.
+//
+// **Effects column, one per track**, at the track's right edge: a letter
+// A–Z is the command, digits roll its argument (0–999), Delete clears the
+// row. Commands live on the *section* per track (`section.fx`), not in
+// patterns — they mark the track's timeline, clips or no clips. The
+// command set is open; the Player will give commands their meaning
+// (TODO.md › Player), the first being "move this track's position".
+//
 // **Drag selects, hold moves.** A press and an immediate drag select,
 // from any cell — a note's too. Moving is the deliberate gesture: held
 // still for a second (HOLD_MS), a press inside the selection arms moving
@@ -79,17 +91,19 @@
 import {
     expandTrack, compactCells, noteName, locate, MAX_LANES,
     putNote, putOff, clearCell, relane, findDuplicates, mergeDuplicates, growBlocker, measuresFor, moveNote,
-    clearRange, fillRange, moveBlock, copyBlock, pasteBlock, blockNotes, removeNotes,
+    clearRange, fillRange, moveBlock, copyBlock, pasteBlock, blockNotes, removeNotes, setVelocity,
 } from './tracker-model.js';
 import {
     COLS_PER_MEASURE, updateClip, clipRepeats, sectionLength, addClip, patternCols,
-    dividerOf, defaultPatternName,
+    dividerOf, defaultPatternName, DEFAULT_VELOCITY, MAX_FX_ARG, sectionFx, fxAt, setSectionFx,
 } from './project-model.js';
 import { presenceOn, markPresence, onPresence } from './presence.js';
 import { reportCursor, cursorsIn, onCursors } from './cursors.js';
 
 const ROW_H = 16;
-const LANE_W = 46;
+const LANE_W = 46;       // the note sub-cell of a lane
+const VEL_W = 26;        // the velocity sub-cell right of it (expanded lanes only)
+const FX_W = 34;         // the one effects column at a track's right edge
 const GAP_W = 18;        // between tracks: the ✎ and the pattern's name live here
 const RULER_W = 36;
 const HEAD_H = 26;
@@ -125,7 +139,10 @@ export function createTracker(opts) {
     let followPlayhead = false;
     try { followPlayhead = localStorage.getItem(FOLLOW_KEY) === '1'; } catch { /* view pref only */ }
 
-    const cursor = { slot: 0, lane: 0, col: 0 };
+    // `lane` may be t.viewLanes — the FX column; `sub` is 0 on the note
+    // sub-cell, 1 on the velocity one (expanded lanes only).
+    const cursor = { slot: 0, lane: 0, col: 0, sub: 0 };
+    let typing = null;        // rolled-up digits for the vel/fx cell under the cursor
     let focused = false;
     let octave = 4;
     let step = 1;
@@ -286,7 +303,8 @@ export function createTracker(opts) {
             // The active track gets one spare sub-lane to type a chord into.
             const spare = !track.compact && track.slot === activeSlot && r.lanes < MAX_LANES ? 1 : 0;
             const viewLanes = track.compact ? 1 : r.lanes + spare;
-            const t = { track, x, viewLanes, w: viewLanes * LANE_W, ...r };
+            const laneW = track.compact ? LANE_W : LANE_W + VEL_W;
+            const t = { track, x, viewLanes, laneW, w: viewLanes * laneW + FX_W, ...r };
             t.cells = track.compact ? compactCells(t.events) : null;
             layout.push(t);
             x += t.w + GAP_W;
@@ -419,13 +437,18 @@ export function createTracker(opts) {
         // Lane separators, faint; the spare lane (if any) a shade darker.
         ctx.strokeStyle = 'rgba(255,255,255,0.05)';
         for (let l = 0; l <= t.viewLanes; l++) {
-            const x = t.x + l * LANE_W;
+            const x = t.x + l * t.laneW;
             ctx.beginPath(); ctx.moveTo(x + 0.5, 0); ctx.lineTo(x + 0.5, rows * ROW_H); ctx.stroke();
         }
         if (t.viewLanes > t.lanes && !t.track.compact) {
             ctx.fillStyle = 'rgba(0,0,0,0.18)';
-            ctx.fillRect(t.x + t.lanes * LANE_W, 0, LANE_W, rows * ROW_H);
+            ctx.fillRect(t.x + t.lanes * t.laneW, 0, t.laneW, rows * ROW_H);
         }
+        // The effects column: a shade of its own, and a right edge.
+        const fxX = t.x + t.viewLanes * t.laneW;
+        ctx.fillStyle = 'rgba(0,0,0,0.22)';
+        ctx.fillRect(fxX, 0, FX_W, rows * ROW_H);
+        ctx.beginPath(); ctx.moveTo(fxX + FX_W + 0.5, 0); ctx.lineTo(fxX + FX_W + 0.5, rows * ROW_H); ctx.stroke();
 
         for (const b of t.blocks) {
             const y = b.startCol * ROW_H;
@@ -466,6 +489,19 @@ export function createTracker(opts) {
 
         if (t.track.compact) drawCompact(ctx, t);
         else drawExpanded(ctx, t);
+        drawFx(ctx, t);
+    }
+
+    /** The track's effects commands, down its FX column. */
+    function drawFx(ctx, t) {
+        const section = session.getSection();
+        if (!section) return;
+        const x = t.x + t.viewLanes * t.laneW + 4;
+        ctx.fillStyle = '#d0a85c';
+        for (const e of sectionFx(section, t.track.id)) {
+            if (e.row >= rows) continue;
+            ctx.fillText(e.cmd + e.arg, x, e.row * ROW_H + ROW_H / 2, FX_W - 8);
+        }
     }
 
     function clipName(b) {
@@ -476,10 +512,14 @@ export function createTracker(opts) {
     function drawExpanded(ctx, t) {
         drawDoubles(ctx, t);
         for (const e of t.events) {
-            const x = t.x + e.lane * LANE_W + 4;
+            const x = t.x + e.lane * t.laneW + 4;
             const dbl = doubles.get(e.note);
             ctx.fillStyle = drag && drag.event === e ? '#666' : dbl ? MERGE : '#e8e8f0';
             ctx.fillText(noteName(e.midi), x, e.col * ROW_H + ROW_H / 2);
+            // The lane's velocity sub-cell: the note's, dim at the default.
+            const v = e.note.vel;
+            ctx.fillStyle = v != null ? '#9fb4d8' : '#454a5e';
+            ctx.fillText(String(v != null ? v : DEFAULT_VELOCITY), x + LANE_W, e.col * ROW_H + ROW_H / 2, VEL_W - 6);
             if (e.off) {
                 ctx.fillStyle = '#667';
                 ctx.fillText('OFF', x, e.end * ROW_H + ROW_H / 2);
@@ -495,7 +535,7 @@ export function createTracker(opts) {
             const label = (first ? noteName(first.midi) : 'OFF') + (n > 1 ? ' +' + (n - 1) : '');
             const dbl = cell.starts.some(e => doubles.has(e.note));
             ctx.fillStyle = dbl ? MERGE : first ? '#e8e8f0' : '#667';
-            ctx.fillText(label, t.x + 4, col * ROW_H + ROW_H / 2, t.w - 8);
+            ctx.fillText(label, t.x + 4, col * ROW_H + ROW_H / 2, t.laneW - 8);
         }
     }
 
@@ -509,7 +549,7 @@ export function createTracker(opts) {
         for (const e of t.events) {
             const dbl = doubles.get(e.note);
             if (!dbl) continue;
-            const x = t.x + e.lane * LANE_W;
+            const x = t.x + e.lane * t.laneW;
             const y = e.col * ROW_H;
             if (dbl.gone) {
                 ctx.fillStyle = 'rgba(240, 160, 48, 0.14)';
@@ -542,7 +582,7 @@ export function createTracker(opts) {
             if (!t) continue;
             const kept = t.events.find(e => e.note === g.keep && e.col === g.col);
             const to = kept ? kept.lane : 0;
-            const x = t.x + (g.lane + (to - g.lane) * ease) * LANE_W;
+            const x = t.x + (g.lane + (to - g.lane) * ease) * t.laneW;
             const y = g.col * ROW_H;
             ctx.globalAlpha = 1 - k;
             ctx.fillStyle = 'rgba(16, 16, 32, 0.8)';
@@ -551,7 +591,7 @@ export function createTracker(opts) {
             ctx.fillText(noteName(g.midi), x + 4, y + ROW_H / 2);
             if (kept) {
                 ctx.strokeStyle = MERGE;
-                ctx.strokeRect(t.x + to * LANE_W + 0.5, y + 0.5, LANE_W - 1, ROW_H - 1);
+                ctx.strokeRect(t.x + to * t.laneW + 0.5, y + 0.5, LANE_W - 1, ROW_H - 1);
             }
             ctx.globalAlpha = 1;
         }
@@ -576,7 +616,7 @@ export function createTracker(opts) {
         for (const r of cursorsIn('tracker', { sectionId: sid })) {
             const t = bySlot(r.where.slot);
             if (!t || r.where.lane >= t.viewLanes) continue;
-            const x = t.x + r.where.lane * LANE_W;
+            const x = t.x + r.where.lane * t.laneW;
             const y = r.where.col * ROW_H;
             ctx.strokeStyle = r.color;
             ctx.lineWidth = 2;
@@ -591,22 +631,38 @@ export function createTracker(opts) {
         }
     }
 
+    /** What the cursor is on: 'note', 'vel', or 'fx'. */
+    function cellKind(t = bySlot(cursor.slot)) {
+        if (!t) return 'note';
+        if (cursor.lane >= t.viewLanes) return 'fx';
+        return cursor.sub === 1 && !t.track.compact ? 'vel' : 'note';
+    }
+
+    /** The cursor cell's box on track `t`. */
+    function cellRect(t) {
+        const kind = cellKind(t);
+        if (kind === 'fx') return { x: t.x + t.viewLanes * t.laneW, w: FX_W, kind };
+        const x = t.x + Math.min(cursor.lane, t.viewLanes - 1) * t.laneW;
+        if (kind === 'vel') return { x: x + LANE_W, w: VEL_W, kind };
+        return { x, w: LANE_W, kind };
+    }
+
     function drawCursor(ctx) {
         const t = bySlot(cursor.slot);
         if (!t) return;
         drawRemoteCursors(ctx);
-        const x = t.x + cursor.lane * LANE_W;
+        const { x, w } = cellRect(t);
         const y = cursor.col * ROW_H;
         ctx.fillStyle = focused ? 'rgba(233, 69, 96, 0.22)' : 'rgba(233, 69, 96, 0.08)';
-        ctx.fillRect(x, y, LANE_W, ROW_H);
+        ctx.fillRect(x, y, w, ROW_H);
         ctx.strokeStyle = focused ? '#e94560' : 'rgba(233, 69, 96, 0.5)';
-        ctx.strokeRect(x + 0.5, y + 0.5, LANE_W - 1, ROW_H - 1);
+        ctx.strokeRect(x + 0.5, y + 0.5, w - 1, ROW_H - 1);
         // A hold that armed a drag: the pressed cell, ringed in blue.
         const a = armed && bySlot(armed.slot);
         if (a) {
             ctx.strokeStyle = '#2196f3';
             ctx.lineWidth = 2;
-            ctx.strokeRect(a.x + armed.lane * LANE_W + 1, armed.row * ROW_H + 1, LANE_W - 2, ROW_H - 2);
+            ctx.strokeRect(a.x + armed.lane * a.laneW + 1, armed.row * ROW_H + 1, LANE_W - 2, ROW_H - 2);
             ctx.lineWidth = 1;
         }
     }
@@ -614,7 +670,7 @@ export function createTracker(opts) {
     function drawDrag(ctx) {
         if (!drag || drag.row === drag.event.col) return;
         const t = drag.track;
-        const x = t.x + drag.event.lane * LANE_W + 4;
+        const x = t.x + drag.event.lane * t.laneW + 4;
         ctx.fillStyle = '#e94560';
         ctx.fillText(noteName(drag.event.midi), x, drag.row * ROW_H + ROW_H / 2);
     }
@@ -723,7 +779,7 @@ export function createTracker(opts) {
         const t = bySlot(slot);
         const at = t && repeatAt(t, col);
         if (!at) { sel = null; return false; }
-        const ln = t.track.compact ? 0 : lane;
+        const ln = t.track.compact ? 0 : Math.min(t.viewLanes - 1, Math.max(0, lane));
         sel = { slot, clipId: at.block.clip.id, lo: at.lo, hi: at.hi, a: { lane: ln, col }, h: { lane: ln, col } };
         return true;
     }
@@ -795,9 +851,9 @@ export function createTracker(opts) {
         const r = selRect();
         const t = r && bySlot(sel.slot);
         if (!t) return;
-        const x = t.x + r.l0 * LANE_W;
+        const x = t.x + r.l0 * t.laneW;
         const y = r.c0 * ROW_H;
-        const w = (r.l1 - r.l0 + 1) * LANE_W;
+        const w = (r.l1 - r.l0 + 1) * t.laneW;
         const h = (r.c1 - r.c0 + 1) * ROW_H;
         ctx.fillStyle = 'rgba(33, 150, 243, 0.16)';
         ctx.fillRect(x, y, w, h);
@@ -815,14 +871,17 @@ export function createTracker(opts) {
         if (layout.length === 0) return;
         let t = bySlot(cursor.slot);
         if (!t) { t = bySlot(activeSlot) || layout[0]; cursor.slot = t.track.slot; }
-        cursor.lane = Math.max(0, Math.min(t.viewLanes - 1, cursor.lane));
+        cursor.lane = Math.max(0, Math.min(t.viewLanes, cursor.lane));   // viewLanes = the FX column
+        cursor.sub = cursor.sub === 1 && !t.track.compact && cursor.lane < t.viewLanes ? 1 : 0;
         cursor.col = Math.max(0, Math.min(rows - 1, cursor.col));
     }
 
-    function setCursor(slot, lane, col) {
+    function setCursor(slot, lane, col, sub = 0) {
+        if (cursor.slot !== slot || cursor.lane !== lane || cursor.col !== col || cursor.sub !== sub) typing = null;
         cursor.slot = slot;
         cursor.lane = lane;
         cursor.col = col;
+        cursor.sub = sub;
         if (slot !== activeSlot) { selectTrack(slot); return; }   // re-renders
         clampCursor();
         draw();
@@ -836,19 +895,33 @@ export function createTracker(opts) {
         else if (viewH > ROW_H && y + ROW_H > scroll.scrollTop + viewH) scroll.scrollTop = y + ROW_H - viewH;
         const t = bySlot(cursor.slot);
         if (!t) return;
-        const x = t.x + cursor.lane * LANE_W;
+        const { x, w } = cellRect(t);
         if (x < scroll.scrollLeft + RULER_W) scroll.scrollLeft = Math.max(0, x - RULER_W);
-        else if (x + LANE_W > scroll.scrollLeft + scroll.clientWidth) scroll.scrollLeft = x + LANE_W - scroll.clientWidth;
+        else if (x + w > scroll.scrollLeft + scroll.clientWidth) scroll.scrollLeft = x + w - scroll.clientWidth;
     }
 
+    /**
+     * Left/right, one sub-cell at a time: note, vel, next lane's note, …,
+     * the FX column, then the next track. Compact tracks have no vel cells.
+     */
     function moveLane(delta) {
         const i = layout.findIndex(t => t.track.slot === cursor.slot);
         if (i < 0) return;
-        const lane = cursor.lane + delta;
-        if (lane >= 0 && lane < layout[i].viewLanes) { setCursor(cursor.slot, lane, cursor.col); return; }
+        const t = layout[i];
+        const subs = t.track.compact ? 1 : 2;
+        const last = t.viewLanes * subs;                    // the FX column's index
+        let at = cursor.lane >= t.viewLanes ? last : cursor.lane * subs + cursor.sub;
+        at += delta;
+        if (at >= 0 && at <= last) {
+            if (at === last) { setCursor(cursor.slot, t.viewLanes, cursor.col); return; }
+            setCursor(cursor.slot, Math.floor(at / subs), cursor.col, at % subs);
+            return;
+        }
         const j = i + (delta > 0 ? 1 : -1);
         if (j < 0 || j >= layout.length) return;
-        setCursor(layout[j].track.slot, delta > 0 ? 0 : MAX_LANES, cursor.col);
+        const n = layout[j];
+        if (delta > 0) setCursor(n.track.slot, 0, cursor.col);
+        else setCursor(n.track.slot, n.viewLanes, cursor.col);   // its FX column
     }
 
     function moveTrack(delta) {
@@ -868,6 +941,7 @@ export function createTracker(opts) {
         const section = session.getSection();
         const t = bySlot(cursor.slot);
         if (!project || !section || !t) return null;
+        if (cursor.lane >= t.viewLanes) return null;   // the FX column: not a note cell
         const loc = locate(project, section, t.track, cursor.col);
         if (!loc) {
             say('No pattern here — place one in Section, or grow a clip with ✎');
@@ -958,6 +1032,7 @@ export function createTracker(opts) {
      * Copy takes when nothing is selected. */
     function cursorTarget() {
         const t = bySlot(cursor.slot);
+        if (t && cursor.lane >= t.viewLanes) return null;   // the FX column
         const at = t && repeatAt(t, cursor.col);
         if (!at) return null;
         const lane = t.track.compact ? 0 : cursor.lane;
@@ -1043,6 +1118,67 @@ export function createTracker(opts) {
         moveRow(step);
     }
 
+    /** Digits rolled into the cell under the cursor (vel or fx arg). */
+    function rollDigits(d, max) {
+        const here = cursor.slot + ':' + cursor.lane + ':' + cursor.col + ':' + cursor.sub;
+        if (!typing || typing.at !== here) typing = { at: here, digits: '' };
+        typing.digits = (typing.digits + d).slice(-3);
+        return Math.min(max, parseInt(typing.digits, 10));
+    }
+
+    /** A digit into the velocity cell: the note's velocity, rolled up. */
+    function enterVelocity(d) {
+        const at = target();
+        if (!at) return;
+        const v = Math.max(1, rollDigits(d, 127));
+        if (!setVelocity(at.pattern, at.patternCol, at.lane, v)) { say('No note starts here — velocity sits on a note'); return; }
+        edited(at.pattern);
+        say('Velocity ' + v);
+    }
+
+    function clearVelocity() {
+        const at = target();
+        if (!at) return;
+        if (!setVelocity(at.pattern, at.patternCol, at.lane, null)) { moveRow(step); return; }
+        edited(at.pattern);
+        say('Velocity back to the default (' + DEFAULT_VELOCITY + ')');
+        moveRow(step);
+    }
+
+    /** The FX column: a letter is the command, digits roll its argument. */
+    function enterFxCmd(letter) {
+        const t = bySlot(cursor.slot);
+        const section = session.getSection();
+        if (!t || !section) return;
+        const was = fxAt(section, t.track.id, cursor.col);
+        session.update((project, sec) => {
+            setSectionFx(sec, t.track.id, cursor.col, { cmd: letter, arg: was ? was.arg : 0 });
+        }, 'tracker');
+        say(letter + (was ? was.arg : 0) + ' — digits set the argument (the Player gives commands their meaning)');
+    }
+
+    function enterFxArg(d) {
+        const t = bySlot(cursor.slot);
+        const section = session.getSection();
+        if (!t || !section) return;
+        const was = fxAt(section, t.track.id, cursor.col);
+        if (!was) { say('Type a command letter first (A–Z)'); return; }
+        const arg = rollDigits(d, MAX_FX_ARG);
+        session.update((project, sec) => {
+            setSectionFx(sec, t.track.id, cursor.col, { cmd: was.cmd, arg });
+        }, 'tracker');
+        say(was.cmd + arg);
+    }
+
+    function clearFx() {
+        const t = bySlot(cursor.slot);
+        const section = session.getSection();
+        if (!t || !section) return;
+        if (!fxAt(section, t.track.id, cursor.col)) { moveRow(step); return; }
+        session.update((project, sec) => { setSectionFx(sec, t.track.id, cursor.col, null); }, 'tracker');
+        moveRow(step);
+    }
+
     canvas.addEventListener('keydown', (e) => {
         const eat = () => { e.preventDefault(); e.stopPropagation(); };
         // Ctrl/Cmd+C / +X: the selection becomes a stamp (X: a cut).
@@ -1105,7 +1241,15 @@ export function createTracker(opts) {
         // Moving the cursor drops the selection; entries keep it, so a
         // second note can replace the first.
         if (/^(Arrow|Page|Home$|End$|Tab$)/.test(e.key)) clearSelection();
-        if (e.code in NOTE_KEYS && !e.shiftKey) enterNote(NOTE_KEYS[e.code]);
+        const kind = cellKind();
+        const digit = /^(?:Digit|Numpad)(\d)$/.exec(e.code);
+        if (kind === 'vel' && digit) enterVelocity(digit[1]);
+        else if (kind === 'vel' && (e.key === 'Delete' || e.key === 'Backspace')) clearVelocity();
+        else if (kind === 'fx' && !e.shiftKey && /^Key[A-Z]$/.test(e.code)) enterFxCmd(e.code.slice(3));
+        else if (kind === 'fx' && digit) enterFxArg(digit[1]);
+        else if (kind === 'fx' && (e.key === 'Delete' || e.key === 'Backspace')) clearFx();
+        else if (kind !== 'note' && ((e.code in NOTE_KEYS && !e.shiftKey) || e.code === 'Digit1')) { /* note keys mean nothing off the note cell */ }
+        else if (e.code in NOTE_KEYS && !e.shiftKey) enterNote(NOTE_KEYS[e.code]);
         else if (e.code === 'Digit1') enterOff();
         else if (e.key === 'Delete' || e.key === 'Backspace') clearHere();
         else if (e.key === 'ArrowUp') moveRow(-1);
@@ -1161,7 +1305,10 @@ export function createTracker(opts) {
         if (canvas.focus) canvas.focus({ preventScroll: true });
         const t = trackAt(p.x);
         if (!t) return;
-        const lane = t.track.compact ? 0 : Math.floor((p.x - t.x) / LANE_W);
+        const hitAt = hitCell(t, p.x);
+        // The FX column: just the cursor there — no selections, no holds.
+        if (hitAt.fx) { clearSelection(); setCursor(t.track.slot, t.viewLanes, p.row); return; }
+        const lane = hitAt.lane;
         // Shift: extend from the cursor in this track, and keep extending
         // while the button is held.
         if (e.shiftKey && t.track.slot === cursor.slot && extendFromCursor(lane, p.row)) {
@@ -1175,9 +1322,21 @@ export function createTracker(opts) {
         const inSel = !!r && sel.slot === t.track.slot
             && lane >= r.l0 && lane <= r.l1 && p.row >= r.c0 && p.row <= r.c1;
         if (!inSel) clearSelection();
-        setCursor(t.track.slot, lane, p.row);
+        setCursor(t.track.slot, lane, p.row, hitAt.sub);
         startPress(t.track.slot, lane, p.row, inSel);
     });
+
+    /**
+     * The cell of track `t` at canvas x: the lane and its sub-cell
+     * (0 note, 1 velocity), or the FX column. Lanes clamp to the track.
+     */
+    function hitCell(t, x) {
+        const off = x - t.x;
+        if (off >= t.viewLanes * t.laneW) return { fx: true, lane: t.viewLanes, sub: 0 };
+        if (t.track.compact) return { fx: false, lane: 0, sub: 0 };
+        const lane = Math.max(0, Math.min(t.viewLanes - 1, Math.floor(off / t.laneW)));
+        return { fx: false, lane, sub: off - lane * t.laneW >= LANE_W ? 1 : 0 };
+    }
 
     /**
      * A press, until it becomes a gesture. Off its cell first: a selection
@@ -1311,7 +1470,7 @@ export function createTracker(opts) {
     function stampTarget(p) {
         const t = trackAt(p.x);
         if (!t) return null;
-        const lane = t.track.compact ? 0 : Math.floor((p.x - t.x) / LANE_W);
+        const lane = t.track.compact ? 0 : hitCell(t, p.x).lane;
         return stampTargetAt(t, lane, p.row);
     }
 
@@ -1376,9 +1535,9 @@ export function createTracker(opts) {
         const viewH = scroll.clientHeight - HEAD_H;
         if (y < scroll.scrollTop) scroll.scrollTop = y;
         else if (viewH > ROW_H && y + ROW_H > scroll.scrollTop + viewH) scroll.scrollTop = y + ROW_H - viewH;
-        const x = t.x + at.lane * LANE_W;
+        const x = t.x + at.lane * t.laneW;
         if (x < scroll.scrollLeft + RULER_W) scroll.scrollLeft = Math.max(0, x - RULER_W);
-        else if (x + LANE_W > scroll.scrollLeft + scroll.clientWidth) scroll.scrollLeft = x + LANE_W - scroll.clientWidth;
+        else if (x + t.laneW > scroll.scrollLeft + scroll.clientWidth) scroll.scrollLeft = x + t.laneW - scroll.clientWidth;
     }
 
     function followStamp(p) {
@@ -1466,9 +1625,9 @@ export function createTracker(opts) {
         const src = stamp && stamp.cut && stamp.source;
         const t = src && bySlot(src.slot);
         if (!t) return;
-        const x = t.x + src.l0 * LANE_W;
+        const x = t.x + src.l0 * t.laneW;
         const y = src.c0 * ROW_H;
-        const w = (src.l1 - src.l0 + 1) * LANE_W;
+        const w = (src.l1 - src.l0 + 1) * t.laneW;
         const h = (src.c1 - src.c0 + 1) * ROW_H;
         ctx.fillStyle = 'rgba(16, 16, 32, 0.6)';
         ctx.fillRect(x, y, w, h);
@@ -1485,22 +1644,22 @@ export function createTracker(opts) {
         const t = at && bySlot(at.slot);
         if (!t) return;
         const { rows, lanes, items } = stamp.block;
-        const x = t.x + at.lane * LANE_W;
+        const x = t.x + at.lane * t.laneW;
         const y = at.col * ROW_H;
         const h = Math.min(rows, at.hi - at.col + 1) * ROW_H;
         // Covers the cells beneath, so the copy's notes read on their own.
         ctx.fillStyle = 'rgba(16, 16, 32, 0.9)';
-        ctx.fillRect(x, y, lanes * LANE_W, h);
+        ctx.fillRect(x, y, lanes * t.laneW, h);
         ctx.fillStyle = 'rgba(76, 175, 80, 0.12)';
-        ctx.fillRect(x, y, lanes * LANE_W, h);
+        ctx.fillRect(x, y, lanes * t.laneW, h);
         ctx.setLineDash && ctx.setLineDash([4, 3]);
         ctx.strokeStyle = '#4caf50';
-        ctx.strokeRect(x + 0.5, y + 0.5, lanes * LANE_W - 1, h - 1);
+        ctx.strokeRect(x + 0.5, y + 0.5, lanes * t.laneW - 1, h - 1);
         ctx.setLineDash && ctx.setLineDash([]);
         ctx.fillStyle = '#81c784';
         for (const it of items) {
             if (at.col + it.dCol > at.hi) continue;
-            ctx.fillText(noteName(it.midi), x + it.dLane * LANE_W + 4, (at.col + it.dCol) * ROW_H + ROW_H / 2);
+            ctx.fillText(noteName(it.midi), x + it.dLane * t.laneW + 4, (at.col + it.dCol) * ROW_H + ROW_H / 2);
         }
     }
 
@@ -1543,19 +1702,19 @@ export function createTracker(opts) {
         const t = m && bySlot(m.slot);
         if (!t || (!m.dr && !m.dl)) return;
         const { st } = m;
-        const x = t.x + (st.l0 + m.dl) * LANE_W;
+        const x = t.x + (st.l0 + m.dl) * t.laneW;
         const y = (st.c0 + m.dr) * ROW_H;
         // Covers the cells beneath, which the move will overwrite anyway.
         ctx.fillStyle = 'rgba(16, 16, 32, 0.9)';
-        ctx.fillRect(x, y, (st.l1 - st.l0 + 1) * LANE_W, (st.c1 - st.c0 + 1) * ROW_H);
+        ctx.fillRect(x, y, (st.l1 - st.l0 + 1) * t.laneW, (st.c1 - st.c0 + 1) * ROW_H);
         ctx.setLineDash && ctx.setLineDash([4, 3]);
         ctx.strokeStyle = '#2196f3';
-        ctx.strokeRect(x + 0.5, y + 0.5, (st.l1 - st.l0 + 1) * LANE_W - 1, (st.c1 - st.c0 + 1) * ROW_H - 1);
+        ctx.strokeRect(x + 0.5, y + 0.5, (st.l1 - st.l0 + 1) * t.laneW - 1, (st.c1 - st.c0 + 1) * ROW_H - 1);
         ctx.setLineDash && ctx.setLineDash([]);
         ctx.fillStyle = '#64b5f6';
         for (const ev of t.events) {
             if (ev.col < st.c0 || ev.col > st.c1 || ev.lane < st.l0 || ev.lane > st.l1) continue;
-            ctx.fillText(noteName(ev.midi), t.x + (ev.lane + m.dl) * LANE_W + 4, (ev.col + m.dr) * ROW_H + ROW_H / 2);
+            ctx.fillText(noteName(ev.midi), t.x + (ev.lane + m.dl) * t.laneW + 4, (ev.col + m.dr) * ROW_H + ROW_H / 2);
         }
     }
 
@@ -1563,7 +1722,7 @@ export function createTracker(opts) {
     function cellIn(t, e) {
         const p = pointAt(e);
         return {
-            lane: t.track.compact ? 0 : Math.floor((p.x - t.x) / LANE_W),
+            lane: t.track.compact ? 0 : Math.min(t.viewLanes - 1, Math.max(0, Math.floor((p.x - t.x) / t.laneW))),
             row: Math.max(0, Math.floor(p.y / ROW_H)),
         };
     }

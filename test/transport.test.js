@@ -65,9 +65,9 @@ function build(opts = {}) {
         session, tickWorker,
         startWorker: (w, bpm, col) => w.started.push({ bpm, col }),
         stopWorker: (w) => { w.stopped++; },
-        playNote: (midi, durMs, voiceData, slot) => {
+        playNote: (midi, durMs, voiceData, slot, noteOpts) => {
             if (opts.throwOnPlay) throw new Error('no audio');
-            played.push({ midi, durMs, voiceData, slot });
+            played.push({ midi, durMs, voiceData, slot, noteOpts });
         },
         getSlotData: (slot) => BANK[slot] || null,
         getPattern: (id) => made.find(m => m.pattern.id === id)?.pattern || session.getPattern(id),
@@ -99,6 +99,21 @@ describe('modes', () => {
         const a = build({ tracks: [{ slot: 0, notes: [note(60, 0)] }] });
         a.transport.setMode('pattern');
         assert.equal(build({ tracks: [{ slot: 0, notes: [note(60, 0)] }] }).transport.getMode(), 'pattern');
+    });
+
+    test('a note velocity rides in noteOpts; a note without one rides none (the output defaults to 100)', () => {
+        const h = build({ tracks: [{ slot: 0, notes: [
+            { midi: 60, start: 0, dur: 1, vel: 42 },
+            { midi: 62, start: 1, dur: 1 },
+        ] }] });
+        h.transport.setMode('section');
+        h.transport.play();
+        h.played.length = 0;
+        h.tickWorker.tick(0);
+        assert.equal(h.played[0].noteOpts.velocity, 42);
+        h.played.length = 0;
+        h.tickWorker.tick(1);
+        assert.deepEqual(h.played[0].noteOpts, {}, 'absent: playNote falls back to its default');
     });
 
     test('section mode sounds every track; pattern mode the window of the edited one, with company', () => {

@@ -362,7 +362,7 @@ async function playNote(midi, voiceData, durationMs, channel, noteOpts = {}) {
         try {
             await acquire();
             if (isReady()) {
-                return joinStops(midiStop, withTimeout(playNoteOnChannel(channel, midi), durMs));
+                return joinStops(midiStop, withTimeout(playNoteOnChannel(channel, midi, noteOpts.velocity || 100), durMs));
             }
         } catch (err) {
             console.warn('DX7 synth unavailable:', err);
@@ -381,7 +381,7 @@ async function playNote(midi, voiceData, durationMs, channel, noteOpts = {}) {
             await acquire();
             if (isReady()) {
                 return joinStops(auditionStop,
-                    withTimeout(playNoteRealtime(voiceData, midi), durMs * 0.6));
+                    withTimeout(playNoteRealtime(voiceData, midi, noteOpts.velocity || 100), durMs * 0.6));
             }
         } catch (err) {
             console.warn('DX7 synth unavailable, falling back:', err);

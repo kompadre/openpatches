@@ -168,3 +168,30 @@ describe('collapsible keyboard', () => {
         assert.equal(dock._isKeyboardCollapsed(), true);
     });
 });
+
+describe('a take carries MIDI velocity', () => {
+    test('a MIDI note-on during the session records its velocity on the note; 100 is not stored', async () => {
+        const stub = installMidiStub();
+        const { roll, recDesktop } = build();
+        await midi.requestMidi();
+        midi.setSelectedInput('in0');
+        roll.addNote({ midi: 60, start: 4, dur: 1, slot: 0 });
+        roll.startPlayback();
+        recDesktop.dispatch('click');
+        const input = stub.inputs[0];
+        input.receive([0x90, 64, 42]);          // note-on, velocity 42
+        await flush();
+        input.receive([0x80, 64, 0]);           // note-off
+        await flush();
+        input.receive([0x90, 65, 100]);         // the default velocity
+        await flush();
+        input.receive([0x80, 65, 0]);
+        await flush();
+        recDesktop.dispatch('click');
+        const notes = roll.getNotes();
+        const took = notes.find(n => n.midi === 64);
+        assert.equal(took.vel, 42);
+        const plain = notes.find(n => n.midi === 65);
+        assert.equal('vel' in plain, false, 'the default is not stored');
+    });
+});

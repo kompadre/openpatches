@@ -71,7 +71,7 @@ function loadMode() {
  * @param {object} opts.session        the shared project session
  * @param {function} opts.getPattern   id → the live pattern (the roll's copy)
  * @param {function} opts.getEditTarget () → { trackId, clipId, pattern, slot } | null
- * @param {function} opts.playNote     (midi, durMs, voiceData, slot)
+ * @param {function} opts.playNote     (midi, durMs, voiceData, slot, noteOpts) — noteOpts carries `velocity`
  * @param {function} opts.getSlotData  slot → voice bank entry
  * @param {function} [opts.onStop]     release whatever is still sounding
  */
@@ -269,7 +269,8 @@ export function createTransport(opts) {
             if (recording && ev.note && ev.note._recordedInSession) continue;
             try {
                 const entry = getSlotData(ev.slot);
-                playNote(ev.midi, ev.dur * ms, entry ? entry.voiceData : null, ev.slot);
+                playNote(ev.midi, ev.dur * ms, entry ? entry.voiceData : null, ev.slot,
+                    ev.vel != null ? { velocity: ev.vel } : {});
                 consecutiveErrors = 0;
             } catch (e) {
                 consecutiveErrors++;

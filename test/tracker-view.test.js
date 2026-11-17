@@ -64,6 +64,8 @@ function build(opts = {}) {
 }
 
 const ROW = 16;
+const LANE = 46 + 26;   // the note sub-cell plus the velocity one
+const FX = 34;          // the one effects column per track
 const docFire = (type, ev) => {
     for (const fn of [...(document._listeners[type] || [])]) fn({ type, ...ev });
 };
@@ -302,7 +304,7 @@ describe('tracker editing', () => {
     test('a doubled note is merged when the edit commits, not while typing', () => {
         const { pattern } = seedPattern(session, { notes: [N(60, 0, 4)] });
         const { head, press, key, tracker } = build();
-        press(head(0).x + 46 + 4, 0);            // row 0, the spare lane 1
+        press(head(0).x + LANE + 4, 0);          // row 0, the spare lane 1
         key('KeyZ');                             // C-4 again, over silence: to the end
         assert.deepEqual(notesOf(session, pattern.id), [[60, 0, 4, 0], [60, 0, 16, 1]], 'both, while typing');
         tracker.flush();
@@ -316,7 +318,7 @@ describe('tracker editing', () => {
     test('doubles waiting to merge are shown and named; the merge glides and fades, and says so', () => {
         const { pattern } = seedPattern(session, { notes: [N(60, 0, 4)] });
         const h = build();
-        h.press(h.head(0).x + 46 + 4, 0);
+        h.press(h.head(0).x + LANE + 4, 0);
         h.key('KeyZ');
         h.canvas.getContext('2d')._calls.length = 0;
         h.tracker.render();
@@ -341,14 +343,14 @@ describe('tracker editing', () => {
         // Lane 0: E 0–4, C at 4. Lane 1: G 0–8, then C-4 typed at row 4 cuts it.
         const { pattern } = seedPattern(session, { notes: [N(64, 0, 4), N(60, 4, 4), N(67, 0, 8, 1)] });
         const h = build();
-        h.press(h.head(0).x + 46 + 4, 4 * ROW);
+        h.press(h.head(0).x + LANE + 4, 4 * ROW);
         h.key('KeyZ');
         h.tracker.flush();
         assert.deepEqual(notesOf(session, pattern.id).sort((a, b) => a[1] - b[1] || a[0] - b[0]),
             [[64, 0, 4, 0], [67, 0, 4, 1], [60, 4, 4, 0]], 'G still stops at 4');
         h.canvas.getContext('2d')._calls.length = 0;
         h.tracker.render();
-        assert.ok(texts(h).some(c => c.args[0] === 'OFF' && c.args[1] === h.head(0).x + 46 + 4
+        assert.ok(texts(h).some(c => c.args[0] === 'OFF' && c.args[1] === h.head(0).x + LANE + 4
             && c.args[2] === 4 * ROW + ROW / 2), 'OFF in lane 1, row 4');
     });
 
@@ -375,9 +377,9 @@ describe('tracker editing', () => {
 
     test('the spare sub-lane takes a chord note', () => {
         const { pattern } = seedPattern(session, { notes: [N(60, 0, 16)] });
-        const { head, press, key } = build();
-        assert.equal(head(0).w, 2 * 46, 'one lane in use plus a spare on the active track');
-        press(head(0).x + 46 + 4, 0);            // lane 1
+        const { head, press, key, tracker } = build();
+        assert.equal(head(0).w, 2 * LANE + FX, 'one lane in use plus a spare on the active track');
+        press(head(0).x + LANE + 4, 0);          // lane 1
         key('KeyC');                             // E-4
         assert.deepEqual(notesOf(session, pattern.id), [[60, 0, 16, 0], [64, 0, 16, 1]]);
     });
@@ -387,7 +389,7 @@ describe('tracker editing', () => {
         const events = [];
         session.subscribe((ev) => { if (ev.source === 'tracker') events.push(ev); });
         const { head, press, key, tracker } = build();
-        press(head(0).x + 46 + 4, 0);            // type into lane 1 of an empty pattern
+        press(head(0).x + LANE + 4, 0);          // type into lane 1 of an empty pattern
         key('KeyZ');
         assert.equal(events.length, 0, 'nothing announced while typing');
         assert.equal(session.getPattern(pattern.id).notes[0].lane, 1, 'kept where typed for now');
@@ -598,7 +600,7 @@ describe('tracker selection', () => {
         const h = build();
         setStep(h.q, 4);
         const x0 = h.head(0).x + 4;
-        dragSel(h, x0, 2, x0 + 46, 9);                    // lanes 0–1, rows 2–9
+        dragSel(h, x0, 2, x0 + LANE, 9);                  // lanes 0–1, rows 2–9
         assert.deepEqual(h.tracker.getSelection().lanes, [0, 1]);
         assert.match(h.q('.tracker-status').textContent, /fills the first lane every 4 rows/);
         h.key('KeyZ');
@@ -980,5 +982,128 @@ describe('tracker selection', () => {
         h.key('KeyV', { key: 'v', ctrlKey: true });       // a copy at row 8
         h.tracker.flush();
         assert.deepEqual(notesOf(pattern.id), [[60, 4, 2, 0], [60, 8, 2, 0], [67, 12, 2, 0]]);
+    });
+});
+
+describe('tracker velocity and effects columns', () => {
+    const N = (midi, start, dur, lane) => (lane == null ? { midi, start, dur } : { midi, start, dur, lane });
+    const VEL_X = 46 + 4;              // lane 0's velocity sub-cell
+
+    test('digits on the velocity cell roll the note velocity; Delete returns the default', () => {
+        const { pattern } = seedPattern(session, { notes: [N(60, 0, 4)] });
+        const h = build();
+        h.press(h.head(0).x + VEL_X, 0);
+        assert.deepEqual([h.tracker.getCursor().lane, h.tracker.getCursor().sub], [0, 1]);
+        h.key('Digit8');
+        h.key('Digit0');
+        assert.match(h.q('.tracker-status').textContent, /Velocity 80/);
+        h.tracker.flush();
+        assert.equal(session.getPattern(pattern.id).notes[0].vel, 80, 'digits rolled up');
+        h.key('', { key: 'Delete' });
+        assert.match(h.q('.tracker-status').textContent, /default/);
+        h.tracker.flush();
+        assert.equal('vel' in session.getPattern(pattern.id).notes[0], false);
+    });
+
+    test('digits over 127 clamp; a cell without a note start refuses and says so', () => {
+        const { pattern } = seedPattern(session, { notes: [N(60, 0, 4)] });
+        const h = build();
+        h.press(h.head(0).x + VEL_X, 0);
+        for (const d of ['Digit9', 'Digit9', 'Digit9']) h.key(d);
+        h.tracker.flush();
+        assert.equal(session.getPattern(pattern.id).notes[0].vel, 127);
+        h.press(h.head(0).x + VEL_X, 2 * ROW);           // the note sounds here but does not start
+        h.key('Digit5');
+        assert.match(h.q('.tracker-status').textContent, /No note starts here/);
+        assert.equal(session.getPattern(pattern.id).notes.length, 1, 'nothing typed in');
+    });
+
+    test('note keys mean nothing on the velocity cell', () => {
+        const { pattern } = seedPattern(session, { notes: [N(60, 0, 4)] });
+        const h = build();
+        h.press(h.head(0).x + VEL_X, 0);
+        h.key('KeyZ');
+        h.tracker.flush();
+        assert.deepEqual(session.getPattern(pattern.id).notes.map(n => n.midi), [60]);
+    });
+
+    test('the velocity is drawn beside the note: dim at the default, plain once set', () => {
+        const { pattern } = seedPattern(session, { notes: [N(60, 0, 4)] });
+        session.updatePattern(pattern.id, {}, 'test');
+        const h = build();
+        const calls = () => h.canvas.getContext('2d')._calls.filter(c => c.fn === 'fillText');
+        h.canvas.getContext('2d')._calls.length = 0;
+        h.tracker.render();
+        assert.ok(calls().some(c => c.args[0] === '100' && c.fillStyle === '#454a5e'), 'the default, dim');
+        session.getPattern(pattern.id).notes[0].vel = 55;
+        h.canvas.getContext('2d')._calls.length = 0;
+        h.tracker.render();
+        assert.ok(calls().some(c => c.args[0] === '55' && c.fillStyle === '#9fb4d8'));
+    });
+
+    test('the FX column: a letter is the command, digits the argument, Delete clears — stored on the section per track', () => {
+        const { track } = seedPattern(session, { notes: [N(60, 0, 4)] });
+        const h = build();
+        const fxX = h.head(0).x + 2 * LANE + 4;          // past both lanes: the FX column
+        h.press(fxX, 4 * ROW);
+        assert.equal(h.tracker.getCursor().lane, 2, 'the FX column is the lane past the last');
+        h.key('KeyB');
+        h.key('Digit1');
+        h.key('Digit0');
+        const fx = () => session.getSection().fx[track.id];
+        assert.deepEqual(fx(), [{ row: 4, cmd: 'B', arg: 10 }]);
+        h.key('KeyJ');
+        assert.deepEqual(fx(), [{ row: 4, cmd: 'J', arg: 10 }], 'a new letter keeps the argument');
+        h.key('', { key: 'Delete' });
+        assert.equal(session.getSection().fx[track.id], undefined);
+    });
+
+    test('FX works in the gap between clips — it is the track timeline, not the pattern', () => {
+        const { track } = seedPattern(session, { notes: [N(60, 0, 4)] });
+        const h = build();
+        h.press(h.head(0).x + 2 * LANE + 4, 40 * ROW);   // far below the one-bar clip
+        h.key('KeyB');
+        assert.deepEqual(session.getSection().fx[track.id], [{ row: 40, cmd: 'B', arg: 0 }]);
+    });
+
+    test('digits on the FX cell without a command ask for the letter first', () => {
+        seedPattern(session, { notes: [N(60, 0, 4)] });
+        const h = build();
+        h.press(h.head(0).x + 2 * LANE + 4, 0);
+        h.key('Digit5');
+        assert.match(h.q('.tracker-status').textContent, /command letter first/);
+    });
+
+    test('arrows walk note → velocity → next lane → FX → next track, and back', () => {
+        seedPattern(session, { notes: [N(60, 0, 16)] });   // one lane + the spare
+        seedPattern(session, { slot: 1, notes: [] });
+        const h = build();
+        h.press(h.head(0).x + 4, 0);
+        const at = () => { const c = h.tracker.getCursor(); return [c.slot, c.lane, c.sub]; };
+        assert.deepEqual(at(), [0, 0, 0]);
+        const right = () => h.key('ArrowRight', { key: 'ArrowRight' });
+        right(); assert.deepEqual(at(), [0, 0, 1], 'the velocity cell');
+        right(); assert.deepEqual(at(), [0, 1, 0], 'the spare lane');
+        right(); assert.deepEqual(at(), [0, 1, 1]);
+        right(); assert.deepEqual(at(), [0, 2, 0], 'the FX column');
+        right(); assert.deepEqual(at(), [1, 0, 0], 'the next track');
+        h.key('ArrowLeft', { key: 'ArrowLeft' });
+        // Track 1 became active, so track 0 lost its spare lane: its FX
+        // column is now the lane past its one real lane.
+        assert.deepEqual(at(), [0, 1, 0], 'and back onto the FX column');
+    });
+
+    test('the FX cell draws its command and takes no selection', () => {
+        const { track } = seedPattern(session, { notes: [N(60, 0, 4)] });
+        const h = build();
+        h.press(h.head(0).x + 2 * LANE + 4, 4 * ROW);
+        h.key('KeyB');
+        h.key('Digit7');
+        h.canvas.getContext('2d')._calls.length = 0;
+        h.tracker.render();
+        const texts = h.canvas.getContext('2d')._calls.filter(c => c.fn === 'fillText');
+        assert.ok(texts.some(c => c.args[0] === 'B7' && c.fillStyle === '#d0a85c'));
+        assert.equal(h.tracker.getSelection(), null);
+        void track;
     });
 });

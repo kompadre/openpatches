@@ -664,7 +664,7 @@ export function createToolbar(opts) {
             const col = mapped && (mapped.fresh ? ((press.startCol % tc) + tc) % tc : mapped.patternCol);
             if (mapped && col > 0) {
                 logRecord(`[record] seam-split midi=${midi} startCol=${press.startCol} endCol=${pos.rawCol}`);
-                addRecordedNote(midi, press.startCol, pos.rawCol, activeRecordSlot);
+                addRecordedNote(midi, press.startCol, pos.rawCol, activeRecordSlot, press.velocity);
                 activePresses.delete(midi);
             }
         }
@@ -945,7 +945,7 @@ export function createToolbar(opts) {
         if (stepping) {
             stepNoteOn(midi, when);
         } else if (recording) {
-            activePresses.set(midi, { startCol: colAt(when) });
+            activePresses.set(midi, { startCol: colAt(when), velocity });
             logRecord(`[record] note-on midi=${midi} vel=${velocity} slot=${activeRecordSlot}`);
         }
 
@@ -980,7 +980,7 @@ export function createToolbar(opts) {
             activePresses.delete(midi);
             const endCol = colAt(when);
             logRecord(`[record] note-off midi=${midi} startCol=${press.startCol} endCol=${endCol}`);
-            addRecordedNote(midi, press.startCol, endCol, activeRecordSlot);
+            addRecordedNote(midi, press.startCol, endCol, activeRecordSlot, press.velocity);
         }
     }
 
@@ -1184,7 +1184,7 @@ export function createToolbar(opts) {
     const kb = document.createElement('div');
     kb.className = 'keyboard';
 
-    function addRecordedNote(midi, startCol, endCol, slot) {
+    function addRecordedNote(midi, startCol, endCol, slot, vel) {
         if (!pianorollRef || !pianorollRef.addNote) return;
         // Where does this column land? In section mode that depends on which
         // clip is under the playhead on this voice; with none, the note was
@@ -1198,7 +1198,7 @@ export function createToolbar(opts) {
         // `fresh` means this voice has nothing placed yet — wrap on the grid
         // and let addNote() start a track and a clip at bar 1, as before.
         const start = mapped.fresh ? ((startCol % tc) + tc) % tc : mapped.patternCol;
-        const note = pianorollRef.addNote({ midi, start, dur, slot, clipId: mapped.fresh ? null : mapped.clipId });
+        const note = pianorollRef.addNote({ midi, start, dur, vel, slot, clipId: mapped.fresh ? null : mapped.clipId });
         if (note) {
             note._recordedInSession = true;
             undoStack.push(note);

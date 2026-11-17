@@ -221,6 +221,7 @@ export function createSectionSequence(project, section, opts = {}) {
                 for (const n of notes) {
                     events.push({
                         midi: n.midi,
+                        vel: n.vel,
                         // A divided track's notes last as many ticks as the
                         // pattern is slowed by. Cut at the clip's end: a clip
                         // stopped part-way through its pattern takes its

@@ -63,7 +63,7 @@ const NOTES = [
 import { selectionMade, onSelectionElsewhere } from './selection-bus.js';
 import {
     COLS_PER_MEASURE, createTrack, addClip, clipCols,
-    MIN_BPM, MAX_BPM, defaultPatternName,
+    MIN_BPM, MAX_BPM, defaultPatternName, DEFAULT_VELOCITY,
 } from './project-model.js';
 import { msPerColumn } from '../synth/section-sequencer.js';
 import { createTransport } from '../synth/transport.js';
@@ -104,7 +104,7 @@ export function createPianoroll(opts) {
         startWorker: opts.startWorker,
         stopWorker: opts.stopWorker,
         tempoWorker: opts.tempoWorker,
-        playNote: (midi, durMs, voiceData, slot) => playNoteFn(midi, durMs, voiceData, slot),
+        playNote: (midi, durMs, voiceData, slot, noteOpts) => playNoteFn(midi, durMs, voiceData, slot, noteOpts),
         getSlotData: (slot) => getSlotData(slot),
         getPattern: (id) => livePattern(id),
         getEditTarget: () => editTarget(),
@@ -2163,7 +2163,7 @@ export function createPianoroll(opts) {
          * Insert a note on `slot`'s track (the recorder names the slot it
          * recorded on, which need not be the one being edited).
          */
-        addNote({ midi, start, dur, slot, clipId, reveal }) {
+        addNote({ midi, start, dur, vel, slot, clipId, reveal }) {
             const target = slot != null ? slot : currentSlot();
             // The recorder names the clip when the section's playhead is over
             // one; otherwise the voice's own track takes the note.
@@ -2171,6 +2171,8 @@ export function createPianoroll(opts) {
             if (!track || !track.pattern) track = ensureTrackForSlot(target);
             selectSlot(currentSlot());
             const note = { midi, start, dur };
+            // The default velocity is not stored (project-model's rule).
+            if (vel != null && vel !== DEFAULT_VELOCITY) note.vel = Math.max(1, Math.min(127, Math.round(vel)));
             track.pattern.notes.push(note);
             draw();
             renderLegend();

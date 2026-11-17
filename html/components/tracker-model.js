@@ -379,6 +379,21 @@ export function putNote(pattern, col, lane, midi) {
 }
 
 /**
+ * Set the velocity (1–127) of the note starting at `col` in `lane`, or
+ * clear it back to the default with `vel` null. Returns the note, or null
+ * when no note starts there — velocity lives on a note, never on its own.
+ */
+export function setVelocity(pattern, col, lane, vel) {
+    const d = freeze(pattern);
+    const here = inLane(pattern, d, lane).find(n => n.start === col);
+    if (!here) return null;
+    const v = Math.round(Number(vel));
+    if (vel != null && Number.isFinite(v)) here.vel = Math.max(1, Math.min(127, v));
+    else delete here.vel;
+    return here;
+}
+
+/**
  * Put an OFF at `col` in `lane`: cut the note sounding there, or turn a
  * note starting there into the end of the one before.
  * @returns {boolean} whether anything changed — an OFF over silence is not
@@ -526,7 +541,7 @@ export function copyBlock(pattern, c0, c1, l0, l1) {
     for (const n of pattern.notes) {
         const lane = d.lane.get(n);
         if (lane < l0 || lane > l1 || n.start < c0 || n.start > c1) continue;
-        items.push({ dCol: n.start - c0, dLane: lane - l0, midi: n.midi, dur: n.dur });
+        items.push({ dCol: n.start - c0, dLane: lane - l0, midi: n.midi, dur: n.dur, vel: n.vel });
     }
     return { rows: c1 - c0 + 1, lanes: l1 - l0 + 1, items };
 }
@@ -554,6 +569,7 @@ export function pasteBlock(pattern, c0, l0, stamp) {
         const start = c0 + it.dCol;
         if (start >= len) continue;
         const n = { midi: it.midi, start, dur: it.dur };
+        if (it.vel != null) n.vel = it.vel;
         setLane(n, l0 + it.dLane);
         laneOf.set(n, l0 + it.dLane);
         pattern.notes.push(n);

@@ -31,20 +31,6 @@ The Piece panel shipped 2026-11-15 (CHANGELOG). Not started; nothing is decided 
 - [ ] **Ruler above the strip**: bar numbers or mm:ss, so the piece reads as time.
 - [ ] **Phones**: a layout for the Piece panel. The strip is hidden under 600 px for now; the header and the select row still work.
 
-### Tracker: velocity and effects columns (agreed 2026-11-17) — before the Player
-
-Reverses the 2026-11-07 Tracker decision "note-ons and note-offs only".
-Both columns are per track. Order: the Tracker view first, playback after.
-- [ ] **Velocity column**: a velocity per note, shown and edited in the
-  Tracker. Stored on the note (the pattern is data, so that is the right
-  home); notes without one play at today's 100.
-- [ ] **Effects column**: tracker commands per track, shown and edited in
-  the Tracker. The first command the Player needs is "move this track's
-  position" (e.g. back 10 beats). Command set and encoding to be decided
-  when the phase starts.
-- [ ] **Playback honours velocity** end to end (sequencer event →
-  `playNote` → internal synth and MIDI out; today both default to 100).
-
 ### Player and per-track Playheads (agreed 2026-11-17, parked) — after the Tracker columns
 
 A **Player** with one **Playhead per track**. Decisions (user):
@@ -57,7 +43,7 @@ A **Player** with one **Playhead per track**. Decisions (user):
 - **Playheads line up again when a new Section starts.**
 - **No synthetic note-offs on a jump**: what sounds keeps sounding. The one
   exception: **all notes off at the transition between Sections**.
-- **Jumps come from the Tracker's effects column** (above).
+- **Jumps come from the Tracker's effects column** (shipped 2026-11-17, CHANGELOG — `section.fx`, open command set).
 - **Humanize is per track.** Rather than scheduling notes ahead, the clock
   can skip some of its precision spinning while micro-adjusting the pause
   between ticks; since the offsets are per track, that micro-adjustment
@@ -130,6 +116,9 @@ Open, to settle when the phases start:
 
 ### Ideas
 
+- [ ] **Tracker as the single source of truth** (user, 2026-11-17): the
+  Tracker view becomes the one home of timeline events; other views read
+  it. Explicitly *not* a sudden pivot — a direction to drift towards.
 - [ ] Import and export **MIDI** (patterns ↔ MIDI files; a section or the piece as a multi-track SMF).
 - [ ] Export (and maybe import) the project as a **Reaper project** (.rpp): tracks, clips as MIDI items, tempo.
 - [ ] Per section track configuration.

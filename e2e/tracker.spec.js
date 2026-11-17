@@ -48,7 +48,7 @@ test('compact folds the track to one column and is stored on the project', async
     await expect(page.locator('.tracker-mode')).toHaveText('▣');
     expect(await page.evaluate(() => window.__opProject.get().tracks[0].compact)).toBe(true);
     const w = await page.locator('.tracker-head').evaluate((el) => el.getBoundingClientRect().width);
-    expect(w).toBeLessThan(80);
+    expect(w).toBeLessThan(90);   // one 46px column plus the 34px FX column
 });
 
 test('the Section pane outlines the tracker viewport while the tab is open', async ({ page }) => {
@@ -437,7 +437,7 @@ test('doubled notes: marked while typing, merged on the idle commit', async ({ p
 
     // Riff: C-4 and E-4 at row 0 (lanes 0, 1), G-4 at 8. Type G-4 at row 8
     // in lane 1 too (B on the FT2 keys is G).
-    await page.mouse.click(box.x + 40 + 46, box.y + 8 * 16 + 8);
+    await page.mouse.click(box.x + 40 + 72, box.y + 8 * 16 + 8);   // lane 1: a lane is note (46) + velocity (26) wide
     await page.keyboard.press('KeyB');
     await expect(page.locator('.tracker-status')).toContainText('G-4 twice on row 8');
     await page.screenshot({ path: '/tmp/op-shots/tracker-doubles.png', clip: { x: box.x - 40, y: box.y - 60, width: 420, height: 320 } });
@@ -447,4 +447,35 @@ test('doubled notes: marked while typing, merged on the idle commit', async ({ p
     await expect(page.locator('.tracker-status')).toContainText('Merged a doubled G-4', { timeout: 6000 });
     await page.screenshot({ path: '/tmp/op-shots/tracker-merged.png', clip: { x: box.x - 40, y: box.y - 60, width: 420, height: 320 } });
     expect(await lane(67)).toHaveLength(1);
+});
+
+test('the velocity column takes digits on a note; the FX column takes a command per track', async ({ page }) => {
+    await openApp(page);
+    await seed(page);
+    await page.locator('.dock-tab-tracker').click();
+    const box = await page.locator('.tracker-canvas').boundingBox();
+    // A lane is note (46) + velocity (26) wide; the ruler is 36px. The
+    // velocity cell of lane 0, row 0 — the chord's C-4.
+    await page.mouse.click(box.x + 36 + 46 + 4, box.y + 8);
+    await page.keyboard.press('Digit9');
+    await page.keyboard.press('Digit0');
+    await expect(page.locator('.tracker-status')).toContainText('Velocity 90');
+    expect(await page.evaluate(() => Object.values(window.__opProject.get().patterns)[0].notes
+        .find((n) => n.midi === 60).vel)).toBe(90);
+
+    // The FX column sits past the lanes: 2 chord lanes + the active track's
+    // spare = 3. A command in the gap below the one-bar clip, row 20.
+    await page.mouse.click(box.x + 36 + 3 * 72 + 4, box.y + 20 * 16 + 8);
+    await page.keyboard.press('KeyB');
+    await page.keyboard.press('Digit1');
+    await page.keyboard.press('Digit0');
+    const fx = await page.evaluate(() => {
+        const p = window.__opProject.get();
+        return Object.values(p.sections[0].fx)[0];
+    });
+    expect(fx).toEqual([{ row: 20, cmd: 'B', arg: 10 }]);
+
+    // Delete clears the command.
+    await page.keyboard.press('Delete');
+    expect(await page.evaluate(() => Object.keys(window.__opProject.get().sections[0].fx).length)).toBe(0);
 });

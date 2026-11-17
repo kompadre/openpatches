@@ -65,6 +65,8 @@ export const DEFAULT_BPM = 120;
 /** Channel volume, on the 0–127 scale the engine and the fader both use. */
 export const MAX_VOLUME = 127;
 export const DEFAULT_VOLUME = 100;
+export const DEFAULT_VELOCITY = 100;  // a note without `vel` plays at this
+export const MAX_FX_ARG = 999;
 export const PATTERN_KINDS = ['mono'];
 
 // A clip cannot start past, or run past, bar 4097. Generous: the point is to
@@ -196,6 +198,13 @@ function normalizeNote(n, cols) {
     if (!Number.isFinite(start) || start < 0 || start >= cols) return null;
     const dur = clampInt(n.dur, 1, cols - start, 1);
     const note = { midi, start, dur };
+    // Velocity, 1–127. Omitted when unset — the note plays at
+    // DEFAULT_VELOCITY, and a pattern of plain notes stores what it did
+    // before velocities existed.
+    if (n.vel != null) {
+        const vel = clampInt(n.vel, 1, 127, NaN);
+        if (Number.isFinite(vel)) note.vel = vel;
+    }
     // The tracker sub-lane. Omitted when 0 — most notes are — so a pattern
     // of plain notes stores exactly what it did before lanes existed.
     const lane = Math.round(Number(n.lane));
@@ -379,8 +388,68 @@ export function createSection(partial = {}) {
         bpmEnd: partial.bpmEnd == null ? null : clampInt(partial.bpmEnd, MIN_BPM, MAX_BPM, DEFAULT_BPM),
         clips: (Array.isArray(partial.clips) ? partial.clips : []).map(createClip),
         loop: normalizeLoop(partial.loop),
+        // Tracker effects commands, per track, on the section's own
+        // timeline (NOT in patterns: a pattern is shared by its
+        // placements, and a command can sit in the gap between clips).
+        // Always present, even empty: collab's refill deletes what the
+        // factory omits.
+        fx: normalizeSectionFx(partial.fx),
         created: partial.created || Date.now(),
     };
+}
+
+/**
+ * The section's effects store: `{ [trackId]: [{row, cmd, arg}] }`, each
+ * track's list sorted by row, one command per row. `cmd` is a single
+ * letter A–Z; `arg` an integer 0–MAX_FX_ARG. The command set is open —
+ * the Player assigns meanings (TODO.md).
+ */
+function normalizeSectionFx(fx) {
+    const out = {};
+    if (!fx || typeof fx !== 'object') return out;
+    for (const [trackId, list] of Object.entries(fx)) {
+        if (!Array.isArray(list)) continue;
+        const byRow = new Map();
+        for (const e of list) {
+            if (!e || typeof e !== 'object') continue;
+            const row = clampInt(e.row, 0, 4096 * COLS_PER_MEASURE, NaN);
+            const cmd = typeof e.cmd === 'string' && /^[A-Z]$/.test(e.cmd) ? e.cmd : null;
+            if (!Number.isFinite(row) || !cmd) continue;
+            byRow.set(row, { row, cmd, arg: clampInt(e.arg, 0, MAX_FX_ARG, 0) });
+        }
+        if (byRow.size) out[trackId] = [...byRow.values()].sort((a, b) => a.row - b.row);
+    }
+    return out;
+}
+
+/** A track's effects commands in `section`, sorted by row (shared array — read only). */
+export function sectionFx(section, trackId) {
+    return (section && section.fx && section.fx[trackId]) || [];
+}
+
+/** The command at `row` of `trackId`, or null. */
+export function fxAt(section, trackId, row) {
+    return sectionFx(section, trackId).find(e => e.row === row) || null;
+}
+
+/**
+ * Put a command at `row` of `trackId` (replacing the row's), or clear the
+ * row with `entry` null. Returns the stored entry, or null.
+ */
+export function setSectionFx(section, trackId, row, entry) {
+    if (!section.fx) section.fx = {};
+    const list = (section.fx[trackId] || []).filter(e => e.row !== row);
+    let stored = null;
+    if (entry) {
+        const cmd = typeof entry.cmd === 'string' && /^[A-Z]$/.test(entry.cmd) ? entry.cmd : null;
+        if (!cmd) return null;
+        stored = { row, cmd, arg: clampInt(entry.arg, 0, MAX_FX_ARG, 0) };
+        list.push(stored);
+        list.sort((a, b) => a.row - b.row);
+    }
+    if (list.length) section.fx[trackId] = list;
+    else delete section.fx[trackId];
+    return stored;
 }
 
 // Section colours: muted, and a different set from the patterns', since a

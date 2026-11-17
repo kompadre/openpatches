@@ -2,6 +2,22 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-17: Tracker velocity and effects columns; playback honours velocity
+
+The Player's testing playground (TODO.md › Player), ahead of it. Reverses the 2026-11-07 "note-ons and note-offs only".
+
+**Velocity column, per lane.** Every expanded sub-lane is now a note cell (46px) plus a velocity cell (26px). The velocity lives on the note (`note.vel`, 1–127, omitted at the default 100 — a pattern of plain notes stores exactly what it did), so every placement of the pattern shares it. On the velocity cell, digits roll the value (`8`,`0` → 80, clamped at 127), Delete returns the default; the default draws dim, a set value plain. Copy/cut/paste and block moves carry it; `mergeDuplicates` keeps the kept note's. Over collab the note atom's value grows from bare `dur` to `{dur, vel}` only when a velocity is set, and a malformed one is dropped on apply.
+
+**Effects column, one per track**, at the track's right edge (34px), compact or expanded. A letter A–Z is the command, digits roll the argument (0–999), Delete clears the row. Commands are stored on the **section**, per track (`section.fx[trackId] = [{row, cmd, arg}]`, sorted, one per row) — not in patterns: a command marks the track's timeline (it works in the gap between clips) and a shared pattern must not drag commands to every placement. `createSection` always carries `fx` (collab's refill deletes what the factory omits); it travels as the section's `fx` field atom, whole, last write wins. The command set is open — the Player gives commands their meaning (the first will be "move this track's position").
+
+**Playback honours velocity end to end.** The sequencer's events carry `vel`; the transport passes `{velocity}` through `playNote`; the MIDI out already took it, and the internal synth path (`playNoteOnChannel`, `playNoteRealtime`) now receives it instead of silently playing 100. A MIDI-in take records its velocity onto the note too (`activePresses` keeps it; 100 is not stored); mouse and keyboard presses stay at the default.
+
+The cursor knows its sub-cell (`cursor.sub`) and the FX column (`lane === viewLanes`); arrows walk note → velocity → next lane → FX → next track. Selections, stamps and moves stay on whole lanes (note + velocity together) and never include the FX column.
+
+Files: `html/components/project-model.js`, `tracker-model.js`, `tracker.js`, `collab-ops.js`, `pianoroll.js`, `toolbar.js`, `html/synth/section-sequencer.js`, `transport.js`, `html/app.js`.
+
+Tests: new `velocity-and-fx` (9: normalize/set/clamp/clear, copy-paste, collab note atom and section fx round-trips, sequencer `vel`); `tracker-view` +9 (both columns' editing, drawing, navigation, FX in a clip gap, no selection on FX); `transport` +1 (velocity in `noteOpts`); `toolbar-record-keyboard` +1 (a take records MIDI velocity); e2e `tracker` +1 (both columns in the browser). Stale lane-width baselines updated (a lane is 72px now, a track ends in the FX column). 1375 unit; the whole e2e suite run, green.
+
 ## 2026-11-16: A block plays its section n times; desktop opens on the Tracker; new patterns take the least-used colour
 
 **Repeats per block** (Piece panel follow-up). A piece entry may carry `repeats` (1–64, stored only above 1), so one block stands for a chorus played twice in a row. `pieceLayout` gives the part every pass (`passCols`, `repeats`) and what follows moves along; the piece sequence folds each column into one pass, so the section and its tempo ramp start again from the top each time. On a block: **+ / −** (and `=`), with no modifier, play it more or fewer times. The block menu has *+ Play once more* and *− Play once less*, and the row under the strip has a **×** field for the picked block. The block reads `2 ×3` (bars of one pass, then the count) and is as wide as every pass; while playing, its line crosses all the passes and the header says `▶ 2 of 3 · pass 2 of 2`. It travels in the `arrangement` atom and the export as it is.
