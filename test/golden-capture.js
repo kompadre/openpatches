@@ -94,8 +94,9 @@ export function fixtures() {
     });
 
     // 2. Clock dividers: ÷2 over a one-bar clip, ÷4 over a two-bar clip.
+    // Mixed lengths, so a delta fixture: the ÷2 track loops at bar 2.
     all.push({
-        name: 'section-divider', cols: 48,
+        name: 'section-divider', cols: 48, delta: true,
         make() {
             const p = project();
             const s = p.sections[0];
@@ -107,7 +108,7 @@ export function fixtures() {
                 slot: 1, track: 'tB', pattern: 'pB', clip: 'cB', divider: 4, measures: 2,
                 notes: [N(40, 0, 1), N(43, 1, 1)],
             });
-            return createSectionSequence(p, s);
+            return { seq: createSectionSequence(p, s), project: p, section: s };
         },
     });
 
@@ -127,9 +128,9 @@ export function fixtures() {
     });
 
     // 4. A clip cut mid-pattern and one spelled in repeats: the cut takes
-    // notes (and note tails) with it.
+    // notes (and note tails) with it. Mixed lengths (12 against 32): delta.
     all.push({
-        name: 'section-cut-and-repeats', cols: 48,
+        name: 'section-cut-and-repeats', cols: 48, delta: true,
         make() {
             const p = project();
             const s = p.sections[0];
@@ -141,7 +142,7 @@ export function fixtures() {
                 slot: 1, track: 'tB', pattern: 'pB', clip: 'cB', repeats: 2,
                 notes: [N(36, 0, 4), N(38, 12, 4)],
             });
-            return createSectionSequence(p, s);
+            return { seq: createSectionSequence(p, s), project: p, section: s };
         },
     });
 
@@ -300,6 +301,11 @@ export function reference(seq, project, section) {
         }
     }
     return out;
+}
+
+/** The sequence a fixture plays, whatever shape make() returns. */
+export function sequenceOf(made) {
+    return made && made.seq ? made.seq : made;
 }
 
 /** The full golden for one fixture. */

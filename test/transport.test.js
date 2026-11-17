@@ -131,7 +131,10 @@ describe('modes', () => {
         assert.deepEqual(h.played.map(p => [p.midi, p.slot]).sort(), [[48, 1], [60, 0]]);
         h.played.length = 0;
         h.tickWorker.tick(48);
-        assert.deepEqual(h.played.map(p => p.midi), [52], 'section mode reaches bar 4');
+        // Bar 4: the one-bar tracks on slots 0 and 1 have looped back to
+        // their row 0 (the Player's per-track loop, 2026-11-17) and sound
+        // again beside slot 2's bar-4 clip.
+        assert.deepEqual(h.played.map(p => p.midi).sort(), [48, 52, 60], 'section mode reaches bar 4; short tracks loop');
 
         h.transport.setMode('pattern');
         h.transport.play();

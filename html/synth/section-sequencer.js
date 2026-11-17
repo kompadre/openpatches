@@ -86,6 +86,7 @@ function emptySequence(kind) {
         columnForTick: () => 0,
         eventsAt: () => [],
         locate: () => ({ col: 0, measure: 0, colInMeasure: 0, tracks: {} }),
+        tracks: () => [],
     };
 }
 
@@ -208,10 +209,11 @@ export function createSectionSequence(project, section, opts = {}) {
          * Notes that start exactly at absolute column `col`, on audible
          * tracks. `dur` is in columns; the transport converts with the bpm.
          */
-        eventsAt(col) {
+        eventsAt(col, trackId = null) {
             const audible = audibleTrackIds(project.tracks);
             const events = [];
             for (const p of placementsAt(col)) {
+                if (trackId != null && p.track.id !== trackId) continue;
                 if (opts.onlyTrackId && p.track.id !== opts.onlyTrackId) continue;
                 if (!audible.has(p.track.id)) continue;
                 const { local, tick, divider } = trackColumn(p, col);
@@ -239,6 +241,24 @@ export function createSectionSequence(project, section, opts = {}) {
                 }
             }
             return events;
+        },
+        /**
+         * The tracks the Player walks: every track with a clip inside the
+         * range, and where its last clip ends — **exactly**, never rounded
+         * to the bar (a short track loops against the longer ones from
+         * there), clipped to the range. A track with nothing in the range
+         * is not listed: it takes no part in the Section's transition.
+         */
+        tracks() {
+            const ends = new Map();
+            for (const p of placed) {
+                if (p.endCol <= range.startCol || p.startCol >= range.endCol) continue;
+                const end = Math.min(p.endCol, range.endCol);
+                if (!ends.has(p.track.id) || ends.get(p.track.id).end < end) {
+                    ends.set(p.track.id, { trackId: p.track.id, slot: p.track.slot, end });
+                }
+            }
+            return [...ends.values()].sort((a, b) => a.slot - b.slot);
         },
         /**
          * Where the playhead is, for drawing: the measure and the
@@ -305,6 +325,9 @@ export function createPieceSequence(project) {
         kind: 'piece',
         length: layout.total,
         range,
+        /** The piece's parts in order, each with its own section sequence (for the Player). */
+        parts() { return parts; },
+        tracks() { return []; },
         columnForTick(rawCol) { return wrapToRange(rawCol, range); },
         eventsAt(col) {
             const p = partAt(col);
@@ -371,6 +394,7 @@ export function createPatternSequence(pattern, slot) {
                 tracks: { [trackId]: { clipId: null, patternId: pattern.id, patternCol: col } },
             };
         },
+        tracks() { return [{ trackId, slot, end: patternCols() }]; },
     };
 }
 

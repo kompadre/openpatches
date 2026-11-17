@@ -45,6 +45,7 @@ import {
     createSectionSequence, createPatternSequence, createPieceSequence, msPerColumn,
     patternPlacements, nearestPlacement,
 } from './section-sequencer.js';
+import { createPlayer } from './player.js';
 import { COLS_PER_MEASURE, clipCols, bpmAt, pieceLayout } from '../components/project-model.js';
 import * as midiManager from './midi-manager.js';
 
@@ -88,6 +89,12 @@ export function createTransport(opts) {
     let recording = false;
     let sequence = null;
     let lastCol = -1;
+    // The Player (player.js) owns the heads — where every track is and what
+    // fires; it is rebuilt with the sequence and re-seeked to `lastCol`.
+    // `nextRaw` is the worker count the next tick should carry; any other
+    // (the first tick, an external `continue`, a skipped tick) seeks first.
+    let player = null;
+    let nextRaw = null;
     let sectionPos = 0;       // section column the pattern loop anchors to (see header)
     let placement = null;     // the placement pattern mode is looping, null when alone
     let consecutiveErrors = 0;
@@ -132,8 +139,25 @@ export function createTransport(opts) {
      */
     function refresh() {
         sequence = buildSequence();
+        player = createPlayer(sequence);
+        // Mid-play the heads are put back where a run from the top would
+        // have them at this column: an edit re-snapshots, the position holds.
+        if (lastCol >= 0 && sequence.range) player.start(lastCol);
         retempo();
         return sequence;
+    }
+
+    /** Position the Player at `col` for a fresh start; the first tick seeks anyway. */
+    function placePlayer(col) {
+        if (!player) player = createPlayer(sequence);
+        if (col >= 0 && sequence.range) player.start(col);
+        nextRaw = null;
+    }
+
+    /** Where the playhead is, for `notify`: the Player's heads when it stands at `col`. */
+    function locateAt(col) {
+        if (player && player.ready() && player.col() === col) return player.locate();
+        return sequence.locate(col);
     }
 
     /**
@@ -213,7 +237,7 @@ export function createTransport(opts) {
             } else if (mode === 'pattern') {
                 edit = t ? { clipId: t.clipId, patternCol: col } : null;
             } else if (t) {
-                const here = sequence.locate(col).tracks[t.trackId];
+                const here = locateAt(col).tracks[t.trackId];
                 // Only when the clip under the playhead is the one being
                 // edited: the same track may carry several clips.
                 if (here && here.clipId === t.clipId) {
@@ -260,10 +284,10 @@ export function createTransport(opts) {
         else if (tickWorker) tickWorker.postMessage({ type: 'stop' });
     }
 
-    /** Sound everything that begins at `col`, each voice on its own slot. */
-    function fire(col) {
+    /** Sound the events the Player armed for this tick, each voice on its own slot. */
+    function fire(events) {
         const ms = msPerColumn(playbackBpm());
-        for (const ev of sequence.eventsAt(col)) {
+        for (const ev of events) {
             // A note just played in by the user must not be echoed back at
             // them on the same pass; the flag is cleared at the loop seam.
             if (recording && ev.note && ev.note._recordedInSession) continue;
@@ -299,15 +323,23 @@ export function createTransport(opts) {
         // A stale tick (see STALE_TICK_MS) moves the playhead and nothing
         // else: no clock burst to the device, no notes.
         if (!stale) midiManager.clockColumn(rawCol, getBpm());
-        const col = sequence.columnForTick(rawCol);
-        // The seam is the wrap back to the first column of the range; the
-        // recorder finalises notes held across it.
-        const seam = rawCol > 0 && col === sequence.range.startCol;
+        // The Player walks the heads; a tick the worker count did not lead
+        // up to (the first, an external continue, a skipped one) seeks first.
+        if (!player) player = createPlayer(sequence);
+        const seeked = rawCol !== nextRaw;
+        if (seeked) player.start(sequence.columnForTick(rawCol));
+        nextRaw = rawCol + 1;
+        // The seam is the first row of a new pass — the heads realigned; the
+        // recorder finalises notes held across it. A seek that lands on the
+        // range's first column counts too (the worker wrapped us there).
+        const step = player.tick();
+        const { col, events } = step;
+        const seam = step.seam || (seeked && rawCol > 0 && col === sequence.range.startCol);
         lastCol = col;
         if (sequence.kind === 'section') sectionPos = col;
         if (sequence.kind === 'piece') followPiece(col);
         if (!stale) rampTempo();
-        if (!stale && !fire(col)) return;
+        if (!stale && !fire(events)) return;
         notify({ col, rawCol, seam });
     }
 
@@ -355,6 +387,7 @@ export function createTransport(opts) {
             else if (sequence.range) playing = true;
             else return;
             if (fromTop) lastCol = sequence.range ? sequence.range.startCol : 0;
+            placePlayer(lastCol);
             consecutiveErrors = 0;
             log(`[transport] external clock ${ev.type}`);
             notify({ col: lastCol });
@@ -428,7 +461,8 @@ export function createTransport(opts) {
             ? Math.min(Math.max(Math.floor(fromCol), startCol), Math.max(startCol, endCol - 1))
             : startCol;
         consecutiveErrors = 0;
-        if (slaved()) { lastCol = startCol; return arm('play'); }
+        if (slaved()) { lastCol = startCol; placePlayer(lastCol); return arm('play'); }
+        placePlayer(lastCol);
         return deferIfSaving(() => {
             playing = true;
             notify({ col: lastCol });
@@ -489,6 +523,7 @@ export function createTransport(opts) {
         recording = false;
         armed = null;
         lastCol = -1;
+        nextRaw = null;
         warnedOutsideClip = false;
         midiManager.clockStop();
         stopTheWorker();
@@ -514,6 +549,7 @@ export function createTransport(opts) {
             log('[transport] recording into an empty section');
         }
         lastCol = sequence.range ? sequence.range.startCol : 0;
+        placePlayer(lastCol);
         consecutiveErrors = 0;
         warnedOutsideClip = false;
         if (slaved()) return arm('record');
@@ -579,6 +615,8 @@ export function createTransport(opts) {
         isRunning() { return playing || recording || !!armed; },
         getEffectiveBpm() { return playbackBpm(); },
         getSequence() { return sequence; },
+        /** The Player (player.js): the heads, for the views and tests. */
+        getPlayer() { return player; },
         getColumn() { return lastCol; },
         /** The playhead on the edited section's timeline, -1 when it is not there. */
         getSectionColumn() { return sectionColumn(lastCol); },

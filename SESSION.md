@@ -89,14 +89,35 @@ Phases (proposed 2026-11-16, agreed):
   as goldens later phases must match — plus, for the mixed-length
   fixtures, the **expected delta** under the per-track loop rule, so phase
   1 has a target, not just a diff.
-- [ ] **1 — Player + Playhead** (amended 2026-11-17, user agreed): the
-  per-track loop and the looped-status transition rule are implemented
-  here directly — no compatibility path; behaviour changes for
-  mixed-length sections as accepted. A playhead per track, the divider as
-  a counter, `seek` of all heads from day one (play-from-a-block, external
-  clock continue, stale ticks); the transport keeps the clock, modes,
-  external sync and MIDI clock out, and hands firing and locating to the
-  Player.
+- [x] **1 — Player + Playhead** — DONE 2026-11-17 (`html/synth/player.js`,
+  `test/player.test.js` 21; transport hands firing and locating to it,
+  keeps clock, modes, external sync, MIDI clock out). As agreed: the
+  per-track loop and the looped-status transition are in, no compatibility
+  path; `seek` (`player.start(col)`) from day one — the transport seeks
+  whenever a tick's worker count is not the one it expected (first tick,
+  external continue, skipped tick) and re-seeks on every `refresh()`
+  mid-play. Goldens: equal-length fixtures match `today`; the four
+  mixed-length fixtures (now all marked delta, two goldens regenerated to
+  add their `player` target — `today` unchanged) match `player`.
+  Deviations and leftovers, for the user:
+  - **Divider stays derived from the head's row** (trackColumn), not a
+    counter in the head: identical output, and a moved head (phase 4)
+    gets the right pattern column for free.
+  - **Wrap target = the scope's first row** (range start), the agent's
+    recommendation for the still-open question; a track beginning with a
+    gap walks the gap again.
+  - A section whose longest track ends mid-bar now **ends there** (exact
+    cut) instead of at the bar; the piece's nominal column skips to the
+    next part's start on that tick (piece length is nominal, as agreed).
+  - `mapRecordColumn` still maps the take against the *nominal* column
+    (today's rule) — a looped short track records in the wrong place
+    during a take until **phase 3**. Views still draw the one global
+    playhead at `pos.col`; per-track heads are **phase 4**
+    (`player.positions()` / `locate()` are ready for it).
+  - A scope with nothing placed keeps a silent clock head wrapping on the
+    range (a take into an empty window).
+  - `transport.test.js` › "section mode sounds every track": expectation
+    updated to the accepted change (short tracks loop at bar 4).
 - [ ] **2 — The Playhead fires notes**: explicit note-on/off, the notes it
   has sounding, velocity carried, one output interface instead of the
   bare `playNote`; all notes off at a Section transition.
