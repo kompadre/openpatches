@@ -118,9 +118,25 @@ Phases (proposed 2026-11-16, agreed):
     range (a take into an empty window).
   - `transport.test.js` › "section mode sounds every track": expectation
     updated to the accepted change (short tracks loop at bar 4).
-- [ ] **2 — The Playhead fires notes**: explicit note-on/off, the notes it
-  has sounding, velocity carried, one output interface instead of the
-  bare `playNote`; all notes off at a Section transition.
+- [x] **2 — The Playhead fires notes** — DONE 2026-11-17
+  (`html/synth/note-output.js`, player.js registry; tests `note-output` 5,
+  `player` explicit-offs 4, `transport` explicit-offs 2). The Player emits
+  typed on/off events and keeps `sounding` (`{slot, midi, ticksLeft}`);
+  offs count **real ticks**, so a seek never cuts a note — the one
+  synthetic off is the Section transition's flush, ordered ahead of row
+  0's ons. The transport sounds through one `createNoteOutput(playNote)`:
+  ons held open (`sustained: true`, the nominal dur-ms as the chain's
+  safety), offs via the returned stop (promise-aware), `allOff()` on Stop.
+  A stale tick sends only the offs; a retriggered slot-and-pitch
+  supersedes its entry, no off between (the MIDI layer and the synth both
+  retrigger, as today). `refresh()` mid-play now forgets tick continuity
+  (`nextRaw = null`; the next tick seeks itself — this also fixed a
+  phase-1 latent double-fire of the just-played row) and the rebuilt
+  Player **adopts** the old one's sounding notes so their offs still
+  come. The internal synth keeps its duration timeout as a second net; the
+  explicit off normally lands first. Behaviour change, per the agreed
+  rule: tails that today rang across a loop restart are cut by the
+  transition's all-notes-off.
 - [ ] **3 — Recording through the Playhead**: a take writes into the
   playhead of the track on screen. Removes `activeRecordSlot` and with it
   the live-take wrong-track bug (SESSION.md).
