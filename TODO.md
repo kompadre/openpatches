@@ -63,21 +63,41 @@ moved in time both ways — fired before its tick (humanize early) or after.
   pattern → **by default wrap to the track's first row** (an effects
   command may say otherwise). Everything a head does is scoped to the
   Section.
-- **Section transition**: when the head of the **longest track** (the one
-  whose last clip ends furthest) is at its last row, the Player overrides
-  **every** head's next step to **row −1 of the next Section**. The events
-  already armed still fire on their tick; the following advance lands all
-  heads on row 0 of the new Section — this is the realignment. The
+- **Loop status**: a head that wraps — by reaching the end of its track's
+  last clip (default) or by a command jumping past it — goes to the
+  track's row 0 and gains the status **looped** (once; never cleared
+  inside the Section). A track with no clip in the Section is **inactive**
+  and takes no part in what follows; a head a command has **stopped** is
+  satisfied too.
+- **Section transition** (user, 2026-11-17, replaces "the longest track"):
+  a head arriving at its **last row** that is **not yet looped**, while
+  **every other active head has looped at least once or is stopped**,
+  ends the Section. Refinement (agent, to confirm): a colleague that is
+  itself at its last row on the same tick counts as satisfied — otherwise
+  tracks of equal length (the common case) all arrive unlooped together and
+  no one may go. The Player then overrides **every** head's next step to
+  **row −1 of the next Section**; the events already armed still fire on
+  their tick, the following advance lands all heads on row 0 of the new
+  Section — the realignment — and clears every looped status. The
   all-notes-off at the transition is armed as an ordinary command on that
   crossing, due just before any (possibly early) row-0 note.
-- Consequences (agent, to confirm): the transition is driven by the
-  longest track's *head*, not by the tick count — a jump-back on that
-  track lengthens the Section in time, so the piece's total length and
-  `pieceLayout`/`columnForTick` become nominal and the Player must be
-  stateful (heads consume ticks in order; a stale tick advances the heads
-  and fires nothing). The per-track wrap is a **behaviour change** (today a
-  short track is silent after its last clip) — it belongs with phase 4, and
-  the golden capture of phase 0 holds for phases 1–3 only.
+- **A track's last row is the end of its last clip, exactly** — no bar
+  rounding. Today's rounding (`playCols`) stopped a one-beat clip from
+  looping the whole section every beat; under this rule such a clip loops
+  only its own track while the others carry on, which is the intent.
+- Consequences: the transition is driven by heads, not by the tick count —
+  a jump-back on the last unlooped track lengthens the Section in time, so
+  the piece's total length and `pieceLayout`/`columnForTick` become nominal
+  and the Player must be stateful (heads consume ticks in order; a stale
+  tick advances the heads and fires nothing; `seek` of all heads is needed
+  from phase 1 for play-from-a-block, external clock `continue` and stale
+  ticks). **The per-track loop is the default and a behaviour change**
+  (user, accepted: today a short track falls silent after its last clip;
+  some songs will change). The way back for an author is a **stop**
+  command at the end of the short track — so the Player's first two
+  commands are *move this track's position* and *stop here* (agent, to
+  confirm). A section loop restart is a transition like any other (every
+  head's last row is the loop end): realign and all notes off.
 
 Phases (proposed 2026-11-16, agreed):
 - [ ] **0 — Golden capture**: today's events and playhead positions per
@@ -100,16 +120,10 @@ Phases (proposed 2026-11-16, agreed):
   micro-adjustment between ticks reported to the playheads (see above).
 
 Open, to settle when the phases start:
-- "The longest track's last row": the last clip's end, or that end
-  **rounded up to the bar** as the section's play length is today
-  (`playCols`; a clip cut mid-bar would otherwise lurch the piece)? Agent
-  recommends the bar.
 - A short track's wrap target: the Section's row 0, or the start of the
   track's first clip when the track begins with a gap? Agent recommends
   row 0 (the head walks the Section's timeline; only the wrap point is
   per track).
-- Does a **section loop restarting** count as "a new Section starts"
-  (realign), or only moving to another Section in the piece?
 - Humanize **early** notes: answered by the one-row window above — a note
   can move earlier by up to one row. Still open: should a pass sound the
   same every time (seeded) or differ?
