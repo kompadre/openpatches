@@ -108,8 +108,8 @@ describe('heads, loop and transition', () => {
         player.start(0);
         for (let i = 0; i < 16; i++) player.tick();
         assert.deepEqual(player.positions(), [
-            { trackId: 'tA', slot: 0, row: 0, looped: true },
-            { trackId: 'tB', slot: 1, row: 16, looped: false },
+            { trackId: 'tA', slot: 0, row: 0, looped: true, stopped: false },
+            { trackId: 'tB', slot: 1, row: 16, looped: false, stopped: false },
         ]);
         assert.deepEqual(ons(player.tick().events).map(e => e.midi).sort(), [38, 60], 'both sound at column 16');
         for (let i = 17; i < 32; i++) player.tick();
@@ -133,8 +133,8 @@ describe('heads, loop and transition', () => {
         const player = createPlayer(seq);
         player.start(20);
         assert.deepEqual(player.positions(), [
-            { trackId: 'tA', slot: 0, row: 4, looped: true },
-            { trackId: 'tB', slot: 1, row: 20, looped: false },
+            { trackId: 'tA', slot: 0, row: 4, looped: true, stopped: false },
+            { trackId: 'tB', slot: 1, row: 20, looped: false, stopped: false },
         ]);
         assert.equal(player.col(), 20);
         // The same events a run from 0 would give at 20.
@@ -151,7 +151,7 @@ describe('heads, loop and transition', () => {
         const player = createPlayer(createSectionSequence(p, s));
         player.start(16);
         // tA's clip ends at 16: nothing of it lies in the range, so it has no head.
-        assert.deepEqual(player.positions(), [{ trackId: 'tB', slot: 1, row: 16, looped: false }]);
+        assert.deepEqual(player.positions(), [{ trackId: 'tB', slot: 1, row: 16, looped: false, stopped: false }]);
         const first = player.tick();
         assert.deepEqual(ons(first.events).map(e => e.midi), [38]);
         for (let i = 17; i < 32; i++) player.tick();
@@ -251,6 +251,126 @@ describe('explicit note-offs (phase 2)', () => {
             for (const e of st.events) if (e.type === 'off') offAt.push(st.col);
         }
         assert.deepEqual(offAt, [20], 'the adopted note runs out its 10 remaining ticks');
+    });
+});
+
+describe('commands from the effects column (phase 4)', () => {
+    /** Two tracks: A one bar (slot 0), B two bars (slot 1); commands on A unless said. */
+    function withFx(fx, { onB = false } = {}) {
+        const p = createProject({ name: 'P' });
+        const s = p.sections[0];
+        const a = addTrack(p, { id: 'tA', slot: 0 });
+        const b = addTrack(p, { id: 'tB', slot: 1 });
+        const pa = addPattern(p, { id: 'pA', notes: [N(60, 0, 1), N(62, 4, 1), N(64, 8, 1), N(65, 12, 1)] });
+        const pb = addPattern(p, { id: 'pB', measures: 2, notes: [N(36, 0, 1)] });
+        addClip(p, s, { id: 'cA', trackId: a.id, patternId: pa.id, startCol: 0 });
+        addClip(p, s, { id: 'cB', trackId: b.id, patternId: pb.id, startCol: 0 });
+        s.fx = { [onB ? 'tB' : 'tA']: fx };
+        return createPlayer(createSectionSequence(p, s));
+    }
+    const rowOf = (player, id) => player.positions().find(h => h.trackId === id);
+    const onsOf = (st, slot) => st.events.filter(e => e.type === 'on' && e.slot === slot).map(e => e.midi);
+
+    test('jump (B): the row fires, then the head goes to row N; backwards is a loop', () => {
+        const player = withFx([{ row: 8, cmd: 'B', arg: 4 }]);
+        player.start(0);
+        const log = [];
+        for (let i = 0; i < 14; i++) { const st = player.tick(); log.push([rowOf(player, 'tA').row, onsOf(st, 0)]); }
+        // Fired rows: 0 … 8 (64), then 4 (62), 5, 6, 7, 8 (64) — the head read after each tick is the next row.
+        assert.deepEqual(log.map(l => l[1]).flat(), [60, 62, 64, 62, 64]);
+        assert.equal(rowOf(player, 'tA').looped, true, 'a backward jump counts as a loop');
+        assert.equal(rowOf(player, 'tB').looped, false);
+    });
+
+    test('a looping jump on the short track does not hold the Section: B still ends it at its last row', () => {
+        const player = withFx([{ row: 8, cmd: 'B', arg: 4 }]);
+        player.start(0);
+        let seamAt = null;
+        for (let i = 0; i < 40 && seamAt == null; i++) { const st = player.tick(); if (st.seam) seamAt = i; }
+        assert.equal(seamAt, 32, 'B (two bars, unlooped) arrives at its last row at 31');
+    });
+
+    test('a jump on the long track lengthens the Section: the others keep looping meanwhile', () => {
+        const player = withFx([{ row: 24, cmd: 'B', arg: 16 }], { onB: true });  // B: 24 → 16, forever
+        player.start(0);
+        let seams = 0;
+        let aWraps = 0;
+        let prev = 0;
+        for (let i = 0; i < 100; i++) {
+            const st = player.tick();
+            if (st.seam) seams++;
+            const r = rowOf(player, 'tA').row;
+            if (r < prev) aWraps++;
+            prev = r;
+        }
+        assert.equal(seams, 0, 'B never reaches its last row unlooped');
+        assert.ok(aWraps >= 5, 'A loops on its own meanwhile');
+    });
+
+    test('back (R) and skip (K) move by rows; skip past the end wraps', () => {
+        const player = withFx([{ row: 4, cmd: 'R', arg: 3 }, { row: 13, cmd: 'K', arg: 10 }]);
+        player.start(0);
+        const rows = [];
+        for (let i = 0; i < 8; i++) { player.tick(); rows.push(rowOf(player, 'tA').row); }
+        // after rows 0,1,2,3 fire the head is at 1,2,3,4; row 4 fires → back 3 → row 2
+        assert.deepEqual(rows, [1, 2, 3, 4, 2, 3, 4, 2]);
+        assert.equal(rowOf(player, 'tA').looped, true);
+        const p2 = withFx([{ row: 13, cmd: 'K', arg: 10 }]);
+        p2.start(13);
+        p2.tick();                                         // row 13 fires, skip 10 → past 16: wrap
+        assert.equal(rowOf(p2, 'tA').row, 0);
+        assert.equal(rowOf(p2, 'tA').looped, true);
+    });
+
+    test('stop (S): the head rests, arms nothing, and counts as satisfied for the transition', () => {
+        const player = withFx([{ row: 4, cmd: 'S', arg: 0 }]);
+        player.start(0);
+        const fired = [];
+        let seamAt = null;
+        for (let i = 0; i < 34; i++) {
+            const st = player.tick();
+            fired.push(...onsOf(st, 0));
+            if (st.seam && seamAt == null) seamAt = i;
+        }
+        assert.deepEqual(fired.slice(0, 2), [60, 62], 'rows 0–4 fired, nothing after');
+        assert.equal(rowOf(player, 'tA').stopped, false, 'realigned: the next Section clears it');
+        assert.equal(seamAt, 32, 'B alone decides, A is satisfied');
+        // Every head stopped: the Section ends at once.
+        const all = withFx([{ row: 2, cmd: 'S', arg: 0 }]);
+        all.start(0);
+        all.tick(); all.tick(); all.tick();                 // rows 0, 1, 2 fire; A stops
+        assert.equal(rowOf(all, 'tA').stopped, true);
+    });
+
+    test('break (D): the Section ends after this row, whatever the heads say', () => {
+        const player = withFx([{ row: 5, cmd: 'D', arg: 0 }]);
+        player.start(0);
+        const log = [];
+        for (let i = 0; i < 8; i++) { const st = player.tick(); log.push([st.col, st.seam]); }
+        assert.deepEqual(log, [[0, false], [1, false], [2, false], [3, false], [4, false], [5, false], [0, true], [1, false]]);
+    });
+
+    test('seek replays the walk with its commands: the same rows a run from the top reaches', () => {
+        const fx = [{ row: 8, cmd: 'B', arg: 4 }];
+        const run = withFx(fx);
+        run.start(0);
+        for (let i = 0; i < 20; i++) run.tick();
+        const sought = withFx(fx);
+        sought.start(20);
+        assert.deepEqual(sought.positions(), run.positions());
+    });
+
+    test('snapshot/restore carries the heads into a rebuilt Player, commands and all', () => {
+        const fx = [{ row: 8, cmd: 'B', arg: 4 }];
+        const a = withFx(fx);
+        a.start(0);
+        for (let i = 0; i < 11; i++) a.tick();
+        const b = withFx(fx);
+        assert.equal(b.restore(a.snapshot()), true);
+        assert.deepEqual(b.positions(), a.positions());
+        const next = [a.tick(), b.tick()];
+        assert.deepEqual(onsOf(next[1], 0), onsOf(next[0], 0), 'the same row fires next');
+        assert.equal(b.restore(null), false);
     });
 });
 

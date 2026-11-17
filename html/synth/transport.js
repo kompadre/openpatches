@@ -148,10 +148,16 @@ export function createTransport(opts) {
         // notes still get their offs; forgetting `nextRaw` makes the next
         // tick seek to its own column — the heads land on the right row
         // and the row already fired is not fired again.
+        const snap = player ? player.snapshot() : null;
         const held = player ? player.sounding() : [];
         player = createPlayer(sequence);
-        player.adopt(held);
-        nextRaw = null;
+        // Phase 4: the heads carry on from where they are (a jump-stretched
+        // Section has no honest nominal column to seek by); only when the
+        // state does not fit the new sequence does the next tick seek.
+        if (!(snap && player.restore(snap))) {
+            player.adopt(held);
+            nextRaw = null;
+        }
         retempo();
         return sequence;
     }
@@ -260,9 +266,12 @@ export function createTransport(opts) {
         // piece mode the column inside the section the playhead is in, if
         // that is the edited one; -1 otherwise.
         const sectionCol = sectionColumn(col);
+        // `heads`: every track's own playhead (section rows, with `looped`
+        // and `stopped`), for the views to draw where it differs from `col`.
+        const heads = player && player.ready() && col >= 0 ? player.positions() : [];
         const pos = {
             playing, recording, mode, col, sectionCol, edit, seam: false, rawCol: -1,
-            waiting: waiting(), pending: pendingStart, bpm: playbackBpm(),
+            waiting: waiting(), pending: pendingStart, bpm: playbackBpm(), heads,
             ...extra,
         };
         for (const fn of [...subscribers]) {
@@ -352,6 +361,8 @@ export function createTransport(opts) {
         // The seam is the first row of a new pass — the heads realigned; the
         // recorder finalises notes held across it. A seek that lands on the
         // range's first column counts too (the worker wrapped us there).
+        // The heads as they stand for this tick — read before it advances them.
+        const heads = player.positions();
         const step = player.tick();
         const { col, events } = step;
         const seam = step.seam || (seeked && rawCol > 0 && col === sequence.range.startCol);
@@ -360,7 +371,7 @@ export function createTransport(opts) {
         if (sequence.kind === 'piece') followPiece(col);
         if (!stale) rampTempo();
         if (!fire(events, stale)) return;
-        notify({ col, rawCol, seam });
+        notify({ col, rawCol, seam, heads });
     }
 
     /**

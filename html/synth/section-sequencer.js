@@ -22,7 +22,7 @@
 
 import {
     COLS_PER_MEASURE, clipCols, patternCols as patternColsOf,
-    audibleTracks, getPattern as getProjectPattern, pieceLayout, dividerOf,
+    audibleTracks, getPattern as getProjectPattern, pieceLayout, dividerOf, fxAt,
 } from '../components/project-model.js';
 
 /**
@@ -87,6 +87,7 @@ function emptySequence(kind) {
         eventsAt: () => [],
         locate: () => ({ col: 0, measure: 0, colInMeasure: 0, tracks: {} }),
         tracks: () => [],
+        commandAt: () => null,
     };
 }
 
@@ -243,6 +244,13 @@ export function createSectionSequence(project, section, opts = {}) {
             return events;
         },
         /**
+         * The effects command on `trackId` at section row `row`, read live
+         * off the section (like mute and solo): `{row, cmd, arg}` or null.
+         */
+        commandAt(trackId, row) {
+            return fxAt(section, trackId, row);
+        },
+        /**
          * The tracks the Player walks: every track with a clip inside the
          * range, and where its last clip ends — **exactly**, never rounded
          * to the bar (a short track loops against the longer ones from
@@ -395,6 +403,7 @@ export function createPatternSequence(pattern, slot) {
             };
         },
         tracks() { return [{ trackId, slot, end: patternCols() }]; },
+        commandAt() { return null; },
     };
 }
 

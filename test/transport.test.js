@@ -586,6 +586,34 @@ describe('explicit note-offs through the output (phase 2)', () => {
     });
 });
 
+describe('per-track heads (phase 4)', () => {
+    test('the position broadcast carries every track\'s head; a looped short track reads at its own row', () => {
+        const h = build({ tracks: [{ slot: 0, measures: 1, notes: [note(60, 0)] },
+                                   { slot: 1, measures: 2, notes: [note(48, 0)] }] });
+        h.transport.play();
+        for (let raw = 0; raw <= 20; raw++) h.tickWorker.tick(raw);
+        const pos = h.last();
+        assert.equal(pos.col, 20);
+        const bySlot = Object.fromEntries(pos.heads.map(x => [x.slot, x]));
+        assert.equal(bySlot[0].row, 4);
+        assert.equal(bySlot[0].looped, true);
+        assert.equal(bySlot[1].row, 20);
+        h.transport.stop();
+        assert.deepEqual(h.last().heads, [], 'none at rest');
+    });
+
+    test('an edit mid-play hands the heads over: no refire, no seek by the nominal column', () => {
+        const h = build({ tracks: [{ slot: 0, measures: 1, notes: [note(60, 0), note(62, 6)] }] });
+        h.transport.play();
+        for (let raw = 0; raw <= 5; raw++) h.tickWorker.tick(raw);
+        h.played.length = 0;
+        h.transport.refresh();                              // what every edit does
+        h.tickWorker.tick(6);
+        assert.deepEqual(h.played.map(p => p.midi), [62], 'row 6 fires once, row 5 does not fire again');
+        assert.equal(h.last().col, 6);
+    });
+});
+
 describe('mapRecordColumn', () => {
     test('pattern mode wraps on the edited pattern', () => {
         const h = build({ tracks: [{ slot: 0, measures: 1, notes: [note(60, 0)] }], mode: 'pattern' });

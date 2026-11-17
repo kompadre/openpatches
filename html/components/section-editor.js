@@ -128,6 +128,7 @@ export function createSectionEditor(opts = {}) {
     let unsubscribe = null;
     let unsubscribeTransport = null;
     let playheadEl = null;
+    let lanesEl = null;             // the lanes container, for the per-lane heads
     let snapCols = loadNum(SNAP_KEY, SNAPS.map(s => s.cols), DEFAULT_SNAP);
     let zoom = loadNum(ZOOM_KEY, ZOOMS, 1);
 
@@ -1000,6 +1001,7 @@ export function createSectionEditor(opts = {}) {
         playheadEl.className = 'section-playhead';
         playheadEl.style.display = 'none';
         lanes.appendChild(playheadEl);
+        lanesEl = lanes;
         if (transport) movePlayhead(transport.isRunning() && transport.getSectionColumn ? transport.getSectionColumn() : -1);
 
         // The tracker's viewport, as a band over the lanes: the rows that
@@ -1094,6 +1096,12 @@ export function createSectionEditor(opts = {}) {
         lane.style.backgroundColor = tint(slotColor(track.slot), 0.16);
         lane.dataset.trackId = track.id;
         lane.dataset.slot = String(track.slot);
+        // The track's own playhead, shown only where it differs from the
+        // section's (a looped short track, a jump, a stop) — moved per tick.
+        const head = document.createElement('div');
+        head.className = 'section-lane-head';
+        head.style.display = 'none';
+        lane.appendChild(head);
         lane.addEventListener('click', (e) => {
             if (e.target !== lane) return;           // a clip handles its own clicks
             if (swallowClick) { swallowClick = false; return; }
@@ -1410,8 +1418,17 @@ export function createSectionEditor(opts = {}) {
         trackerViewEl.style.height = (((trackerViewport.endCol - trackerViewport.startCol) / COLS_PER_MEASURE) * measureH()) + 'px';
     }
 
-    function movePlayhead(col) {
+    function movePlayhead(col, heads = []) {
         if (!playheadEl) return;
+        for (const lane of lanesEl ? lanesEl.querySelectorAll('.section-lane') : []) {
+            const el = lane.querySelector('.section-lane-head');
+            if (!el) continue;
+            const h = col >= 0 && heads.find(o => o.trackId === lane.dataset.trackId);
+            if (!h || h.row === col) { el.style.display = 'none'; continue; }
+            el.style.display = '';
+            el.style.top = ((h.row / COLS_PER_MEASURE) * measureH()) + 'px';
+            el.classList.toggle('stopped', !!h.stopped);
+        }
         if (!(col >= 0)) {
             playheadEl.style.display = 'none';
             return;
@@ -1924,7 +1941,7 @@ export function createSectionEditor(opts = {}) {
     });
     if (transport) {
         unsubscribeTransport = transport.subscribe((pos) => {
-            movePlayhead(pos.sectionCol != null ? pos.sectionCol : pos.col);
+            movePlayhead(pos.sectionCol != null ? pos.sectionCol : pos.col, pos.heads || []);
             const next = readPiecePos(pos);
             // Cheap to compare, and most ticks move the fraction only.
             if (JSON.stringify(next) !== JSON.stringify(piecePos)) { piecePos = next; applyPiecePos(); }

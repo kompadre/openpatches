@@ -985,6 +985,48 @@ describe('tracker selection', () => {
     });
 });
 
+describe('per-track heads and command meanings (Player phase 4)', () => {
+    const N = (midi, start, dur) => ({ midi, start, dur });
+
+    test('a track whose head differs from the global playhead gets its own line; stopped reads so', () => {
+        seedPattern(session, { slot: 0, notes: [N(60, 0, 4)] });
+        const { track } = seedPattern(session, { slot: 1, notes: [N(48, 0, 4)] });
+        let push = null;
+        const transport = { subscribe(fn) { push = fn; return () => {}; } };
+        const h = build({ transport });
+        const lines = () => [...h.qa('.tracker-head-line')];
+        push({ playing: true, sectionCol: 20, heads: [
+            { trackId: session.get().tracks[0].id, row: 20, looped: false, stopped: false },
+            { trackId: track.id, row: 4, looped: true, stopped: false },
+        ] });
+        const shown = lines().filter(el => el.style.display !== 'none');
+        assert.equal(shown.length, 1, 'only the track that differs');
+        assert.equal(parseFloat(shown[0].style.top), 26 + 4 * ROW);
+        assert.equal(parseFloat(shown[0].style.left), h.head(1).x);
+        push({ playing: true, sectionCol: 21, heads: [
+            { trackId: session.get().tracks[0].id, row: 21, looped: false, stopped: false },
+            { trackId: track.id, row: 4, looped: true, stopped: true },
+        ] });
+        assert.ok(lines().some(el => el.className.includes('stopped')));
+        push({ playing: false, sectionCol: -1, heads: [] });
+        assert.ok(lines().every(el => el.style.display === 'none'));
+    });
+
+    test('the FX cell says what the letter means — FT2 letter, human name', () => {
+        seedPattern(session, { notes: [N(60, 0, 4)] });
+        const h = build();
+        h.press(h.head(0).x + 2 * LANE + 4, 4 * ROW);
+        h.key('KeyB');
+        assert.match(h.q('.tracker-status').textContent, /B0 · jump to row 0/);
+        h.key('Digit8');
+        assert.match(h.q('.tracker-status').textContent, /B8 · jump to row 8/);
+        h.key('', { key: 'Delete' });
+        h.press(h.head(0).x + 2 * LANE + 4, 6 * ROW);
+        h.key('KeyX');
+        assert.match(h.q('.tracker-status').textContent, /no meaning yet/);
+    });
+});
+
 describe('tracker velocity and effects columns', () => {
     const N = (midi, start, dur, lane) => (lane == null ? { midi, start, dur } : { midi, start, dur, lane });
     const VEL_X = 46 + 4;              // lane 0's velocity sub-cell

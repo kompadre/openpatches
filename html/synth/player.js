@@ -39,10 +39,21 @@
 // offs, placed *ahead of* the new row 0's ons. A second on for a sounding
 // slot-and-pitch replaces its entry: a retrigger, as today.
 //
+// **Commands** (phase 4, tracker-commands.js) sit on the section per
+// track and are read live, like mute. A head arriving at a row reads the
+// row's command: `break` (D) is a vote decided — the Section ends after
+// this row; the others take effect on the head's *next step* instead of
+// row + 1: `jump` (B) to a row, `back` (R) and `skip` (K) by rows, `stop`
+// (S) — the head rests, arms nothing and counts as satisfied. A move that
+// goes backwards, or past the track's end, is a loop: the head is
+// `looped`. Nothing a command does leaves the Section.
+//
 // Position state lives here, in memory, never in the project and never
 // synced. Per-track settings (the divider) are the track's; the divider is
 // applied by the sequence from the head's row, so a moved head keeps the
 // right pattern column for free.
+
+import { commandByLetter } from './tracker-commands.js';
 
 /**
  * @param {object} sequence  a section, piece or pattern sequence
@@ -57,6 +68,7 @@ export function createPlayer(sequence) {
     let armed = [];                // events gathered for the next tick
     let seam = false;              // the armed row is row 0 after a transition
     let pendingTransition = false;
+    let breakHere = false;         // a `break` command on an armed row: the vote is decided
     let sounding = [];             // { slot, midi, trackId, ticksLeft } — the notes out
 
     const isPiece = sequence.kind === 'piece';
@@ -92,21 +104,65 @@ export function createPlayer(sequence) {
     /** Heads for a scope: one per track with a clip in it, parked at row −1. */
     function headsFor(sc) {
         const list = sc.seq.tracks().map(t => ({
-            trackId: t.trackId, slot: t.slot, row: sc.start - 1, end: t.end, looped: false, clockOnly: false,
+            trackId: t.trackId, slot: t.slot, row: sc.start - 1, end: t.end,
+            looped: false, stopped: false, cmd: null, clockOnly: false,
         }));
         // Nothing placed in the scope (a take into an empty range, say):
         // one silent head keeps the clock wrapping on the range.
-        if (list.length === 0) list.push({ trackId: null, slot: -1, row: sc.start - 1, end: sc.end, looped: false, clockOnly: true });
+        if (list.length === 0) {
+            list.push({ trackId: null, slot: -1, row: sc.start - 1, end: sc.end, looped: false, stopped: false, cmd: null, clockOnly: true });
+        }
         return list;
     }
 
     // --- The walk ---
 
-    /** Gather the heads' rows as note-ons, each entered into `sounding`. */
+    /**
+     * The command under a head's row, kept on the head until its next
+     * step; a `break` decides the vote now.
+     */
+    function readCommand(h) {
+        h.cmd = null;
+        if (h.clockOnly || h.stopped) return;
+        const entry = scope.seq.commandAt(h.trackId, h.row);
+        const c = entry && commandByLetter(entry.cmd);
+        if (!c) return;
+        if (c.name === 'break') { breakHere = true; return; }
+        h.cmd = { name: c.name, arg: entry.arg };
+    }
+
+    /**
+     * One step of a head: row + 1, or what its command says; past the end
+     * of its track — or backwards — it is a loop. A stopped head stays.
+     */
+    function moveHead(h) {
+        if (h.stopped) return;
+        const from = h.row;
+        let next = from + 1;
+        const c = h.cmd;
+        h.cmd = null;
+        if (c) {
+            switch (c.name) {
+            case 'jump': next = Math.max(scope.start, Math.min(h.end - 1, scope.start + c.arg)); break;
+            case 'back': next = Math.max(scope.start, from + 1 - c.arg); break;
+            case 'skip': next = from + 1 + c.arg; break;
+            case 'stop': h.stopped = true; return;
+            default: break;
+            }
+            if (next <= from) h.looped = true;
+        }
+        if (next >= h.end) { next = scope.start; h.looped = true; }
+        h.row = next;
+    }
+
+    /** Gather the heads' rows as note-ons, each entered into `sounding`; read their commands. */
     function armOns() {
         const ons = [];
+        breakHere = false;
         for (const h of heads) {
             if (h.clockOnly) continue;
+            readCommand(h);
+            if (h.stopped) continue;
             for (const e of scope.seq.eventsAt(h.row, h.trackId)) {
                 ons.push({ type: 'on', ...e });
                 // A sounding slot-and-pitch hit again: superseded, one entry.
@@ -138,10 +194,19 @@ export function createPlayer(sequence) {
     }
 
     const atLast = (h) => h.row === h.end - 1;
+    const satisfied = (h) => h.looped || h.stopped || atLast(h);
 
+    /**
+     * The vote (2026-11-17): a head on its last row, not yet looped, while
+     * every other head has looped, is stopped, or is on its own last row
+     * this tick. A `break` decides it; every head stopped ends it too (no
+     * one is left to arrive).
+     */
     function transitionDue() {
-        return heads.some(h => atLast(h) && !h.looped
-            && heads.every(o => o === h || o.looped || atLast(o)));
+        if (breakHere) return true;
+        if (heads.length && heads.every(h => h.stopped)) return true;
+        return heads.some(h => atLast(h) && !h.looped && !h.stopped
+            && heads.every(o => o === h || satisfied(o)));
     }
 
     function advance() {
@@ -158,10 +223,7 @@ export function createPlayer(sequence) {
         } else {
             clock++;
             seam = false;
-            for (const h of heads) {
-                h.row++;
-                if (h.row >= h.end) { h.row = scope.start; h.looped = true; }
-            }
+            for (const h of heads) moveHead(h);
             offs = dueOffs();
         }
         armed = [...offs, ...armOns()];
@@ -180,12 +242,14 @@ export function createPlayer(sequence) {
             scope = scopeAt(col);
             heads = headsFor(scope);
             clock = Math.max(0, col - scope.base - scope.start);
-            for (const h of heads) {
-                const span = h.end - scope.start;
-                if (span <= 0) { h.row = scope.start; continue; }
-                h.row = scope.start + (clock % span);
-                h.looped = clock >= span;
+            // Replay the walk from the top, commands included, so the heads
+            // stand exactly where a run would have them — in rows only; no
+            // notes are gathered on the way.
+            for (const h of heads) h.row = scope.start;
+            for (let i = 0; i < clock; i++) {
+                for (const h of heads) { readCommand(h); moveHead(h); }
             }
+            breakHere = false;
             seam = false;
             // A seek never cuts a note: what sounds keeps sounding, its
             // off still counting (the transition is the one exception).
@@ -234,9 +298,47 @@ export function createPlayer(sequence) {
         sounding() { return sounding.map(n => ({ ...n })); },
         adopt(notes) { if (Array.isArray(notes)) sounding = notes.map(n => ({ ...n })); },
 
-        /** The heads, for tests and the views: `[{trackId, slot, row, looped}]`. */
+        /** The heads, for tests and the views: `[{trackId, slot, row, looped, stopped}]`. */
         positions() {
-            return heads.filter(h => !h.clockOnly).map(h => ({ trackId: h.trackId, slot: h.slot, row: h.row, looped: h.looped }));
+            return heads.filter(h => !h.clockOnly)
+                .map(h => ({ trackId: h.trackId, slot: h.slot, row: h.row, looped: h.looped, stopped: h.stopped }));
+        },
+
+        /**
+         * The whole position state, for a hand-over: the transport rebuilds
+         * the Player on every edit mid-play and restores this into the new
+         * one, so the heads carry on from where they are — no seek by a
+         * nominal column that a jump-stretched Section would belie.
+         */
+        snapshot() {
+            if (!scope) return null;
+            return {
+                part: scope.part, pass: scope.pass, clock, pendingTransition,
+                heads: heads.filter(h => !h.clockOnly).map(h => ({ trackId: h.trackId, row: h.row, looped: h.looped, stopped: h.stopped })),
+                sounding: sounding.map(n => ({ ...n })),
+            };
+        },
+
+        /** Restore a snapshot onto this Player's sequence. False when it does not fit (seek instead). */
+        restore(snap) {
+            if (!snap || !sequence.range) return false;
+            if (isPiece && parts.length === 0) return false;
+            if (isPiece && !(snap.part < parts.length && snap.pass < parts[snap.part].repeats)) return false;
+            scope = isPiece ? scopeOf(snap.part, snap.pass) : scopeAt(sequence.range.startCol);
+            heads = headsFor(scope);
+            for (const h of heads) {
+                const was = snap.heads.find(o => o.trackId === h.trackId);
+                if (!was) { h.row = scope.start + Math.min(snap.clock, Math.max(0, h.end - scope.start - 1)); continue; }
+                h.row = was.row >= h.end || was.row < scope.start ? scope.start : was.row;
+                h.looped = was.looped;
+                h.stopped = was.stopped;
+            }
+            clock = snap.clock;
+            sounding = snap.sounding.map(n => ({ ...n }));
+            seam = false;
+            armed = armOns();
+            pendingTransition = snap.pendingTransition || transitionDue();
+            return true;
         },
 
         /** Piece bookkeeping of the current scope: `{part, pass}` (0, 0 outside the piece). */

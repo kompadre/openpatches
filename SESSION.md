@@ -153,17 +153,42 @@ Phases (proposed 2026-11-16, agreed):
   +2, `toolbar-record-keyboard` › "a take writes into the track on
   screen". Left for phase 4: the take log is what a jumped head needs too
   (it records *where the head was*, not a formula), so it stays.
-- [ ] **4 — Per-track moves**: `seek`/`jump` on a playhead, driven by the
-  effects column; realigned at a new Section; the Tracker, Section and
-  Pattern views draw one playhead per track where they differ.
+- [x] **4 — Per-track moves** — DONE 2026-11-17. **Commands**
+  (`html/synth/tracker-commands.js`, one registry, two names each): the
+  stored letter is FT2's where FT2 has the effect, the human-readable
+  **name** is the alias the status line speaks (`commandByName` takes
+  either spelling; `ft2` on each entry is the hook for an XM import):
+  `B` **jump** (FT2 Bxx position jump) to row N · `D` **break** (FT2 Dxx
+  pattern break): the Section ends after this row · `R` **back** N rows ·
+  `K` **skip** N rows · `S` **stop**: the track rests until the next
+  Section. Arguments count rows (a beat is four). Read live off
+  `section.fx` (`seq.commandAt`), like mute. Semantics: a command on row N
+  is read when the head arrives (arms) at N; `break` decides the vote
+  then; the others take effect on the head's *next step*. A move that
+  goes backwards or past the track's end is a loop (`looped`); a stopped
+  head arms nothing and counts as satisfied; every head stopped ends the
+  Section; `start(col)` replays the walk from the top, commands included.
+  Unknown letters stay stored, draw dim in the Tracker and are ignored.
+  **Views**: the position broadcast carries `heads`
+  (`[{trackId, slot, row, looped, stopped}]`, read before the tick
+  advances them); the Tracker draws a `.tracker-head-line` per track and
+  the Section pane a `.section-lane-head` per lane, only where a head's
+  row differs from the global playhead (orange; grey when stopped). The
+  roll already followed the edited track's head through `edit`
+  (phase 1). **Mid-play edits** no longer seek by the nominal column:
+  `refresh()` restores the old Player's `snapshot()` (scope, heads,
+  clock, sounding) into the new one and keeps tick continuity; only when
+  it does not fit (arrangement changed) does the next tick seek. Open
+  question settled by implementation, as recommended: a track beginning
+  with a gap wraps to the Section's row 0 (`scope.start`). Tests:
+  `tracker-commands` 4, `player` › commands 8, `transport` › heads 2,
+  `tracker-view` +2, `section-editor` +1 (1442 unit); visual probe of
+  both views' head lines done with Playwright (screenshot inspected,
+  probe spec removed).
 - [ ] **5 — Humanize**: per-track timing and velocity; the clock's
   micro-adjustment between ticks reported to the playheads (see above).
 
 Open, to settle when the phases start:
-- A short track's wrap target: the Section's row 0, or the start of the
-  track's first clip when the track begins with a gap? Agent recommends
-  row 0 (the head walks the Section's timeline; only the wrap point is
-  per track).
 - Humanize **early** notes: answered by the one-row window above — a note
   can move earlier by up to one row. Still open: should a pass sound the
   same every time (seeded) or differ?

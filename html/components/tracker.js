@@ -98,6 +98,7 @@ import {
     dividerOf, defaultPatternName, DEFAULT_VELOCITY, MAX_FX_ARG, sectionFx, fxAt, setSectionFx,
 } from './project-model.js';
 import { presenceOn, markPresence, onPresence } from './presence.js';
+import { describeCommand, commandByLetter } from '../synth/tracker-commands.js';
 import { reportCursor, cursorsIn, onCursors } from './cursors.js';
 
 const ROW_H = 16;
@@ -257,6 +258,20 @@ export function createTracker(opts) {
     playheadEl.className = 'tracker-playhead';
     playheadEl.style.display = 'none';
     inner.appendChild(playheadEl);
+    // One line per track for its own head, shown only where it differs
+    // from the global playhead (a looped short track, a jump, a stop).
+    const headLines = new Map();   // trackId → div
+    function headLine(trackId) {
+        let el = headLines.get(trackId);
+        if (!el) {
+            el = document.createElement('div');
+            el.className = 'tracker-head-line';
+            el.style.display = 'none';
+            inner.appendChild(el);
+            headLines.set(trackId, el);
+        }
+        return el;
+    }
 
     // --- Helpers ---
 
@@ -497,9 +512,10 @@ export function createTracker(opts) {
         const section = session.getSection();
         if (!section) return;
         const x = t.x + t.viewLanes * t.laneW + 4;
-        ctx.fillStyle = '#d0a85c';
         for (const e of sectionFx(section, t.track.id)) {
             if (e.row >= rows) continue;
+            // A letter the Player knows reads bright; one with no meaning yet, dim.
+            ctx.fillStyle = commandByLetter(e.cmd) ? '#d0a85c' : '#7a6a4a';
             ctx.fillText(e.cmd + e.arg, x, e.row * ROW_H + ROW_H / 2, FX_W - 8);
         }
     }
@@ -1151,10 +1167,11 @@ export function createTracker(opts) {
         const section = session.getSection();
         if (!t || !section) return;
         const was = fxAt(section, t.track.id, cursor.col);
+        const arg = was ? was.arg : 0;
         session.update((project, sec) => {
-            setSectionFx(sec, t.track.id, cursor.col, { cmd: letter, arg: was ? was.arg : 0 });
+            setSectionFx(sec, t.track.id, cursor.col, { cmd: letter, arg });
         }, 'tracker');
-        say(letter + (was ? was.arg : 0) + ' — digits set the argument (the Player gives commands their meaning)');
+        say(describeCommand({ cmd: letter, arg }) + ' — digits set the argument');
     }
 
     function enterFxArg(d) {
@@ -1167,7 +1184,7 @@ export function createTracker(opts) {
         session.update((project, sec) => {
             setSectionFx(sec, t.track.id, cursor.col, { cmd: was.cmd, arg });
         }, 'tracker');
-        say(was.cmd + arg);
+        say(describeCommand({ cmd: was.cmd, arg }));
     }
 
     function clearFx() {
@@ -1877,7 +1894,19 @@ export function createTracker(opts) {
 
     // --- Playhead + follow ---
 
-    function moveTo(col) {
+    function moveTo(col, heads = []) {
+        // The tracks' own heads, where they differ from the global line.
+        for (const [id, el] of headLines) {
+            const t = layout.find(o => o.track.id === id);
+            const h = col >= 0 && t && heads.find(o => o.trackId === id);
+            if (!h || h.row === col) { el.style.display = 'none'; continue; }
+            el.style.display = '';
+            el.style.top = (HEAD_H + h.row * ROW_H) + 'px';
+            el.style.left = t.x + 'px';
+            el.style.width = t.w + 'px';
+            el.classList.toggle('stopped', !!h.stopped);
+        }
+        for (const h of heads) if (col >= 0 && !headLines.has(h.trackId) && layout.some(t => t.track.id === h.trackId)) { headLine(h.trackId); return moveTo(col, heads); }
         if (!(col >= 0)) { playheadEl.style.display = 'none'; return; }
         playheadEl.style.display = '';
         playheadEl.style.top = (HEAD_H + col * ROW_H) + 'px';
@@ -1891,7 +1920,7 @@ export function createTracker(opts) {
 
     if (transport) {
         transport.subscribe((pos) => {
-            moveTo(pos.playing || pos.recording ? pos.sectionCol : -1);
+            moveTo(pos.playing || pos.recording ? pos.sectionCol : -1, pos.heads || []);
         });
     }
 

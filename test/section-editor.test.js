@@ -720,6 +720,28 @@ describe('playhead (phase 5)', () => {
         return { editor, transport, tickWorker, session, root: editor.element };
     }
 
+    test('a lane whose head differs from the section playhead shows its own marker (Player phase 4)', async () => {
+        const h = await withTransport();
+        // A second, one-bar track: it loops at 16 while the two-bar one runs on.
+        h.session.update((project, section) => {
+            const t = M.createTrack({ slot: 1 });
+            project.tracks.push(t);
+            const p = M.addPattern(project, { name: 'B', measures: 1, notes: [{ midi: 48, start: 0, dur: 1 }] });
+            M.addClip(project, section, { trackId: t.id, patternId: p.id, startCol: 0 });
+        }, 'test');
+        const marks = () => [...h.root.querySelectorAll('.section-lane-head')];
+        assert.equal(marks().length, 2);
+        h.transport.play();
+        for (let raw = 0; raw <= 20; raw++) h.tickWorker.tick(raw);
+        const lanesShown = [...h.root.querySelectorAll('.section-lane')]
+            .filter(l => l.querySelector('.section-lane-head').style.display !== 'none');
+        assert.equal(lanesShown.length, 1, 'the short track only');
+        assert.equal(lanesShown[0].dataset.slot, '1');
+        assert.equal(parseFloat(lanesShown[0].querySelector('.section-lane-head').style.top), (4 / 16) * MEASURE_W, 'at its own row 4');
+        h.transport.stop();
+        assert.ok(marks().every(el => el.style.display === 'none'));
+    });
+
     test('hidden at rest, follows the section column down while playing', async () => {
         const h = await withTransport();
         const head = () => h.root.querySelector('.section-playhead');

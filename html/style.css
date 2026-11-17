@@ -5537,6 +5537,16 @@ footer {
 .section-clip-label { padding: 0.15rem 0.3rem; max-width: 100%; font-size: 0.65rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 1px rgba(0,0,0,0.6); }
 .section-clip-handle { position: absolute; left: 0; right: 0; bottom: 0; height: 8px; cursor: ns-resize; background: rgba(255,255,255,0.35); }
 
+.section-lane-head {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: #ffb13b;
+    pointer-events: none;
+    z-index: 2;
+}
+.section-lane-head.stopped { background: #8a8a8a; }
 .section-playhead {
     position: absolute;
     left: var(--section-ruler-w);
@@ -5709,6 +5719,15 @@ footer {
     pointer-events: none;
     z-index: 2;
 }
+/* A track's own head, where it differs from the global line (Player phase 4). */
+.tracker-head-line {
+    position: absolute;
+    height: 2px;
+    background: #ffb13b;
+    pointer-events: none;
+    z-index: 2;
+}
+.tracker-head-line.stopped { background: #8a8a8a; }
 
 .tracker-popover {
     position: absolute;
