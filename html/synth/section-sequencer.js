@@ -22,7 +22,7 @@
 
 import {
     COLS_PER_MEASURE, clipCols, patternCols as patternColsOf,
-    audibleTracks, getPattern as getProjectPattern, pieceLayout, dividerOf, fxAt,
+    audibleTracks, getPattern as getProjectPattern, pieceLayout, dividerOf, fxAt, humanizeOf,
 } from '../components/project-model.js';
 
 /**
@@ -221,10 +221,12 @@ export function createSectionSequence(project, section, opts = {}) {
                 if (!tick) continue;
                 const notes = p.notesByCol.get(local);
                 if (!notes) continue;
+                const humanize = humanizeOf(p.track.humanize);   // live, like mute
                 for (const n of notes) {
                     events.push({
                         midi: n.midi,
                         vel: n.vel,
+                        ...(humanize ? { humanize } : {}),
                         // A divided track's notes last as many ticks as the
                         // pattern is slowed by. Cut at the clip's end: a clip
                         // stopped part-way through its pattern takes its

@@ -96,6 +96,7 @@ import {
 import {
     COLS_PER_MEASURE, updateClip, clipRepeats, sectionLength, addClip, patternCols,
     dividerOf, defaultPatternName, DEFAULT_VELOCITY, MAX_FX_ARG, sectionFx, fxAt, setSectionFx,
+    HUMANIZE_LEVELS, humanizeOf,
 } from './project-model.js';
 import { presenceOn, markPresence, onPresence } from './presence.js';
 import { describeCommand, commandByLetter } from '../synth/tracker-commands.js';
@@ -387,6 +388,29 @@ export function createTracker(opts) {
                 }, 'tracker');
             });
             head.appendChild(divBtn);
+            // Humanize (Player phase 5): ≈ cycles off → ¼ → ½ → 1, timing and
+            // velocity together; Shift+click cycles back. Stored on the
+            // track, omitted when off.
+            const hz = humanizeOf(t.track.humanize);
+            const level = hz ? Math.max(hz.timing, hz.velocity) : 0;
+            const li = HUMANIZE_LEVELS.findIndex(l => Math.abs(l - level) < 1e-9);
+            const names = ['off', '¼', '½', '1'];
+            const hzBtn = document.createElement('button');
+            hzBtn.className = 'tracker-humanize' + (level > 0 ? ' active' : '');
+            hzBtn.textContent = '≈' + (level > 0 ? names[li >= 0 ? li : 3] : '');
+            hzBtn.title = level > 0
+                ? `Humanize ${names[li >= 0 ? li : 3]}: this track's notes are nudged in time (up to ±${Math.round(level * 50)}% of a row) and velocity (up to ±${Math.round(level * 32)}) — every pass differs, every Play repeats; click for more, Shift+click for less`
+                : 'Humanize off: click to nudge this track\'s timing and velocity a little (¼), more with each click; Shift+click to go back';
+            hzBtn.addEventListener('click', (e) => {
+                const i = li >= 0 ? li : 0;
+                const next = HUMANIZE_LEVELS[(i + (e.shiftKey ? -1 : 1) + HUMANIZE_LEVELS.length) % HUMANIZE_LEVELS.length];
+                session.update((project) => {
+                    const tr = project.tracks.find(o => o.id === t.track.id);
+                    if (!tr) return;
+                    if (next > 0) tr.humanize = { timing: next, velocity: next }; else delete tr.humanize;
+                }, 'tracker');
+            });
+            head.appendChild(hzBtn);
             heads.appendChild(head);
         }
     }

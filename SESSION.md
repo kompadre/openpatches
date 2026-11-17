@@ -185,13 +185,31 @@ Phases (proposed 2026-11-16, agreed):
   `tracker-view` +2, `section-editor` +1 (1442 unit); visual probe of
   both views' head lines done with Playwright (screenshot inspected,
   probe spec removed).
-- [ ] **5 — Humanize**: per-track timing and velocity; the clock's
-  micro-adjustment between ticks reported to the playheads (see above).
+- [x] **5 — Humanize** — DONE 2026-11-17. `track.humanize = {timing,
+  velocity}` (each 0–1, omitted when off; `humanizeOf`), set from the
+  Tracker head's **≈** button cycling `HUMANIZE_LEVELS` off → ¼ → ½ → 1
+  (Shift back), timing and velocity together. The sequence puts the
+  track's live setting on each event; the Player nudges at arm time:
+  velocity ±32·velocity, timing ±½ row·timing as `offset` **in rows**. A
+  negative offset makes the note **early**: `tick()` hands it out one
+  tick ahead in `early` (not again on its own tick); the transport
+  schedules it at the live tempo from the tick's due time — `at + (1 +
+  offset)·ms` for early, `at + offset·ms` for late — so the worker's own
+  lateness is not added; un-nudged notes still fire straight on the tick.
+  The transition's flushed offs go early too, just before an early row-0
+  note. After a seek or restore nothing is early (no earlier tick). Stop
+  cancels pending nudges (`startGen`). **Seeded vs varying, decided as
+  the hybrid**: a mulberry32 PRNG over (track id, row, passes since Play,
+  `seed`) — each pass breathes differently, each Play repeats the same
+  performance; `createPlayer(seq, {seed})` is the one knob for "vary
+  every time" (the transport passes none = 0). The "clock
+  micro-adjustment reported to the heads" is realised as the live
+  `msPerColumn` and the tick's due time at scheduling, not by jittering
+  the worker. Tests: `player` › humanize 6, `transport` › humanized 2,
+  `tracker-view` › ≈ 1, `velocity-and-fx` › humanize 1 (1452 unit);
+  visual probe of the ≈ button done (screenshot inspected, probe removed).
 
 Open, to settle when the phases start:
-- Humanize **early** notes: answered by the one-row window above — a note
-  can move earlier by up to one row. Still open: should a pass sound the
-  same every time (seeded) or differ?
 
 ### Tracker velocity + effects columns — DONE 2026-11-17 (CHANGELOG)
 

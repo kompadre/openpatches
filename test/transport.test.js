@@ -614,6 +614,51 @@ describe('per-track heads (phase 4)', () => {
     });
 });
 
+describe('humanized notes are scheduled off the tick (phase 5)', () => {
+    function withHumanize(t, level) {
+        t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+        const log = [];
+        const output = {
+            noteOn: (ev) => log.push(['on', ev.midi, Date.now()]),
+            noteOff: (slot, midi) => log.push(['off', midi, Date.now()]),
+            allOff: () => {},
+        };
+        const h = build({ tracks: [{ slot: 0, measures: 1, notes: [note(60, 0, 2), note(62, 8, 2)] }], output });
+        h.session.update((project) => { project.tracks[0].humanize = { timing: level, velocity: 0 }; }, 'test');
+        return { h, log };
+    }
+
+    test('a nudged note sounds within half a row of its tick, not on it; the next tick is not needed for it', (t) => {
+        const { h, log } = withHumanize(t, 1);
+        h.transport.play();
+        const ms = 60000 / 120 / 4;                              // 125 ms a row at 120
+        // Ticks 0..8 at their due times, the clock advanced in 5 ms steps so a
+        // timer's run time is read close to its due time; row 8's note is
+        // nudged one way or the other.
+        const advance = () => { for (let i = 0; i < ms / 5; i++) t.mock.timers.tick(5); };
+        for (let raw = 0; raw <= 8; raw++) { h.tickWorker.tick(raw); advance(); }
+        const on62 = log.find(e => e[0] === 'on' && e[1] === 62);
+        assert.ok(on62, 'it sounded');
+        const tick8At = 8 * ms;                                  // Date started at 0 under the mock
+        assert.ok(Math.abs(on62[2] - tick8At) <= ms / 2 + 5, 'within half a row of tick 8: ' + (on62[2] - tick8At));
+        assert.notEqual(on62[2], tick8At, 'and not exactly on it');
+    });
+
+    test('Stop cancels a nudge still pending', (t) => {
+        const { h, log } = withHumanize(t, 1);
+        h.transport.play();
+        const ms = 125;
+        for (let raw = 0; raw <= 6; raw++) { h.tickWorker.tick(raw); t.mock.timers.tick(ms); }
+        // Tick 7 hands row 8's note out early (pending) if its nudge is
+        // negative; if positive it would only be scheduled at tick 8. Stop
+        // right here: either way nothing of row 8 may sound.
+        h.tickWorker.tick(7);
+        h.transport.stop();
+        t.mock.timers.tick(ms * 3);
+        assert.equal(log.filter(e => e[0] === 'on' && e[1] === 62).length, 0, 'stopped before it sounded');
+    });
+});
+
 describe('mapRecordColumn', () => {
     test('pattern mode wraps on the edited pattern', () => {
         const h = build({ tracks: [{ slot: 0, measures: 1, notes: [note(60, 0)] }], mode: 'pattern' });

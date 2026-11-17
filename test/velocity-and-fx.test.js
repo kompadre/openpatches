@@ -116,6 +116,17 @@ describe('section effects', () => {
     });
 });
 
+describe('humanize on the track', () => {
+    test('humanizeOf clamps to 0–1 and is null when off; createTrack stores it only when on', async () => {
+        const { humanizeOf, createTrack } = await import('../html/components/project-model.js');
+        assert.deepEqual(humanizeOf({ timing: 2, velocity: -1 }), { timing: 1, velocity: 0 });
+        assert.equal(humanizeOf({ timing: 0, velocity: 0 }), null);
+        assert.equal(humanizeOf('nonsense'), null);
+        assert.equal('humanize' in createTrack({}), false);
+        assert.deepEqual(createTrack({ humanize: { timing: 0.5, velocity: 0.25 } }).humanize, { timing: 0.5, velocity: 0.25 });
+    });
+});
+
 describe('velocity reaches playback', () => {
     test('eventsAt carries the note velocity; notes without one carry none (the player defaults)', () => {
         const project = createProject({ name: 'P' });

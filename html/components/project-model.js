@@ -244,6 +244,9 @@ export function createTrack(partial = {}) {
         // slower (and its notes last that many times longer) inside the
         // same clip span. Omitted at 1 — the default — for the same reason.
         ...(dividerOf(partial.divider) > 1 ? { divider: dividerOf(partial.divider) } : {}),
+        // Humanize (Player phase 5): per-track timing and velocity nudges,
+        // omitted when off.
+        ...(humanizeOf(partial.humanize) ? { humanize: humanizeOf(partial.humanize) } : {}),
     };
 }
 
@@ -253,6 +256,23 @@ export const MAX_DIVIDER = 8;
 /** A track's divider as an integer in range — 1 when unset or invalid. */
 export function dividerOf(value) {
     return clampInt(value, 1, MAX_DIVIDER, 1);
+}
+
+/** The humanize presets the Tracker head's ≈ button cycles through: off, light, medium, full. */
+export const HUMANIZE_LEVELS = [0, 0.25, 0.5, 1];
+
+/**
+ * A track's humanize setting: `{timing, velocity}`, each 0–1 (0 = off).
+ * Timing is the largest nudge as a fraction of half a row either way;
+ * velocity the largest change as a fraction of ±32. Absent or all zero →
+ * null (the Player skips the track).
+ */
+export function humanizeOf(value) {
+    if (!value || typeof value !== 'object') return null;
+    const timing = clampNum(value.timing, 0, 1, 0);
+    const velocity = clampNum(value.velocity, 0, 1, 0);
+    if (timing <= 0 && velocity <= 0) return null;
+    return { timing, velocity };
 }
 
 /**

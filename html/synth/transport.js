@@ -312,17 +312,40 @@ export function createTransport(opts) {
      * ordered so by the Player), then ons. A stale tick sends only the offs:
      * its notes are dropped, and an off whose on was never sent is a no-op.
      */
-    function fire(events, stale = false) {
+    function fire(events, stale = false, at = Date.now(), early = []) {
         const ms = msPerColumn(playbackBpm());
+        const sound = (ev) => {
+            const entry = getSlotData(ev.slot);
+            output.noteOn(ev, ev.dur * ms, entry ? entry.voiceData : null);
+        };
+        // A humanized note is due off the tick: `offset` rows from this
+        // tick's due time, measured on the same clock, so the worker's
+        // lateness is not added to the nudge. Early notes of the next row
+        // are due a row further on (minus their nudge). A Stop meanwhile
+        // cancels them (`startGen`).
+        const gen = startGen;
+        const later = (fn, dueMs) => {
+            setTimeout(() => {
+                if (gen !== startGen || !(playing || recording)) return;
+                try { fn(); } catch (e) { log('[transport] a humanized note failed: ' + (e && e.message)); }
+            }, Math.max(0, dueMs - Date.now()));
+        };
+        if (!stale) {
+            for (const ev of early) {
+                const due = at + (1 + ev.offset) * ms;
+                if (ev.type === 'off') later(() => output.noteOff(ev.slot, ev.midi), due);
+                else later(() => sound(ev), due);
+            }
+        }
         for (const ev of events) {
             if (ev.type === 'off') { output.noteOff(ev.slot, ev.midi); continue; }
             if (stale) continue;
             // A note just played in by the user must not be echoed back at
             // them on the same pass; the flag is cleared at the loop seam.
             if (recording && ev.note && ev.note._recordedInSession) continue;
+            if (ev.offset > 0) { later(() => sound(ev), at + ev.offset * ms); continue; }
             try {
-                const entry = getSlotData(ev.slot);
-                output.noteOn(ev, ev.dur * ms, entry ? entry.voiceData : null);
+                sound(ev);
                 consecutiveErrors = 0;
             } catch (e) {
                 consecutiveErrors++;
@@ -344,7 +367,7 @@ export function createTransport(opts) {
      */
     const STALE_TICK_MS = 150;
 
-    function onTick(rawCol, stale = false) {
+    function onTick(rawCol, stale = false, at = Date.now()) {
         if (!playing && !recording) return;
         if (!sequence || !sequence.range) return;
         // First, before any note work: these are timestamps for the device.
@@ -370,7 +393,7 @@ export function createTransport(opts) {
         if (sequence.kind === 'section') sectionPos = col;
         if (sequence.kind === 'piece') followPiece(col);
         if (!stale) rampTempo();
-        if (!fire(events, stale)) return;
+        if (!fire(events, stale, at, step.early || [])) return;
         notify({ col, rawCol, seam, heads });
     }
 
@@ -394,7 +417,8 @@ export function createTransport(opts) {
             if (!e.data || e.data.type !== 'tick') return;
             if (armed) return;             // following a device: its clock, not the worker's
             const at = e.data.at;
-            onTick(e.data.col, typeof at === 'number' && Date.now() - at > STALE_TICK_MS);
+            onTick(e.data.col, typeof at === 'number' && Date.now() - at > STALE_TICK_MS,
+                typeof at === 'number' ? at : Date.now());
         });
     }
 

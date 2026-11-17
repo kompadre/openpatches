@@ -48,6 +48,16 @@
 // goes backwards, or past the track's end, is a loop: the head is
 // `looped`. Nothing a command does leaves the Section.
 //
+// **Humanize** (phase 5). A track with `humanize` on gets each note nudged:
+// velocity by up to ±32·velocity, timing by up to ±½ row·timing — in rows,
+// as `offset`; the transport turns it into milliseconds at the live
+// tempo. A note nudged *early* (offset < 0) rides the one-row lookahead:
+// `tick()` hands it out one tick ahead in `early`, due before the next
+// tick, and leaves it out of that tick's events. The nudges are drawn from
+// a PRNG seeded by (track, row, pass since Play, seed): every pass
+// breathes differently, every Play reproduces the same performance — and
+// `seed` is one number away from varying every time.
+//
 // Position state lives here, in memory, never in the project and never
 // synced. Per-track settings (the divider) are the track's; the divider is
 // applied by the sequence from the head's row, so a moved head keeps the
@@ -58,7 +68,7 @@ import { commandByLetter } from './tracker-commands.js';
 /**
  * @param {object} sequence  a section, piece or pattern sequence
  */
-export function createPlayer(sequence) {
+export function createPlayer(sequence, { seed = 0 } = {}) {
     // The current scope: its sequence, its range, where it sits on the
     // outer timeline (`base` + `start` is the column the outer sequence
     // calls row 0 of this scope), and the piece bookkeeping.
@@ -70,6 +80,7 @@ export function createPlayer(sequence) {
     let pendingTransition = false;
     let breakHere = false;         // a `break` command on an armed row: the vote is decided
     let sounding = [];             // { slot, midi, trackId, ticksLeft } — the notes out
+    let passes = 0;                // scope restarts since start(): the humanize seed's pass
 
     const isPiece = sequence.kind === 'piece';
     const parts = isPiece && sequence.parts ? sequence.parts() : [];
@@ -155,6 +166,40 @@ export function createPlayer(sequence) {
         h.row = next;
     }
 
+    // --- Humanize: a small seeded PRNG (mulberry32) over (track, row, pass, seed) ---
+
+    function hashString(str) {
+        let h = 2166136261;
+        for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+        return h >>> 0;
+    }
+
+    function rng(trackId, row) {
+        let a = (hashString(String(trackId)) ^ Math.imul(row + 1, 2654435761) ^ Math.imul(passes + 1, 40503) ^ (seed | 0)) >>> 0;
+        return () => {
+            a = (a + 0x6D2B79F5) >>> 0;
+            let t = a;
+            t = Math.imul(t ^ (t >>> 15), t | 1);
+            t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+            return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+    }
+
+    /** The note's nudges, if its track humanizes: `vel` moved, `offset` in rows, `early` when negative. */
+    function humanize(ev, row) {
+        const h = ev.humanize;
+        if (!h) return;
+        const next = rng(ev.trackId, row);
+        if (h.velocity > 0) {
+            const base = ev.vel == null ? 100 : ev.vel;
+            ev.vel = Math.max(1, Math.min(127, Math.round(base + (next() * 2 - 1) * h.velocity * 32)));
+        }
+        if (h.timing > 0) {
+            ev.offset = (next() * 2 - 1) * h.timing * 0.5;
+            ev.early = ev.offset < 0;
+        }
+    }
+
     /** Gather the heads' rows as note-ons, each entered into `sounding`; read their commands. */
     function armOns() {
         const ons = [];
@@ -164,7 +209,9 @@ export function createPlayer(sequence) {
             readCommand(h);
             if (h.stopped) continue;
             for (const e of scope.seq.eventsAt(h.row, h.trackId)) {
-                ons.push({ type: 'on', ...e });
+                const on = { type: 'on', ...e };
+                humanize(on, h.row);
+                ons.push(on);
                 // A sounding slot-and-pitch hit again: superseded, one entry.
                 sounding = sounding.filter(n => !(n.slot === e.slot && n.midi === e.midi));
                 sounding.push({ slot: e.slot, midi: e.midi, trackId: e.trackId, ticksLeft: Math.max(1, e.dur) });
@@ -218,6 +265,7 @@ export function createPlayer(sequence) {
             clock = 0;
             seam = true;
             pendingTransition = false;
+            passes++;
             // All notes off at the transition — ahead of the new row 0's ons.
             offs = flushOffs();
         } else {
@@ -226,8 +274,17 @@ export function createPlayer(sequence) {
             for (const h of heads) moveHead(h);
             offs = dueOffs();
         }
-        armed = [...offs, ...armOns()];
+        const ons = armOns();
+        // The transition's offs go out just before any early row-0 note.
+        const earliest = Math.min(0, ...ons.filter(o => o.early).map(o => o.offset));
+        if (seam && earliest < 0) for (const o of offs) { o.offset = earliest - 0.01; o.early = true; }
+        armed = [...offs, ...ons];
         if (transitionDue()) pendingTransition = true;
+    }
+
+    /** After a seek or a restore there was no earlier tick: nothing can be early. */
+    function noEarly() {
+        for (const e of armed) if (e.early) { e.early = false; e.offset = 0; }
     }
 
     // --- API ---
@@ -251,9 +308,11 @@ export function createPlayer(sequence) {
             }
             breakHere = false;
             seam = false;
+            passes = 0;
             // A seek never cuts a note: what sounds keeps sounding, its
             // off still counting (the transition is the one exception).
             armed = armOns();
+            noEarly();
             pendingTransition = transitionDue();
         },
 
@@ -265,9 +324,12 @@ export function createPlayer(sequence) {
          * this row is the first of a new pass. Then the heads advance.
          */
         tick() {
-            if (!scope) return { col: 0, events: [], seam: false };
-            const out = { col: api.col(), events: armed, seam };
+            if (!scope) return { col: 0, events: [], seam: false, early: [] };
+            // What is due now — the early-released notes went out last tick.
+            const out = { col: api.col(), events: armed.filter(e => !e.early), seam };
             advance();
+            // The next row's early notes: due before the next tick.
+            out.early = armed.filter(e => e.early);
             return out;
         },
 
@@ -313,7 +375,7 @@ export function createPlayer(sequence) {
         snapshot() {
             if (!scope) return null;
             return {
-                part: scope.part, pass: scope.pass, clock, pendingTransition,
+                part: scope.part, pass: scope.pass, clock, pendingTransition, passes,
                 heads: heads.filter(h => !h.clockOnly).map(h => ({ trackId: h.trackId, row: h.row, looped: h.looped, stopped: h.stopped })),
                 sounding: sounding.map(n => ({ ...n })),
             };
@@ -335,8 +397,10 @@ export function createPlayer(sequence) {
             }
             clock = snap.clock;
             sounding = snap.sounding.map(n => ({ ...n }));
+            passes = snap.passes || 0;
             seam = false;
             armed = armOns();
+            noEarly();
             pendingTransition = snap.pendingTransition || transitionDue();
             return true;
         },

@@ -1027,6 +1027,28 @@ describe('per-track heads and command meanings (Player phase 4)', () => {
     });
 });
 
+describe('humanize button (Player phase 5)', () => {
+    test('≈ cycles off → ¼ → ½ → 1 → off, stored on the track and omitted when off; Shift goes back', () => {
+        const { track } = seedPattern(session, { notes: [{ midi: 60, start: 0, dur: 4 }] });
+        const { q } = build();
+        const stored = () => session.get().tracks.find(t => t.id === track.id).humanize;
+        assert.equal(q('.tracker-humanize').textContent, '≈');
+        assert.equal(stored(), undefined);
+        q('.tracker-humanize').dispatch('click');
+        assert.deepEqual(stored(), { timing: 0.25, velocity: 0.25 });
+        assert.equal(q('.tracker-humanize').textContent, '≈¼');
+        assert.ok(q('.tracker-humanize').className.includes('active'));
+        q('.tracker-humanize').dispatch('click');
+        assert.deepEqual(stored(), { timing: 0.5, velocity: 0.5 });
+        q('.tracker-humanize').dispatch('click');
+        assert.deepEqual(stored(), { timing: 1, velocity: 1 });
+        q('.tracker-humanize').dispatch('click');
+        assert.equal(stored(), undefined, 'round to off, not stored');
+        q('.tracker-humanize').dispatch('click', { shiftKey: true });
+        assert.deepEqual(stored(), { timing: 1, velocity: 1 }, 'Shift+click steps back');
+    });
+});
+
 describe('tracker velocity and effects columns', () => {
     const N = (midi, start, dur, lane) => (lane == null ? { midi, start, dur } : { midi, start, dur, lane });
     const VEL_X = 46 + 4;              // lane 0's velocity sub-cell

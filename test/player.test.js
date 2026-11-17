@@ -374,6 +374,105 @@ describe('commands from the effects column (phase 4)', () => {
     });
 });
 
+describe('humanize (phase 5)', () => {
+    function humanized(humanize, { seed = 0, notes } = {}) {
+        const p = createProject({ name: 'P' });
+        const s = p.sections[0];
+        const t = addTrack(p, { id: 'tA', slot: 0, humanize });
+        const pat = addPattern(p, { id: 'pA', notes: notes || [N(60, 0, 2), N(62, 4, 2), N(64, 8, 2), N(65, 12, 2)] });
+        addClip(p, s, { id: 'cA', trackId: t.id, patternId: pat.id, startCol: 0 });
+        return createPlayer(createSectionSequence(p, s), { seed });
+    }
+    /** Every on the Player hands out over `ticks`, with the tick it was handed out on and how. */
+    function collect(player, ticks) {
+        const out = [];
+        player.start(0);
+        for (let i = 0; i < ticks; i++) {
+            const st = player.tick();
+            for (const e of st.events) if (e.type === 'on') out.push({ at: i, how: 'now', midi: e.midi, vel: e.vel, offset: e.offset || 0 });
+            for (const e of st.early) if (e.type === 'on') out.push({ at: i, how: 'early', midi: e.midi, vel: e.vel, offset: e.offset });
+        }
+        return out;
+    }
+
+    test('off by default: no offsets, velocities untouched (the goldens hold)', () => {
+        const ons = collect(humanized(undefined), 16);
+        assert.ok(ons.every(o => o.offset === 0 && o.how === 'now' && o.vel == null));
+    });
+
+    test('velocity nudges stay within ±32·velocity of the note; timing within ±½ row·timing', () => {
+        const ons = collect(humanized({ timing: 1, velocity: 1 }), 16);
+        assert.equal(ons.length, 4);
+        for (const o of ons) {
+            assert.ok(o.vel >= 100 - 32 && o.vel <= 100 + 32, 'velocity ' + o.vel);
+            assert.ok(Math.abs(o.offset) <= 0.5, 'offset ' + o.offset);
+        }
+        assert.ok(ons.some(o => o.offset !== 0), 'actually nudged');
+        const half = collect(humanized({ timing: 0.5, velocity: 0.5 }), 16);
+        for (const o of half) {
+            assert.ok(o.vel >= 84 && o.vel <= 116);
+            assert.ok(Math.abs(o.offset) <= 0.25);
+        }
+    });
+
+    test('an early note is handed out one tick ahead, in `early`, and not again on its own tick', () => {
+        // A note on every row (midi 40 + row), 15 ticks: rows 0–14, so the
+        // last tick's `early` (row 15) is not the next pass's row 0.
+        const notes = Array.from({ length: 16 }, (_, r) => N(40 + r, r, 1));
+        const ons = collect(humanized({ timing: 1, velocity: 0 }, { notes }), 15);
+        const early = ons.filter(o => o.how === 'early');
+        assert.ok(early.length > 0, 'some notes fall early');
+        for (const o of early) {
+            assert.ok(o.offset < 0);
+            assert.equal(ons.filter(x => x.midi === o.midi).length, 1, 'handed out once');
+            // Row r fires at tick r: an early one is handed out at tick r − 1.
+            assert.equal(o.at, (o.midi - 40) - 1);
+        }
+        for (const o of ons.filter(o => o.how === 'now')) assert.ok(o.offset >= 0);
+    });
+
+    test('seeded: two Plays are the same performance; passes differ from each other; another seed differs', () => {
+        const a = collect(humanized({ timing: 1, velocity: 1 }), 32);
+        const b = collect(humanized({ timing: 1, velocity: 1 }), 32);
+        assert.deepEqual(a, b, 'repeatable');
+        const pass1 = a.filter(o => o.at < 16).map(o => [o.vel, o.offset]);
+        const pass2 = a.filter(o => o.at >= 16).map(o => [o.vel, o.offset]);
+        assert.notDeepEqual(pass1, pass2, 'the second pass breathes differently');
+        const c = collect(humanized({ timing: 1, velocity: 1 }, { seed: 7 }), 16);
+        assert.notDeepEqual(c.map(o => [o.vel, o.offset]), pass1, 'another seed, another performance');
+    });
+
+    test('after a seek nothing is early: there was no earlier tick to hand it out on', () => {
+        const player = humanized({ timing: 1, velocity: 0 });
+        // Find a row whose note falls early from the top, then seek onto it.
+        const fromTop = collect(humanized({ timing: 1, velocity: 0 }), 16).find(o => o.how === 'early');
+        const row = [60, 62, 64, 65].indexOf(fromTop.midi) * 4;
+        player.start(row);
+        const st = player.tick();
+        const on = st.events.find(e => e.type === 'on' && e.midi === fromTop.midi);
+        assert.ok(on, 'fires on its tick');
+        assert.equal(on.offset, 0);
+    });
+
+    test('at the transition the flushed offs go out just before an early row-0 note', () => {
+        // Row 0's note falls early on some pass; the offs must precede it.
+        const player = humanized({ timing: 1, velocity: 0 }, { notes: [N(60, 0, 2), N(62, 14, 4)] });
+        player.start(0);
+        let seen = false;
+        for (let i = 0; i < 64 && !seen; i++) {
+            const st = player.tick();
+            const earlyOn = st.early.find(e => e.type === 'on');
+            if (!earlyOn) continue;
+            const earlyOffs = st.early.filter(e => e.type === 'off');
+            if (earlyOffs.length) {
+                seen = true;
+                for (const off of earlyOffs) assert.ok(off.offset < earlyOn.offset, 'off before the on');
+            }
+        }
+        assert.ok(seen, 'a transition with an early row-0 note occurred');
+    });
+});
+
 describe('the piece', () => {
     function piece() {
         const p = createProject({ name: 'P' });
