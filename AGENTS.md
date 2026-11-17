@@ -23,21 +23,26 @@
 ## Task & Subtask Lifecycle
 1. **Backlog:** Ideas and future tasks originate in `TODO.md`.
 2. **Activation:** When starting a parent task, **move** (cut) it out of `TODO.md` into `SESSION.md`.
+2a. **Phases:** When a task is split into phases, the split is agreed with the user *before* coding and written in `SESSION.md`. The agent does not declare a phase — or the last phase — on its own.
 3. **Self-Resolving Subtasks/Tasks:**
    - If work in `SESSION.md` checks off a subtask belonging to a task still in `TODO.md`, mark that subtask `[x]` (or `[-]`) directly in `TODO.md`.
    - If all subtasks under a parent task in `TODO.md` become `[x]` or `[-]`, the parent task is complete and moves directly from `TODO.md` to `CHANGELOG.md`.
-4. **Completion:** Once a task in `SESSION.md` and all its subtasks are complete, remove it from `SESSION.md` and record the completed feature/fix in `CHANGELOG.md`.
+4. **Review:** When the work is built and verified (see Verification), the agent reports *ready for review* — what changed, how it was checked — and stops. The agent does not decide that a task is finished.
+5. **Acceptance:** A task is complete only when the user accepts it. `CHANGELOG.md`, `HEARME.tts` and the `TODO.md` reconciliation are written after acceptance, never before. Until then the task stays in `SESSION.md`.
 
 ## Rules
 - Read enough context before editing. Don't creep offsets line-by-line.
 - If Edit fails twice, stop and explain the issue.
 - Verify JS changes with `node --check html/app.js`, `node --check html/components/*.js`, `node --check html/synth/*.js`.
 - Run the regression tests with `node --test test/`. They use `test/harness.js`, a dependency-free browser stub — extend it rather than adding a DOM library.
+- **Verification per change:** `node --check`, `node --test test/`, and the Playwright spec(s) covering the touched area. The *full* Playwright suite runs only after the user accepts the task (Acceptance), or when the user asks for it.
+- Verification that gates a commit or a report runs in the **foreground**, with an explicit timeout. Never end a turn while a process the task depends on is still running in the background; if it is too long for the foreground, say so and ask.
 - WASM build: `make -f Makefile.msfa` in `html/synth/wasm/` (uses `zig c++ -target wasm32-wasi`). Do NOT use emscripten.
 - Never export `malloc`/`free` from WASM. Use static pre-allocated buffers (`get_patch_buffer()`, `load_voice_from_buffer()`).
 - AudioManager is a singleton — `initAudio()` runs once. Never re-call `addModule()` after initial setup.
 - Shutdown is disabled for testing — `shutdownAll()`, `setPianorollStop()`, `extendIdle()` are no-ops.
 - Match existing code style in each file. Don't introduce conventions that conflict with neighbors.
+- **Build what was asked.** Anything beyond the request — a neighbouring feature, a "natural" extension, a refactor — is proposed in chat first, as agent ideas are for `TODO.md`. A real problem with the request is stated in a sentence, then the request is built.
 - Use `pianoDockWrapper` (module-scoped in app.js) to access `_voiceBank`, `_pianoroll`, `_showLog` — NOT `document.getElementById('piano-dock')` which returns the outer container, not the inner wrapper.
 - VoiceBank assigns colors by slot index (PATCH_COLORS[8]). Pianoroll receives color via `setActivePatch(id, data, color, channel)` — always pass `entry.color` from voicebank.
 - VoiceBank channel = array index. Entries have no `channel` property. Slot IS the channel.
@@ -54,7 +59,7 @@
 - **Append-only commits:** All changes must strictly be committed as NEW, additive commits on top of the current branch.
 
 ### Commit Execution & Boundaries
-- **Commit on Task Completion:** Create a git commit only when a task or sub-goal is fully complete and verified (code builds/runs without errors).
+- **Commit on Phase or Task Completion:** Create a git commit only when a phase agreed in `SESSION.md`, or the task itself, is fully complete and verified (code builds, tests pass). The commit that closes a task — `CHANGELOG.md`, `HEARME.tts`, `TODO.md` — requires the user's acceptance first.
 - **Turn Boundaries:** If a turn ends without having completed a task, **do not commit**. Leave the working tree dirty until the task definition in `SESSION.md` is met, compartmentalizing development cycles cleanly by completed tasks.
 - **Commit Messages:** Write short, descriptive commit messages summarizing the actual functional changes made and referencing the completed task name.
 
