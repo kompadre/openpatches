@@ -30,6 +30,15 @@
 // external clock's `continue`, and a worker tick that skipped are all one
 // operation: seek, then carry on.
 //
+// **Notes are explicit** (phase 2). An armed row's notes go out as
+// `{type:'on', …, vel, dur}` events; the Player keeps what it has sounding
+// — `{slot, midi, ticksLeft}` — counts the ticks down, and emits
+// `{type:'off'}` when a note's time is up. The count is time, not rows: a
+// seek never cuts a note (what sounds keeps sounding) — the one exception
+// is the **Section transition**, where everything sounding is flushed as
+// offs, placed *ahead of* the new row 0's ons. A second on for a sounding
+// slot-and-pitch replaces its entry: a retrigger, as today.
+//
 // Position state lives here, in memory, never in the project and never
 // synced. Per-track settings (the divider) are the track's; the divider is
 // applied by the sequence from the head's row, so a moved head keeps the
@@ -48,6 +57,7 @@ export function createPlayer(sequence) {
     let armed = [];                // events gathered for the next tick
     let seam = false;              // the armed row is row 0 after a transition
     let pendingTransition = false;
+    let sounding = [];             // { slot, midi, trackId, ticksLeft } — the notes out
 
     const isPiece = sequence.kind === 'piece';
     const parts = isPiece && sequence.parts ? sequence.parts() : [];
@@ -92,12 +102,39 @@ export function createPlayer(sequence) {
 
     // --- The walk ---
 
-    function arm() {
-        armed = [];
+    /** Gather the heads' rows as note-ons, each entered into `sounding`. */
+    function armOns() {
+        const ons = [];
         for (const h of heads) {
             if (h.clockOnly) continue;
-            for (const e of scope.seq.eventsAt(h.row, h.trackId)) armed.push(e);
+            for (const e of scope.seq.eventsAt(h.row, h.trackId)) {
+                ons.push({ type: 'on', ...e });
+                // A sounding slot-and-pitch hit again: superseded, one entry.
+                sounding = sounding.filter(n => !(n.slot === e.slot && n.midi === e.midi));
+                sounding.push({ slot: e.slot, midi: e.midi, trackId: e.trackId, ticksLeft: Math.max(1, e.dur) });
+            }
         }
+        return ons;
+    }
+
+    /** Count the sounding notes one tick down; the spent ones become offs. */
+    function dueOffs() {
+        const offs = [];
+        const left = [];
+        for (const n of sounding) {
+            n.ticksLeft--;
+            if (n.ticksLeft <= 0) offs.push({ type: 'off', slot: n.slot, midi: n.midi, trackId: n.trackId });
+            else left.push(n);
+        }
+        sounding = left;
+        return offs;
+    }
+
+    /** Everything sounding, off — the Section transition's clean slate. */
+    function flushOffs() {
+        const offs = sounding.map(n => ({ type: 'off', slot: n.slot, midi: n.midi, trackId: n.trackId }));
+        sounding = [];
+        return offs;
     }
 
     const atLast = (h) => h.row === h.end - 1;
@@ -108,6 +145,7 @@ export function createPlayer(sequence) {
     }
 
     function advance() {
+        let offs;
         if (pendingTransition) {
             scope = nextScope();
             heads = headsFor(scope);
@@ -115,6 +153,8 @@ export function createPlayer(sequence) {
             clock = 0;
             seam = true;
             pendingTransition = false;
+            // All notes off at the transition — ahead of the new row 0's ons.
+            offs = flushOffs();
         } else {
             clock++;
             seam = false;
@@ -122,8 +162,9 @@ export function createPlayer(sequence) {
                 h.row++;
                 if (h.row >= h.end) { h.row = scope.start; h.looped = true; }
             }
+            offs = dueOffs();
         }
-        arm();
+        armed = [...offs, ...armOns()];
         if (transitionDue()) pendingTransition = true;
     }
 
@@ -146,7 +187,9 @@ export function createPlayer(sequence) {
                 h.looped = clock >= span;
             }
             seam = false;
-            arm();
+            // A seek never cuts a note: what sounds keeps sounding, its
+            // off still counting (the transition is the one exception).
+            armed = armOns();
             pendingTransition = transitionDue();
         },
 
@@ -185,6 +228,11 @@ export function createPlayer(sequence) {
             }
             return { ...here, tracks };
         },
+
+        /** The notes out right now — and the hand-over: refresh() rebuilds the
+         *  Player mid-play and the new one adopts them so their offs still come. */
+        sounding() { return sounding.map(n => ({ ...n })); },
+        adopt(notes) { if (Array.isArray(notes)) sounding = notes.map(n => ({ ...n })); },
 
         /** The heads, for tests and the views: `[{trackId, slot, row, looped}]`. */
         positions() {

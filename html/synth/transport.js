@@ -46,6 +46,7 @@ import {
     patternPlacements, nearestPlacement,
 } from './section-sequencer.js';
 import { createPlayer } from './player.js';
+import { createNoteOutput } from './note-output.js';
 import { COLS_PER_MEASURE, clipCols, bpmAt, pieceLayout } from '../components/project-model.js';
 import * as midiManager from './midi-manager.js';
 
@@ -139,10 +140,14 @@ export function createTransport(opts) {
      */
     function refresh() {
         sequence = buildSequence();
+        // The new Player adopts what the old one has sounding, so those
+        // notes still get their offs; forgetting `nextRaw` makes the next
+        // tick seek to its own column — the heads land on the right row
+        // and the row already fired is not fired again.
+        const held = player ? player.sounding() : [];
         player = createPlayer(sequence);
-        // Mid-play the heads are put back where a run from the top would
-        // have them at this column: an edit re-snapshots, the position holds.
-        if (lastCol >= 0 && sequence.range) player.start(lastCol);
+        player.adopt(held);
+        nextRaw = null;
         retempo();
         return sequence;
     }
@@ -284,17 +289,27 @@ export function createTransport(opts) {
         else if (tickWorker) tickWorker.postMessage({ type: 'stop' });
     }
 
-    /** Sound the events the Player armed for this tick, each voice on its own slot. */
-    function fire(events) {
+    // The one interface everything sounds through (note-output.js): ons held
+    // open, offs explicit, and an all-off for Stop. The Player says what and
+    // when; this says how.
+    const output = opts.output || createNoteOutput(playNote);
+
+    /**
+     * Sound the events the Player armed for this tick — offs first (they are
+     * ordered so by the Player), then ons. A stale tick sends only the offs:
+     * its notes are dropped, and an off whose on was never sent is a no-op.
+     */
+    function fire(events, stale = false) {
         const ms = msPerColumn(playbackBpm());
         for (const ev of events) {
+            if (ev.type === 'off') { output.noteOff(ev.slot, ev.midi); continue; }
+            if (stale) continue;
             // A note just played in by the user must not be echoed back at
             // them on the same pass; the flag is cleared at the loop seam.
             if (recording && ev.note && ev.note._recordedInSession) continue;
             try {
                 const entry = getSlotData(ev.slot);
-                playNote(ev.midi, ev.dur * ms, entry ? entry.voiceData : null, ev.slot,
-                    ev.vel != null ? { velocity: ev.vel } : {});
+                output.noteOn(ev, ev.dur * ms, entry ? entry.voiceData : null);
                 consecutiveErrors = 0;
             } catch (e) {
                 consecutiveErrors++;
@@ -339,7 +354,7 @@ export function createTransport(opts) {
         if (sequence.kind === 'section') sectionPos = col;
         if (sequence.kind === 'piece') followPiece(col);
         if (!stale) rampTempo();
-        if (!stale && !fire(events)) return;
+        if (!fire(events, stale)) return;
         notify({ col, rawCol, seam });
     }
 
@@ -527,6 +542,7 @@ export function createTransport(opts) {
         warnedOutsideClip = false;
         midiManager.clockStop();
         stopTheWorker();
+        output.allOff();
         notify({ col: -1 });
         // Stopping the clock only stops new note-ons; whatever is ringing
         // has to be cut explicitly.

@@ -21,6 +21,7 @@ import { fixtures, sequenceOf } from './golden-capture.js';
 const here = dirname(fileURLToPath(import.meta.url));
 const golden = (name) => JSON.parse(readFileSync(join(here, 'golden', name + '.json'), 'utf8'));
 const ev = (e) => [e.midi, e.slot, e.dur, e.vel == null ? 0 : e.vel];
+const ons = (events) => events.filter(e => e.type === 'on');
 const sortEvs = (a, b) => a[1] - b[1] || a[0] - b[0];
 
 /** Drive a Player the way the transport does: seek on the first tick, then tick. */
@@ -39,7 +40,7 @@ function run(seq, cols) {
         }
         prev = now;
         const step = player.tick();
-        const evs = step.events.map(ev).sort(sortEvs);
+        const evs = ons(step.events).map(ev).sort(sortEvs);
         if (evs.length) out.events[raw] = evs;
         if (step.col !== raw) out.cols[raw] = step.col;
         if (step.seam) out.seams.push(raw);
@@ -110,7 +111,7 @@ describe('heads, loop and transition', () => {
             { trackId: 'tA', slot: 0, row: 0, looped: true },
             { trackId: 'tB', slot: 1, row: 16, looped: false },
         ]);
-        assert.deepEqual(player.tick().events.map(e => e.midi).sort(), [38, 60], 'both sound at column 16');
+        assert.deepEqual(ons(player.tick().events).map(e => e.midi).sort(), [38, 60], 'both sound at column 16');
         for (let i = 17; i < 32; i++) player.tick();
         const st = player.tick();
         assert.equal(st.seam, true, 'column 32 is the Section again');
@@ -141,7 +142,7 @@ describe('heads, loop and transition', () => {
         ref.start(0);
         let at20 = null;
         for (let i = 0; i <= 20; i++) at20 = ref.tick();
-        assert.deepEqual(player.tick().events.map(ev), at20.events.map(ev));
+        assert.deepEqual(ons(player.tick().events).map(ev), ons(at20.events).map(ev));
     });
 
     test('a range (the section loop) scopes the heads: row 0 is its first column and every end is clipped to it', () => {
@@ -152,7 +153,7 @@ describe('heads, loop and transition', () => {
         // tA's clip ends at 16: nothing of it lies in the range, so it has no head.
         assert.deepEqual(player.positions(), [{ trackId: 'tB', slot: 1, row: 16, looped: false }]);
         const first = player.tick();
-        assert.deepEqual(first.events.map(e => e.midi), [38]);
+        assert.deepEqual(ons(first.events).map(e => e.midi), [38]);
         for (let i = 17; i < 32; i++) player.tick();
         const st = player.tick();
         assert.equal(st.col, 16, 'wrapped to the loop start');
@@ -181,6 +182,75 @@ describe('heads, loop and transition', () => {
         assert.equal(here.col, 20);
         assert.equal(here.tracks.tA.patternCol, 4, 'the looped track reads its real pattern column');
         assert.equal(here.tracks.tB.patternCol, 20);
+    });
+});
+
+describe('explicit note-offs (phase 2)', () => {
+    function oneTrack(notes, measures = 1) {
+        const p = createProject({ name: 'P' });
+        const s = p.sections[0];
+        const t = addTrack(p, { id: 'tA', slot: 0 });
+        const pat = addPattern(p, { id: 'pA', measures, notes });
+        addClip(p, s, { id: 'cA', trackId: t.id, patternId: pat.id, startCol: 0 });
+        return createPlayer(createSectionSequence(p, s));
+    }
+
+    test('a note goes off exactly dur ticks after its on', () => {
+        const player = oneTrack([N(60, 0, 4), N(62, 8, 1)]);
+        player.start(0);
+        const log = [];
+        for (let i = 0; i < 12; i++) {
+            const st = player.tick();
+            for (const e of st.events) log.push([i, e.type, e.midi]);
+        }
+        assert.deepEqual(log, [[0, 'on', 60], [4, 'off', 60], [8, 'on', 62], [9, 'off', 62]]);
+    });
+
+    test('the transition flushes everything sounding, the offs ahead of the new row 0', () => {
+        // The note's tail (dur 8 from row 12) would ring past the wrap.
+        const player = oneTrack([N(60, 12, 8)]);
+        player.start(0);
+        let seamEvents = null;
+        for (let i = 0; i < 17; i++) {
+            const st = player.tick();
+            if (st.seam) seamEvents = st.events;
+        }
+        assert.ok(seamEvents, 'wrapped');
+        assert.deepEqual(seamEvents.map(e => [e.type, e.midi]), [['off', 60]],
+            'cut at the Section transition — the one synthetic off');
+        assert.deepEqual(player.sounding(), [], 'nothing left sounding');
+    });
+
+    test('a retriggered pitch keeps one sounding entry, its off at the later time', () => {
+        const player = oneTrack([{ midi: 60, start: 0, dur: 8 }, { midi: 60, start: 2, dur: 4, lane: 1 }]);
+        player.start(0);
+        const log = [];
+        for (let i = 0; i < 8; i++) {
+            const st = player.tick();
+            for (const e of st.events) log.push([i, e.type]);
+        }
+        // On at 0, the retrigger at 2 supersedes (the output cuts, no off
+        // event between), one off when the second note ends.
+        assert.deepEqual(log, [[0, 'on'], [2, 'on'], [6, 'off']]);
+    });
+
+    test('a seek does not cut what sounds; adopt() hands the notes to a rebuilt Player', () => {
+        // The off counts real ticks, not columns: a seek moves the head,
+        // never the note's remaining time.
+        const player = oneTrack([N(60, 0, 12)], 2);
+        player.start(0);
+        player.tick();                                  // on at 0 (12 ticks left)
+        player.start(4);                                // a jump — no off
+        assert.deepEqual(player.tick().events.map(e => e.type), [], 'still sounding');
+        const heir = oneTrack([N(60, 0, 12)], 2);
+        heir.adopt(player.sounding());                  // 10 ticks left
+        heir.start(10);
+        const offAt = [];
+        for (let i = 0; i < 14; i++) {
+            const st = heir.tick();                     // columns 10, 11, …
+            for (const e of st.events) if (e.type === 'off') offAt.push(st.col);
+        }
+        assert.deepEqual(offAt, [20], 'the adopted note runs out its 10 remaining ticks');
     });
 });
 
@@ -221,8 +291,8 @@ describe('the piece', () => {
         assert.equal(player.col(), 20);
         player.start(40);
         assert.deepEqual(player.where(), { part: 1, pass: 0 });
-        assert.deepEqual(player.tick().events.map(e => e.midi), [], 'column 8 of the chorus: silent');
+        assert.deepEqual(ons(player.tick().events).map(e => e.midi), [], 'column 8 of the chorus: silent');
         player.start(32);
-        assert.deepEqual(player.tick().events.map(e => e.midi), [72]);
+        assert.deepEqual(ons(player.tick().events).map(e => e.midi), [72]);
     });
 });

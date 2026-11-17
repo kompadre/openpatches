@@ -25,7 +25,11 @@ function makeTickWorker() {
         started: [], stopped: 0,
         postMessage() {},
         addEventListener(type, fn) { if (type === 'message') handlers.push(fn); },
-        tick(col) { for (const fn of handlers) fn({ data: { type: 'tick', col } }); },
+        tick(col, { stale = false } = {}) {
+            // A stale tick arrives long after it was due (STALE_TICK_MS).
+            const at = stale ? Date.now() - 1000 : undefined;
+            for (const fn of handlers) fn({ data: { type: 'tick', col, at } });
+        },
     };
 }
 
@@ -71,6 +75,7 @@ function build(opts = {}) {
         },
         getSlotData: (slot) => BANK[slot] || null,
         getPattern: (id) => made.find(m => m.pattern.id === id)?.pattern || session.getPattern(id),
+        output: opts.output || undefined,
         getEditTarget: () => {
             const m = made[editIdx];
             return m ? { trackId: m.track.id, clipId: m.clip.id, pattern: m.pattern, slot: m.slot } : null;
@@ -113,7 +118,8 @@ describe('modes', () => {
         assert.equal(h.played[0].noteOpts.velocity, 42);
         h.played.length = 0;
         h.tickWorker.tick(1);
-        assert.deepEqual(h.played[0].noteOpts, {}, 'absent: playNote falls back to its default');
+        assert.deepEqual(h.played[0].noteOpts, { sustained: true },
+            'absent: no velocity — and the note is held open, its off explicit (phase 2)');
     });
 
     test('section mode sounds every track; pattern mode the window of the edited one, with company', () => {
@@ -543,6 +549,40 @@ describe('recording', () => {
         h.transport.startRecording();
         assert.equal(h.transport.isRecording(), true);
         assert.deepEqual(h.transport.mapRecordColumn(5, 0), { fresh: true });
+    });
+});
+
+describe('explicit note-offs through the output (phase 2)', () => {
+    /** A transport over one track, sounding into a fake output. */
+    function withOutput(notes) {
+        const log = [];
+        const output = {
+            noteOn: (ev) => log.push(['on', ev.midi, ev.vel == null ? 0 : ev.vel]),
+            noteOff: (slot, midi) => log.push(['off', midi]),
+            allOff: () => log.push(['allOff']),
+        };
+        const h = build({ tracks: [{ slot: 0, measures: 1, notes }], output });
+        return { h, log };
+    }
+
+    test('a note goes off dur ticks after its on; Stop flushes the output', () => {
+        const { h, log } = withOutput([note(60, 0, 4)]);
+        h.transport.play();
+        for (let raw = 0; raw <= 5; raw++) h.tickWorker.tick(raw);
+        assert.deepEqual(log, [['on', 60, 0]].concat([['off', 60]]));
+        h.transport.stop();
+        assert.deepEqual(log.pop(), ['allOff']);
+    });
+
+    test('a stale tick sends only the offs — dropped notes stay dropped, nothing hangs', () => {
+        const { h, log } = withOutput([note(60, 0, 2), note(64, 2, 2)]);
+        h.transport.play();
+        h.tickWorker.tick(0);                           // on 60
+        h.tickWorker.tick(1, { stale: true });          // nothing due
+        h.tickWorker.tick(2, { stale: true });          // off 60 flows; on 64 dropped
+        h.tickWorker.tick(3);
+        h.tickWorker.tick(4);                           // 64's off: never on — the output no-ops
+        assert.deepEqual(log, [['on', 60, 0], ['off', 60], ['off', 64]]);
     });
 });
 
