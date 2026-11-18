@@ -11,35 +11,37 @@
     [
      60,
      0,
-     4,
+     2,
      0
     ],
     [
      40,
      1,
-     4,
+     1,
+     0
+    ]
+   ],
+   "1": [
+    [
+     43,
+     1,
+     1,
+     0
+    ]
+   ],
+   "2": [
+    [
+     62,
+     0,
+     2,
      0
     ]
    ],
    "4": [
     [
-     62,
-     0,
-     4,
-     0
-    ],
-    [
-     43,
-     1,
-     4,
-     0
-    ]
-   ],
-   "8": [
-    [
      64,
      0,
-     8,
+     4,
      0
     ]
    ],
@@ -47,35 +49,37 @@
     [
      60,
      0,
-     4,
+     2,
      0
     ],
     [
      40,
      1,
-     4,
+     1,
+     0
+    ]
+   ],
+   "33": [
+    [
+     43,
+     1,
+     1,
+     0
+    ]
+   ],
+   "34": [
+    [
+     62,
+     0,
+     2,
      0
     ]
    ],
    "36": [
     [
-     62,
-     0,
-     4,
-     0
-    ],
-    [
-     43,
-     1,
-     4,
-     0
-    ]
-   ],
-   "40": [
-    [
      64,
      0,
-     8,
+     4,
      0
     ]
    ]
@@ -124,12 +128,12 @@
      "tA": {
       "clipId": "cA",
       "patternId": "pA",
-      "patternCol": 0
+      "patternCol": 1
      },
      "tB": {
       "clipId": "cB",
       "patternId": "pB",
-      "patternCol": 0
+      "patternCol": 1
      }
     }
    },
@@ -141,12 +145,12 @@
      "tA": {
       "clipId": "cA",
       "patternId": "pA",
-      "patternCol": 1
+      "patternCol": 2
      },
      "tB": {
       "clipId": "cB",
       "patternId": "pB",
-      "patternCol": 0
+      "patternCol": 2
      }
     }
    },
@@ -158,12 +162,12 @@
      "tA": {
       "clipId": "cA",
       "patternId": "pA",
-      "patternCol": 1
+      "patternCol": 3
      },
      "tB": {
       "clipId": "cB",
       "patternId": "pB",
-      "patternCol": 0
+      "patternCol": 3
      }
     }
    },
@@ -175,12 +179,12 @@
      "tA": {
       "clipId": "cA",
       "patternId": "pA",
-      "patternCol": 2
+      "patternCol": 4
      },
      "tB": {
       "clipId": "cB",
       "patternId": "pB",
-      "patternCol": 1
+      "patternCol": 4
      }
     }
    },
@@ -192,12 +196,12 @@
      "tA": {
       "clipId": "cA",
       "patternId": "pA",
-      "patternCol": 2
+      "patternCol": 5
      },
      "tB": {
       "clipId": "cB",
       "patternId": "pB",
-      "patternCol": 1
+      "patternCol": 5
      }
     }
    },
@@ -209,12 +213,12 @@
      "tA": {
       "clipId": "cA",
       "patternId": "pA",
-      "patternCol": 3
+      "patternCol": 6
      },
      "tB": {
       "clipId": "cB",
       "patternId": "pB",
-      "patternCol": 1
+      "patternCol": 6
      }
     }
    },
@@ -226,12 +230,12 @@
      "tA": {
       "clipId": "cA",
       "patternId": "pA",
-      "patternCol": 3
+      "patternCol": 7
      },
      "tB": {
       "clipId": "cB",
       "patternId": "pB",
-      "patternCol": 1
+      "patternCol": 7
      }
     }
    },
@@ -243,12 +247,12 @@
      "tA": {
       "clipId": "cA",
       "patternId": "pA",
-      "patternCol": 4
+      "patternCol": 8
      },
      "tB": {
       "clipId": "cB",
       "patternId": "pB",
-      "patternCol": 2
+      "patternCol": 8
      }
     }
    },
@@ -260,12 +264,12 @@
      "tA": {
       "clipId": "cA",
       "patternId": "pA",
-      "patternCol": 4
+      "patternCol": 9
      },
      "tB": {
       "clipId": "cB",
       "patternId": "pB",
-      "patternCol": 2
+      "patternCol": 9
      }
     }
    },
@@ -277,12 +281,12 @@
      "tA": {
       "clipId": "cA",
       "patternId": "pA",
-      "patternCol": 5
+      "patternCol": 10
      },
      "tB": {
       "clipId": "cB",
       "patternId": "pB",
-      "patternCol": 2
+      "patternCol": 10
      }
     }
    },
@@ -294,12 +298,12 @@
      "tA": {
       "clipId": "cA",
       "patternId": "pA",
-      "patternCol": 5
+      "patternCol": 11
      },
      "tB": {
       "clipId": "cB",
       "patternId": "pB",
-      "patternCol": 2
+      "patternCol": 11
      }
     }
    },
@@ -311,12 +315,12 @@
      "tA": {
       "clipId": "cA",
       "patternId": "pA",
-      "patternCol": 6
+      "patternCol": 12
      },
      "tB": {
       "clipId": "cB",
       "patternId": "pB",
-      "patternCol": 3
+      "patternCol": 12
      }
     }
    },
@@ -328,12 +332,12 @@
      "tA": {
       "clipId": "cA",
       "patternId": "pA",
-      "patternCol": 6
+      "patternCol": 13
      },
      "tB": {
       "clipId": "cB",
       "patternId": "pB",
-      "patternCol": 3
+      "patternCol": 13
      }
     }
    },
@@ -345,12 +349,12 @@
      "tA": {
       "clipId": "cA",
       "patternId": "pA",
-      "patternCol": 7
+      "patternCol": 14
      },
      "tB": {
       "clipId": "cB",
       "patternId": "pB",
-      "patternCol": 3
+      "patternCol": 14
      }
     }
    },
@@ -362,12 +366,12 @@
      "tA": {
       "clipId": "cA",
       "patternId": "pA",
-      "patternCol": 7
+      "patternCol": 15
      },
      "tB": {
       "clipId": "cB",
       "patternId": "pB",
-      "patternCol": 3
+      "patternCol": 15
      }
     }
    },
@@ -379,7 +383,7 @@
      "tB": {
       "clipId": "cB",
       "patternId": "pB",
-      "patternCol": 4
+      "patternCol": 16
      }
     }
    },
@@ -391,7 +395,7 @@
      "tB": {
       "clipId": "cB",
       "patternId": "pB",
-      "patternCol": 4
+      "patternCol": 17
      }
     }
    },
@@ -403,7 +407,7 @@
      "tB": {
       "clipId": "cB",
       "patternId": "pB",
-      "patternCol": 4
+      "patternCol": 18
      }
     }
    },
@@ -415,7 +419,7 @@
      "tB": {
       "clipId": "cB",
       "patternId": "pB",
-      "patternCol": 4
+      "patternCol": 19
      }
     }
    },
@@ -427,7 +431,7 @@
      "tB": {
       "clipId": "cB",
       "patternId": "pB",
-      "patternCol": 5
+      "patternCol": 20
      }
     }
    },
@@ -439,7 +443,7 @@
      "tB": {
       "clipId": "cB",
       "patternId": "pB",
-      "patternCol": 5
+      "patternCol": 21
      }
     }
    },
@@ -451,7 +455,7 @@
      "tB": {
       "clipId": "cB",
       "patternId": "pB",
-      "patternCol": 5
+      "patternCol": 22
      }
     }
    },
@@ -463,7 +467,7 @@
      "tB": {
       "clipId": "cB",
       "patternId": "pB",
-      "patternCol": 5
+      "patternCol": 23
      }
     }
    },
@@ -475,7 +479,7 @@
      "tB": {
       "clipId": "cB",
       "patternId": "pB",
-      "patternCol": 6
+      "patternCol": 24
      }
     }
    },
@@ -487,7 +491,7 @@
      "tB": {
       "clipId": "cB",
       "patternId": "pB",
-      "patternCol": 6
+      "patternCol": 25
      }
     }
    },
@@ -499,7 +503,7 @@
      "tB": {
       "clipId": "cB",
       "patternId": "pB",
-      "patternCol": 6
+      "patternCol": 26
      }
     }
    },
@@ -511,7 +515,7 @@
      "tB": {
       "clipId": "cB",
       "patternId": "pB",
-      "patternCol": 6
+      "patternCol": 27
      }
     }
    },
@@ -523,7 +527,7 @@
      "tB": {
       "clipId": "cB",
       "patternId": "pB",
-      "patternCol": 7
+      "patternCol": 28
      }
     }
    },
@@ -535,7 +539,7 @@
      "tB": {
       "clipId": "cB",
       "patternId": "pB",
-      "patternCol": 7
+      "patternCol": 29
      }
     }
    },
@@ -547,7 +551,7 @@
      "tB": {
       "clipId": "cB",
       "patternId": "pB",
-      "patternCol": 7
+      "patternCol": 30
      }
     }
    },
@@ -559,7 +563,7 @@
      "tB": {
       "clipId": "cB",
       "patternId": "pB",
-      "patternCol": 7
+      "patternCol": 31
      }
     }
    },
@@ -588,12 +592,12 @@
      "tA": {
       "clipId": "cA",
       "patternId": "pA",
-      "patternCol": 0
+      "patternCol": 1
      },
      "tB": {
       "clipId": "cB",
       "patternId": "pB",
-      "patternCol": 0
+      "patternCol": 1
      }
     }
    },
@@ -605,12 +609,12 @@
      "tA": {
       "clipId": "cA",
       "patternId": "pA",
-      "patternCol": 1
+      "patternCol": 2
      },
      "tB": {
       "clipId": "cB",
       "patternId": "pB",
-      "patternCol": 0
+      "patternCol": 2
      }
     }
    },
@@ -622,12 +626,12 @@
      "tA": {
       "clipId": "cA",
       "patternId": "pA",
-      "patternCol": 1
+      "patternCol": 3
      },
      "tB": {
       "clipId": "cB",
       "patternId": "pB",
-      "patternCol": 0
+      "patternCol": 3
      }
     }
    },
@@ -639,12 +643,12 @@
      "tA": {
       "clipId": "cA",
       "patternId": "pA",
-      "patternCol": 2
+      "patternCol": 4
      },
      "tB": {
       "clipId": "cB",
       "patternId": "pB",
-      "patternCol": 1
+      "patternCol": 4
      }
     }
    },
@@ -656,12 +660,12 @@
      "tA": {
       "clipId": "cA",
       "patternId": "pA",
-      "patternCol": 2
+      "patternCol": 5
      },
      "tB": {
       "clipId": "cB",
       "patternId": "pB",
-      "patternCol": 1
+      "patternCol": 5
      }
     }
    },
@@ -673,12 +677,12 @@
      "tA": {
       "clipId": "cA",
       "patternId": "pA",
-      "patternCol": 3
+      "patternCol": 6
      },
      "tB": {
       "clipId": "cB",
       "patternId": "pB",
-      "patternCol": 1
+      "patternCol": 6
      }
     }
    },
@@ -690,12 +694,12 @@
      "tA": {
       "clipId": "cA",
       "patternId": "pA",
-      "patternCol": 3
+      "patternCol": 7
      },
      "tB": {
       "clipId": "cB",
       "patternId": "pB",
-      "patternCol": 1
+      "patternCol": 7
      }
     }
    },
@@ -707,12 +711,12 @@
      "tA": {
       "clipId": "cA",
       "patternId": "pA",
-      "patternCol": 4
+      "patternCol": 8
      },
      "tB": {
       "clipId": "cB",
       "patternId": "pB",
-      "patternCol": 2
+      "patternCol": 8
      }
     }
    },
@@ -724,12 +728,12 @@
      "tA": {
       "clipId": "cA",
       "patternId": "pA",
-      "patternCol": 4
+      "patternCol": 9
      },
      "tB": {
       "clipId": "cB",
       "patternId": "pB",
-      "patternCol": 2
+      "patternCol": 9
      }
     }
    },
@@ -741,12 +745,12 @@
      "tA": {
       "clipId": "cA",
       "patternId": "pA",
-      "patternCol": 5
+      "patternCol": 10
      },
      "tB": {
       "clipId": "cB",
       "patternId": "pB",
-      "patternCol": 2
+      "patternCol": 10
      }
     }
    },
@@ -758,12 +762,12 @@
      "tA": {
       "clipId": "cA",
       "patternId": "pA",
-      "patternCol": 5
+      "patternCol": 11
      },
      "tB": {
       "clipId": "cB",
       "patternId": "pB",
-      "patternCol": 2
+      "patternCol": 11
      }
     }
    },
@@ -775,12 +779,12 @@
      "tA": {
       "clipId": "cA",
       "patternId": "pA",
-      "patternCol": 6
+      "patternCol": 12
      },
      "tB": {
       "clipId": "cB",
       "patternId": "pB",
-      "patternCol": 3
+      "patternCol": 12
      }
     }
    },
@@ -792,12 +796,12 @@
      "tA": {
       "clipId": "cA",
       "patternId": "pA",
-      "patternCol": 6
+      "patternCol": 13
      },
      "tB": {
       "clipId": "cB",
       "patternId": "pB",
-      "patternCol": 3
+      "patternCol": 13
      }
     }
    },
@@ -809,12 +813,12 @@
      "tA": {
       "clipId": "cA",
       "patternId": "pA",
-      "patternCol": 7
+      "patternCol": 14
      },
      "tB": {
       "clipId": "cB",
       "patternId": "pB",
-      "patternCol": 3
+      "patternCol": 14
      }
     }
    },
@@ -826,12 +830,12 @@
      "tA": {
       "clipId": "cA",
       "patternId": "pA",
-      "patternCol": 7
+      "patternCol": 15
      },
      "tB": {
       "clipId": "cB",
       "patternId": "pB",
-      "patternCol": 3
+      "patternCol": 15
      }
     }
    }
@@ -875,7 +879,7 @@
      0
     ]
    ],
-   "16": [
+   "32": [
     [
      60,
      0,
@@ -883,7 +887,7 @@
      0
     ]
    ],
-   "20": [
+   "36": [
     [
      62,
      0,
@@ -891,7 +895,55 @@
      0
     ]
    ],
-   "24": [
+   "40": [
+    [
+     64,
+     0,
+     8,
+     0
+    ]
+   ],
+   "64": [
+    [
+     60,
+     0,
+     4,
+     0
+    ]
+   ],
+   "68": [
+    [
+     62,
+     0,
+     4,
+     0
+    ]
+   ],
+   "72": [
+    [
+     64,
+     0,
+     8,
+     0
+    ]
+   ],
+   "96": [
+    [
+     60,
+     0,
+     4,
+     0
+    ]
+   ],
+   "100": [
+    [
+     62,
+     0,
+     4,
+     0
+    ]
+   ],
+   "104": [
     [
      64,
      0,
@@ -901,10 +953,16 @@
    ]
   },
   "wraps": {
-   "16": [
+   "32": [
+    "tA"
+   ],
+   "64": [
+    "tA"
+   ],
+   "96": [
     "tA"
    ]
   },
-  "transitionAt": 31
+  "transitionAt": 127
  }
 }

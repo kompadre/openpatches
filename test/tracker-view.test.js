@@ -92,24 +92,25 @@ describe('tracker view', () => {
             'expanded is the default and is not stored');
     });
 
-    test('the ÷ button cycles the track\'s clock divider through the session, packed', () => {
+    test('the speed button cycles the track\'s speed through the session, packed', () => {
         const { track } = seedPattern(session, { notes: [{ midi: 60, start: 0, dur: 4 }] });
         const { q } = build();
-        assert.equal(q('.tracker-divider').textContent, '÷1', 'every tick by default');
-        assert.equal(q('.tracker-divider').className.includes('active'), false);
-        q('.tracker-divider').dispatch('click');
+        assert.equal(q('.tracker-speed').textContent, '1×', 'the Section\'s pace by default');
+        assert.equal(q('.tracker-speed').className.includes('active'), false);
+        q('.tracker-speed').dispatch('click');
         assert.equal(session.get().tracks.find(t => t.id === track.id).divider, 2);
-        assert.equal(q('.tracker-divider').textContent, '÷2', 'the head follows the session event');
-        assert.equal(q('.tracker-divider').className.includes('active'), true);
-        q('.tracker-divider').dispatch('click');
+        assert.equal(q('.tracker-speed').textContent, '½×', 'the head follows the session event');
+        assert.equal(q('.tracker-speed').className.includes('active'), true);
+        q('.tracker-speed').dispatch('click');
         assert.equal(session.get().tracks.find(t => t.id === track.id).divider, 3);
-        q('.tracker-divider').dispatch('click', { shiftKey: true });
+        q('.tracker-speed').dispatch('click', { shiftKey: true });
         assert.equal(session.get().tracks.find(t => t.id === track.id).divider, 2, 'Shift+click steps back');
-        q('.tracker-divider').dispatch('click', { shiftKey: true });
+        q('.tracker-speed').dispatch('click', { shiftKey: true });
         assert.equal('divider' in session.get().tracks.find(t => t.id === track.id), false,
-            '÷1 is the default and is not stored');
-        q('.tracker-divider').dispatch('click', { shiftKey: true });
-        assert.equal(q('.tracker-divider').textContent, '÷8', 'back wraps to the largest');
+            '1× is the default and is not stored');
+        q('.tracker-speed').dispatch('click', { shiftKey: true });
+        assert.equal(q('.tracker-speed').textContent, '¹⁄₁₆×', 'back wraps to the slowest');
+        assert.equal(session.get().tracks.find(t => t.id === track.id).divider, 16, 'stored as 16 ticks a row');
     });
 
     test('clicking a head selects that voice', () => {
@@ -149,6 +150,44 @@ describe('tracker view', () => {
         assert.equal(session.getPattern(pattern.id).measures, 2);
         assert.equal(q('.tracker-popover'), null, 'closed after acting');
         void tracker;
+    });
+
+    test('the + on a clip\'s last row adds a bar to the pattern, where it ends', () => {
+        const { pattern, clip } = seedPattern(session, { notes: [{ midi: 60, start: 0, dur: 4 }] });
+        const { q, head, press, canvas } = build();
+        const margin = () => head(0).x + head(0).w + 4;
+        press(margin(), ROW * 14 + 4);
+        assert.equal(session.getPattern(pattern.id).measures, 1, 'the row above the end is not the button');
+        canvas.dispatch('mousemove', { clientX: margin(), clientY: ROW * 15 + 4 });
+        assert.match(canvas.title, /Add a bar to Seed \(1 → 2\)/, 'the tooltip says what it does');
+        press(margin(), ROW * 15 + 4);                                // row 15: the clip's last
+        assert.equal(session.getPattern(pattern.id).measures, 2);
+        assert.equal(q('.tracker-popover'), null, 'a click, no popover');
+        press(margin(), ROW * 31 + 4);                                // the + followed the end
+        assert.equal(session.getPattern(pattern.id).measures, 3);
+        // Two repeats: the + is at the end of the last pass, and the clip grows by a bar per pass.
+        session.update((project, section) => {
+            section.clips.find(c => c.id === clip.id).repeats = 2;
+        }, 'test');
+        press(margin(), ROW * 95 + 4);
+        assert.equal(session.getPattern(pattern.id).measures, 4);
+    });
+
+    test('the + is refused when the grown clip would run into the next one, and absent on a cut clip', () => {
+        const { track, pattern } = seedPattern(session, { notes: [] });
+        session.update((project, section) => {
+            section.clips.push({ id: 'c2', trackId: track.id, patternId: pattern.id, startCol: 16, lengthCols: 8 });
+        }, 'test');
+        const { q, head, press } = build();
+        const margin = head(0).x + head(0).w + 4;
+        press(margin, ROW * 15 + 4);
+        assert.equal(session.getPattern(pattern.id).measures, 1);
+        assert.match(q('.tracker-status').textContent, /No room/);
+        // The cut clip (rows 16–23) ends where its 8 columns do, not its pattern: no +, so
+        // its last row is just margin.
+        press(margin, ROW * 23 + 4);
+        assert.equal(session.getPattern(pattern.id).measures, 1);
+        assert.equal(q('.tracker-popover'), null);
     });
 
     test('the ✎ popover: Edit opens the clip in the Pattern editor, committing first', () => {

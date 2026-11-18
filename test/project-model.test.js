@@ -67,6 +67,8 @@ describe('createProject', () => {
         assert.equal(createTrack({ divider: 3 }).divider, 3);
         assert.equal(createTrack({ divider: 2.6 }).divider, 3, 'rounded to a whole number of ticks');
         assert.equal(createTrack({ divider: 99 }).divider, MAX_DIVIDER, 'clamped');
+        assert.equal(MAX_DIVIDER, 16, 'down to 1/16 speed');
+        assert.equal(createTrack({ divider: 16 }).divider, 16);
         assert.equal('divider' in createTrack({ divider: 0 }), false);
         assert.equal('divider' in createTrack({ divider: -2 }), false);
         assert.equal('divider' in createTrack({ divider: 'two' }), false);

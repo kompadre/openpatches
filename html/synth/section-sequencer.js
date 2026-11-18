@@ -18,30 +18,18 @@
 //    transport re-creates on every change notification, which is cheap.
 //  - Mute/solo are read **live** off the project's tracks, so toggling them
 //    mid-playback takes effect on the next column without a rebuild. So is
-//    a track's clock divider (see `trackColumn`).
+//    a track's speed (`ticksPerRow`) — which the Player applies, not this:
+//    a sequence speaks in rows of the track's timeline, the Player decides
+//    how many ticks a row lasts.
 
 import {
     COLS_PER_MEASURE, clipCols, patternCols as patternColsOf,
     audibleTracks, getPattern as getProjectPattern, pieceLayout, dividerOf, fxAt, humanizeOf,
 } from '../components/project-model.js';
 
-/**
- * Where a placement's pattern is at section column `col`, under the track's
- * clock divider: a track divided by n advances its pattern one column every
- * n ticks, counted from the clip's start, so the pattern plays n times
- * slower inside the clip's span (a one-bar clip at ÷2 plays the pattern's
- * first half). `local` is the pattern-local column; `tick` says whether the
- * pattern advanced on this column at all — only then can a note start.
- * The divider is read live off the track, like mute and solo.
- */
-function trackColumn(p, col) {
-    const d = dividerOf(p.track.divider);
-    const since = col - p.startCol;
-    return {
-        local: Math.floor(since / d) % p.patternCols,
-        tick: since % d === 0,
-        divider: d,
-    };
+/** Where a placement's pattern is at row `row` of the track's timeline. */
+function patternColumn(p, row) {
+    return (row - p.startCol) % p.patternCols;
 }
 
 /**
@@ -88,6 +76,7 @@ function emptySequence(kind) {
         locate: () => ({ col: 0, measure: 0, colInMeasure: 0, tracks: {} }),
         tracks: () => [],
         commandAt: () => null,
+        ticksPerRow: () => 1,
     };
 }
 
@@ -208,7 +197,8 @@ export function createSectionSequence(project, section, opts = {}) {
         },
         /**
          * Notes that start exactly at absolute column `col`, on audible
-         * tracks. `dur` is in columns; the transport converts with the bpm.
+         * tracks. `dur` is in columns — rows of the track's timeline; the
+         * Player turns them into ticks at the track's speed.
          */
         eventsAt(col, trackId = null) {
             const audible = audibleTrackIds(project.tracks);
@@ -217,9 +207,7 @@ export function createSectionSequence(project, section, opts = {}) {
                 if (trackId != null && p.track.id !== trackId) continue;
                 if (opts.onlyTrackId && p.track.id !== opts.onlyTrackId) continue;
                 if (!audible.has(p.track.id)) continue;
-                const { local, tick, divider } = trackColumn(p, col);
-                if (!tick) continue;
-                const notes = p.notesByCol.get(local);
+                const notes = p.notesByCol.get(patternColumn(p, col));
                 if (!notes) continue;
                 const humanize = humanizeOf(p.track.humanize);   // live, like mute
                 for (const n of notes) {
@@ -227,11 +215,9 @@ export function createSectionSequence(project, section, opts = {}) {
                         midi: n.midi,
                         vel: n.vel,
                         ...(humanize ? { humanize } : {}),
-                        // A divided track's notes last as many ticks as the
-                        // pattern is slowed by. Cut at the clip's end: a clip
-                        // stopped part-way through its pattern takes its
-                        // notes with it.
-                        dur: Math.min(n.dur * divider, p.endCol - col),
+                        // Cut at the clip's end: a clip stopped part-way
+                        // through its pattern takes its notes with it.
+                        dur: Math.min(n.dur, p.endCol - col),
                         slot: p.track.slot,
                         trackId: p.track.id,
                         clipId: p.clip.id,
@@ -251,6 +237,15 @@ export function createSectionSequence(project, section, opts = {}) {
          */
         commandAt(trackId, row) {
             return fxAt(section, trackId, row);
+        },
+        /**
+         * How many ticks one row of a track lasts — its speed, read live
+         * off the track like mute: 1 is the Section's own pace, n is 1/n
+         * of it. Stored as `track.divider`.
+         */
+        ticksPerRow(trackId) {
+            const t = trackById.get(trackId);
+            return t ? dividerOf(t.divider) : 1;
         },
         /**
          * The tracks the Player walks: every track with a clip inside the
@@ -274,8 +269,8 @@ export function createSectionSequence(project, section, opts = {}) {
          * Where the playhead is, for drawing: the measure and the
          * pattern-local column on every track that has a clip under it.
          * Muted tracks are included — the playhead still moves over them.
-         * A divided track's pattern column is the divided one — where its
-         * pattern really is — so the roll's playhead matches what sounds.
+         * A slowed track's own position is its head's row (the Player's
+         * `locate()`), not this column.
          */
         locate(col) {
             const tracks = {};
@@ -283,7 +278,7 @@ export function createSectionSequence(project, section, opts = {}) {
                 tracks[p.track.id] = {
                     clipId: p.clip.id,
                     patternId: p.pattern.id,
-                    patternCol: trackColumn(p, col).local,
+                    patternCol: patternColumn(p, col),
                 };
             }
             return {
@@ -338,6 +333,10 @@ export function createPieceSequence(project) {
         /** The piece's parts in order, each with its own section sequence (for the Player). */
         parts() { return parts; },
         tracks() { return []; },
+        ticksPerRow(trackId) {
+            const t = project.tracks.find(o => o.id === trackId);
+            return t ? dividerOf(t.divider) : 1;
+        },
         columnForTick(rawCol) { return wrapToRange(rawCol, range); },
         eventsAt(col) {
             const p = partAt(col);
@@ -406,6 +405,7 @@ export function createPatternSequence(pattern, slot) {
         },
         tracks() { return [{ trackId, slot, end: patternCols() }]; },
         commandAt() { return null; },
+        ticksPerRow() { return 1; },
     };
 }
 

@@ -515,3 +515,146 @@ describe('the piece', () => {
         assert.deepEqual(ons(player.tick().events).map(e => e.midi), [72]);
     });
 });
+
+describe('track speed: a head holds each row for ticksPerRow ticks', () => {
+    /** tA one bar at the given speed, tB one bar at 1×; notes on rows 0, 1 and 12 of tA. */
+    function slow(divider = 2) {
+        const p = createProject({ name: 'P' });
+        const s = p.sections[0];
+        const a = addTrack(p, { id: 'tA', slot: 0 });
+        const b = addTrack(p, { id: 'tB', slot: 1 });
+        a.divider = divider;
+        const pa = addPattern(p, { id: 'pA', notes: [N(60, 0, 1), N(62, 1, 2), N(64, 12, 4)] });
+        const pb = addPattern(p, { id: 'pB', notes: [N(36, 0, 1)] });
+        addClip(p, s, { id: 'cA', trackId: a.id, patternId: pa.id, startCol: 0 });
+        addClip(p, s, { id: 'cB', trackId: b.id, patternId: pb.id, startCol: 0 });
+        return { p, s, seq: createSectionSequence(p, s) };
+    }
+    const onsOf = (st, trackId) => ons(st.events).filter(e => e.trackId === trackId);
+
+    test('at ½× the head steps every other tick; a row\'s notes fire on its first tick, twice as long', () => {
+        const { seq } = slow(2);
+        const player = createPlayer(seq);
+        player.start(0);
+        const rows = [];
+        const heard = [];
+        for (let i = 0; i < 6; i++) {
+            rows.push(player.positions()[0].row);
+            for (const e of onsOf(player.tick(), 'tA')) heard.push([i, e.midi, e.dur]);
+        }
+        assert.deepEqual(rows, [0, 0, 1, 1, 2, 2]);
+        assert.deepEqual(heard, [[0, 60, 2], [2, 62, 4]]);
+    });
+
+    test('the whole clip plays, slower — and the Section waits for the slow track', () => {
+        const { seq } = slow(2);
+        const player = createPlayer(seq);
+        player.start(0);
+        const a = [];
+        const b = [];
+        const seams = [];
+        const cols = [];
+        for (let i = 0; i < 34; i++) {
+            const st = player.tick();
+            if (onsOf(st, 'tA').some(e => e.midi === 64)) a.push(i);
+            if (onsOf(st, 'tB').length) b.push(i);
+            if (st.seam) seams.push(i);
+            cols.push(st.col);
+        }
+        assert.deepEqual(a, [24], 'row 12 at tick 24: the clip is not cut at half its pattern');
+        assert.deepEqual(b, [0, 16, 32], 'the 1× track loops under it');
+        assert.deepEqual(seams, [32], 'two bars of time for a one-bar track at ½×');
+        assert.equal(cols[20], 4, 'the outer column keeps the Section\'s pace and wraps at its range');
+        assert.equal(cols[31], 15);
+    });
+
+    test('on its last row a slow head is not done until the row\'s last tick', () => {
+        // Equal one-bar tracks, one at ½×: at tick 15 the 1× head is on its
+        // last row and the slow one on row 7 — no transition.
+        const { seq } = slow(2);
+        const player = createPlayer(seq);
+        player.start(0);
+        for (let i = 0; i < 30; i++) player.tick();
+        assert.deepEqual(player.positions()[0].row, 15, 'tick 30: row 15, first of its two ticks');
+        assert.equal(player.tick().seam, false);
+        assert.equal(player.tick().seam, false, 'tick 31: its second tick, the Section ends after it');
+        assert.equal(player.tick().seam, true);
+    });
+
+    test('the speed is live: a change lands when the row being held is done', () => {
+        const { p, seq } = slow(4);
+        const player = createPlayer(seq);
+        player.start(0);
+        player.tick();                                   // tick 0: row 0, phase → 1
+        p.tracks.find(t => t.id === 'tA').divider = 1;
+        const st = player.tick();                        // tick 1: still row 0's
+        assert.deepEqual(onsOf(st, 'tA'), []);
+        assert.equal(player.positions()[0].row, 1, 'stepped as soon as the new speed allows');
+        assert.deepEqual(onsOf(player.tick(), 'tA').map(e => [e.midi, e.dur]), [[62, 2]], 'and at 1× from here');
+    });
+
+    test('a seek replays the walk at speed — mid-row, nothing re-fires', () => {
+        const { seq } = slow(2);
+        const player = createPlayer(seq);
+        player.start(3);
+        assert.equal(player.positions()[0].row, 1);
+        assert.deepEqual(onsOf(player.tick(), 'tA'), [], 'row 1 fired at tick 2');
+        const ref = createPlayer(seq);
+        ref.start(0);
+        let at = null;
+        for (let i = 0; i <= 24; i++) at = ref.tick();
+        player.start(24);
+        assert.deepEqual(ons(player.tick().events).map(ev), ons(at.events).map(ev));
+    });
+
+    test('a command on a slow row acts after the whole row', () => {
+        const { s, seq } = slow(2);
+        s.fx = { tA: [{ row: 2, cmd: 'D', arg: 0 }] };   // break on row 2
+        const player = createPlayer(seq);
+        player.start(0);
+        const seams = [];
+        for (let i = 0; i < 8; i++) if (player.tick().seam) seams.push(i);
+        assert.deepEqual(seams, [6], 'row 2 is ticks 4 and 5; the Section starts again at 6');
+
+        s.fx = { tA: [{ row: 1, cmd: 'B', arg: 10 }] };  // jump to row 10 from row 1
+        player.start(0);
+        const rows = [];
+        for (let i = 0; i < 6; i++) { rows.push(player.positions()[0].row); player.tick(); }
+        assert.deepEqual(rows, [0, 0, 1, 1, 10, 10]);
+    });
+
+    test('a hand-over keeps a slow head mid-row', () => {
+        const { seq } = slow(2);
+        const player = createPlayer(seq);
+        player.start(0);
+        for (let i = 0; i < 3; i++) player.tick();       // row 1, its second tick armed
+        const next = createPlayer(seq);
+        assert.equal(next.restore(player.snapshot()), true);
+        assert.deepEqual(onsOf(next.tick(), 'tA'), [], 'row 1 is not fired twice');
+        assert.equal(next.positions()[0].row, 2);
+        assert.deepEqual(onsOf(next.tick(), 'tA'), []);
+    });
+
+    test('in the piece, a Section stretched by a slow track stays in its part', () => {
+        const p = createProject({ name: 'P' });
+        const verse = p.sections[0];
+        verse.id = 'secV';
+        const t = addTrack(p, { id: 'tA', slot: 0 });
+        t.divider = 2;
+        const pv = addPattern(p, { id: 'pV', notes: [N(60, 0, 1)] });
+        addClip(p, verse, { id: 'cV', trackId: t.id, patternId: pv.id, startCol: 0 });
+        const chorus = addSection(p, { id: 'secC', name: 'C' }, { place: false });
+        const pc = addPattern(p, { id: 'pC', notes: [N(72, 0, 1)] });
+        addClip(p, chorus, { id: 'cC', trackId: t.id, patternId: pc.id, startCol: 0 });
+        p.arrangement = [{ id: 'e1', sectionId: 'secV' }, { id: 'e2', sectionId: 'secC' }];
+        const player = createPlayer(createPieceSequence(p));
+        player.start(0);
+        const log = [];
+        for (let i = 0; i < 34; i++) {
+            const st = player.tick();
+            if (st.seam) log.push(i);
+            assert.ok(st.col < 16 || i >= 32, `tick ${i}: column ${st.col} is still the verse`);
+        }
+        assert.deepEqual(log, [32], 'the verse takes two bars at ½×; the chorus follows');
+    });
+});

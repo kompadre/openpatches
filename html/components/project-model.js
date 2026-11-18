@@ -239,10 +239,11 @@ export function createTrack(partial = {}) {
         // Omitted unless compact, so a project that never opened the
         // tracker stores exactly what it did before.
         ...(partial.compact === true ? { compact: true } : {}),
-        // Clock divider: the track's pattern advances one column every
-        // `divider` ticks of the section, so it plays that many times
-        // slower (and its notes last that many times longer) inside the
-        // same clip span. Omitted at 1 — the default — for the same reason.
+        // Speed, as ticks per row (the name is from when it was a clock
+        // divider): the track's own playhead holds each row for `divider`
+        // ticks, so its whole timeline plays that many times slower and
+        // its notes last that many times longer (the Player applies it).
+        // Omitted at 1 — the default — for the same reason.
         ...(dividerOf(partial.divider) > 1 ? { divider: dividerOf(partial.divider) } : {}),
         // Humanize (Player phase 5): per-track timing and velocity nudges,
         // omitted when off.
@@ -250,10 +251,10 @@ export function createTrack(partial = {}) {
     };
 }
 
-/** The clock dividers a track may take: 1 (every tick) up to MAX_DIVIDER. */
-export const MAX_DIVIDER = 8;
+/** The speeds a track may take, as ticks per row: 1 (the Section's pace) up to MAX_DIVIDER (1/16 of it). */
+export const MAX_DIVIDER = 16;
 
-/** A track's divider as an integer in range — 1 when unset or invalid. */
+/** A track's ticks per row as an integer in range — 1 when unset or invalid. */
 export function dividerOf(value) {
     return clampInt(value, 1, MAX_DIVIDER, 1);
 }

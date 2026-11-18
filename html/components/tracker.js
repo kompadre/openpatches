@@ -7,8 +7,10 @@
 // plus `+n`, the rest in a tooltip). Clips show as blocks in their
 // pattern's colour, subdued. The gap right of each track is the clip's
 // margin: a ✎ on the clip's first row (Edit in the Pattern editor,
-// repeats, + Bar to pattern) and, under it, the pattern's name reading
-// downward.
+// repeats, + Bar to pattern), under it the pattern's name reading
+// downward, and a + on the clip's last row — where the pattern ends — that
+// adds a bar to the pattern (only on a clip spelled in repeats: a clip cut
+// to a column count does not end where its pattern does).
 //
 // **Editing** (FT2-style). Click a cell or focus the grid, then:
 //   Z-row / Q-row          notes, as a piano (Z = C of the octave, Q = C above)
@@ -114,7 +116,11 @@ const COMMIT_MS = 3000;  // quiet time before an edited pattern is committed
 const MERGE = '#f0a030';  // doubled notes about to merge, and the merge itself
 const GHOST_FRAMES = 12;  // the merge, shown: the doubles slide into the kept note and fade
 const GHOST_STEP_MS = 35;
-const DIVIDERS = [1, 2, 3, 4, 6, 8]; // the clock dividers the head's ÷ button cycles through
+// The track speeds the head's speed button cycles through, as ticks per row
+// (stored as `track.divider`): 1 is the Section's pace, n is 1/n of it.
+const SPEEDS = [1, 2, 3, 4, 6, 8, 16];
+// Unicode has no single ¹⁄₁₆ glyph: superscript, fraction slash, subscript.
+const SPEED_LABELS = { 1: '1×', 2: '½×', 3: '⅓×', 4: '¼×', 6: '⅙×', 8: '⅛×', 16: '¹⁄₁₆×' };
 const HOLD_MS = 1000;    // a still press this long arms a move (a note, or the selection)
 const FOLLOW_KEY = 'openpatches_tracker_follow';
 
@@ -138,6 +144,7 @@ export function createTracker(opts) {
     let shown = false;
     let layout = [];          // per track: { track, x, w, lanes, viewLanes, blocks, events, cells }
     let rows = MIN_MEASURES * COLS_PER_MEASURE;
+    let gridW = RULER_W;      // the grid's width, from the layout — never measured off the page
     let followPlayhead = false;
     try { followPlayhead = localStorage.getItem(FOLLOW_KEY) === '1'; } catch { /* view pref only */ }
 
@@ -295,7 +302,7 @@ export function createTracker(opts) {
     const bySlot = (slot) => layout.find(t => t.track.slot === slot) || null;
 
     /** The ✎ hotspots: one per clip block, in the gap right of its track. */
-    let pencils = [];   // { x, y, w, h, track, block }
+    let pencils = [];   // margin buttons: { x, y, w, h, track, block, kind: 'edit' | 'grow' }
 
     // --- Layout + draw ---
 
@@ -303,6 +310,7 @@ export function createTracker(opts) {
         const project = session.get();
         const section = session.getSection();
         layout = [];
+        gridW = RULER_W;
         if (!project || !section) return;
 
         doubles = new Map();
@@ -325,6 +333,7 @@ export function createTracker(opts) {
             layout.push(t);
             x += t.w + GAP_W;
         }
+        gridW = x;
         inner.style.width = x + 'px';
         inner.style.height = (HEAD_H + rows * ROW_H) + 'px';
         clampCursor();
@@ -367,20 +376,21 @@ export function createTracker(opts) {
                 }, 'tracker');
             });
             head.appendChild(mode);
-            // Clock divider: ÷1 plays every tick; ÷n advances this track's
-            // pattern one column every n ticks of the section (it plays n
-            // times slower, notes n times longer, in the same clip span).
-            // Click cycles; Shift+click cycles back.
+            // Track speed: 1× moves with the Section; ½×, ⅓×, … hold each
+            // row for 2, 3, … ticks — this track's own playhead moves that
+            // much slower and its notes last that much longer. Click
+            // cycles; Shift+click cycles back.
             const div = dividerOf(t.track.divider);
             const divBtn = document.createElement('button');
-            divBtn.className = 'tracker-divider' + (div > 1 ? ' active' : '');
-            divBtn.textContent = '÷' + div;
+            divBtn.className = 'tracker-speed' + (div > 1 ? ' active' : '');
+            const label = SPEED_LABELS[div] || ('1/' + div + '×');
+            divBtn.textContent = label;
             divBtn.title = div > 1
-                ? `Clock divider ÷${div}: this track advances one column every ${div} ticks — click for the next, Shift+click for the previous`
-                : 'Clock divider ÷1: this track plays every tick — click to slow it (÷2, ÷3, …), Shift+click to go back';
+                ? `Speed ${label}: this track's playhead moves one row every ${div} ticks — ${div} times slower than the Section; click for slower, Shift+click for faster`
+                : 'Speed 1×: this track moves with the Section — click to slow it (½×, ⅓×, …), Shift+click to go back';
             divBtn.addEventListener('click', (e) => {
-                const i = DIVIDERS.indexOf(div);
-                const next = DIVIDERS[(i + (e.shiftKey ? -1 : 1) + DIVIDERS.length) % DIVIDERS.length];
+                const i = SPEEDS.indexOf(div);
+                const next = SPEEDS[(i + (e.shiftKey ? -1 : 1) + SPEEDS.length) % SPEEDS.length];
                 session.update((project) => {
                     const tr = project.tracks.find(o => o.id === t.track.id);
                     if (!tr) return;
@@ -416,7 +426,11 @@ export function createTracker(opts) {
     }
 
     function draw() {
-        const w = Math.max(inner.offsetWidth, RULER_W + 1);
+        // The layout's width, not `inner.offsetWidth`: on a reload the
+        // project is ready before the dock is in the document, so the first
+        // render runs detached, where every measurement is 0 — and the grid
+        // stayed a bare ruler until something else redrew it.
+        const w = Math.max(gridW, RULER_W + 1);
         const h = rows * ROW_H;
         canvas.width = w;
         canvas.height = h;
@@ -511,8 +525,20 @@ export function createTracker(opts) {
             ctx.fillRect(gx + 2, y, GAP_W - 4, bh);
             ctx.fillStyle = '#cdd';
             ctx.fillText('✎', gx + 3, y + ROW_H / 2);
-            pencils.push({ x: gx, y, w: GAP_W, h: ROW_H, track: t, block: b });
-            const room = bh - ROW_H - 4;
+            pencils.push({ x: gx, y, w: GAP_W, h: ROW_H, track: t, block: b, kind: 'edit' });
+            // + on the last row: one more bar for the pattern, where it ends.
+            const grow = b.clip.repeats != null && bh >= 2 * ROW_H;
+            if (grow) {
+                const gy = y + bh - ROW_H;
+                ctx.fillStyle = tint(b.pattern.color, 0.5);
+                ctx.fillRect(gx + 3, gy + 2, GAP_W - 6, ROW_H - 4);
+                ctx.fillStyle = '#fff';
+                ctx.font = 'bold 12px monospace';
+                ctx.fillText('+', gx + 5, gy + ROW_H / 2 + 1);
+                ctx.font = '10px monospace';
+                pencils.push({ x: gx, y: gy, w: GAP_W, h: ROW_H, track: t, block: b, kind: 'grow' });
+            }
+            const room = bh - ROW_H - 4 - (grow ? ROW_H : 0);
             if (room > 12) {
                 ctx.save();
                 ctx.translate(gx + GAP_W / 2, y + ROW_H + 2);
@@ -723,6 +749,13 @@ export function createTracker(opts) {
         if (popover) { popover.remove(); popover = null; }
     }
 
+    /** One more bar on the block's pattern — every clip playing it follows; refused when a clip would collide. */
+    function growPattern(block) {
+        const why = growBlocker(session.get(), block.pattern.id, block.pattern.measures + 1);
+        if (why) say('No room: ' + why);
+        else session.updatePattern(block.pattern.id, { measures: block.pattern.measures + 1 }, 'tracker');
+    }
+
     function openPopover(hit) {
         closePopover();
         const { block } = hit;
@@ -793,9 +826,7 @@ export function createTracker(opts) {
         addBar.textContent = '+ Bar to pattern';
         addBar.title = 'Lengthen the pattern itself by one bar — every clip playing it follows';
         addBar.addEventListener('click', () => {
-            const why = growBlocker(session.get(), block.pattern.id, block.pattern.measures + 1);
-            if (why) say('No room: ' + why);
-            else session.updatePattern(block.pattern.id, { measures: block.pattern.measures + 1 }, 'tracker');
+            growPattern(block);
             closePopover();
         });
         popover.appendChild(addBar);
@@ -1339,6 +1370,7 @@ export function createTracker(opts) {
             return;
         }
         const hit = pencils.find(h => p.x >= h.x && p.x < h.x + h.w && p.y >= h.y && p.y < h.y + h.h);
+        if (hit && hit.kind === 'grow') { closePopover(); growPattern(hit.block); return; }
         if (hit) { openPopover(hit); return; }
         closePopover();
         // preventScroll: a plain focus() scrolls the (tall) canvas into
@@ -1891,7 +1923,12 @@ export function createTracker(opts) {
         if (stamp) { followStamp(p); return; }
         const t = trackAt(p.x);
         let tip = '';
-        if (t && t.track.compact && t.cells) {
+        const button = pencils.find(h => p.x >= h.x && p.x < h.x + h.w && p.y >= h.y && p.y < h.y + h.h);
+        if (button) {
+            tip = button.kind === 'grow'
+                ? `Add a bar to ${button.block.pattern.name} (${button.block.pattern.measures} → ${button.block.pattern.measures + 1}) — every clip playing it follows`
+                : `${button.block.pattern.name}: Edit, repeats, + Bar`;
+        } else if (t && t.track.compact && t.cells) {
             const cell = t.cells.get(p.row);
             if (cell && cell.starts.length + cell.offs.length > 1) {
                 tip = cell.starts.map(ev => noteName(ev.midi) + ' (lane ' + (ev.lane + 1) + ')')
@@ -1963,6 +2000,12 @@ export function createTracker(opts) {
         opts.onViewport(shown ? viewport() : null);
     }
     scroll.addEventListener('scroll', reportViewport);
+    // The rows on screen also change when the scroller is laid out at all
+    // (the first render of a reload runs before the dock is in the
+    // document, and reported a one-row viewport) or resized with its pane.
+    if (typeof ResizeObserver !== 'undefined') {
+        new ResizeObserver(() => { if (shown) reportViewport(); }).observe(scroll);
+    }
 
     // --- Render + wiring ---
 

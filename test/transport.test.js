@@ -713,6 +713,21 @@ describe('mapRecordColumn', () => {
         assert.equal(h.transport.mapRecordColumn(20, 0), null, 'the log is gone with the take; nominal 20 is past the one-bar clip');
     });
 
+    test('a slowed track records at its head\'s row and says how many ticks a row lasts', () => {
+        // Slot 0 at ½× (on screen), slot 1 at 1×: at tick 20 the slow head
+        // is on row 10 — a key there writes at pattern column 10, and the
+        // recorder sizes the note in the track's rows.
+        const h = build({ tracks: [{ slot: 0, measures: 1, notes: [note(60, 0)] },
+                                   { slot: 1, measures: 1, notes: [note(48, 0)] }], edit: 0 });
+        h.session.update((project) => { project.tracks.find(t => t.slot === 0).divider = 2; }, 'test');
+        h.transport.startRecording();
+        for (let raw = 0; raw <= 20; raw++) h.tickWorker.tick(raw);
+        const m = h.transport.mapRecordColumn(20);
+        assert.equal(m.patternCol, 10);
+        assert.equal(m.ticksPerRow, 2);
+        assert.equal(h.transport.mapRecordColumn(20, 1).ticksPerRow, 1);
+    });
+
     test('a voice with clips but none under the playhead records nothing, and says so once', () => {
         const h = build({ tracks: [{ slot: 0, measures: 1, notes: [note(60, 0)], at: 2, repeats: 1 },
                                    { slot: 1, measures: 1, notes: [note(48, 0)], at: 0, repeats: 4 }] });

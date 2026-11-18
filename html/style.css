@@ -5689,7 +5689,7 @@ footer {
     cursor: pointer;
 }
 .tracker-mode:hover { border-color: #888; color: #ddd; }
-.tracker-divider, .tracker-humanize {
+.tracker-speed, .tracker-humanize {
     flex-shrink: 0;
     background: none;
     border: 1px solid #3a3a55;
@@ -5701,8 +5701,8 @@ footer {
     cursor: pointer;
     font-variant-numeric: tabular-nums;
 }
-.tracker-divider:hover, .tracker-humanize:hover { border-color: #888; color: #ddd; }
-.tracker-divider.active { border-color: #e9a045; color: #ffd08a; }
+.tracker-speed:hover, .tracker-humanize:hover { border-color: #888; color: #ddd; }
+.tracker-speed.active { border-color: #e9a045; color: #ffd08a; }
 .tracker-humanize.active { border-color: #45b8e9; color: #8ad8ff; }
 
 .tracker-canvas {

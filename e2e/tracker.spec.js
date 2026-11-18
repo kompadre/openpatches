@@ -479,3 +479,45 @@ test('the velocity column takes digits on a note; the FX column takes a command 
     await page.keyboard.press('Delete');
     expect(await page.evaluate(() => Object.keys(window.__opProject.get().sections[0].fx).length)).toBe(0);
 });
+
+test('after a reload the grid is drawn and the Section pane outlines the rows on screen', async ({ page }) => {
+    // On a reload the project is ready before the dock is in the document,
+    // so the Tracker's first render ran detached: the canvas came out as a
+    // bare ruler and the Section pane's outline one row tall, until
+    // something else (Play) redrew them.
+    await openApp(page);
+    await seed(page);
+    await page.waitForTimeout(3500);   // past the autosave
+    for (let i = 0; i < 3; i++) {
+        await page.reload();
+        await expect(page.locator('.tracker-head-name')).toHaveText('1 Keys');
+        const got = await page.evaluate(() => ({
+            canvas: document.querySelector('.tracker-canvas').width,
+            inner: document.querySelector('.tracker-inner').offsetWidth,
+            rows: (() => { const v = window.__opDock._tracker.getViewport(); return v.endCol - v.startCol; })(),
+            outline: document.querySelector('.section-tracker-viewport').getBoundingClientRect().height,
+        }));
+        expect(got.canvas).toBe(got.inner);
+        expect(got.rows).toBeGreaterThan(4);
+        expect(got.outline).toBeGreaterThan(10);
+    }
+});
+
+test('the + where a clip ends adds a bar to its pattern', async ({ page }) => {
+    await openApp(page);
+    await seed(page);
+    await page.locator('.dock-tab-tracker').click();
+    const canvas = page.locator('.tracker-canvas');
+    const at = await page.evaluate(() => {
+        const c = document.querySelector('.tracker-canvas').getBoundingClientRect();
+        const h = document.querySelector('.tracker-head').getBoundingClientRect();
+        return { x: h.right - c.left + 6, y: 15 * 16 + 8 };      // the margin, row 15: the clip's last
+    });
+    await canvas.hover({ position: at });
+    await expect(canvas).toHaveAttribute('title', /Add a bar to Riff \(1 → 2\)/);
+    await canvas.click({ position: at });
+    const measures = () => page.evaluate(() => window.__opProject.get().patterns[
+        window.__opProject.getSection().clips[0].patternId].measures);
+    await expect.poll(measures).toBe(2);
+    await expect(page.locator('.tracker-popover')).toHaveCount(0);
+});

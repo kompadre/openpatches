@@ -2,6 +2,20 @@
 
 Append-only record of completed work and structural changes, newest first.
 
+## 2026-11-18: Track speed replaces the clock divider; Tracker reload fix and + to grow a pattern; goldens no longer rewritten by the test run
+
+**Track speed** (user: "nobody gets the clock divider"). The Tracker head's button reads **1× ½× ⅓× ¼× ⅙× ⅛× ¹⁄₁₆×** (click slower, Shift+click back) and the **Player** applies it: a head holds each row for that many ticks (`phase`) before it steps, so the track's own line moves that much slower, the **whole clip plays** (the divider only ever reached the start of its pattern inside the clip span), its notes last that much longer, a command on its row acts once the row is done, and the vote counts a slow head as on its last row only on that row's last tick — **a Section waits for its slowest track** (confirmed with the user on the "Poison" piece, whose sections stretch to 24–32 s; the piece's bar count is nominal). Sequences now speak rows only — `eventsAt` and `locate` unscaled — and expose a live `ticksPerRow(trackId)`. The Player's outer `col()` **wraps at the scope's range**, so a stretched Section goes round under the slow head instead of running into the next piece part. A take on a slow track is sized in its rows (`mapRecordColumn` returns `ticksPerRow`). Stored as before in `track.divider` (now 1–16, `MAX_DIVIDER`), so saved projects and the collab atom are unchanged; collab names it "speed".
+
+**Tracker blank after a reload.** The project is ready before the dock is in the document, so the Tracker's first render ran detached: the canvas was sized from `inner.offsetWidth` (0) and showed only the ruler, and the Section pane's outline came out one row tall, until anything (Play) redrew it. `draw()` now uses the layout's own width, and a `ResizeObserver` on the scroller re-reports the viewport.
+
+**+ where a clip ends.** On the clip's last row in the margin (the ✎ is on its first), a **+** adds a bar to the pattern — the popover's "+ Bar to pattern", shared as `growPattern`, refused with "No room" when the grown clip would collide; hovering says "Add a bar to Riff (1 → 2)". Only on clips spelled in repeats (a cut clip does not end where its pattern does).
+
+**Goldens.** `node --test test/` ran `test/golden/update.js` as a test file, rewriting every golden from the current code on every run — racing `golden-playback`'s reads (one flaky failure) and leaving the goldens unable to catch a regression in a full run. The script is gone; `npm run golden:update` is the golden test with `UPDATE_GOLDENS=1`, writing instead of comparing. `section-divider.json` regenerated on purpose (its reference walk models speed; `today` unscaled); the other eleven byte-identical.
+
+Files: `html/synth/player.js`, `section-sequencer.js`, `transport.js`; `html/components/tracker.js`, `toolbar.js`, `project-model.js`, `collab-panel.js`; `html/style.css`; `package.json`; `test/golden-capture.js`, `golden-playback.test.js`, `test/golden/section-divider.json`; `test/golden/update.js` (removed).
+
+Tests: `player` +8 (speed: stepping and durations, whole clip and the vote, last-row-last-tick, live change, seek, commands, hand-over, the piece), `section-sequencer` −6 +3 (rows unscaled, live `ticksPerRow`, the piece), `transport` +1 (a slow take's mapping), `tracker-view` +2 (the +, refused and absent on a cut clip) and the speed button's labels, `project-model` (1–16); e2e `tracker` +2 (after a reload — fails without the fix, canvas 37 px vs 304 — and the + click). 1459 unit, 157 e2e — the whole suite, run in the foreground after acceptance, green.
+
 ## 2026-11-17: The Player — one Playhead per track
 
 The transport used to map every tick onto a stateless sequence and fire what was there. Now a **Player** (`html/synth/player.js`) owns *where every track is* and *what fires*; the transport keeps the clock, the modes, external sync and MIDI clock out, and hands firing and locating over. Position state lives in the Player, in memory, never in the project or the sync. Five phases, each committed on its own (SESSION.md kept the decisions; this is the sum).

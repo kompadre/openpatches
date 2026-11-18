@@ -735,7 +735,10 @@ export function createTransport(opts) {
                 }
                 return null;
             }
-            return { patternCol: here.patternCol, clipId: here.clipId, patternId: here.patternId };
+            // `ticksPerRow`: the track's speed, so the recorder can size the
+            // note in rows of a slowed track rather than in ticks.
+            const ticksPerRow = sequence.ticksPerRow ? sequence.ticksPerRow(track.id) : 1;
+            return { patternCol: here.patternCol, clipId: here.clipId, patternId: here.patternId, ticksPerRow };
         },
     };
     return api;

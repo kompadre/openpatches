@@ -1205,8 +1205,9 @@ export function createToolbar(opts) {
         const mapped = transport.mapRecordColumn(startCol);
         if (!mapped) return;              // placed elsewhere: heard, not recorded
         const tc = pianorollRef.totalCols ? pianorollRef.totalCols() : 16;
-        // Calculate duration from raw columns (before wrapping)
-        const rawDur = Math.max(1, endCol - startCol);
+        // Calculate duration from raw columns (before wrapping), in rows of
+        // the track: a track at half speed holds each row for two ticks.
+        const rawDur = Math.max(1, Math.round((endCol - startCol) / (mapped.ticksPerRow || 1)));
         const dur = Math.min(rawDur, tc); // cap at total cols
         // `fresh` means this voice has nothing placed yet — wrap on the grid
         // and let addNote() start a track and a clip at bar 1, as before.

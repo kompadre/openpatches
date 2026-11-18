@@ -2,7 +2,7 @@
 // Playheads). What today's sequencers emit, per column, over fixture
 // projects: events, the tick → column mapping, and the playhead positions.
 // The goldens live in test/golden/*.json; golden-playback.test.js holds the
-// phases to them, and `node test/golden/update.js` rewrites them (do that
+// phases to them, and `npm run golden:update` rewrites them (do that
 // only when a change in output is *intended* and say so in the commit).
 //
 // Every id is fixed by hand so the capture is stable run to run.
@@ -93,8 +93,10 @@ export function fixtures() {
         },
     });
 
-    // 2. Clock dividers: ÷2 over a one-bar clip, ÷4 over a two-bar clip.
-    // Mixed lengths, so a delta fixture: the ÷2 track loops at bar 2.
+    // 2. Track speeds (stored as `divider`): ½× over a one-bar clip, ¼× over
+    // a two-bar clip. The sequence speaks rows (`today` ignores speed); the
+    // reference walk holds each row for the track's ticks: the ½× track
+    // takes two bars, loops, and the ¼× one ends the Section at tick 127.
     all.push({
         name: 'section-divider', cols: 48, delta: true,
         make() {
@@ -260,7 +262,9 @@ function trackEnd(project, section, trackId) {
 
 /**
  * Walk one pass of the Section under the agreed rule and record what each
- * column fires. Heads advance together, one row per tick; a head whose
+ * column fires. Heads advance together, one row per tick — or one row per
+ * n ticks for a track at 1/n speed (`ticksPerRow`), its notes gathered on
+ * the row's first tick and lasting n times as many ticks; a head whose
  * track ends wraps to row 0 and is `looped`; the pass ends on the tick an
  * unlooped head sits on its last row while every other active head has
  * looped or sits on its own last row. Events come from the section
@@ -272,23 +276,28 @@ export function reference(seq, project, section) {
         .filter(t => t.end > 0);                       // inactive tracks take no part
     const out = { events: {}, wraps: {}, transitionAt: null };
     const pos = new Map(tracks.map(t => [t.id, 0]));
+    const phase = new Map(tracks.map(t => [t.id, 0]));
+    const tpr = (t) => (seq.ticksPerRow ? seq.ticksPerRow(t.id) : 1);
     const looped = new Set();
     for (let col = 0; col < 4096; col++) {
         const evs = [];
         for (const t of tracks) {
+            if (phase.get(t.id) !== 0) continue;
             for (const e of seq.eventsAt(pos.get(t.id))) {
-                if (e.trackId === t.id) evs.push(ev(e));
+                if (e.trackId === t.id) evs.push(ev({ ...e, dur: e.dur * tpr(t) }));
             }
         }
         evs.sort(sortEvs);
         if (evs.length) out.events[col] = evs;
-        // The transition check, with this head on its last row counting
-        // its colleagues' same-tick arrival as satisfied.
-        const atLast = (t) => pos.get(t.id) === t.end - 1;
+        // The transition check, with this head on its last row (its last
+        // tick there) counting its colleagues' same-tick arrival as satisfied.
+        const atLast = (t) => pos.get(t.id) === t.end - 1 && phase.get(t.id) === tpr(t) - 1;
         const triggers = tracks.some(t => atLast(t) && !looped.has(t.id)
             && tracks.every(o => o === t || looped.has(o.id) || atLast(o)));
         if (triggers) { out.transitionAt = col; break; }
         for (const t of tracks) {
+            if (phase.get(t.id) + 1 < tpr(t)) { phase.set(t.id, phase.get(t.id) + 1); continue; }
+            phase.set(t.id, 0);
             const next = pos.get(t.id) + 1;
             if (next >= t.end) {
                 pos.set(t.id, 0);

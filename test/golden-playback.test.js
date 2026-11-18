@@ -3,22 +3,31 @@
 // checked-in goldens in test/golden/. Phases 1–3 of the Player must keep
 // `today` byte for byte (except the delta fixtures, whose `player` object
 // is phase 1's target under the per-track loop rule); a failure here means
-// playback changed — regenerate with `node test/golden/update.js` only
-// when that change is intended, and say so in the commit.
+// playback changed — regenerate with `npm run golden:update` only when
+// that change is intended, and say so in the commit.
+//
+// Regenerating is this test run with UPDATE_GOLDENS=1: each fixture's
+// golden is written instead of compared. It used to be a script beside the
+// goldens (test/golden/update.js), which `node --test test/` ran as a test
+// file — rewriting every golden from the current code on every run, racing
+// this file's reads and making the goldens unable to catch anything.
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { fixtures, captureFixture } from './golden-capture.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
+const updating = process.env.UPDATE_GOLDENS === '1';
 
 describe('golden playback (Player phase 0)', () => {
     for (const fx of fixtures()) {
         test(fx.name, () => {
-            const golden = JSON.parse(readFileSync(join(here, 'golden', fx.name + '.json'), 'utf8'));
+            const file = join(here, 'golden', fx.name + '.json');
+            if (updating) writeFileSync(file, JSON.stringify(captureFixture(fx), null, 1) + '\n');
+            const golden = JSON.parse(readFileSync(file, 'utf8'));
             assert.deepEqual(captureFixture(fx), golden);
         });
     }

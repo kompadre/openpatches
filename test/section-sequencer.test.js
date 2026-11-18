@@ -172,81 +172,42 @@ describe('snapshot vs live', () => {
     });
 });
 
-describe('a track\'s clock divider', () => {
-    test('÷2 advances the pattern every other tick, notes twice as long', () => {
+describe('a track\'s speed (the sequence speaks rows; the Player applies it)', () => {
+    test('a slowed track\'s events are its timeline\'s rows, unscaled', () => {
         const { project, pattern, section } = build({
             measures: 2,
-            notes: [{ midi: 60, start: 0, dur: 4 }, { midi: 62, start: 1, dur: 2 }, { midi: 64, start: 8, dur: 1 }],
+            notes: [{ midi: 60, start: 0, dur: 4 }, { midi: 62, start: 1, dur: 2 }, { midi: 64, start: 24, dur: 1 }],
         });
         project.tracks[0].divider = 2;
         place(project, section, 0, pattern, 0);
         const seq = createSectionSequence(project, section);
-
-        assert.deepEqual(seq.eventsAt(0).map(e => [e.midi, e.dur]), [[60, 8]], 'column 0 sounds, twice as long');
-        assert.deepEqual(seq.eventsAt(1), [], 'the pattern did not advance on this tick');
-        assert.deepEqual(seq.eventsAt(2).map(e => [e.midi, e.dur]), [[62, 4]], 'pattern column 1 at tick 2');
-        assert.deepEqual(seq.eventsAt(16).map(e => [e.midi, e.dur]), [[64, 2]], 'pattern column 8 at tick 16');
-        assert.deepEqual(seq.eventsAt(8), [], 'the clip is 2 bars: at ÷2 only its first half is reached');
+        assert.deepEqual(seq.eventsAt(0).map(e => [e.midi, e.dur]), [[60, 4]], 'durations in rows');
+        assert.deepEqual(seq.eventsAt(1).map(e => [e.midi, e.dur]), [[62, 2]]);
+        assert.deepEqual(seq.eventsAt(24).map(e => [e.midi, e.dur]), [[64, 1]], 'the whole clip is there');
+        assert.equal(seq.locate(9).tracks[project.tracks[0].id].patternCol, 9, 'locate is the row\'s own column');
     });
 
-    test('÷3 plays the first tick and ignores the next two, from the clip start', () => {
-        const { project, pattern, section } = build({
-            notes: [{ midi: 60, start: 0, dur: 1 }, { midi: 61, start: 1, dur: 1 }, { midi: 62, start: 2, dur: 1 }],
-        });
-        project.tracks[1].divider = 3;
-        place(project, section, 1, pattern, 4);
-        const seq = createSectionSequence(project, section);
-        const heard = [];
-        for (let col = 0; col < 16; col++) {
-            for (const e of seq.eventsAt(col)) heard.push([col, e.midi, e.dur]);
-        }
-        assert.deepEqual(heard, [[4, 60, 3], [7, 61, 3], [10, 62, 3]]);
-    });
-
-    test('a stretched note is still cut at the clip end', () => {
-        const { project, pattern, section } = build({ notes: [{ midi: 60, start: 0, dur: 4 }] });
-        project.tracks[0].divider = 4;
-        place(project, section, 0, pattern, 0, { lengthCols: 6 });
-        const seq = createSectionSequence(project, section);
-        assert.equal(seq.eventsAt(0)[0].dur, 6, '4 × 4 = 16, cut to the 6-column clip');
-    });
-
-    test('the divider is live, like mute, and 1 or junk means every tick', () => {
-        const { project, pattern, section } = build({
-            notes: [{ midi: 60, start: 0, dur: 1 }, { midi: 61, start: 1, dur: 1 }],
-        });
+    test('ticksPerRow is read live off the track, like mute; 1 or junk is the Section\'s pace', () => {
+        const { project, pattern, section } = build({ notes: [{ midi: 60, start: 0, dur: 1 }] });
         place(project, section, 0, pattern, 0);
         const seq = createSectionSequence(project, section);
-        assert.equal(seq.eventsAt(1).length, 1);
-        project.tracks[0].divider = 2;
-        assert.deepEqual(seq.eventsAt(1), [], 'took effect without a rebuild');
-        delete project.tracks[0].divider;
-        assert.equal(seq.eventsAt(1).length, 1);
+        const id = project.tracks[0].id;
+        assert.equal(seq.ticksPerRow(id), 1);
+        project.tracks[0].divider = 3;
+        assert.equal(seq.ticksPerRow(id), 3, 'took effect without a rebuild');
         project.tracks[0].divider = 'fast';
-        assert.equal(seq.eventsAt(1).length, 1, 'an invalid divider is 1');
+        assert.equal(seq.ticksPerRow(id), 1, 'an invalid value is 1');
+        assert.equal(seq.ticksPerRow('nobody'), 1);
     });
 
-    test('locate reports the divided pattern column — where the pattern really is', () => {
-        const { project, pattern, section } = build({ measures: 2 });
-        project.tracks[0].divider = 2;
-        place(project, section, 0, pattern, 8);
-        const seq = createSectionSequence(project, section);
-        assert.equal(seq.locate(8).tracks[project.tracks[0].id].patternCol, 0);
-        assert.equal(seq.locate(9).tracks[project.tracks[0].id].patternCol, 0, 'held for the skipped tick');
-        assert.equal(seq.locate(22).tracks[project.tracks[0].id].patternCol, 7);
-    });
-
-    test('the piece sequence carries the divider through', async () => {
+    test('the piece sequence and its parts answer it too', async () => {
         const { createPieceSequence } = await import('../html/synth/section-sequencer.js');
-        const { project, pattern, section } = build({
-            notes: [{ midi: 60, start: 0, dur: 1 }, { midi: 61, start: 1, dur: 1 }],
-        });
+        const { project, pattern, section } = build({ notes: [{ midi: 60, start: 0, dur: 1 }] });
         project.tracks[0].divider = 2;
         place(project, section, 0, pattern, 0);
         const seq = createPieceSequence(project);
-        assert.equal(seq.eventsAt(0).length, 1);
-        assert.deepEqual(seq.eventsAt(1), []);
-        assert.equal(seq.eventsAt(2)[0].midi, 61);
+        assert.equal(seq.ticksPerRow(project.tracks[0].id), 2);
+        assert.equal(seq.parts()[0].seq.ticksPerRow(project.tracks[0].id), 2);
     });
 });
 

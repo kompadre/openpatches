@@ -38,7 +38,7 @@ export function chipText(s) {
 
 const FIELD_WORDS = {
     name: 'name', bpm: 'tempo', bpmEnd: 'end tempo', color: 'colour', measures: 'length', kind: 'kind',
-    slot: 'slot', volume: 'volume', mute: 'mute', solo: 'solo', compact: 'compact view', divider: 'clock divider',
+    slot: 'slot', volume: 'volume', mute: 'mute', solo: 'solo', compact: 'compact view', divider: 'speed',
     patchId: 'patch', voiceData: 'voice', startCol: 'position', repeats: 'repeats', lengthCols: 'length', loop: 'loop',
     trackId: 'track', patternId: 'pattern', tags: 'tags', created: 'created',
 };
